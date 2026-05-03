@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { ETFInfo, OptionsChainData, SortField, SortDirection } from '../lib/types';
-import { fetchOptions, fetchPrice, blackScholesPutDelta, formatPrice, formatYield, yieldColor } from '../lib/api';
+import { fetchOptions, fetchPrice, calculatePutDelta, formatPrice, formatYield, yieldColor, formatNumber } from '../lib/api';
 import {
   ArrowLeft, RefreshCw, TrendingUp, TrendingDown, AlertCircle,
   ChevronUp, ChevronDown
@@ -11,10 +11,30 @@ interface OptionsPageProps {
   onBack: () => void;
 }
 
+interface EnrichedPut {
+  strike: number;
+  last: number | null;
+  bid: number | null;
+  ask: number | null;
+  delta: number;
+  impliedVolatility: number | null;
+  volume: number | null;
+  openInterest: number | null;
+  nomYieldBid: number | null;
+  annYieldBid: number | null;
+  nomYieldAsk: number | null;
+  annYieldAsk: number | null;
+  nomYieldLast: number | null;
+  annYieldLast: number | null;
+  otmItmPct: number | null;
+  otmItmLabel: string;
+  otmItmColor: string;
+}
+
 function SkeletonRow() {
   return (
     <tr className="border-b border-[#1e1e2e]/50">
-      {Array.from({ length: 11 }).map((_, i) => (
+      {Array.from({ length: 15 }).map((_, i) => (
         <td key={i} className="px-3 py-2.5">
           <div className="h-4 w-16 rounded bg-[#1e1e2e] animate-pulse" />
         </td>
@@ -76,21 +96,71 @@ export default function OptionsPage({ etf, onBack }: OptionsPageProps) {
   const currentPrice = priceData?.price ?? optionsData?.currentPrice ?? 0;
   const changePositive = priceData ? priceData.changePercent >= 0 : true;
 
-  const enrichedPuts = useMemo(() => {
+  const enrichedPuts = useMemo((): EnrichedPut[] => {
     if (!optionsData?.puts) return [];
     const exp = optionsData.expirations.find(e => e.date === selectedExp);
     const dte = exp?.dte ?? 1;
 
     return optionsData.puts.map(p => {
-      const delta = p.delta != null ? p.delta : blackScholesPutDelta(currentPrice, p.strike, dte / 365, 0.05, 0.5);
-      const nomYieldBid = p.bid > 0 && p.strike > 0 ? (p.bid / p.strike) * 100 : null;
+      // Delta: use Yahoo value if available and non-zero, otherwise Black-Scholes fallback
+      let delta: number;
+      if (p.delta != null && p.delta !== 0) {
+        delta = p.delta;
+      } else {
+        const sigma = p.impliedVolatility != null && p.impliedVolatility > 0
+          ? p.impliedVolatility / 100
+          : 0.80;
+        delta = calculatePutDelta(currentPrice, p.strike, dte / 365, 0.045, sigma);
+      }
+      // Ensure delta is always negative for puts, minimum -0.01
+      if (delta > 0) delta = -delta;
+      if (delta > -0.01 && delta <= 0) delta = -0.01;
+
+      // Yield calculations: only when bid/ask/last is non-null and non-zero
+      const nomYieldBid = p.bid != null && p.bid !== 0 && p.strike > 0
+        ? (p.bid / p.strike) * 100 : null;
       const annYieldBid = nomYieldBid != null ? nomYieldBid * (365 / dte) : null;
-      const nomYieldAsk = p.ask > 0 && p.strike > 0 ? (p.ask / p.strike) * 100 : null;
+      const nomYieldAsk = p.ask != null && p.ask !== 0 && p.strike > 0
+        ? (p.ask / p.strike) * 100 : null;
       const annYieldAsk = nomYieldAsk != null ? nomYieldAsk * (365 / dte) : null;
-      const nomYieldLast = p.last > 0 && p.strike > 0 ? (p.last / p.strike) * 100 : null;
+      const nomYieldLast = p.last != null && p.last !== 0 && p.strike > 0
+        ? (p.last / p.strike) * 100 : null;
       const annYieldLast = nomYieldLast != null ? nomYieldLast * (365 / dte) : null;
 
-      return { ...p, delta, nomYieldBid, annYieldBid, nomYieldAsk, annYieldAsk, nomYieldLast, annYieldLast };
+      // % OTM / % ITM
+      let otmItmPct: number | null = null;
+      let otmItmLabel = '';
+      let otmItmColor = '';
+      if (currentPrice > 0) {
+        const ratio = Math.abs(p.strike - currentPrice) / currentPrice;
+        if (ratio < 0.005) {
+          otmItmLabel = 'ATM';
+          otmItmColor = '#eab308';
+        } else if (p.strike < currentPrice) {
+          otmItmPct = ((currentPrice - p.strike) / currentPrice) * 100;
+          otmItmLabel = otmItmPct.toFixed(1) + '% OTM';
+          otmItmColor = '#22c55e';
+        } else {
+          otmItmPct = ((p.strike - currentPrice) / currentPrice) * 100;
+          otmItmLabel = otmItmPct.toFixed(1) + '% ITM';
+          otmItmColor = '#ef4444';
+        }
+      }
+
+      return {
+        strike: p.strike,
+        last: p.last,
+        bid: p.bid,
+        ask: p.ask,
+        delta,
+        impliedVolatility: p.impliedVolatility,
+        volume: p.volume,
+        openInterest: p.openInterest,
+        nomYieldBid, annYieldBid,
+        nomYieldAsk, annYieldAsk,
+        nomYieldLast, annYieldLast,
+        otmItmPct, otmItmLabel, otmItmColor,
+      };
     });
   }, [optionsData, selectedExp, currentPrice]);
 
@@ -100,10 +170,14 @@ export default function OptionsPage({ etf, onBack }: OptionsPageProps) {
       let aVal: number, bVal: number;
       switch (sortField) {
         case 'strike': aVal = a.strike; bVal = b.strike; break;
-        case 'last': aVal = a.last; bVal = b.last; break;
-        case 'bid': aVal = a.bid; bVal = b.bid; break;
-        case 'ask': aVal = a.ask; bVal = b.ask; break;
+        case 'last': aVal = a.last ?? -1; bVal = b.last ?? -1; break;
+        case 'bid': aVal = a.bid ?? -1; bVal = b.bid ?? -1; break;
+        case 'ask': aVal = a.ask ?? -1; bVal = b.ask ?? -1; break;
         case 'delta': aVal = a.delta; bVal = b.delta; break;
+        case 'otmItm': aVal = a.otmItmPct ?? -1; bVal = b.otmItmPct ?? -1; break;
+        case 'iv': aVal = a.impliedVolatility ?? -1; bVal = b.impliedVolatility ?? -1; break;
+        case 'volume': aVal = a.volume ?? -1; bVal = b.volume ?? -1; break;
+        case 'openInterest': aVal = a.openInterest ?? -1; bVal = b.openInterest ?? -1; break;
         case 'nomYieldBid': aVal = a.nomYieldBid ?? -1; bVal = b.nomYieldBid ?? -1; break;
         case 'annYieldBid': aVal = a.annYieldBid ?? -1; bVal = b.annYieldBid ?? -1; break;
         case 'nomYieldAsk': aVal = a.nomYieldAsk ?? -1; bVal = b.nomYieldAsk ?? -1; break;
@@ -116,6 +190,24 @@ export default function OptionsPage({ etf, onBack }: OptionsPageProps) {
     });
     return sorted;
   }, [enrichedPuts, sortField, sortDir]);
+
+  // Find divider index: between last strike < currentPrice and first strike >= currentPrice
+  const dividerIndex = useMemo(() => {
+    if (currentPrice <= 0) return -1;
+    // Work on the default sort (ascending by strike)
+    const byStrike = [...enrichedPuts].sort((a, b) => a.strike - b.strike);
+    let idx = -1;
+    for (let i = 0; i < byStrike.length; i++) {
+      if (byStrike[i].strike >= currentPrice) {
+        idx = i;
+        break;
+      }
+    }
+    // idx is the first ITM row; divider goes before it
+    // If all OTM or all ITM, no divider
+    if (idx <= 0 || idx >= byStrike.length) return -1;
+    return idx;
+  }, [enrichedPuts, currentPrice]);
 
   function handleSort(field: SortField) {
     if (sortField === field) {
@@ -136,7 +228,7 @@ export default function OptionsPage({ etf, onBack }: OptionsPageProps) {
   function getMoneyness(strike: number): 'itm' | 'otm' | 'atm' {
     if (currentPrice <= 0) return 'otm';
     const ratio = Math.abs(strike - currentPrice) / currentPrice;
-    if (ratio < 0.01) return 'atm';
+    if (ratio < 0.005) return 'atm';
     return strike > currentPrice ? 'itm' : 'otm';
   }
 
@@ -155,7 +247,13 @@ export default function OptionsPage({ etf, onBack }: OptionsPageProps) {
     return '#64748b';
   }
 
-  const itmCount = enrichedPuts.filter(p => p.strike > currentPrice).length;
+  function ivColor(iv: number | null): string {
+    if (iv == null) return '#475569';
+    if (iv < 50) return '#22c55e';
+    if (iv < 100) return '#eab308';
+    if (iv < 150) return '#f97316';
+    return '#ef4444';
+  }
 
   const columns: { field: SortField; label: string; align: string }[] = [
     { field: 'strike', label: 'Strike', align: 'text-left' },
@@ -163,6 +261,10 @@ export default function OptionsPage({ etf, onBack }: OptionsPageProps) {
     { field: 'bid', label: 'Bid', align: 'text-right' },
     { field: 'ask', label: 'Ask', align: 'text-right' },
     { field: 'delta', label: 'Delta', align: 'text-right' },
+    { field: 'otmItm', label: '% OTM / % ITM', align: 'text-right' },
+    { field: 'iv', label: 'IV', align: 'text-right' },
+    { field: 'volume', label: 'Volume', align: 'text-right' },
+    { field: 'openInterest', label: 'Open Interest', align: 'text-right' },
     { field: 'nomYieldBid', label: 'Nom. Yield (Bid)', align: 'text-right' },
     { field: 'annYieldBid', label: 'Ann. Yield (Bid)', align: 'text-right' },
     { field: 'nomYieldAsk', label: 'Nom. Yield (Ask)', align: 'text-right' },
@@ -170,6 +272,8 @@ export default function OptionsPage({ etf, onBack }: OptionsPageProps) {
     { field: 'nomYieldLast', label: 'Nom. Yield (Last)', align: 'text-right' },
     { field: 'annYieldLast', label: 'Ann. Yield (Last)', align: 'text-right' },
   ];
+
+  const colCount = columns.length;
 
   return (
     <div className="min-h-screen bg-[#0a0a0f]">
@@ -272,15 +376,19 @@ export default function OptionsPage({ etf, onBack }: OptionsPageProps) {
                 {loading ? (
                   Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} />)
                 ) : (
-                  sortedPuts.map((put, idx) => {
-                    const moneyness = getMoneyness(put.strike);
-                    const isDivider = idx === itmCount && itmCount > 0 && itmCount < sortedPuts.length;
+                  (() => {
+                    // Build rows with divider inserted at the correct position
+                    // Sort by strike ascending to find divider position
+                    const byStrike = [...enrichedPuts].sort((a, b) => a.strike - b.strike);
+                    const rows: JSX.Element[] = [];
+                    let dividerInserted = false;
 
-                    return (
-                      <>
-                        {isDivider && (
-                          <tr key={`divider-${put.strike}`}>
-                            <td colSpan={11} className="px-0 py-0">
+                    byStrike.forEach((put, idx) => {
+                      // Insert divider before first strike >= currentPrice
+                      if (!dividerInserted && put.strike >= currentPrice && idx > 0) {
+                        rows.push(
+                          <tr key="divider">
+                            <td colSpan={colCount} className="px-0 py-0">
                               <div className="relative py-2 px-4 bg-[#6366f1]/10 border-y border-[#6366f1]/20">
                                 <span className="text-xs font-medium text-[#6366f1]">
                                   Current Price: ${currentPrice.toFixed(2)}
@@ -288,10 +396,17 @@ export default function OptionsPage({ etf, onBack }: OptionsPageProps) {
                               </div>
                             </td>
                           </tr>
-                        )}
+                        );
+                        dividerInserted = true;
+                      }
+
+                      const moneyness = getMoneyness(put.strike);
+                      const rowIdx = rows.length;
+
+                      rows.push(
                         <tr
                           key={put.strike}
-                          className={`border-b border-[#1e1e2e]/30 hover:bg-white/[0.02] transition-colors ${rowBg(put.strike)} ${idx % 2 === 0 ? '' : 'bg-white/[0.01]'}`}
+                          className={`border-b border-[#1e1e2e]/30 hover:bg-white/[0.02] transition-colors ${rowBg(put.strike)} ${rowIdx % 2 === 0 ? '' : 'bg-white/[0.01]'}`}
                         >
                           <td className="px-3 py-2.5 text-left whitespace-nowrap">
                             <div className="flex items-center gap-2">
@@ -308,10 +423,22 @@ export default function OptionsPage({ etf, onBack }: OptionsPageProps) {
                             </div>
                           </td>
                           <td className="px-3 py-2.5 text-right font-mono text-[#e2e8f0]">{formatPrice(put.last)}</td>
-                          <td className="px-3 py-2.5 text-right font-mono text-[#e2e8f0]">{put.bid > 0 ? formatPrice(put.bid) : '—'}</td>
-                          <td className="px-3 py-2.5 text-right font-mono text-[#e2e8f0]">{put.ask > 0 ? formatPrice(put.ask) : '—'}</td>
+                          <td className="px-3 py-2.5 text-right font-mono text-[#e2e8f0]">{formatPrice(put.bid)}</td>
+                          <td className="px-3 py-2.5 text-right font-mono text-[#e2e8f0]">{formatPrice(put.ask)}</td>
                           <td className="px-3 py-2.5 text-right font-mono" style={{ color: deltaColor(put.delta) }}>
                             {put.delta.toFixed(2)}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono text-xs" style={{ color: put.otmItmColor }}>
+                            {put.otmItmLabel || '—'}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono" style={{ color: ivColor(put.impliedVolatility) }}>
+                            {put.impliedVolatility != null ? put.impliedVolatility.toFixed(1) + '%' : '—'}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono text-[#94a3b8]">
+                            {formatNumber(put.volume)}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono text-[#94a3b8]">
+                            {formatNumber(put.openInterest)}
                           </td>
                           <td className="px-3 py-2.5 text-right font-mono text-[#94a3b8]">
                             {put.nomYieldBid != null ? formatYield(put.nomYieldBid) : '—'}
@@ -332,14 +459,16 @@ export default function OptionsPage({ etf, onBack }: OptionsPageProps) {
                             {put.annYieldLast != null ? formatYield(put.annYieldLast) : '—'}
                           </td>
                         </tr>
-                      </>
-                    );
-                  })
+                      );
+                    });
+
+                    return rows;
+                  })()
                 )}
               </tbody>
             </table>
           </div>
-          {!loading && sortedPuts.length === 0 && !error && (
+          {!loading && enrichedPuts.length === 0 && !error && (
             <div className="py-12 text-center text-[#64748b] text-sm">No put options data available for this expiration.</div>
           )}
         </div>

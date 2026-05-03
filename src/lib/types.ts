@@ -13,10 +13,13 @@ export interface PriceData {
 
 export interface OptionContract {
   strike: number;
-  last: number;
-  bid: number;
-  ask: number;
+  last: number | null;
+  bid: number | null;
+  ask: number | null;
   delta: number | null;
+  impliedVolatility: number | null;
+  volume: number | null;
+  openInterest: number | null;
 }
 
 export interface ExpirationDate {
@@ -31,5 +34,5 @@ export interface OptionsChainData {
   currentPrice: number;
 }
 
-export type SortField = 'strike' | 'last' | 'bid' | 'ask' | 'delta' | 'nomYieldBid' | 'annYieldBid' | 'nomYieldAsk' | 'annYieldAsk' | 'nomYieldLast' | 'annYieldLast';
+export type SortField = 'strike' | 'last' | 'bid' | 'ask' | 'delta' | 'otmItm' | 'iv' | 'volume' | 'openInterest' | 'nomYieldBid' | 'annYieldBid' | 'nomYieldAsk' | 'annYieldAsk' | 'nomYieldLast' | 'annYieldLast';
 export type SortDirection = 'asc' | 'desc';
