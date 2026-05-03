@@ -35,8 +35,8 @@ function SkeletonRow() {
   return (
     <tr className="border-b border-[#1e1e2e]/50">
       {Array.from({ length: 15 }).map((_, i) => (
-        <td key={i} className="px-3 py-2.5">
-          <div className="h-4 w-16 rounded bg-[#1e1e2e] animate-pulse" />
+        <td key={i} className="px-3 py-1.5">
+          <div className="h-3.5 w-16 rounded bg-[#1e1e2e] animate-pulse" />
         </td>
       ))}
     </tr>
@@ -102,7 +102,6 @@ export default function OptionsPage({ etf, onBack }: OptionsPageProps) {
     const dte = exp?.dte ?? 1;
 
     return optionsData.puts.map(p => {
-      // Delta: use Yahoo value if available and non-zero, otherwise Black-Scholes fallback
       let delta: number;
       if (p.delta != null && p.delta !== 0) {
         delta = p.delta;
@@ -112,11 +111,9 @@ export default function OptionsPage({ etf, onBack }: OptionsPageProps) {
           : 0.80;
         delta = calculatePutDelta(currentPrice, p.strike, dte / 365, 0.045, sigma);
       }
-      // Ensure delta is always negative for puts, minimum -0.01
       if (delta > 0) delta = -delta;
       if (delta > -0.01 && delta <= 0) delta = -0.01;
 
-      // Yield calculations: only when bid/ask/last is non-null and non-zero
       const nomYieldBid = p.bid != null && p.bid !== 0 && p.strike > 0
         ? (p.bid / p.strike) * 100 : null;
       const annYieldBid = nomYieldBid != null ? nomYieldBid * (365 / dte) : null;
@@ -127,7 +124,6 @@ export default function OptionsPage({ etf, onBack }: OptionsPageProps) {
         ? (p.last / p.strike) * 100 : null;
       const annYieldLast = nomYieldLast != null ? nomYieldLast * (365 / dte) : null;
 
-      // % OTM / % ITM
       let otmItmPct: number | null = null;
       let otmItmLabel = '';
       let otmItmColor = '';
@@ -148,17 +144,9 @@ export default function OptionsPage({ etf, onBack }: OptionsPageProps) {
       }
 
       return {
-        strike: p.strike,
-        last: p.last,
-        bid: p.bid,
-        ask: p.ask,
-        delta,
-        impliedVolatility: p.impliedVolatility,
-        volume: p.volume,
-        openInterest: p.openInterest,
-        nomYieldBid, annYieldBid,
-        nomYieldAsk, annYieldAsk,
-        nomYieldLast, annYieldLast,
+        strike: p.strike, last: p.last, bid: p.bid, ask: p.ask, delta,
+        impliedVolatility: p.impliedVolatility, volume: p.volume, openInterest: p.openInterest,
+        nomYieldBid, annYieldBid, nomYieldAsk, annYieldAsk, nomYieldLast, annYieldLast,
         otmItmPct, otmItmLabel, otmItmColor,
       };
     });
@@ -190,24 +178,6 @@ export default function OptionsPage({ etf, onBack }: OptionsPageProps) {
     });
     return sorted;
   }, [enrichedPuts, sortField, sortDir]);
-
-  // Find divider index: between last strike < currentPrice and first strike >= currentPrice
-  const dividerIndex = useMemo(() => {
-    if (currentPrice <= 0) return -1;
-    // Work on the default sort (ascending by strike)
-    const byStrike = [...enrichedPuts].sort((a, b) => a.strike - b.strike);
-    let idx = -1;
-    for (let i = 0; i < byStrike.length; i++) {
-      if (byStrike[i].strike >= currentPrice) {
-        idx = i;
-        break;
-      }
-    }
-    // idx is the first ITM row; divider goes before it
-    // If all OTM or all ITM, no divider
-    if (idx <= 0 || idx >= byStrike.length) return -1;
-    return idx;
-  }, [enrichedPuts, currentPrice]);
 
   function handleSort(field: SortField) {
     if (sortField === field) {
@@ -362,7 +332,9 @@ export default function OptionsPage({ etf, onBack }: OptionsPageProps) {
                     <th
                       key={col.field}
                       onClick={() => handleSort(col.field)}
-                      className={`px-3 py-3 font-medium text-[#64748b] cursor-pointer hover:text-[#e2e8f0] transition-colors select-none whitespace-nowrap ${col.align}`}
+                      className={`px-3 py-1.5 text-xs uppercase tracking-wider font-medium text-[#64748b] cursor-pointer hover:text-[#e2e8f0] transition-colors select-none whitespace-nowrap ${col.align} ${
+                        col.field === 'strike' ? 'sticky left-0 z-[3] bg-[#0e0e16] border-r border-[#1e1e2e]' : ''
+                      }`}
                     >
                       <span className="inline-flex items-center gap-1">
                         {col.label}
@@ -377,19 +349,16 @@ export default function OptionsPage({ etf, onBack }: OptionsPageProps) {
                   Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} />)
                 ) : (
                   (() => {
-                    // Build rows with divider inserted at the correct position
-                    // Sort by strike ascending to find divider position
                     const byStrike = [...enrichedPuts].sort((a, b) => a.strike - b.strike);
                     const rows: JSX.Element[] = [];
                     let dividerInserted = false;
 
                     byStrike.forEach((put, idx) => {
-                      // Insert divider before first strike >= currentPrice
                       if (!dividerInserted && put.strike >= currentPrice && idx > 0) {
                         rows.push(
                           <tr key="divider">
                             <td colSpan={colCount} className="px-0 py-0">
-                              <div className="relative py-2 px-4 bg-[#6366f1]/10 border-y border-[#6366f1]/20">
+                              <div className="relative py-1 px-4 bg-[#6366f1]/10 border-y border-[#6366f1]/20">
                                 <span className="text-xs font-medium text-[#6366f1]">
                                   Current Price: ${currentPrice.toFixed(2)}
                                 </span>
@@ -408,54 +377,54 @@ export default function OptionsPage({ etf, onBack }: OptionsPageProps) {
                           key={put.strike}
                           className={`border-b border-[#1e1e2e]/30 hover:bg-white/[0.02] transition-colors ${rowBg(put.strike)} ${rowIdx % 2 === 0 ? '' : 'bg-white/[0.01]'}`}
                         >
-                          <td className="px-3 py-2.5 text-left whitespace-nowrap">
-                            <div className="flex items-center gap-2">
+                          <td className={`px-3 py-1.5 text-left whitespace-nowrap sticky left-0 z-[2] border-r border-[#1e1e2e] ${rowBg(put.strike)} ${rowIdx % 2 === 0 ? '' : 'bg-white/[0.01]'}`}>
+                            <div className="flex items-center gap-1.5">
                               <span className="font-mono font-semibold text-[#e2e8f0]">{formatPrice(put.strike)}</span>
                               {moneyness === 'itm' && (
-                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 border border-red-500/20">ITM</span>
+                                <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-red-500/15 text-red-400 border border-red-500/20">ITM</span>
                               )}
                               {moneyness === 'otm' && (
-                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">OTM</span>
+                                <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">OTM</span>
                               )}
                               {moneyness === 'atm' && (
-                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/20">ATM</span>
+                                <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/20">ATM</span>
                               )}
                             </div>
                           </td>
-                          <td className="px-3 py-2.5 text-right font-mono text-[#e2e8f0]">{formatPrice(put.last)}</td>
-                          <td className="px-3 py-2.5 text-right font-mono text-[#e2e8f0]">{formatPrice(put.bid)}</td>
-                          <td className="px-3 py-2.5 text-right font-mono text-[#e2e8f0]">{formatPrice(put.ask)}</td>
-                          <td className="px-3 py-2.5 text-right font-mono" style={{ color: deltaColor(put.delta) }}>
+                          <td className="px-3 py-1.5 text-right font-mono text-[#e2e8f0]">{formatPrice(put.last)}</td>
+                          <td className="px-3 py-1.5 text-right font-mono text-[#e2e8f0]">{formatPrice(put.bid)}</td>
+                          <td className="px-3 py-1.5 text-right font-mono text-[#e2e8f0]">{formatPrice(put.ask)}</td>
+                          <td className="px-3 py-1.5 text-right font-mono" style={{ color: deltaColor(put.delta) }}>
                             {put.delta.toFixed(2)}
                           </td>
-                          <td className="px-3 py-2.5 text-right font-mono text-xs" style={{ color: put.otmItmColor }}>
+                          <td className="px-3 py-1.5 text-right font-mono text-xs" style={{ color: put.otmItmColor }}>
                             {put.otmItmLabel || '—'}
                           </td>
-                          <td className="px-3 py-2.5 text-right font-mono" style={{ color: ivColor(put.impliedVolatility) }}>
+                          <td className="px-3 py-1.5 text-right font-mono" style={{ color: ivColor(put.impliedVolatility) }}>
                             {put.impliedVolatility != null ? put.impliedVolatility.toFixed(1) + '%' : '—'}
                           </td>
-                          <td className="px-3 py-2.5 text-right font-mono text-[#94a3b8]">
+                          <td className="px-3 py-1.5 text-right font-mono text-[#94a3b8]">
                             {formatNumber(put.volume)}
                           </td>
-                          <td className="px-3 py-2.5 text-right font-mono text-[#94a3b8]">
+                          <td className="px-3 py-1.5 text-right font-mono text-[#94a3b8]">
                             {formatNumber(put.openInterest)}
                           </td>
-                          <td className="px-3 py-2.5 text-right font-mono text-[#94a3b8]">
+                          <td className="px-3 py-1.5 text-right font-mono text-[#94a3b8]">
                             {put.nomYieldBid != null ? formatYield(put.nomYieldBid) : '—'}
                           </td>
-                          <td className="px-3 py-2.5 text-right font-mono font-medium" style={{ color: put.annYieldBid != null ? yieldColor(put.annYieldBid) : '#475569' }}>
+                          <td className="px-3 py-1.5 text-right font-mono font-medium" style={{ color: put.annYieldBid != null ? yieldColor(put.annYieldBid) : '#475569' }}>
                             {put.annYieldBid != null ? formatYield(put.annYieldBid) : '—'}
                           </td>
-                          <td className="px-3 py-2.5 text-right font-mono text-[#94a3b8]">
+                          <td className="px-3 py-1.5 text-right font-mono text-[#94a3b8]">
                             {put.nomYieldAsk != null ? formatYield(put.nomYieldAsk) : '—'}
                           </td>
-                          <td className="px-3 py-2.5 text-right font-mono font-medium" style={{ color: put.annYieldAsk != null ? yieldColor(put.annYieldAsk) : '#475569' }}>
+                          <td className="px-3 py-1.5 text-right font-mono font-medium" style={{ color: put.annYieldAsk != null ? yieldColor(put.annYieldAsk) : '#475569' }}>
                             {put.annYieldAsk != null ? formatYield(put.annYieldAsk) : '—'}
                           </td>
-                          <td className="px-3 py-2.5 text-right font-mono text-[#94a3b8]">
+                          <td className="px-3 py-1.5 text-right font-mono text-[#94a3b8]">
                             {put.nomYieldLast != null ? formatYield(put.nomYieldLast) : '—'}
                           </td>
-                          <td className="px-3 py-2.5 text-right font-mono font-medium" style={{ color: put.annYieldLast != null ? yieldColor(put.annYieldLast) : '#475569' }}>
+                          <td className="px-3 py-1.5 text-right font-mono font-medium" style={{ color: put.annYieldLast != null ? yieldColor(put.annYieldLast) : '#475569' }}>
                             {put.annYieldLast != null ? formatYield(put.annYieldLast) : '—'}
                           </td>
                         </tr>

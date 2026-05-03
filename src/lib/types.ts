@@ -1,8 +1,11 @@
+export type ETFType = 'Broad Index' | 'Sector' | 'Commodity' | 'Country';
+
 export interface ETFInfo {
   ticker: string;
   name: string;
   leverage: string;
   underlying: string;
+  type: ETFType;
 }
 
 export interface PriceData {

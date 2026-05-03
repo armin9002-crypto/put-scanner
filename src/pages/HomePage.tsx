@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { ETF_LIST } from '../lib/etfs';
-import type { ETFInfo } from '../lib/types';
+import type { ETFInfo, ETFType } from '../lib/types';
 import ETFCard from '../components/ETFCard';
 import { Search, ShieldCheck } from 'lucide-react';
 
@@ -8,16 +8,29 @@ interface HomePageProps {
   onSelectETF: (etf: ETFInfo) => void;
 }
 
+const LEVERAGE_OPTIONS = ['All', '2x', '3x'] as const;
+const TYPE_OPTIONS = ['All', 'Broad Index', 'Sector', 'Commodity', 'Country'] as const;
+
 export default function HomePage({ onSelectETF }: HomePageProps) {
   const [search, setSearch] = useState('');
+  const [leverageFilter, setLeverageFilter] = useState<string>('All');
+  const [typeFilter, setTypeFilter] = useState<string>('All');
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
-    if (!q) return ETF_LIST;
-    return ETF_LIST.filter(
-      e => e.ticker.toLowerCase().includes(q) || e.underlying.toLowerCase().includes(q) || e.name.toLowerCase().includes(q)
-    );
-  }, [search]);
+    return ETF_LIST.filter(e => {
+      if (q && !e.ticker.toLowerCase().includes(q) && !e.underlying.toLowerCase().includes(q) && !e.name.toLowerCase().includes(q)) {
+        return false;
+      }
+      if (leverageFilter !== 'All' && !e.leverage.includes(leverageFilter)) {
+        return false;
+      }
+      if (typeFilter !== 'All' && e.type !== typeFilter) {
+        return false;
+      }
+      return true;
+    });
+  }, [search, leverageFilter, typeFilter]);
 
   return (
     <div className="min-h-screen bg-[#0a0a0f]">
@@ -34,7 +47,7 @@ export default function HomePage({ onSelectETF }: HomePageProps) {
           </div>
         </header>
 
-        <div className="relative mb-6">
+        <div className="relative mb-4">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#64748b]" />
           <input
             type="text"
@@ -45,7 +58,43 @@ export default function HomePage({ onSelectETF }: HomePageProps) {
           />
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div className="flex flex-wrap items-center gap-3 mb-6">
+          <span className="text-xs text-[#64748b] font-medium uppercase tracking-wider">Leverage</span>
+          <div className="flex gap-1.5">
+            {LEVERAGE_OPTIONS.map(opt => (
+              <button
+                key={opt}
+                onClick={() => setLeverageFilter(opt)}
+                className={`px-3 py-1 rounded-lg text-sm font-medium transition-all ${
+                  leverageFilter === opt
+                    ? 'bg-[#6366f1] text-white'
+                    : 'bg-[#12121a] border border-[#1e1e2e] text-[#64748b] hover:text-[#e2e8f0] hover:border-[#6366f1]/30'
+                }`}
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+
+          <span className="text-xs text-[#64748b] font-medium uppercase tracking-wider ml-2">Type</span>
+          <div className="flex gap-1.5">
+            {TYPE_OPTIONS.map(opt => (
+              <button
+                key={opt}
+                onClick={() => setTypeFilter(opt)}
+                className={`px-3 py-1 rounded-lg text-sm font-medium transition-all ${
+                  typeFilter === opt
+                    ? 'bg-[#6366f1] text-white'
+                    : 'bg-[#12121a] border border-[#1e1e2e] text-[#64748b] hover:text-[#e2e8f0] hover:border-[#6366f1]/30'
+                }`}
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {filtered.map(etf => (
             <ETFCard key={etf.ticker} etf={etf} onClick={() => onSelectETF(etf)} />
           ))}
@@ -53,7 +102,7 @@ export default function HomePage({ onSelectETF }: HomePageProps) {
 
         {filtered.length === 0 && (
           <div className="text-center py-16">
-            <p className="text-[#64748b]">No ETFs match your search.</p>
+            <p className="text-[#64748b]">No ETFs match your filters.</p>
           </div>
         )}
 

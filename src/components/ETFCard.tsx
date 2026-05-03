@@ -9,7 +9,7 @@ interface ETFCardProps {
 }
 
 function Skeleton() {
-  return <div className="h-4 w-16 rounded bg-[#1e1e2e] animate-pulse" />;
+  return <div className="h-3.5 w-14 rounded bg-[#1e1e2e] animate-pulse" />;
 }
 
 export default function ETFCard({ etf, onClick }: ETFCardProps) {
@@ -38,26 +38,26 @@ export default function ETFCard({ etf, onClick }: ETFCardProps) {
   return (
     <button
       onClick={onClick}
-      className="group bg-[#12121a] border border-[#1e1e2e] rounded-xl p-5 text-left hover:border-[#6366f1]/40 hover:shadow-[0_0_20px_rgba(99,102,241,0.08)] transition-all duration-200 w-full"
+      className="group bg-[#12121a] border border-[#1e1e2e] rounded-xl p-3 text-left hover:border-[#6366f1]/40 hover:shadow-[0_0_20px_rgba(99,102,241,0.08)] transition-all duration-200 w-full"
     >
-      <div className="flex items-start justify-between mb-3">
-        <span className="text-xl font-bold font-mono text-[#e2e8f0] tracking-tight">{etf.ticker}</span>
-        <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-md border ${leverageColor}`}>
+      <div className="flex items-start justify-between mb-2">
+        <span className="text-lg font-bold font-mono text-[#e2e8f0] tracking-tight">{etf.ticker}</span>
+        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md border ${leverageColor}`}>
           {etf.leverage}
         </span>
       </div>
 
-      <p className="text-sm text-[#64748b] mb-1 leading-snug line-clamp-2">{etf.name}</p>
-      <p className="text-xs text-[#475569] mb-4">{etf.underlying}</p>
+      <p className="text-xs text-[#64748b] mb-0.5 leading-snug line-clamp-1">{etf.name}</p>
+      <p className="text-xs text-[#475569] mb-2">{etf.underlying}</p>
 
       <div className="flex items-end justify-between">
         {loading ? (
           <Skeleton />
         ) : error ? (
-          <span className="text-xs text-red-400/60">Price unavailable</span>
+          <span className="text-[10px] text-red-400/60">Price unavailable</span>
         ) : priceData ? (
           <div>
-            <span className="text-lg font-semibold font-mono text-[#e2e8f0]">
+            <span className="text-base font-semibold font-mono text-[#e2e8f0]">
               ${priceData.price.toFixed(2)}
             </span>
             <div className={`flex items-center gap-1 text-xs font-mono mt-0.5 ${changePositive ? 'text-emerald-400' : 'text-red-400'}`}>
