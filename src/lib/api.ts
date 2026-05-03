@@ -1,79 +1,48 @@
 import type { PriceData, OptionsChainData, ExpirationDate, OptionContract } from './types';
 
-const TRADIER_TOKEN = 'YOUR_TOKEN_HERE';
-const TRADIER_BASE = 'https://sandbox.tradier.com/v1';
-
-const headers = {
-  Authorization: `Bearer ${TRADIER_TOKEN}`,
-  Accept: 'application/json',
-};
+const API_BASE = '/api';
 
 export async function fetchPrice(ticker: string): Promise<PriceData> {
-  const res = await fetch(`${TRADIER_BASE}/markets/quotes?symbols=${encodeURIComponent(ticker)}`, { headers });
+  const res = await fetch(`${API_BASE}/price?ticker=${encodeURIComponent(ticker)}`);
   if (!res.ok) throw new Error(`Failed to fetch price for ${ticker}`);
   const data = await res.json();
-
-  const quote = data?.quotes?.quote;
-  if (!quote) throw new Error(`No quote data for ${ticker}`);
-
-  const price = quote.last ?? 0;
-  const change = quote.change ?? 0;
-  const changePercent = quote.change_percentage ?? 0;
-
-  return { price, change, changePercent };
+  if (data.error) throw new Error(data.error);
+  return { price: data.price, change: data.change, changePercent: data.changePct };
 }
 
 export async function fetchOptions(ticker: string, date?: number): Promise<OptionsChainData> {
-  const [expRes, quoteRes] = await Promise.all([
-    fetch(`${TRADIER_BASE}/markets/options/expirations?symbol=${encodeURIComponent(ticker)}`, { headers }),
-    fetch(`${TRADIER_BASE}/markets/quotes?symbols=${encodeURIComponent(ticker)}`, { headers }),
-  ]);
+  let url = `${API_BASE}/options?ticker=${encodeURIComponent(ticker)}`;
+  if (date) url += `&date=${date}`;
 
-  if (!expRes.ok) throw new Error('Failed to fetch expirations');
-  if (!quoteRes.ok) throw new Error('Failed to fetch quote');
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to fetch options for ${ticker}`);
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
 
-  const expData = await expRes.json();
-  const quoteData = await quoteRes.json();
+  const result = data?.optionChain?.result?.[0];
+  if (!result) throw new Error('No options data available');
 
-  const currentPrice = quoteData?.quotes?.quote?.last ?? 0;
+  const currentPrice = result.quote?.regularMarketPrice ?? 0;
+  const expDates: number[] = result.expirationDates || [];
 
-  const dateStrings: string[] = expData?.expirations?.date || [];
-  const expirations: ExpirationDate[] = dateStrings.map((ds: string) => {
-    const expDate = new Date(ds + 'T00:00:00');
-    const dte = Math.max(1, Math.ceil((expDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
-    const label = expDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    return { date: Math.floor(expDate.getTime() / 1000), label, dte };
+  const expirations: ExpirationDate[] = expDates.map((ts: number) => {
+    const dte = Math.max(1, Math.ceil((ts * 1000 - Date.now()) / (1000 * 60 * 60 * 24)));
+    const d = new Date(ts * 1000);
+    const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return { date: ts, label, dte };
   });
 
-  let selectedExp: ExpirationDate | undefined;
-  if (date) {
-    selectedExp = expirations.find(e => e.date === date);
-  }
-  if (!selectedExp && expirations.length > 0) {
-    selectedExp = expirations[0];
-  }
+  const putsRaw = result.options?.[0]?.puts || [];
 
-  let puts: OptionContract[] = [];
-  if (selectedExp) {
-    const expStr = new Date(selectedExp.date * 1000).toISOString().split('T')[0];
-    const chainRes = await fetch(
-      `${TRADIER_BASE}/markets/options/chains?symbol=${encodeURIComponent(ticker)}&expiration=${expStr}&greeks=true`,
-      { headers }
-    );
-    if (chainRes.ok) {
-      const chainData = await chainRes.json();
-      const options: any[] = chainData?.options?.option || [];
-      puts = options
-        .filter((o: any) => o.option_type === 'put')
-        .map((o: any) => ({
-          strike: o.strike,
-          last: o.last ?? 0,
-          bid: o.bid ?? 0,
-          ask: o.ask ?? 0,
-          delta: o.greeks?.delta ?? null,
-        }));
-    }
-  }
+  const puts: OptionContract[] = putsRaw
+    .filter((p: any) => p.strike != null)
+    .map((p: any) => ({
+      strike: p.strike,
+      last: p.lastPrice ?? 0,
+      bid: p.bid ?? 0,
+      ask: p.ask ?? 0,
+      delta: p.delta != null ? (p.delta > 0 ? -p.delta : p.delta) : null,
+    }));
 
   return { expirations, puts, currentPrice };
 }
