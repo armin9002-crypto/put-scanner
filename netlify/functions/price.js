@@ -1,7 +1,5 @@
-export default async (request, context) => {
-  const url = new URL(request.url);
-  const ticker = url.searchParams.get('ticker');
-
+exports.handler = async function(event, context) {
+  const ticker = event.queryStringParameters.ticker;
   try {
     const res = await fetch(
       `https://query2.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`,
@@ -10,14 +8,15 @@ export default async (request, context) => {
     const data = await res.json();
     const meta = data.chart.result[0].meta;
     const price = meta.regularMarketPrice;
-    const change = price - meta.chartPreviousClose;
-    const changePct = (change / meta.chartPreviousClose) * 100;
-    return new Response(JSON.stringify({ price, change, changePct }), {
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-    });
-  } catch (e) {
-    return new Response(JSON.stringify({ error: e.message }), { status: 500 });
+    const prev = meta.chartPreviousClose;
+    const change = price - prev;
+    const changePct = (change / prev) * 100;
+    return {
+      statusCode: 200,
+      headers: { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ price, change, changePct })
+    };
+  } catch(e) {
+    return { statusCode: 500, body: JSON.stringify({ error: e.message }) };
   }
 };
-
-export const config = { path: '/api/price' };
