@@ -1,0 +1,353 @@
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import type { ETFInfo, OptionsChainData, SortField, SortDirection } from '../lib/types';
+import { fetchOptions, fetchPrice, blackScholesPutDelta, formatPrice, formatYield, yieldColor } from '../lib/api';
+import {
+  ArrowLeft, RefreshCw, TrendingUp, TrendingDown, AlertCircle,
+  ChevronUp, ChevronDown
+} from 'lucide-react';
+
+interface OptionsPageProps {
+  etf: ETFInfo;
+  onBack: () => void;
+}
+
+function SkeletonRow() {
+  return (
+    <tr className="border-b border-[#1e1e2e]/50">
+      {Array.from({ length: 11 }).map((_, i) => (
+        <td key={i} className="px-3 py-2.5">
+          <div className="h-4 w-16 rounded bg-[#1e1e2e] animate-pulse" />
+        </td>
+      ))}
+    </tr>
+  );
+}
+
+export default function OptionsPage({ etf, onBack }: OptionsPageProps) {
+  const [optionsData, setOptionsData] = useState<OptionsChainData | null>(null);
+  const [priceData, setPriceData] = useState<{ price: number; change: number; changePercent: number } | null>(null);
+  const [selectedExp, setSelectedExp] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [sortField, setSortField] = useState<SortField>('strike');
+  const [sortDir, setSortDir] = useState<SortDirection>('asc');
+
+  const loadData = useCallback(async (expDate?: number) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [opts, price] = await Promise.all([
+        fetchOptions(etf.ticker, expDate),
+        fetchPrice(etf.ticker),
+      ]);
+      setOptionsData(opts);
+      setPriceData(price);
+      if (!expDate && opts.expirations.length > 0) {
+        setSelectedExp(opts.expirations[0].date);
+      }
+      setLastUpdated(new Date());
+    } catch (err: any) {
+      setError(err.message || 'Failed to load options data');
+    } finally {
+      setLoading(false);
+    }
+  }, [etf.ticker]);
+
+  const loadExpiration = useCallback(async (expDate: number) => {
+    setSelectedExp(expDate);
+    setLoading(true);
+    setError(null);
+    try {
+      const opts = await fetchOptions(etf.ticker, expDate);
+      setOptionsData(opts);
+      const price = await fetchPrice(etf.ticker);
+      setPriceData(price);
+      setLastUpdated(new Date());
+    } catch (err: any) {
+      setError(err.message || 'Failed to load expiration data');
+    } finally {
+      setLoading(false);
+    }
+  }, [etf.ticker]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const currentPrice = priceData?.price ?? optionsData?.currentPrice ?? 0;
+  const changePositive = priceData ? priceData.changePercent >= 0 : true;
+
+  const enrichedPuts = useMemo(() => {
+    if (!optionsData?.puts) return [];
+    const exp = optionsData.expirations.find(e => e.date === selectedExp);
+    const dte = exp?.dte ?? 1;
+
+    return optionsData.puts.map(p => {
+      const delta = p.delta != null ? p.delta : blackScholesPutDelta(currentPrice, p.strike, dte / 365, 0.05, 0.5);
+      const nomYieldBid = p.bid > 0 && p.strike > 0 ? (p.bid / p.strike) * 100 : null;
+      const annYieldBid = nomYieldBid != null ? nomYieldBid * (365 / dte) : null;
+      const nomYieldAsk = p.ask > 0 && p.strike > 0 ? (p.ask / p.strike) * 100 : null;
+      const annYieldAsk = nomYieldAsk != null ? nomYieldAsk * (365 / dte) : null;
+      const nomYieldLast = p.last > 0 && p.strike > 0 ? (p.last / p.strike) * 100 : null;
+      const annYieldLast = nomYieldLast != null ? nomYieldLast * (365 / dte) : null;
+
+      return { ...p, delta, nomYieldBid, annYieldBid, nomYieldAsk, annYieldAsk, nomYieldLast, annYieldLast };
+    });
+  }, [optionsData, selectedExp, currentPrice]);
+
+  const sortedPuts = useMemo(() => {
+    const sorted = [...enrichedPuts];
+    sorted.sort((a, b) => {
+      let aVal: number, bVal: number;
+      switch (sortField) {
+        case 'strike': aVal = a.strike; bVal = b.strike; break;
+        case 'last': aVal = a.last; bVal = b.last; break;
+        case 'bid': aVal = a.bid; bVal = b.bid; break;
+        case 'ask': aVal = a.ask; bVal = b.ask; break;
+        case 'delta': aVal = a.delta; bVal = b.delta; break;
+        case 'nomYieldBid': aVal = a.nomYieldBid ?? -1; bVal = b.nomYieldBid ?? -1; break;
+        case 'annYieldBid': aVal = a.annYieldBid ?? -1; bVal = b.annYieldBid ?? -1; break;
+        case 'nomYieldAsk': aVal = a.nomYieldAsk ?? -1; bVal = b.nomYieldAsk ?? -1; break;
+        case 'annYieldAsk': aVal = a.annYieldAsk ?? -1; bVal = b.annYieldAsk ?? -1; break;
+        case 'nomYieldLast': aVal = a.nomYieldLast ?? -1; bVal = b.nomYieldLast ?? -1; break;
+        case 'annYieldLast': aVal = a.annYieldLast ?? -1; bVal = b.annYieldLast ?? -1; break;
+        default: aVal = a.strike; bVal = b.strike;
+      }
+      return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
+    });
+    return sorted;
+  }, [enrichedPuts, sortField, sortDir]);
+
+  function handleSort(field: SortField) {
+    if (sortField === field) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDir('asc');
+    }
+  }
+
+  function SortIcon({ field }: { field: SortField }) {
+    if (sortField !== field) return <ChevronUp className="w-3 h-3 text-[#475569] opacity-40" />;
+    return sortDir === 'asc'
+      ? <ChevronUp className="w-3 h-3 text-[#6366f1]" />
+      : <ChevronDown className="w-3 h-3 text-[#6366f1]" />;
+  }
+
+  function getMoneyness(strike: number): 'itm' | 'otm' | 'atm' {
+    if (currentPrice <= 0) return 'otm';
+    const ratio = Math.abs(strike - currentPrice) / currentPrice;
+    if (ratio < 0.01) return 'atm';
+    return strike > currentPrice ? 'itm' : 'otm';
+  }
+
+  function rowBg(strike: number): string {
+    const m = getMoneyness(strike);
+    if (m === 'itm') return 'bg-red-500/[0.04]';
+    if (m === 'atm') return 'bg-amber-500/[0.06]';
+    return 'bg-emerald-500/[0.03]';
+  }
+
+  function deltaColor(delta: number): string {
+    const abs = Math.abs(delta);
+    if (abs >= 0.7) return '#ef4444';
+    if (abs >= 0.4) return '#f97316';
+    if (abs >= 0.2) return '#eab308';
+    return '#64748b';
+  }
+
+  const itmCount = enrichedPuts.filter(p => p.strike > currentPrice).length;
+
+  const columns: { field: SortField; label: string; align: string }[] = [
+    { field: 'strike', label: 'Strike', align: 'text-left' },
+    { field: 'last', label: 'Last', align: 'text-right' },
+    { field: 'bid', label: 'Bid', align: 'text-right' },
+    { field: 'ask', label: 'Ask', align: 'text-right' },
+    { field: 'delta', label: 'Delta', align: 'text-right' },
+    { field: 'nomYieldBid', label: 'Nom. Yield (Bid)', align: 'text-right' },
+    { field: 'annYieldBid', label: 'Ann. Yield (Bid)', align: 'text-right' },
+    { field: 'nomYieldAsk', label: 'Nom. Yield (Ask)', align: 'text-right' },
+    { field: 'annYieldAsk', label: 'Ann. Yield (Ask)', align: 'text-right' },
+    { field: 'nomYieldLast', label: 'Nom. Yield (Last)', align: 'text-right' },
+    { field: 'annYieldLast', label: 'Ann. Yield (Last)', align: 'text-right' },
+  ];
+
+  return (
+    <div className="min-h-screen bg-[#0a0a0f]">
+      <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* Header */}
+        <div className="flex items-center gap-4 mb-6">
+          <button
+            onClick={onBack}
+            className="p-2 rounded-lg text-[#64748b] hover:text-[#e2e8f0] hover:bg-[#12121a] transition-all"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <div className="flex-1">
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-bold font-mono text-[#e2e8f0]">{etf.ticker}</h1>
+              <span className="text-sm text-[#64748b]">{etf.name}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Price bar */}
+        <div className="bg-[#12121a] border border-[#1e1e2e] rounded-xl p-5 mb-6">
+          <div className="flex flex-wrap items-center gap-6">
+            <div>
+              <span className="text-3xl font-bold font-mono text-[#e2e8f0]">
+                ${currentPrice > 0 ? currentPrice.toFixed(2) : '—'}
+              </span>
+              {priceData && (
+                <div className={`flex items-center gap-1.5 text-sm font-mono mt-1 ${changePositive ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {changePositive ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                  <span>{changePositive ? '+$' : '-$'}{Math.abs(priceData.change).toFixed(2)}</span>
+                  <span>({changePositive ? '+' : '-'}{Math.abs(priceData.changePercent).toFixed(2)}%)</span>
+                </div>
+              )}
+            </div>
+            <div className="ml-auto flex items-center gap-3 text-xs text-[#64748b]">
+              {lastUpdated && (
+                <span>Last updated: {lastUpdated.toLocaleTimeString()}</span>
+              )}
+              <button
+                onClick={() => selectedExp ? loadExpiration(selectedExp) : loadData()}
+                disabled={loading}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#1e1e2e] text-[#e2e8f0] hover:bg-[#2a2a3e] disabled:opacity-50 transition-all"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Expiration selector */}
+        {optionsData && optionsData.expirations.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-6">
+            {optionsData.expirations.map(exp => (
+              <button
+                key={exp.date}
+                onClick={() => loadExpiration(exp.date)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  selectedExp === exp.date
+                    ? 'bg-[#6366f1] text-white shadow-[0_0_12px_rgba(99,102,241,0.3)]'
+                    : 'bg-[#12121a] border border-[#1e1e2e] text-[#64748b] hover:text-[#e2e8f0] hover:border-[#6366f1]/30'
+                }`}
+              >
+                {exp.label} ({exp.dte} DTE)
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Error state */}
+        {error && (
+          <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-6 mb-6 flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
+            <p className="text-sm text-red-300">{error}</p>
+          </div>
+        )}
+
+        {/* Options table */}
+        <div className="bg-[#12121a] border border-[#1e1e2e] rounded-xl overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 z-10">
+                <tr className="bg-[#0e0e16] border-b border-[#1e1e2e]">
+                  {columns.map(col => (
+                    <th
+                      key={col.field}
+                      onClick={() => handleSort(col.field)}
+                      className={`px-3 py-3 font-medium text-[#64748b] cursor-pointer hover:text-[#e2e8f0] transition-colors select-none whitespace-nowrap ${col.align}`}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        {col.label}
+                        <SortIcon field={col.field} />
+                      </span>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} />)
+                ) : (
+                  sortedPuts.map((put, idx) => {
+                    const moneyness = getMoneyness(put.strike);
+                    const isDivider = idx === itmCount && itmCount > 0 && itmCount < sortedPuts.length;
+
+                    return (
+                      <>
+                        {isDivider && (
+                          <tr key={`divider-${put.strike}`}>
+                            <td colSpan={11} className="px-0 py-0">
+                              <div className="relative py-2 px-4 bg-[#6366f1]/10 border-y border-[#6366f1]/20">
+                                <span className="text-xs font-medium text-[#6366f1]">
+                                  Current Price: ${currentPrice.toFixed(2)}
+                                </span>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        <tr
+                          key={put.strike}
+                          className={`border-b border-[#1e1e2e]/30 hover:bg-white/[0.02] transition-colors ${rowBg(put.strike)} ${idx % 2 === 0 ? '' : 'bg-white/[0.01]'}`}
+                        >
+                          <td className="px-3 py-2.5 text-left whitespace-nowrap">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono font-semibold text-[#e2e8f0]">{formatPrice(put.strike)}</span>
+                              {moneyness === 'itm' && (
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 border border-red-500/20">ITM</span>
+                              )}
+                              {moneyness === 'otm' && (
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">OTM</span>
+                              )}
+                              {moneyness === 'atm' && (
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/20">ATM</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono text-[#e2e8f0]">{formatPrice(put.last)}</td>
+                          <td className="px-3 py-2.5 text-right font-mono text-[#e2e8f0]">{put.bid > 0 ? formatPrice(put.bid) : '—'}</td>
+                          <td className="px-3 py-2.5 text-right font-mono text-[#e2e8f0]">{put.ask > 0 ? formatPrice(put.ask) : '—'}</td>
+                          <td className="px-3 py-2.5 text-right font-mono" style={{ color: deltaColor(put.delta) }}>
+                            {put.delta.toFixed(2)}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono text-[#94a3b8]">
+                            {put.nomYieldBid != null ? formatYield(put.nomYieldBid) : '—'}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono font-medium" style={{ color: put.annYieldBid != null ? yieldColor(put.annYieldBid) : '#475569' }}>
+                            {put.annYieldBid != null ? formatYield(put.annYieldBid) : '—'}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono text-[#94a3b8]">
+                            {put.nomYieldAsk != null ? formatYield(put.nomYieldAsk) : '—'}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono font-medium" style={{ color: put.annYieldAsk != null ? yieldColor(put.annYieldAsk) : '#475569' }}>
+                            {put.annYieldAsk != null ? formatYield(put.annYieldAsk) : '—'}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono text-[#94a3b8]">
+                            {put.nomYieldLast != null ? formatYield(put.nomYieldLast) : '—'}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono font-medium" style={{ color: put.annYieldLast != null ? yieldColor(put.annYieldLast) : '#475569' }}>
+                            {put.annYieldLast != null ? formatYield(put.annYieldLast) : '—'}
+                          </td>
+                        </tr>
+                      </>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+          {!loading && sortedPuts.length === 0 && !error && (
+            <div className="py-12 text-center text-[#64748b] text-sm">No put options data available for this expiration.</div>
+          )}
+        </div>
+
+        <footer className="mt-8 pb-6 text-center">
+          <p className="text-xs text-[#475569]">Data delayed up to 15 minutes. Not financial advice.</p>
+        </footer>
+      </div>
+    </div>
+  );
+}
