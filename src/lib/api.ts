@@ -1,6 +1,6 @@
 import type { PriceData, OptionsChainData, ExpirationDate, OptionContract } from './types';
 
-const API_BASE = '/api';
+const API_BASE = '/.netlify/functions';
 
 export async function fetchPrice(ticker: string): Promise<PriceData> {
   const res = await fetch(`${API_BASE}/price?ticker=${encodeURIComponent(ticker)}`);
