@@ -110,3 +110,23 @@ export function formatNumber(n: number | null): string {
   if (n == null || n === 0) return '—';
   return n.toLocaleString('en-US');
 }
+
+export interface SparklineData {
+  price: number;
+  change: number;
+  changePercent: number;
+  sparkline: number[];
+}
+
+export async function fetchSparkline(ticker: string): Promise<SparklineData> {
+  const res = await fetch(`${API_BASE}/price?ticker=${encodeURIComponent(ticker)}&range=1d&interval=1m`);
+  if (!res.ok) throw new Error(`Failed to fetch sparkline for ${ticker}`);
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  return {
+    price: data.price,
+    change: data.change,
+    changePercent: data.changePct,
+    sparkline: data.sparkline || [],
+  };
+}

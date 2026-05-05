@@ -15,61 +15,62 @@ interface ScreenerRow {
   dte: number;
   strike: number;
   moneynessPct: number;
+  moneynessLabel: string;
+  moneynessColor: string;
+  delta: number;
   bid: number | null;
   last: number | null;
   ask: number | null;
-  volume: number | null;
-  openInterest: number | null;
-  volOI: number | null;
   iv: number | null;
+  nomYieldBid: number | null;
+  nomYieldAsk: number | null;
+  nomYieldLast: number | null;
   annYieldBid: number | null;
   annYieldAsk: number | null;
   annYieldLast: number | null;
-  delta: number;
+  volume: number | null;
+  openInterest: number | null;
+  volOI: number | null;
 }
 
-type ScreenerSortField = 'ticker' | 'price' | 'expDate' | 'strike' | 'moneyness' | 'bid' | 'last' | 'ask' | 'volume' | 'openInterest' | 'volOI' | 'iv' | 'annYieldBid' | 'annYieldAsk' | 'annYieldLast' | 'delta';
+type ScreenerSortField = 'ticker' | 'price' | 'expDate' | 'strike' | 'moneyness' | 'delta' | 'bid' | 'last' | 'ask' | 'iv' | 'nomYieldBid' | 'nomYieldAsk' | 'nomYieldLast' | 'annYieldBid' | 'annYieldAsk' | 'annYieldLast' | 'volume' | 'openInterest' | 'volOI';
 type SortDir = 'asc' | 'desc';
 
 // --- Filter options ---
 
-const EXPIRY_OPTIONS = [
-  { value: 'all', label: 'All' },
-  { value: 'this_week', label: 'This Week' },
-  { value: 'next_week', label: 'Next Week' },
-  { value: 'this_month', label: 'This Month' },
-  { value: 'next_month', label: 'Next Month' },
-  { value: '0-7', label: '0-7 DTE' },
-  { value: '8-14', label: '8-14 DTE' },
-  { value: '15-30', label: '15-30 DTE' },
-  { value: '31-60', label: '31-60 DTE' },
-  { value: '61-90', label: '61-90 DTE' },
-  { value: '90+', label: '90+ DTE' },
-];
-
 const DELTA_OPTIONS = [
   { value: 'all', label: 'All' },
-  { value: 'below_-0.05', label: 'Below -0.05' },
-  { value: 'below_-0.10', label: 'Below -0.10' },
-  { value: 'below_-0.20', label: 'Below -0.20' },
-  { value: 'below_-0.30', label: 'Below -0.30' },
-  { value: 'below_-0.40', label: 'Below -0.40' },
-  { value: '-0.10_to_-0.20', label: '-0.10 to -0.20' },
-  { value: '-0.20_to_-0.30', label: '-0.20 to -0.30' },
-  { value: '-0.30_to_-0.40', label: '-0.30 to -0.40' },
+  { value: 'below_0.05', label: 'Below 0.05' },
+  { value: 'below_0.10', label: 'Below 0.10' },
+  { value: 'below_0.15', label: 'Below 0.15' },
+  { value: 'below_0.20', label: 'Below 0.20' },
+  { value: 'below_0.25', label: 'Below 0.25' },
+  { value: 'below_0.30', label: 'Below 0.30' },
+  { value: 'below_0.40', label: 'Below 0.40' },
+  { value: '0.05_to_0.15', label: '0.05 to 0.15' },
+  { value: '0.10_to_0.20', label: '0.10 to 0.20' },
+  { value: '0.15_to_0.25', label: '0.15 to 0.25' },
+  { value: '0.20_to_0.30', label: '0.20 to 0.30' },
+  { value: '0.30_to_0.50', label: '0.30 to 0.50' },
+  { value: 'above_0.50', label: 'Above 0.50' },
 ];
 
-const OTM_OPTIONS = [
+const MONEYNESS_OPTIONS = [
   { value: 'all', label: 'All' },
-  { value: '5+', label: '5%+ OTM' },
-  { value: '10+', label: '10%+ OTM' },
-  { value: '15+', label: '15%+ OTM' },
-  { value: '20+', label: '20%+ OTM' },
-  { value: '25+', label: '25%+ OTM' },
-  { value: '30+', label: '30%+ OTM' },
-  { value: '0-10', label: '0-10% OTM' },
-  { value: '10-20', label: '10-20% OTM' },
-  { value: '20-30', label: '20-30% OTM' },
+  { value: 'otm_only', label: 'OTM Only' },
+  { value: 'itm_only', label: 'ITM Only' },
+  { value: '5+_otm', label: '5%+ OTM' },
+  { value: '10+_otm', label: '10%+ OTM' },
+  { value: '15+_otm', label: '15%+ OTM' },
+  { value: '20+_otm', label: '20%+ OTM' },
+  { value: '25+_otm', label: '25%+ OTM' },
+  { value: '30+_otm', label: '30%+ OTM' },
+  { value: '0-10_otm', label: '0-10% OTM' },
+  { value: '10-20_otm', label: '10-20% OTM' },
+  { value: '20-30_otm', label: '20-30% OTM' },
+  { value: 'any_itm', label: 'Any ITM' },
+  { value: '0-10_itm', label: '0-10% ITM' },
+  { value: '10+_itm', label: '10%+ ITM' },
 ];
 
 const YIELD_OPTIONS = [
@@ -105,61 +106,47 @@ const VOL_OPTIONS = [
 
 // --- Helpers ---
 
-function filterExpirations(exps: ExpirationDate[], filter: string): ExpirationDate[] {
-  if (filter === 'all') return exps;
-  const now = new Date();
-  const endOfWeek = new Date(now);
-  endOfWeek.setDate(now.getDate() + (5 - now.getDay() + 7) % 7);
-  const endOfNextWeek = new Date(endOfWeek);
-  endOfNextWeek.setDate(endOfWeek.getDate() + 7);
-  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  const endOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 2, 0);
-
-  return exps.filter(e => {
-    switch (filter) {
-      case 'this_week': return e.dte <= 7 && new Date(e.date * 1000) <= endOfWeek;
-      case 'next_week': { const d = new Date(e.date * 1000); return d > endOfWeek && d <= endOfNextWeek; }
-      case 'this_month': return new Date(e.date * 1000) <= endOfMonth;
-      case 'next_month': { const d = new Date(e.date * 1000); return d > endOfMonth && d <= endOfNextMonth; }
-      case '0-7': return e.dte >= 0 && e.dte <= 7;
-      case '8-14': return e.dte >= 8 && e.dte <= 14;
-      case '15-30': return e.dte >= 15 && e.dte <= 30;
-      case '31-60': return e.dte >= 31 && e.dte <= 60;
-      case '61-90': return e.dte >= 61 && e.dte <= 90;
-      case '90+': return e.dte > 90;
-      default: return true;
-    }
-  });
-}
-
-function matchDelta(delta: number, filter: string): boolean {
+function matchDeltaAbs(delta: number, filter: string): boolean {
   if (filter === 'all') return true;
+  const abs = Math.abs(delta);
   switch (filter) {
-    case 'below_-0.05': return delta < -0.05;
-    case 'below_-0.10': return delta < -0.10;
-    case 'below_-0.20': return delta < -0.20;
-    case 'below_-0.30': return delta < -0.30;
-    case 'below_-0.40': return delta < -0.40;
-    case '-0.10_to_-0.20': return delta >= -0.20 && delta <= -0.10;
-    case '-0.20_to_-0.30': return delta >= -0.30 && delta <= -0.20;
-    case '-0.30_to_-0.40': return delta >= -0.40 && delta <= -0.30;
+    case 'below_0.05': return abs < 0.05;
+    case 'below_0.10': return abs < 0.10;
+    case 'below_0.15': return abs < 0.15;
+    case 'below_0.20': return abs < 0.20;
+    case 'below_0.25': return abs < 0.25;
+    case 'below_0.30': return abs < 0.30;
+    case 'below_0.40': return abs < 0.40;
+    case '0.05_to_0.15': return abs >= 0.05 && abs <= 0.15;
+    case '0.10_to_0.20': return abs >= 0.10 && abs <= 0.20;
+    case '0.15_to_0.25': return abs >= 0.15 && abs <= 0.25;
+    case '0.20_to_0.30': return abs >= 0.20 && abs <= 0.30;
+    case '0.30_to_0.50': return abs >= 0.30 && abs <= 0.50;
+    case 'above_0.50': return abs > 0.50;
     default: return true;
   }
 }
 
-function matchOTM(otmPct: number, filter: string): boolean {
+function matchMoneyness(moneynessPct: number, filter: string): boolean {
   if (filter === 'all') return true;
-  if (otmPct <= 0) return false;
+  const isOTM = moneynessPct > 0;
+  const isITM = moneynessPct < 0;
+  const absM = Math.abs(moneynessPct);
   switch (filter) {
-    case '5+': return otmPct >= 5;
-    case '10+': return otmPct >= 10;
-    case '15+': return otmPct >= 15;
-    case '20+': return otmPct >= 20;
-    case '25+': return otmPct >= 25;
-    case '30+': return otmPct >= 30;
-    case '0-10': return otmPct >= 0 && otmPct <= 10;
-    case '10-20': return otmPct >= 10 && otmPct <= 20;
-    case '20-30': return otmPct >= 20 && otmPct <= 30;
+    case 'otm_only': return isOTM;
+    case 'itm_only': return isITM;
+    case '5+_otm': return isOTM && absM >= 5;
+    case '10+_otm': return isOTM && absM >= 10;
+    case '15+_otm': return isOTM && absM >= 15;
+    case '20+_otm': return isOTM && absM >= 20;
+    case '25+_otm': return isOTM && absM >= 25;
+    case '30+_otm': return isOTM && absM >= 30;
+    case '0-10_otm': return isOTM && absM >= 0 && absM <= 10;
+    case '10-20_otm': return isOTM && absM >= 10 && absM <= 20;
+    case '20-30_otm': return isOTM && absM >= 20 && absM <= 30;
+    case 'any_itm': return isITM;
+    case '0-10_itm': return isITM && absM >= 0 && absM <= 10;
+    case '10+_itm': return isITM && absM >= 10;
     default: return true;
   }
 }
@@ -202,23 +189,23 @@ function deltaColor(d: number): string {
   if (abs >= 0.5) return '#ef4444';
   if (abs >= 0.3) return '#f97316';
   if (abs >= 0.15) return '#eab308';
-  return '#64748b';
+  return 'var(--text-muted)';
 }
 
 function annYieldColor(y: number | null): string {
-  if (y == null) return '#475569';
-  if (y > 50) return '#22c55e';
-  if (y >= 25) return '#f97316';
-  if (y >= 10) return '#eab308';
-  return '#64748b';
+  if (y == null) return 'var(--text-dim)';
+  if (y > 50) return 'var(--green)';
+  if (y >= 25) return 'var(--orange)';
+  if (y >= 10) return 'var(--yellow)';
+  return 'var(--text-muted)';
 }
 
 function ivColor(iv: number | null): string {
-  if (iv == null) return '#475569';
-  if (iv < 50) return '#22c55e';
-  if (iv < 100) return '#eab308';
-  if (iv < 150) return '#f97316';
-  return '#ef4444';
+  if (iv == null) return 'var(--text-dim)';
+  if (iv < 50) return 'var(--green)';
+  if (iv < 100) return 'var(--yellow)';
+  if (iv < 150) return 'var(--orange)';
+  return 'var(--red)';
 }
 
 function formatExpDate(ts: number, dte: number): string {
@@ -227,6 +214,22 @@ function formatExpDate(ts: number, dte: number): string {
   const dd = String(d.getDate()).padStart(2, '0');
   const yy = String(d.getFullYear() % 100).padStart(2, '0');
   return `${mm}/${dd}/${yy} (${dte})`;
+}
+
+function formatExpLabel(ts: number, dte: number): string {
+  const d = new Date(ts * 1000);
+  const monthDay = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const yr = `'${String(d.getFullYear() % 100).padStart(2, '0')}`;
+  return `${monthDay} ${yr} (${dte} DTE)`;
+}
+
+function computeMoneyness(currentPrice: number, strike: number): { pct: number; label: string; color: string } {
+  if (currentPrice <= 0) return { pct: 0, label: '—', color: 'var(--text-muted)' };
+  const pct = ((currentPrice - strike) / currentPrice) * 100;
+  const absPct = Math.abs(pct);
+  if (absPct < 0.5) return { pct, label: 'ATM', color: 'var(--yellow)' };
+  if (pct > 0) return { pct, label: `${absPct.toFixed(2)}% OTM`, color: 'var(--green)' };
+  return { pct, label: `${absPct.toFixed(2)}% ITM`, color: 'var(--red)' };
 }
 
 // --- Component ---
@@ -238,12 +241,17 @@ export default function ScreenerPage() {
   const [selectedETFs, setSelectedETFs] = useState<ETFInfo[]>([]);
   const [etfSearch, setEtfSearch] = useState('');
   const [showEtfDropdown, setShowEtfDropdown] = useState(false);
-  const [expiryFilter, setExpiryFilter] = useState('all');
+  const [selectedExps, setSelectedExps] = useState<{ date: number; label: string; dte: number }[]>([]);
+  const [availableExps, setAvailableExps] = useState<{ date: number; label: string; dte: number }[]>([]);
+  const [expSearch, setExpSearch] = useState('');
+  const [showExpDropdown, setShowExpDropdown] = useState(false);
+  const [fetchingDates, setFetchingDates] = useState(false);
   const [deltaFilter, setDeltaFilter] = useState('all');
-  const [otmFilter, setOtmFilter] = useState('all');
+  const [moneynessFilter, setMoneynessFilter] = useState('all');
   const [yieldFilter, setYieldFilter] = useState('all');
   const [oiFilter, setOiFilter] = useState('all');
   const [volFilter, setVolFilter] = useState('all');
+  const [showVolOI, setShowVolOI] = useState(false);
 
   // Data state
   const [rows, setRows] = useState<ScreenerRow[]>([]);
@@ -259,8 +267,6 @@ export default function ScreenerPage() {
   // Cache
   const cacheRef = useRef<Map<string, OptionsChainData>>(new Map());
   const lastFetchKeyRef = useRef<string>('');
-
-  const etfSearchRef = useRef<HTMLDivElement>(null);
 
   // ETF dropdown
   const etfOptions = useMemo(() => {
@@ -282,13 +288,56 @@ export default function ScreenerPage() {
     setSelectedETFs(prev => prev.filter(e => e.ticker !== ticker));
   };
 
+  // Expiration dropdown
+  const expOptions = useMemo(() => {
+    const q = expSearch.toLowerCase().trim();
+    const filtered = availableExps.filter(e => !selectedExps.find(s => s.date === e.date));
+    if (!q) return filtered;
+    return filtered.filter(e => e.label.toLowerCase().includes(q) || String(e.dte).includes(q));
+  }, [expSearch, availableExps, selectedExps]);
+
+  const addExp = (exp: { date: number; label: string; dte: number }) => {
+    setSelectedExps(prev => [...prev, exp].sort((a, b) => a.date - b.date));
+    setExpSearch('');
+    setShowExpDropdown(false);
+  };
+
+  const removeExp = (date: number) => {
+    setSelectedExps(prev => prev.filter(e => e.date !== date));
+  };
+
+  const selectNearestOnly = () => {
+    // For each ETF, find the nearest expiry
+    const nearestByTicker = new Map<string, { date: number; label: string; dte: number }>();
+    for (const [key, data] of cacheRef.current.entries()) {
+      if (!key.endsWith(':initial')) continue;
+      const ticker = key.replace(':initial', '');
+      if (data.expirations.length > 0) {
+        const nearest = data.expirations[0];
+        const existing = nearestByTicker.get(ticker);
+        if (!existing || nearest.dte < existing.dte) {
+          nearestByTicker.set(ticker, { date: nearest.date, label: formatExpLabel(nearest.date, nearest.dte), dte: nearest.dte });
+        }
+      }
+    }
+    // Collect unique nearest dates
+    const uniqueDates = new Map<number, { date: number; label: string; dte: number }>();
+    for (const exp of nearestByTicker.values()) {
+      if (!uniqueDates.has(exp.date)) {
+        uniqueDates.set(exp.date, exp);
+      }
+    }
+    setSelectedExps(Array.from(uniqueDates.values()).sort((a, b) => a.date - b.date));
+  };
+
   // Clear filters
   const clearFilters = () => {
     setSelectedETFs([]);
     setEtfSearch('');
-    setExpiryFilter('all');
+    setSelectedExps([]);
+    setAvailableExps([]);
     setDeltaFilter('all');
-    setOtmFilter('all');
+    setMoneynessFilter('all');
     setYieldFilter('all');
     setOiFilter('all');
     setVolFilter('all');
@@ -297,19 +346,13 @@ export default function ScreenerPage() {
   // Load data
   const handleLoad = useCallback(async () => {
     const etfsToScan = selectedETFs.length > 0 ? selectedETFs : ETF_LIST;
-    const fetchKey = `${etfsToScan.map(e => e.ticker).sort().join(',')}:${expiryFilter}`;
+    const fetchKey = `${etfsToScan.map(e => e.ticker).sort().join(',')}:${selectedExps.map(e => e.date).sort().join(',')}`;
 
     setLoading(true);
     setSlowWarning(false);
     setRows([]);
 
-    let shouldRefetch = fetchKey !== lastFetchKeyRef.current;
-    if (shouldRefetch) {
-      cacheRef.current.clear();
-    }
-    lastFetchKeyRef.current = fetchKey;
-
-    // Phase 1: Fetch initial data for each ETF (nearest expiry + expiration list)
+    // Phase 1: Fetch initial data for each ETF if not cached
     const initialResults = new Map<string, OptionsChainData>();
     const tasks1 = etfsToScan.map(etf => async () => {
       try {
@@ -333,16 +376,28 @@ export default function ScreenerPage() {
 
     await concurrentFetch(tasks1, 5);
 
-    // Phase 2: Determine which expirations to fetch based on filter
+    // Also update available expirations
+    const allExps = new Map<number, { date: number; label: string; dte: number }>();
+    for (const [, data] of initialResults) {
+      for (const exp of data.expirations) {
+        if (!allExps.has(exp.date)) {
+          allExps.set(exp.date, { date: exp.date, label: formatExpLabel(exp.date, exp.dte), dte: exp.dte });
+        }
+      }
+    }
+    setAvailableExps(Array.from(allExps.values()).sort((a, b) => a.date - b.date));
+
+    // Phase 2: Determine which expirations to fetch
+    const expsToFetch = selectedExps.length > 0
+      ? selectedExps
+      : Array.from(allExps.values());
+
     const fetchTasks: (() => Promise<void>)[] = [];
     let totalFetches = initialResults.size;
 
     for (const [ticker, initialData] of initialResults) {
-      const filteredExps = filterExpirations(initialData.expirations, expiryFilter);
-      // The initial fetch already includes the nearest expiry data
-      // We need to fetch additional expirations
       const initialExpDate = initialData.expirations[0]?.date;
-      const additionalExps = filteredExps.filter(e => e.date !== initialExpDate);
+      const additionalExps = expsToFetch.filter(e => e.date !== initialExpDate);
 
       for (const exp of additionalExps) {
         fetchTasks.push(async () => {
@@ -365,14 +420,16 @@ export default function ScreenerPage() {
 
     clearInterval(slowCheck);
 
-    // Phase 3: Build rows from cached data
+    // Phase 3: Build rows
     const allRows: ScreenerRow[] = [];
 
     for (const [ticker, initialData] of initialResults) {
-      const filteredExps = filterExpirations(initialData.expirations, expiryFilter);
       const currentPrice = initialData.currentPrice;
+      const etfExps = expsToFetch.filter(e =>
+        initialData.expirations.some(ie => ie.date === e.date)
+      );
 
-      for (const exp of filteredExps) {
+      for (const exp of etfExps) {
         const cacheKey = `${ticker}:${exp.date}`;
         const data = cacheRef.current.has(cacheKey)
           ? cacheRef.current.get(cacheKey)!
@@ -383,7 +440,6 @@ export default function ScreenerPage() {
         const dte = Math.max(1, exp.dte);
 
         for (const p of data.puts) {
-          // Compute delta
           let delta: number;
           if (p.delta != null && p.delta !== 0) {
             delta = p.delta;
@@ -395,47 +451,44 @@ export default function ScreenerPage() {
           if (delta > 0) delta = -delta;
           if (delta > -0.01 && delta <= 0) delta = -0.01;
 
-          // Moneyness
-          const moneynessPct = price > 0 ? ((price - p.strike) / price) * 100 : 0;
+          const { pct: moneynessPct, label: moneynessLabel, color: moneynessColor } = computeMoneyness(price, p.strike);
 
-          // Yields
-          const annYieldBid = p.bid != null && p.bid !== 0 && p.strike > 0
-            ? (p.bid / p.strike) * 100 * (365 / dte) : null;
-          const annYieldAsk = p.ask != null && p.ask !== 0 && p.strike > 0
-            ? (p.ask / p.strike) * 100 * (365 / dte) : null;
-          const annYieldLast = p.last != null && p.last !== 0 && p.strike > 0
-            ? (p.last / p.strike) * 100 * (365 / dte) : null;
+          const nomYieldBid = p.bid != null && p.bid !== 0 && p.strike > 0 ? (p.bid / p.strike) * 100 : null;
+          const nomYieldAsk = p.ask != null && p.ask !== 0 && p.strike > 0 ? (p.ask / p.strike) * 100 : null;
+          const nomYieldLast = p.last != null && p.last !== 0 && p.strike > 0 ? (p.last / p.strike) * 100 : null;
+          const annYieldBid = nomYieldBid != null ? nomYieldBid * (365 / dte) : null;
+          const annYieldAsk = nomYieldAsk != null ? nomYieldAsk * (365 / dte) : null;
+          const annYieldLast = nomYieldLast != null ? nomYieldLast * (365 / dte) : null;
 
-          // Vol/OI
           const volOI = (p.volume != null && p.volume > 0 && p.openInterest != null && p.openInterest > 0)
             ? p.volume / p.openInterest : null;
 
-          const row: ScreenerRow = {
-            ticker, currentPrice: price,
-            expDate: exp.date, expLabel: formatExpDate(exp.date, dte), dte,
-            strike: p.strike, moneynessPct,
-            bid: p.bid, last: p.last, ask: p.ask,
-            volume: p.volume, openInterest: p.openInterest,
-            volOI, iv: p.impliedVolatility,
-            annYieldBid, annYieldAsk, annYieldLast, delta,
-          };
-
           // Apply filters
-          if (!matchDelta(delta, deltaFilter)) continue;
-          if (!matchOTM(moneynessPct, otmFilter)) continue;
+          if (!matchDeltaAbs(delta, deltaFilter)) continue;
+          if (!matchMoneyness(moneynessPct, moneynessFilter)) continue;
           if (!matchYield(annYieldBid, yieldFilter)) continue;
           if (!matchOI(p.openInterest, oiFilter)) continue;
           if (!matchVol(p.volume, volFilter)) continue;
 
-          allRows.push(row);
+          allRows.push({
+            ticker, currentPrice: price,
+            expDate: exp.date, expLabel: formatExpDate(exp.date, dte), dte,
+            strike: p.strike, moneynessPct, moneynessLabel, moneynessColor,
+            delta, bid: p.bid, last: p.last, ask: p.ask,
+            iv: p.impliedVolatility,
+            nomYieldBid, nomYieldAsk, nomYieldLast,
+            annYieldBid, annYieldAsk, annYieldLast,
+            volume: p.volume, openInterest: p.openInterest, volOI,
+          });
         }
       }
     }
 
+    lastFetchKeyRef.current = fetchKey;
     setRows(allRows);
     setLoading(false);
     setLoaded(true);
-  }, [selectedETFs, expiryFilter, deltaFilter, otmFilter, yieldFilter, oiFilter, volFilter]);
+  }, [selectedETFs, selectedExps, deltaFilter, moneynessFilter, yieldFilter, oiFilter, volFilter]);
 
   // Sorted rows
   const sortedRows = useMemo(() => {
@@ -448,17 +501,20 @@ export default function ScreenerPage() {
         case 'expDate': aVal = a.dte; bVal = b.dte; break;
         case 'strike': aVal = a.strike; bVal = b.strike; break;
         case 'moneyness': aVal = a.moneynessPct; bVal = b.moneynessPct; break;
+        case 'delta': aVal = a.delta; bVal = b.delta; break;
         case 'bid': aVal = a.bid ?? -1; bVal = b.bid ?? -1; break;
         case 'last': aVal = a.last ?? -1; bVal = b.last ?? -1; break;
         case 'ask': aVal = a.ask ?? -1; bVal = b.ask ?? -1; break;
-        case 'volume': aVal = a.volume ?? -1; bVal = b.volume ?? -1; break;
-        case 'openInterest': aVal = a.openInterest ?? -1; bVal = b.openInterest ?? -1; break;
-        case 'volOI': aVal = a.volOI ?? -1; bVal = b.volOI ?? -1; break;
         case 'iv': aVal = a.iv ?? -1; bVal = b.iv ?? -1; break;
+        case 'nomYieldBid': aVal = a.nomYieldBid ?? -1; bVal = b.nomYieldBid ?? -1; break;
+        case 'nomYieldAsk': aVal = a.nomYieldAsk ?? -1; bVal = b.nomYieldAsk ?? -1; break;
+        case 'nomYieldLast': aVal = a.nomYieldLast ?? -1; bVal = b.nomYieldLast ?? -1; break;
         case 'annYieldBid': aVal = a.annYieldBid ?? -1; bVal = b.annYieldBid ?? -1; break;
         case 'annYieldAsk': aVal = a.annYieldAsk ?? -1; bVal = b.annYieldAsk ?? -1; break;
         case 'annYieldLast': aVal = a.annYieldLast ?? -1; bVal = b.annYieldLast ?? -1; break;
-        case 'delta': aVal = a.delta; bVal = b.delta; break;
+        case 'volume': aVal = a.volume ?? -1; bVal = b.volume ?? -1; break;
+        case 'openInterest': aVal = a.openInterest ?? -1; bVal = b.openInterest ?? -1; break;
+        case 'volOI': aVal = a.volOI ?? -1; bVal = b.volOI ?? -1; break;
         default: aVal = a.annYieldBid ?? -1; bVal = b.annYieldBid ?? -1;
       }
       if (typeof aVal === 'string' && typeof bVal === 'string') {
@@ -479,46 +535,54 @@ export default function ScreenerPage() {
   }
 
   function SortIcon({ field }: { field: ScreenerSortField }) {
-    if (sortField !== field) return <ChevronUp className="w-3 h-3 text-[#475569] opacity-40" />;
+    if (sortField !== field) return <ChevronUp className="w-3 h-3 opacity-40" style={{ color: 'var(--text-muted)' }} />;
     return sortDir === 'asc'
-      ? <ChevronUp className="w-3 h-3 text-[#6366f1]" />
-      : <ChevronDown className="w-3 h-3 text-[#6366f1]" />;
+      ? <ChevronUp className="w-3 h-3" style={{ color: 'var(--accent)' }} />
+      : <ChevronDown className="w-3 h-3" style={{ color: 'var(--accent)' }} />;
   }
 
-  const columns: { field: ScreenerSortField; label: string; align: string }[] = [
+  const baseColumns: { field: ScreenerSortField; label: string; align: string }[] = [
     { field: 'ticker', label: 'Symbol', align: 'text-left' },
     { field: 'price', label: 'Price', align: 'text-right' },
     { field: 'expDate', label: 'Exp Date', align: 'text-right' },
     { field: 'strike', label: 'Strike', align: 'text-right' },
     { field: 'moneyness', label: 'Moneyness', align: 'text-right' },
+    { field: 'delta', label: 'Delta', align: 'text-right' },
     { field: 'bid', label: 'Bid', align: 'text-right' },
     { field: 'last', label: 'Last', align: 'text-right' },
     { field: 'ask', label: 'Ask', align: 'text-right' },
-    { field: 'volume', label: 'Volume', align: 'text-right' },
-    { field: 'openInterest', label: 'Open Int', align: 'text-right' },
-    { field: 'volOI', label: 'Vol/OI', align: 'text-right' },
     { field: 'iv', label: 'Imp Vol', align: 'text-right' },
+    { field: 'nomYieldBid', label: 'Nom. Yield Bid', align: 'text-right' },
+    { field: 'nomYieldAsk', label: 'Nom. Yield Ask', align: 'text-right' },
+    { field: 'nomYieldLast', label: 'Nom. Yield Last', align: 'text-right' },
     { field: 'annYieldBid', label: 'Ann. Yield Bid', align: 'text-right' },
     { field: 'annYieldAsk', label: 'Ann. Yield Ask', align: 'text-right' },
     { field: 'annYieldLast', label: 'Ann. Yield Last', align: 'text-right' },
-    { field: 'delta', label: 'Delta', align: 'text-right' },
   ];
 
+  const volOIColumns: { field: ScreenerSortField; label: string; align: string }[] = [
+    { field: 'volume', label: 'Volume', align: 'text-right' },
+    { field: 'openInterest', label: 'Open Int', align: 'text-right' },
+    { field: 'volOI', label: 'Vol/OI', align: 'text-right' },
+  ];
+
+  const columns = showVolOI ? [...baseColumns, ...volOIColumns] : baseColumns;
+
   return (
-    <div className="min-h-screen bg-[#0a0a0f]">
+    <div className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
       <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
         {/* Filter Bar */}
-        <div className="bg-[#12121a] border border-[#1e1e2e] rounded-xl p-4 mb-4">
+        <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
           <div className="flex flex-wrap items-end gap-3">
             {/* ETF Selector */}
-            <div className="min-w-[180px]" ref={etfSearchRef}>
-              <label className="block text-[10px] uppercase tracking-wider text-[#64748b] mb-1">ETFs</label>
+            <div className="min-w-[180px]">
+              <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>ETFs</label>
               <div className="relative">
-                <div className="flex flex-wrap gap-1 p-1.5 bg-[#0a0a0f] border border-[#1e1e2e] rounded-lg min-h-[32px]">
+                <div className="flex flex-wrap gap-1 p-1.5 rounded-lg min-h-[32px]" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)' }}>
                   {selectedETFs.map(e => (
-                    <span key={e.ticker} className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-[#6366f1]/15 text-[#818cf8] text-xs rounded border border-[#6366f1]/20">
+                    <span key={e.ticker} className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs rounded" style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)', border: '1px solid var(--accent-border)' }}>
                       {e.ticker}
-                      <button onClick={() => removeETF(e.ticker)} className="hover:text-white"><X className="w-3 h-3" /></button>
+                      <button onClick={() => removeETF(e.ticker)} className="hover:opacity-70"><X className="w-3 h-3" /></button>
                     </span>
                   ))}
                   <input
@@ -527,19 +591,23 @@ export default function ScreenerPage() {
                     onChange={e => { setEtfSearch(e.target.value); setShowEtfDropdown(true); }}
                     onFocus={() => setShowEtfDropdown(true)}
                     placeholder={selectedETFs.length === 0 ? 'All ETFs...' : ''}
-                    className="bg-transparent text-xs text-[#e2e8f0] placeholder-[#475569] outline-none flex-1 min-w-[60px]"
+                    className="bg-transparent text-xs outline-none flex-1 min-w-[60px]"
+                    style={{ color: 'var(--text)' }}
                   />
                 </div>
                 {showEtfDropdown && etfOptions.length > 0 && (
-                  <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-[#12121a] border border-[#1e1e2e] rounded-lg max-h-40 overflow-y-auto shadow-xl">
+                  <div className="absolute z-50 top-full left-0 right-0 mt-1 max-h-40 overflow-y-auto shadow-xl rounded-lg" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
                     {etfOptions.slice(0, 20).map(e => (
                       <button
                         key={e.ticker}
                         onClick={() => addETF(e)}
-                        className="w-full text-left px-3 py-1.5 text-xs text-[#e2e8f0] hover:bg-[#6366f1]/10 transition-colors"
+                        className="w-full text-left px-3 py-1.5 text-xs transition-colors"
+                        style={{ color: 'var(--text)' }}
+                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--accent-bg)')}
+                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
                       >
                         <span className="font-mono font-semibold">{e.ticker}</span>
-                        <span className="text-[#64748b] ml-2">{e.name}</span>
+                        <span className="ml-2" style={{ color: 'var(--text-muted)' }}>{e.name}</span>
                       </button>
                     ))}
                   </div>
@@ -547,56 +615,102 @@ export default function ScreenerPage() {
               </div>
             </div>
 
-            {/* Expiry */}
-            <div>
-              <label className="block text-[10px] uppercase tracking-wider text-[#64748b] mb-1">Expiration</label>
-              <select value={expiryFilter} onChange={e => setExpiryFilter(e.target.value)}
-                className="bg-[#0a0a0f] border border-[#1e1e2e] rounded-lg px-2 py-1.5 text-xs text-[#e2e8f0] outline-none cursor-pointer">
-                {EXPIRY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
+            {/* Expiration - multi-select with chips */}
+            <div className="min-w-[180px]">
+              <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>
+                Expiration
+                {fetchingDates && <Loader2 className="w-3 h-3 inline ml-1 animate-spin" />}
+              </label>
+              <div className="relative">
+                <div className="flex flex-wrap gap-1 p-1.5 rounded-lg min-h-[32px]" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)' }}>
+                  {selectedExps.map(e => (
+                    <span key={e.date} className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs rounded" style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)', border: '1px solid var(--accent-border)' }}>
+                      {e.label}
+                      <button onClick={() => removeExp(e.date)} className="hover:opacity-70"><X className="w-3 h-3" /></button>
+                    </span>
+                  ))}
+                  <input
+                    type="text"
+                    value={expSearch}
+                    onChange={e => { setExpSearch(e.target.value); setShowExpDropdown(true); }}
+                    onFocus={() => setShowExpDropdown(true)}
+                    placeholder={selectedExps.length === 0 ? 'All dates...' : ''}
+                    className="bg-transparent text-xs outline-none flex-1 min-w-[60px]"
+                    style={{ color: 'var(--text)' }}
+                  />
+                </div>
+                {showExpDropdown && expOptions.length > 0 && (
+                  <div className="absolute z-50 top-full left-0 right-0 mt-1 max-h-40 overflow-y-auto shadow-xl rounded-lg" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+                    {expOptions.slice(0, 30).map(e => (
+                      <button
+                        key={e.date}
+                        onClick={() => addExp(e)}
+                        className="w-full text-left px-3 py-1.5 text-xs transition-colors"
+                        style={{ color: 'var(--text)' }}
+                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--accent-bg)')}
+                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+                      >
+                        {e.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={selectNearestOnly}
+                className="mt-1 text-[10px] px-2 py-0.5 rounded transition-colors"
+                style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)' }}
+              >
+                Nearest only
+              </button>
             </div>
 
-            {/* Delta */}
+            {/* Delta (abs) */}
             <div>
-              <label className="block text-[10px] uppercase tracking-wider text-[#64748b] mb-1">Delta</label>
+              <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Delta (abs)</label>
               <select value={deltaFilter} onChange={e => setDeltaFilter(e.target.value)}
-                className="bg-[#0a0a0f] border border-[#1e1e2e] rounded-lg px-2 py-1.5 text-xs text-[#e2e8f0] outline-none cursor-pointer">
+                className="rounded-lg px-2 py-1.5 text-xs outline-none cursor-pointer"
+                style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
                 {DELTA_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
 
-            {/* % OTM */}
+            {/* Moneyness */}
             <div>
-              <label className="block text-[10px] uppercase tracking-wider text-[#64748b] mb-1">% OTM</label>
-              <select value={otmFilter} onChange={e => setOtmFilter(e.target.value)}
-                className="bg-[#0a0a0f] border border-[#1e1e2e] rounded-lg px-2 py-1.5 text-xs text-[#e2e8f0] outline-none cursor-pointer">
-                {OTM_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Moneyness</label>
+              <select value={moneynessFilter} onChange={e => setMoneynessFilter(e.target.value)}
+                className="rounded-lg px-2 py-1.5 text-xs outline-none cursor-pointer"
+                style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
+                {MONEYNESS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
 
             {/* Ann Yield */}
             <div>
-              <label className="block text-[10px] uppercase tracking-wider text-[#64748b] mb-1">Ann. Yield</label>
+              <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Ann. Yield</label>
               <select value={yieldFilter} onChange={e => setYieldFilter(e.target.value)}
-                className="bg-[#0a0a0f] border border-[#1e1e2e] rounded-lg px-2 py-1.5 text-xs text-[#e2e8f0] outline-none cursor-pointer">
+                className="rounded-lg px-2 py-1.5 text-xs outline-none cursor-pointer"
+                style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
                 {YIELD_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
 
             {/* Min OI */}
             <div>
-              <label className="block text-[10px] uppercase tracking-wider text-[#64748b] mb-1">Min OI</label>
+              <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Min OI</label>
               <select value={oiFilter} onChange={e => setOiFilter(e.target.value)}
-                className="bg-[#0a0a0f] border border-[#1e1e2e] rounded-lg px-2 py-1.5 text-xs text-[#e2e8f0] outline-none cursor-pointer">
+                className="rounded-lg px-2 py-1.5 text-xs outline-none cursor-pointer"
+                style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
                 {OI_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
 
             {/* Min Volume */}
             <div>
-              <label className="block text-[10px] uppercase tracking-wider text-[#64748b] mb-1">Min Vol</label>
+              <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Min Vol</label>
               <select value={volFilter} onChange={e => setVolFilter(e.target.value)}
-                className="bg-[#0a0a0f] border border-[#1e1e2e] rounded-lg px-2 py-1.5 text-xs text-[#e2e8f0] outline-none cursor-pointer">
+                className="rounded-lg px-2 py-1.5 text-xs outline-none cursor-pointer"
+                style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
                 {VOL_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
@@ -606,14 +720,16 @@ export default function ScreenerPage() {
               <button
                 onClick={handleLoad}
                 disabled={loading}
-                className="px-4 py-1.5 bg-[#6366f1] text-white text-xs font-medium rounded-lg hover:bg-[#5558e6] disabled:opacity-50 transition-all flex items-center gap-1.5"
+                className="px-4 py-1.5 text-white text-xs font-medium rounded-lg disabled:opacity-50 transition-all flex items-center gap-1.5"
+                style={{ backgroundColor: 'var(--accent)' }}
               >
                 {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
                 {loading ? `Loading ${progress.current}/${progress.total}...` : 'Load'}
               </button>
               <button
                 onClick={clearFilters}
-                className="px-3 py-1.5 bg-[#1e1e2e] text-[#94a3b8] text-xs font-medium rounded-lg hover:bg-[#2a2a3e] transition-all"
+                className="px-3 py-1.5 text-xs font-medium rounded-lg transition-all"
+                style={{ backgroundColor: 'var(--border)', color: 'var(--text-secondary)' }}
               >
                 Clear
               </button>
@@ -621,7 +737,7 @@ export default function ScreenerPage() {
           </div>
 
           {slowWarning && (
-            <div className="flex items-center gap-2 mt-3 text-xs text-amber-400">
+            <div className="flex items-center gap-2 mt-3 text-xs" style={{ color: 'var(--yellow)' }}>
               <AlertTriangle className="w-3.5 h-3.5" />
               This is taking longer than expected — try narrowing your filters
             </div>
@@ -629,25 +745,39 @@ export default function ScreenerPage() {
         </div>
 
         {/* Results header */}
-        {loaded && (
-          <div className="flex items-center justify-between mb-2 px-1">
-            <span className="text-xs text-[#64748b]">Showing {sortedRows.length} results</span>
-          </div>
-        )}
+        <div className="flex items-center justify-between mb-2 px-1">
+          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            {loaded ? `Showing ${sortedRows.length} results` : ''}
+          </span>
+          <label className="flex items-center gap-1.5 text-xs cursor-pointer" style={{ color: 'var(--text-muted)' }}>
+            <input
+              type="checkbox"
+              checked={showVolOI}
+              onChange={e => setShowVolOI(e.target.checked)}
+              className="rounded"
+            />
+            Show Volume / OI columns
+          </label>
+        </div>
 
         {/* Table */}
-        <div className="bg-[#12121a] border border-[#1e1e2e] rounded-xl overflow-hidden">
+        <div className="rounded-xl overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead className="sticky top-0 z-10">
-                <tr className="bg-[#0e0e16] border-b border-[#1e1e2e]">
+                <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
                   {columns.map(col => (
                     <th
                       key={col.field}
                       onClick={() => handleSort(col.field)}
-                      className={`px-2 py-1.5 text-[10px] uppercase tracking-wider font-medium text-[#64748b] cursor-pointer hover:text-[#e2e8f0] transition-colors select-none whitespace-nowrap ${col.align} ${
-                        col.field === 'ticker' ? 'sticky left-0 z-[3] bg-[#0e0e16] border-r border-[#1e1e2e]' : ''
+                      className={`px-2 py-1.5 text-[10px] uppercase tracking-wider font-medium cursor-pointer transition-colors select-none whitespace-nowrap ${col.align} ${
+                        col.field === 'ticker' ? 'sticky left-0 z-[3] border-r' : ''
                       }`}
+                      style={{
+                        color: 'var(--text-muted)',
+                        backgroundColor: col.field === 'ticker' ? 'var(--surface-alt)' : undefined,
+                        borderColor: 'var(--border)',
+                      }}
                     >
                       <span className="inline-flex items-center gap-0.5">
                         {col.label}
@@ -660,49 +790,57 @@ export default function ScreenerPage() {
               <tbody>
                 {!loaded && !loading && (
                   <tr>
-                    <td colSpan={columns.length} className="py-16 text-center text-[#64748b] text-sm">
+                    <td colSpan={columns.length} className="py-16 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
                       Select your filters and click Load to scan options
                     </td>
                   </tr>
                 )}
                 {loaded && sortedRows.length === 0 && (
                   <tr>
-                    <td colSpan={columns.length} className="py-16 text-center text-[#64748b] text-sm">
+                    <td colSpan={columns.length} className="py-16 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
                       No options match your current filters
                     </td>
                   </tr>
                 )}
                 {sortedRows.map((row, idx) => {
-                  const isITM = row.moneynessPct < 0;
-                  const isOTM = row.moneynessPct > 0;
-                  const bgClass = idx % 2 === 0 ? '' : 'bg-white/[0.01]';
+                  const bgStyle = idx % 2 !== 0 ? { backgroundColor: 'var(--row-alt)' } : {};
 
                   return (
-                    <tr key={`${row.ticker}-${row.expDate}-${row.strike}`} className={`border-b border-[#1e1e2e]/30 hover:bg-white/[0.02] transition-colors ${bgClass}`}>
-                      <td className={`px-2 py-1 text-left whitespace-nowrap sticky left-0 z-[2] border-r border-[#1e1e2e] ${bgClass}`}>
+                    <tr key={`${row.ticker}-${row.expDate}-${row.strike}`} className="transition-colors" style={{ borderBottom: '1px solid var(--border)', ...bgStyle }}>
+                      <td className="px-2 py-1 text-left whitespace-nowrap sticky left-0 z-[2] border-r" style={{ borderColor: 'var(--border)', backgroundColor: bgStyle.backgroundColor || 'var(--surface)' }}>
                         <button
                           onClick={() => navigate(`/options/${row.ticker}`)}
-                          className="font-mono font-bold text-[#818cf8] hover:text-[#a5b4fc] transition-colors"
+                          className="font-mono font-bold hover:opacity-80 transition-opacity"
+                          style={{ color: 'var(--accent-light)' }}
                         >
                           {row.ticker}
                         </button>
                       </td>
-                      <td className="px-2 py-1 text-right font-mono text-[#e2e8f0]">{formatPrice(row.currentPrice)}</td>
-                      <td className="px-2 py-1 text-right font-mono text-[#94a3b8] whitespace-nowrap">{row.expLabel}</td>
-                      <td className="px-2 py-1 text-right font-mono" style={{ color: isITM ? '#ef4444' : isOTM ? '#22c55e' : '#e2e8f0', fontWeight: 600 }}>
+                      <td className="px-2 py-1 text-right font-mono" style={{ color: 'var(--text)' }}>{formatPrice(row.currentPrice)}</td>
+                      <td className="px-2 py-1 text-right font-mono whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{row.expLabel}</td>
+                      <td className="px-2 py-1 text-right font-mono font-semibold" style={{ color: row.moneynessPct > 0 ? 'var(--green)' : row.moneynessPct < 0 ? 'var(--red)' : 'var(--text)' }}>
                         {formatPrice(row.strike)}
                       </td>
-                      <td className="px-2 py-1 text-right font-mono" style={{ color: isOTM ? '#22c55e' : isITM ? '#ef4444' : '#64748b' }}>
-                        {row.moneynessPct.toFixed(2)}%
+                      <td className="px-2 py-1 text-right font-mono" style={{ color: row.moneynessColor }}>
+                        {row.moneynessLabel}
                       </td>
-                      <td className="px-2 py-1 text-right font-mono text-[#e2e8f0]">{formatPrice(row.bid)}</td>
-                      <td className="px-2 py-1 text-right font-mono text-[#e2e8f0]">{formatPrice(row.last)}</td>
-                      <td className="px-2 py-1 text-right font-mono text-[#e2e8f0]">{formatPrice(row.ask)}</td>
-                      <td className="px-2 py-1 text-right font-mono text-[#94a3b8]">{formatNumber(row.volume)}</td>
-                      <td className="px-2 py-1 text-right font-mono text-[#94a3b8]">{formatNumber(row.openInterest)}</td>
-                      <td className="px-2 py-1 text-right font-mono text-[#94a3b8]">{row.volOI != null ? row.volOI.toFixed(2) : '—'}</td>
+                      <td className="px-2 py-1 text-right font-mono" style={{ color: deltaColor(row.delta) }}>
+                        {row.delta.toFixed(2)}
+                      </td>
+                      <td className="px-2 py-1 text-right font-mono" style={{ color: 'var(--text)' }}>{formatPrice(row.bid)}</td>
+                      <td className="px-2 py-1 text-right font-mono" style={{ color: 'var(--text)' }}>{formatPrice(row.last)}</td>
+                      <td className="px-2 py-1 text-right font-mono" style={{ color: 'var(--text)' }}>{formatPrice(row.ask)}</td>
                       <td className="px-2 py-1 text-right font-mono" style={{ color: ivColor(row.iv) }}>
                         {row.iv != null ? row.iv.toFixed(1) + '%' : '—'}
+                      </td>
+                      <td className="px-2 py-1 text-right font-mono" style={{ color: 'var(--text-secondary)' }}>
+                        {row.nomYieldBid != null ? row.nomYieldBid.toFixed(2) + '%' : '—'}
+                      </td>
+                      <td className="px-2 py-1 text-right font-mono" style={{ color: 'var(--text-secondary)' }}>
+                        {row.nomYieldAsk != null ? row.nomYieldAsk.toFixed(2) + '%' : '—'}
+                      </td>
+                      <td className="px-2 py-1 text-right font-mono" style={{ color: 'var(--text-secondary)' }}>
+                        {row.nomYieldLast != null ? row.nomYieldLast.toFixed(2) + '%' : '—'}
                       </td>
                       <td className="px-2 py-1 text-right font-mono font-medium" style={{ color: annYieldColor(row.annYieldBid) }}>
                         {row.annYieldBid != null ? row.annYieldBid.toFixed(2) + '%' : '—'}
@@ -713,9 +851,13 @@ export default function ScreenerPage() {
                       <td className="px-2 py-1 text-right font-mono" style={{ color: annYieldColor(row.annYieldLast) }}>
                         {row.annYieldLast != null ? row.annYieldLast.toFixed(2) + '%' : '—'}
                       </td>
-                      <td className="px-2 py-1 text-right font-mono" style={{ color: deltaColor(row.delta) }}>
-                        {row.delta.toFixed(2)}
-                      </td>
+                      {showVolOI && (
+                        <>
+                          <td className="px-2 py-1 text-right font-mono" style={{ color: 'var(--text-secondary)' }}>{formatNumber(row.volume)}</td>
+                          <td className="px-2 py-1 text-right font-mono" style={{ color: 'var(--text-secondary)' }}>{formatNumber(row.openInterest)}</td>
+                          <td className="px-2 py-1 text-right font-mono" style={{ color: 'var(--text-secondary)' }}>{row.volOI != null ? row.volOI.toFixed(2) : '—'}</td>
+                        </>
+                      )}
                     </tr>
                   );
                 })}
@@ -725,7 +867,7 @@ export default function ScreenerPage() {
         </div>
 
         <footer className="mt-6 pb-4 text-center">
-          <p className="text-[10px] text-[#475569]">Data delayed up to 15 minutes. Not financial advice.</p>
+          <p className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Data delayed up to 15 minutes. Not financial advice.</p>
         </footer>
       </div>
     </div>

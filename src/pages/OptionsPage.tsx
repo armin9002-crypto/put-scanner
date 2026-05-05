@@ -30,14 +30,30 @@ interface EnrichedPut {
 
 function SkeletonRow() {
   return (
-    <tr className="border-b border-[#1e1e2e]/50">
+    <tr style={{ borderBottom: '1px solid var(--border)' }}>
       {Array.from({ length: 15 }).map((_, i) => (
         <td key={i} className="px-3 py-1.5">
-          <div className="h-3.5 w-16 rounded bg-[#1e1e2e] animate-pulse" />
+          <div className="h-3.5 w-16 rounded animate-pulse" style={{ backgroundColor: 'var(--border)' }} />
         </td>
       ))}
     </tr>
   );
+}
+
+function deltaColor(delta: number): string {
+  const abs = Math.abs(delta);
+  if (abs >= 0.7) return 'var(--red)';
+  if (abs >= 0.4) return 'var(--orange)';
+  if (abs >= 0.2) return 'var(--yellow)';
+  return 'var(--text-muted)';
+}
+
+function ivColor(iv: number | null): string {
+  if (iv == null) return 'var(--text-dim)';
+  if (iv < 50) return 'var(--green)';
+  if (iv < 100) return 'var(--yellow)';
+  if (iv < 150) return 'var(--orange)';
+  return 'var(--red)';
 }
 
 export default function OptionsPage() {
@@ -134,15 +150,15 @@ export default function OptionsPage() {
         const ratio = Math.abs(p.strike - currentPrice) / currentPrice;
         if (ratio < 0.005) {
           otmItmLabel = 'ATM';
-          otmItmColor = '#eab308';
+          otmItmColor = 'var(--yellow)';
         } else if (p.strike < currentPrice) {
           otmItmPct = ((currentPrice - p.strike) / currentPrice) * 100;
           otmItmLabel = otmItmPct.toFixed(1) + '% OTM';
-          otmItmColor = '#22c55e';
+          otmItmColor = 'var(--green)';
         } else {
           otmItmPct = ((p.strike - currentPrice) / currentPrice) * 100;
           otmItmLabel = otmItmPct.toFixed(1) + '% ITM';
-          otmItmColor = '#ef4444';
+          otmItmColor = 'var(--red)';
         }
       }
 
@@ -192,10 +208,10 @@ export default function OptionsPage() {
   }
 
   function SortIcon({ field }: { field: SortField }) {
-    if (sortField !== field) return <ChevronUp className="w-3 h-3 text-[#475569] opacity-40" />;
+    if (sortField !== field) return <ChevronUp className="w-3 h-3 opacity-40" style={{ color: 'var(--text-muted)' }} />;
     return sortDir === 'asc'
-      ? <ChevronUp className="w-3 h-3 text-[#6366f1]" />
-      : <ChevronDown className="w-3 h-3 text-[#6366f1]" />;
+      ? <ChevronUp className="w-3 h-3" style={{ color: 'var(--accent)' }} />
+      : <ChevronDown className="w-3 h-3" style={{ color: 'var(--accent)' }} />;
   }
 
   function getMoneyness(strike: number): 'itm' | 'otm' | 'atm' {
@@ -207,25 +223,9 @@ export default function OptionsPage() {
 
   function rowBg(strike: number): string {
     const m = getMoneyness(strike);
-    if (m === 'itm') return 'bg-red-500/[0.04]';
-    if (m === 'atm') return 'bg-amber-500/[0.06]';
-    return 'bg-emerald-500/[0.03]';
-  }
-
-  function deltaColor(delta: number): string {
-    const abs = Math.abs(delta);
-    if (abs >= 0.7) return '#ef4444';
-    if (abs >= 0.4) return '#f97316';
-    if (abs >= 0.2) return '#eab308';
-    return '#64748b';
-  }
-
-  function ivColor(iv: number | null): string {
-    if (iv == null) return '#475569';
-    if (iv < 50) return '#22c55e';
-    if (iv < 100) return '#eab308';
-    if (iv < 150) return '#f97316';
-    return '#ef4444';
+    if (m === 'itm') return 'rgba(239,68,68,0.04)';
+    if (m === 'atm') return 'rgba(234,179,8,0.06)';
+    return 'rgba(34,197,94,0.03)';
   }
 
   const columns: { field: SortField; label: string; align: string }[] = [
@@ -250,57 +250,59 @@ export default function OptionsPage() {
 
   if (!etf) {
     return (
-      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--bg)' }}>
         <div className="text-center">
-          <p className="text-[#64748b] mb-4">ETF not found: {ticker}</p>
-          <button onClick={() => navigate('/')} className="px-4 py-2 bg-[#6366f1] text-white rounded-lg text-sm">Back to Scanner</button>
+          <p className="mb-4" style={{ color: 'var(--text-muted)' }}>ETF not found: {ticker}</p>
+          <button onClick={() => navigate('/')} className="px-4 py-2 text-white rounded-lg text-sm" style={{ backgroundColor: 'var(--accent)' }}>Back to Scanner</button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f]">
+    <div className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
       <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Header */}
         <div className="flex items-center gap-4 mb-6">
           <button
             onClick={() => navigate('/')}
-            className="p-2 rounded-lg text-[#64748b] hover:text-[#e2e8f0] hover:bg-[#12121a] transition-all"
+            className="p-2 rounded-lg transition-all"
+            style={{ color: 'var(--text-muted)' }}
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="flex-1">
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold font-mono text-[#e2e8f0]">{etf.ticker}</h1>
-              <span className="text-sm text-[#64748b]">{etf.name}</span>
+              <h1 className="text-2xl font-bold font-mono" style={{ color: 'var(--text)' }}>{etf.ticker}</h1>
+              <span className="text-sm" style={{ color: 'var(--text-muted)' }}>{etf.name}</span>
             </div>
           </div>
         </div>
 
         {/* Price bar */}
-        <div className="bg-[#12121a] border border-[#1e1e2e] rounded-xl p-5 mb-6">
+        <div className="rounded-xl p-5 mb-6" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
           <div className="flex flex-wrap items-center gap-6">
             <div>
-              <span className="text-3xl font-bold font-mono text-[#e2e8f0]">
+              <span className="text-3xl font-bold font-mono" style={{ color: 'var(--text)' }}>
                 ${currentPrice > 0 ? currentPrice.toFixed(2) : '—'}
               </span>
               {priceData && (
-                <div className={`flex items-center gap-1.5 text-sm font-mono mt-1 ${changePositive ? 'text-emerald-400' : 'text-red-400'}`}>
+                <div className={`flex items-center gap-1.5 text-sm font-mono mt-1`} style={{ color: changePositive ? 'var(--green)' : 'var(--red)' }}>
                   {changePositive ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
                   <span>{changePositive ? '+$' : '-$'}{Math.abs(priceData.change).toFixed(2)}</span>
                   <span>({changePositive ? '+' : '-'}{Math.abs(priceData.changePercent).toFixed(2)}%)</span>
                 </div>
               )}
             </div>
-            <div className="ml-auto flex items-center gap-3 text-xs text-[#64748b]">
+            <div className="ml-auto flex items-center gap-3 text-xs" style={{ color: 'var(--text-muted)' }}>
               {lastUpdated && (
                 <span>Last updated: {lastUpdated.toLocaleTimeString()}</span>
               )}
               <button
                 onClick={() => selectedExp ? loadExpiration(selectedExp) : loadData()}
                 disabled={loading}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#1e1e2e] text-[#e2e8f0] hover:bg-[#2a2a3e] disabled:opacity-50 transition-all"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg disabled:opacity-50 transition-all"
+                style={{ backgroundColor: 'var(--border)', color: 'var(--text)' }}
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
                 Refresh
@@ -316,11 +318,13 @@ export default function OptionsPage() {
               <button
                 key={exp.date}
                 onClick={() => loadExpiration(exp.date)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                  selectedExp === exp.date
-                    ? 'bg-[#6366f1] text-white shadow-[0_0_12px_rgba(99,102,241,0.3)]'
-                    : 'bg-[#12121a] border border-[#1e1e2e] text-[#64748b] hover:text-[#e2e8f0] hover:border-[#6366f1]/30'
-                }`}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                style={{
+                  backgroundColor: selectedExp === exp.date ? 'var(--accent)' : 'var(--surface)',
+                  color: selectedExp === exp.date ? 'white' : 'var(--text-muted)',
+                  border: selectedExp === exp.date ? 'none' : '1px solid var(--border)',
+                  boxShadow: selectedExp === exp.date ? '0 0 12px var(--accent-border)' : 'none',
+                }}
               >
                 {exp.label} ({exp.dte} DTE)
               </button>
@@ -330,25 +334,30 @@ export default function OptionsPage() {
 
         {/* Error state */}
         {error && (
-          <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-6 mb-6 flex items-center gap-3">
-            <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
-            <p className="text-sm text-red-300">{error}</p>
+          <div className="rounded-xl p-6 mb-6 flex items-center gap-3" style={{ backgroundColor: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}>
+            <AlertCircle className="w-5 h-5 flex-shrink-0" style={{ color: 'var(--red)' }} />
+            <p className="text-sm" style={{ color: 'var(--red)' }}>{error}</p>
           </div>
         )}
 
         {/* Options table */}
-        <div className="bg-[#12121a] border border-[#1e1e2e] rounded-xl overflow-hidden">
+        <div className="rounded-xl overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="sticky top-0 z-10">
-                <tr className="bg-[#0e0e16] border-b border-[#1e1e2e]">
+                <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
                   {columns.map(col => (
                     <th
                       key={col.field}
                       onClick={() => handleSort(col.field)}
-                      className={`px-3 py-1.5 text-xs uppercase tracking-wider font-medium text-[#64748b] cursor-pointer hover:text-[#e2e8f0] transition-colors select-none whitespace-nowrap ${col.align} ${
-                        col.field === 'strike' ? 'sticky left-0 z-[3] bg-[#0e0e16] border-r border-[#1e1e2e]' : ''
+                      className={`px-3 py-1.5 text-xs uppercase tracking-wider font-medium cursor-pointer transition-colors select-none whitespace-nowrap ${col.align} ${
+                        col.field === 'strike' ? 'sticky left-0 z-[3] border-r' : ''
                       }`}
+                      style={{
+                        color: 'var(--text-muted)',
+                        backgroundColor: col.field === 'strike' ? 'var(--surface-alt)' : undefined,
+                        borderColor: 'var(--border)',
+                      }}
                     >
                       <span className="inline-flex items-center gap-1">
                         {col.label}
@@ -372,8 +381,8 @@ export default function OptionsPage() {
                         rows.push(
                           <tr key="divider">
                             <td colSpan={colCount} className="px-0 py-0">
-                              <div className="relative py-1 px-4 bg-[#6366f1]/10 border-y border-[#6366f1]/20">
-                                <span className="text-xs font-medium text-[#6366f1]">
+                              <div className="relative py-1 px-4" style={{ backgroundColor: 'var(--accent-bg)', borderTop: '1px solid var(--accent-border)', borderBottom: '1px solid var(--accent-border)' }}>
+                                <span className="text-xs font-medium" style={{ color: 'var(--accent)' }}>
                                   Current Price: ${currentPrice.toFixed(2)}
                                 </span>
                               </div>
@@ -385,29 +394,32 @@ export default function OptionsPage() {
 
                       const moneyness = getMoneyness(put.strike);
                       const rowIdx = rows.length;
+                      const bg = rowBg(put.strike);
+                      const altBg = rowIdx % 2 !== 0 ? 'var(--row-alt)' : 'transparent';
 
                       rows.push(
                         <tr
                           key={put.strike}
-                          className={`border-b border-[#1e1e2e]/30 hover:bg-white/[0.02] transition-colors ${rowBg(put.strike)} ${rowIdx % 2 === 0 ? '' : 'bg-white/[0.01]'}`}
+                          className="transition-colors"
+                          style={{ borderBottom: '1px solid var(--border)', backgroundColor: altBg }}
                         >
-                          <td className={`px-3 py-1.5 text-left whitespace-nowrap sticky left-0 z-[2] border-r border-[#1e1e2e] ${rowBg(put.strike)} ${rowIdx % 2 === 0 ? '' : 'bg-white/[0.01]'}`}>
+                          <td className="px-3 py-1.5 text-left whitespace-nowrap sticky left-0 z-[2] border-r" style={{ borderColor: 'var(--border)', backgroundColor: bg }}>
                             <div className="flex items-center gap-1.5">
-                              <span className="font-mono font-semibold text-[#e2e8f0]">{formatPrice(put.strike)}</span>
+                              <span className="font-mono font-semibold" style={{ color: 'var(--text)' }}>{formatPrice(put.strike)}</span>
                               {moneyness === 'itm' && (
-                                <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-red-500/15 text-red-400 border border-red-500/20">ITM</span>
+                                <span className="text-[9px] font-bold px-1 py-0.5 rounded" style={{ backgroundColor: 'rgba(239,68,68,0.15)', color: 'var(--red)', border: '1px solid rgba(239,68,68,0.2)' }}>ITM</span>
                               )}
                               {moneyness === 'otm' && (
-                                <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">OTM</span>
+                                <span className="text-[9px] font-bold px-1 py-0.5 rounded" style={{ backgroundColor: 'rgba(34,197,94,0.15)', color: 'var(--green)', border: '1px solid rgba(34,197,94,0.2)' }}>OTM</span>
                               )}
                               {moneyness === 'atm' && (
-                                <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/20">ATM</span>
+                                <span className="text-[9px] font-bold px-1 py-0.5 rounded" style={{ backgroundColor: 'rgba(234,179,8,0.15)', color: 'var(--yellow)', border: '1px solid rgba(234,179,8,0.2)' }}>ATM</span>
                               )}
                             </div>
                           </td>
-                          <td className="px-3 py-1.5 text-right font-mono text-[#e2e8f0]">{formatPrice(put.last)}</td>
-                          <td className="px-3 py-1.5 text-right font-mono text-[#e2e8f0]">{formatPrice(put.bid)}</td>
-                          <td className="px-3 py-1.5 text-right font-mono text-[#e2e8f0]">{formatPrice(put.ask)}</td>
+                          <td className="px-3 py-1.5 text-right font-mono" style={{ color: 'var(--text)' }}>{formatPrice(put.last)}</td>
+                          <td className="px-3 py-1.5 text-right font-mono" style={{ color: 'var(--text)' }}>{formatPrice(put.bid)}</td>
+                          <td className="px-3 py-1.5 text-right font-mono" style={{ color: 'var(--text)' }}>{formatPrice(put.ask)}</td>
                           <td className="px-3 py-1.5 text-right font-mono" style={{ color: deltaColor(put.delta) }}>
                             {put.delta.toFixed(2)}
                           </td>
@@ -417,28 +429,28 @@ export default function OptionsPage() {
                           <td className="px-3 py-1.5 text-right font-mono" style={{ color: ivColor(put.impliedVolatility) }}>
                             {put.impliedVolatility != null ? put.impliedVolatility.toFixed(1) + '%' : '—'}
                           </td>
-                          <td className="px-3 py-1.5 text-right font-mono text-[#94a3b8]">
+                          <td className="px-3 py-1.5 text-right font-mono" style={{ color: 'var(--text-secondary)' }}>
                             {formatNumber(put.volume)}
                           </td>
-                          <td className="px-3 py-1.5 text-right font-mono text-[#94a3b8]">
+                          <td className="px-3 py-1.5 text-right font-mono" style={{ color: 'var(--text-secondary)' }}>
                             {formatNumber(put.openInterest)}
                           </td>
-                          <td className="px-3 py-1.5 text-right font-mono text-[#94a3b8]">
+                          <td className="px-3 py-1.5 text-right font-mono" style={{ color: 'var(--text-secondary)' }}>
                             {put.nomYieldBid != null ? formatYield(put.nomYieldBid) : '—'}
                           </td>
-                          <td className="px-3 py-1.5 text-right font-mono font-medium" style={{ color: put.annYieldBid != null ? yieldColor(put.annYieldBid) : '#475569' }}>
+                          <td className="px-3 py-1.5 text-right font-mono font-medium" style={{ color: put.annYieldBid != null ? yieldColor(put.annYieldBid) : 'var(--text-dim)' }}>
                             {put.annYieldBid != null ? formatYield(put.annYieldBid) : '—'}
                           </td>
-                          <td className="px-3 py-1.5 text-right font-mono text-[#94a3b8]">
+                          <td className="px-3 py-1.5 text-right font-mono" style={{ color: 'var(--text-secondary)' }}>
                             {put.nomYieldAsk != null ? formatYield(put.nomYieldAsk) : '—'}
                           </td>
-                          <td className="px-3 py-1.5 text-right font-mono font-medium" style={{ color: put.annYieldAsk != null ? yieldColor(put.annYieldAsk) : '#475569' }}>
+                          <td className="px-3 py-1.5 text-right font-mono font-medium" style={{ color: put.annYieldAsk != null ? yieldColor(put.annYieldAsk) : 'var(--text-dim)' }}>
                             {put.annYieldAsk != null ? formatYield(put.annYieldAsk) : '—'}
                           </td>
-                          <td className="px-3 py-1.5 text-right font-mono text-[#94a3b8]">
+                          <td className="px-3 py-1.5 text-right font-mono" style={{ color: 'var(--text-secondary)' }}>
                             {put.nomYieldLast != null ? formatYield(put.nomYieldLast) : '—'}
                           </td>
-                          <td className="px-3 py-1.5 text-right font-mono font-medium" style={{ color: put.annYieldLast != null ? yieldColor(put.annYieldLast) : '#475569' }}>
+                          <td className="px-3 py-1.5 text-right font-mono font-medium" style={{ color: put.annYieldLast != null ? yieldColor(put.annYieldLast) : 'var(--text-dim)' }}>
                             {put.annYieldLast != null ? formatYield(put.annYieldLast) : '—'}
                           </td>
                         </tr>
@@ -452,12 +464,12 @@ export default function OptionsPage() {
             </table>
           </div>
           {!loading && enrichedPuts.length === 0 && !error && (
-            <div className="py-12 text-center text-[#64748b] text-sm">No put options data available for this expiration.</div>
+            <div className="py-12 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No put options data available for this expiration.</div>
           )}
         </div>
 
         <footer className="mt-8 pb-6 text-center">
-          <p className="text-xs text-[#475569]">Data delayed up to 15 minutes. Not financial advice.</p>
+          <p className="text-xs" style={{ color: 'var(--text-dim)' }}>Data delayed up to 15 minutes. Not financial advice.</p>
         </footer>
       </div>
     </div>
