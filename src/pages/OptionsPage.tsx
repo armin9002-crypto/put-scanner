@@ -1,15 +1,12 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import type { ETFInfo, OptionsChainData, SortField, SortDirection } from '../lib/types';
+import { useParams, useNavigate } from 'react-router-dom';
+import type { OptionsChainData, SortField, SortDirection } from '../lib/types';
+import { ETF_LIST } from '../lib/etfs';
 import { fetchOptions, fetchPrice, calculatePutDelta, formatPrice, formatYield, yieldColor, formatNumber } from '../lib/api';
 import {
   ArrowLeft, RefreshCw, TrendingUp, TrendingDown, AlertCircle,
   ChevronUp, ChevronDown
 } from 'lucide-react';
-
-interface OptionsPageProps {
-  etf: ETFInfo;
-  onBack: () => void;
-}
 
 interface EnrichedPut {
   strike: number;
@@ -43,7 +40,11 @@ function SkeletonRow() {
   );
 }
 
-export default function OptionsPage({ etf, onBack }: OptionsPageProps) {
+export default function OptionsPage() {
+  const { ticker } = useParams<{ ticker: string }>();
+  const navigate = useNavigate();
+  const etf = ETF_LIST.find(e => e.ticker === ticker);
+
   const [optionsData, setOptionsData] = useState<OptionsChainData | null>(null);
   const [priceData, setPriceData] = useState<{ price: number; change: number; changePercent: number } | null>(null);
   const [selectedExp, setSelectedExp] = useState<number | null>(null);
@@ -54,12 +55,13 @@ export default function OptionsPage({ etf, onBack }: OptionsPageProps) {
   const [sortDir, setSortDir] = useState<SortDirection>('asc');
 
   const loadData = useCallback(async (expDate?: number) => {
+    if (!ticker) return;
     setLoading(true);
     setError(null);
     try {
       const [opts, price] = await Promise.all([
-        fetchOptions(etf.ticker, expDate),
-        fetchPrice(etf.ticker),
+        fetchOptions(ticker, expDate),
+        fetchPrice(ticker),
       ]);
       setOptionsData(opts);
       setPriceData(price);
@@ -72,16 +74,17 @@ export default function OptionsPage({ etf, onBack }: OptionsPageProps) {
     } finally {
       setLoading(false);
     }
-  }, [etf.ticker]);
+  }, [ticker]);
 
   const loadExpiration = useCallback(async (expDate: number) => {
+    if (!ticker) return;
     setSelectedExp(expDate);
     setLoading(true);
     setError(null);
     try {
-      const opts = await fetchOptions(etf.ticker, expDate);
+      const opts = await fetchOptions(ticker, expDate);
       setOptionsData(opts);
-      const price = await fetchPrice(etf.ticker);
+      const price = await fetchPrice(ticker);
       setPriceData(price);
       setLastUpdated(new Date());
     } catch (err: any) {
@@ -89,7 +92,7 @@ export default function OptionsPage({ etf, onBack }: OptionsPageProps) {
     } finally {
       setLoading(false);
     }
-  }, [etf.ticker]);
+  }, [ticker]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -245,13 +248,24 @@ export default function OptionsPage({ etf, onBack }: OptionsPageProps) {
 
   const colCount = columns.length;
 
+  if (!etf) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-[#64748b] mb-4">ETF not found: {ticker}</p>
+          <button onClick={() => navigate('/')} className="px-4 py-2 bg-[#6366f1] text-white rounded-lg text-sm">Back to Scanner</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#0a0a0f]">
       <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Header */}
         <div className="flex items-center gap-4 mb-6">
           <button
-            onClick={onBack}
+            onClick={() => navigate('/')}
             className="p-2 rounded-lg text-[#64748b] hover:text-[#e2e8f0] hover:bg-[#12121a] transition-all"
           >
             <ArrowLeft className="w-5 h-5" />

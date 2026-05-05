@@ -1,17 +1,15 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { ETF_LIST } from '../lib/etfs';
-import type { ETFInfo, ETFType } from '../lib/types';
+import type { ETFInfo } from '../lib/types';
 import ETFCard from '../components/ETFCard';
 import { Search, ShieldCheck } from 'lucide-react';
-
-interface HomePageProps {
-  onSelectETF: (etf: ETFInfo) => void;
-}
 
 const LEVERAGE_OPTIONS = ['All', '2x', '3x'] as const;
 const TYPE_OPTIONS = ['All', 'Broad Index', 'Sector', 'Commodity', 'Country'] as const;
 
-export default function HomePage({ onSelectETF }: HomePageProps) {
+export default function HomePage() {
+  const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [leverageFilter, setLeverageFilter] = useState<string>('All');
   const [typeFilter, setTypeFilter] = useState<string>('All');
@@ -96,7 +94,7 @@ export default function HomePage({ onSelectETF }: HomePageProps) {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {filtered.map(etf => (
-            <ETFCard key={etf.ticker} etf={etf} onClick={() => onSelectETF(etf)} />
+            <ETFCard key={etf.ticker} etf={etf} onClick={() => navigate(`/options/${etf.ticker}`)} />
           ))}
         </div>
 
