@@ -261,6 +261,7 @@ export default function ScreenerPage() {
   const [expFilter, setExpFilter] = useState('all');
   const [availableExps, setAvailableExps] = useState<{ date: number; label: string; dte: number }[]>([]);
   const [datesLoaded, setDatesLoaded] = useState(false);
+  const [loadingDates, setLoadingDates] = useState(false);
   const [deltaFilter, setDeltaFilter] = useState('all');
   const [moneynessFilter, setMoneynessFilter] = useState('all');
   const [yieldFilter, setYieldFilter] = useState('all');
@@ -303,6 +304,53 @@ export default function ScreenerPage() {
   const vixLineColor = vixData ? vixColor(vixData.price) : 'var(--yellow)';
   const vixStatus = vixData ? vixLabel(vixData.price) : { text: '', color: '' };
 
+  // Auto-fetch available expiration dates on mount
+  const PREFETCH_ETFS = ['TQQQ', 'LABU', 'SSO', 'SOXL', 'UPRO', 'TNA', 'FAS'];
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoadingDates(true);
+      const allExps = new Map<number, { date: number; label: string; dte: number }>();
+      const results = await Promise.allSettled(
+        PREFETCH_ETFS.map(async ticker => {
+          try {
+            const cacheKey = `${ticker}:initial`;
+            let data: OptionsChainData;
+            if (cacheRef.current.has(cacheKey)) {
+              data = cacheRef.current.get(cacheKey)!;
+            } else {
+              data = await fetchOptions(ticker);
+              cacheRef.current.set(cacheKey, data);
+            }
+            return data;
+          } catch {
+            return null;
+          }
+        })
+      );
+      if (cancelled) return;
+      for (const result of results) {
+        if (result.status !== 'fulfilled' || !result.value) continue;
+        const data = result.value;
+        for (const exp of data.expirations) {
+          if (!allExps.has(exp.date)) {
+            allExps.set(exp.date, {
+              date: exp.date,
+              label: formatExpDropdownLabel(exp.date, exp.dte),
+              dte: exp.dte,
+            });
+          }
+        }
+      }
+      const sorted = Array.from(allExps.values()).sort((a, b) => a.date - b.date);
+      setAvailableExps(sorted);
+      setDatesLoaded(true);
+      setLoadingDates(false);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   // ETF dropdown
   const etfOptions = useMemo(() => {
     const q = etfSearch.toLowerCase().trim();
@@ -331,10 +379,14 @@ export default function ScreenerPage() {
     if (hasShortDated) {
       opts.push({ value: 'lte_30dte', label: '\u226430 DTE' });
     }
-    // Add individual dates with DTE > 30
+    // Add individual dates with DTE > 30, including DTE in label
     for (const exp of availableExps) {
       if (exp.dte > 30) {
-        opts.push({ value: `date_${exp.date}`, label: formatExpDropdownLabel(exp.date, exp.dte) });
+        const d = new Date(exp.date * 1000);
+        const month = d.toLocaleDateString('en-US', { month: 'short' });
+        const day = d.getDate();
+        const yr = `'${String(d.getFullYear() % 100).padStart(2, '0')}`;
+        opts.push({ value: `date_${exp.date}`, label: `${month} ${day}, ${yr} (${exp.dte} DTE)` });
       }
     }
     return opts;
@@ -657,16 +709,18 @@ export default function ScreenerPage() {
 
             {/* Expiration - single-select dropdown */}
             <div>
-              <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Expiration</label>
+              <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>
+                Expiration
+                {loadingDates && <Loader2 className="w-3 h-3 inline ml-1 animate-spin" />}
+              </label>
               <select
                 value={expFilter}
                 onChange={e => setExpFilter(e.target.value)}
-                disabled={!datesLoaded}
-                className="rounded-lg px-2 py-1.5 text-xs outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                className="rounded-lg px-2 py-1.5 text-xs outline-none cursor-pointer"
                 style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
               >
-                {!datesLoaded && <option value="all">Load first...</option>}
-                {datesLoaded && expDropdownOptions.map(o => (
+                {loadingDates && !datesLoaded && <option value="all">Loading dates...</option>}
+                {expDropdownOptions.map(o => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
