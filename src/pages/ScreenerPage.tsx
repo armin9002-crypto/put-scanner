@@ -4,8 +4,9 @@ import { ETF_LIST } from '../lib/etfs';
 import type { ETFInfo, OptionsChainData } from '../lib/types';
 import { fetchOptions, fetchSparkline, calculatePutDelta, formatPrice, formatNumber } from '../lib/api';
 import type { SparklineData } from '../lib/api';
+import { getExpirationsCache, setExpirationsCache } from '../lib/cache';
 import SparklineChart from '../components/SparklineChart';
-import { Search, X, ChevronUp, ChevronDown, Loader2, AlertTriangle } from 'lucide-react';
+import { Search, X, ChevronUp, ChevronDown, Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
 
 // --- Types ---
 
@@ -276,38 +277,48 @@ export default function ScreenerPage() {
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [slowWarning, setSlowWarning] = useState(false);
 
+  // Confirmation dialog
+  const [showConfirm, setShowConfirm] = useState(false);
+
   // Sort
   const [sortField, setSortField] = useState<ScreenerSortField>('annYieldBid');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
 
-  // Cache
+  // Cache for raw options data (Opt 6 — client-side re-filtering)
   const cacheRef = useRef<Map<string, OptionsChainData>>(new Map());
+  const rawRowsRef = useRef<ScreenerRow[]>([]);
 
-  // VIX data
+  // VIX data — manual refresh only (Opt 3)
   const [vixData, setVixData] = useState<SparklineData | null>(null);
   const [vixLoading, setVixLoading] = useState(true);
+  const [lastVixUpdate, setLastVixUpdate] = useState<Date | null>(null);
 
   const loadVix = useCallback(async () => {
+    setVixLoading(true);
     try {
       const data = await fetchSparkline('^VIX');
       setVixData(data);
+      setLastVixUpdate(new Date());
     } catch { /* ignore */ }
     setVixLoading(false);
   }, []);
 
-  useEffect(() => {
-    loadVix();
-    const interval = setInterval(loadVix, 60000);
-    return () => clearInterval(interval);
-  }, [loadVix]);
+  useEffect(() => { loadVix(); }, [loadVix]);
 
   const vixLineColor = vixData ? vixColor(vixData.price) : 'var(--yellow)';
   const vixStatus = vixData ? vixLabel(vixData.price) : { text: '', color: '' };
 
-  // Auto-fetch available expiration dates on mount
+  // Auto-fetch available expiration dates on mount (with localStorage cache, Opt 6)
   const PREFETCH_ETFS = ['TQQQ', 'LABU', 'SSO', 'SOXL', 'UPRO', 'TNA', 'FAS'];
 
   useEffect(() => {
+    const cached = getExpirationsCache();
+    if (cached && cached.expirations.length > 0) {
+      setAvailableExps(cached.expirations);
+      setDatesLoaded(true);
+      return;
+    }
+
     let cancelled = false;
     (async () => {
       setLoadingDates(true);
@@ -347,6 +358,7 @@ export default function ScreenerPage() {
       setAvailableExps(sorted);
       setDatesLoaded(true);
       setLoadingDates(false);
+      setExpirationsCache(sorted);
     })();
     return () => { cancelled = true; };
   }, []);
@@ -374,12 +386,10 @@ export default function ScreenerPage() {
   // Build expiration dropdown options from availableExps
   const expDropdownOptions = useMemo(() => {
     const opts: { value: string; label: string }[] = [{ value: 'all', label: 'All dates' }];
-    // Check if any expirations have DTE <= 30
     const hasShortDated = availableExps.some(e => e.dte <= 30);
     if (hasShortDated) {
       opts.push({ value: 'lte_30dte', label: '\u226430 DTE' });
     }
-    // Add individual dates with DTE > 30, including DTE in label
     for (const exp of availableExps) {
       if (exp.dte > 30) {
         const d = new Date(exp.date * 1000);
@@ -394,7 +404,6 @@ export default function ScreenerPage() {
 
   // Nearest only shortcut
   const selectNearestOnly = () => {
-    // Find the single nearest date across all cached ETFs
     const nearestDates = new Map<number, number>();
     for (const [key, data] of cacheRef.current.entries()) {
       if (!key.endsWith(':initial')) continue;
@@ -405,7 +414,6 @@ export default function ScreenerPage() {
         }
       }
     }
-    // Pick the overall nearest
     let best: { date: number; dte: number } | null = null;
     for (const [date, dte] of nearestDates.entries()) {
       if (!best || dte < best.dte) best = { date, dte };
@@ -438,10 +446,32 @@ export default function ScreenerPage() {
     return allExps;
   }, [expFilter]);
 
+  // Client-side re-filtering (Opt 6) — when filters change but data is already loaded
+  useEffect(() => {
+    if (!loaded || rawRowsRef.current.length === 0) return;
+    const filtered = rawRowsRef.current.filter(row => {
+      if (!matchDeltaAbs(row.delta, deltaFilter)) return false;
+      if (!matchMoneyness(row.moneynessPct, moneynessFilter)) return false;
+      if (!matchYield(row.annYieldBid, yieldFilter)) return false;
+      if (!matchOI(row.openInterest, oiFilter)) return false;
+      if (!matchVol(row.volume, volFilter)) return false;
+      return true;
+    });
+    setRows(filtered);
+  }, [deltaFilter, moneynessFilter, yieldFilter, oiFilter, volFilter, loaded]);
+
   // Load data
   const handleLoad = useCallback(async () => {
-    const etfsToScan = selectedETFs.length > 0 ? selectedETFs : ETF_LIST;
+    // If no ETFs selected, show confirmation (Opt 6)
+    if (selectedETFs.length === 0) {
+      setShowConfirm(true);
+      return;
+    }
+    await executeLoad(selectedETFs);
+  }, [selectedETFs, expFilter, deltaFilter, moneynessFilter, yieldFilter, oiFilter, volFilter]);
 
+  const executeLoad = useCallback(async (etfsToScan: ETFInfo[]) => {
+    setShowConfirm(false);
     setLoading(true);
     setSlowWarning(false);
     setRows([]);
@@ -482,6 +512,7 @@ export default function ScreenerPage() {
     const sortedExps = Array.from(allExps.values()).sort((a, b) => a.date - b.date);
     setAvailableExps(sortedExps);
     setDatesLoaded(true);
+    setExpirationsCache(sortedExps);
 
     // Phase 2: Determine which expirations to fetch based on filter
     const expsToFetch = getExpsToFetch(sortedExps);
@@ -514,7 +545,7 @@ export default function ScreenerPage() {
 
     clearInterval(slowCheck);
 
-    // Phase 3: Build rows
+    // Phase 3: Build ALL rows (unfiltered) and store for client-side re-filtering
     const allRows: ScreenerRow[] = [];
 
     for (const [ticker, initialData] of initialResults) {
@@ -557,12 +588,6 @@ export default function ScreenerPage() {
           const volOI = (p.volume != null && p.volume > 0 && p.openInterest != null && p.openInterest > 0)
             ? p.volume / p.openInterest : null;
 
-          if (!matchDeltaAbs(delta, deltaFilter)) continue;
-          if (!matchMoneyness(moneynessPct, moneynessFilter)) continue;
-          if (!matchYield(annYieldBid, yieldFilter)) continue;
-          if (!matchOI(p.openInterest, oiFilter)) continue;
-          if (!matchVol(p.volume, volFilter)) continue;
-
           allRows.push({
             ticker, currentPrice: price,
             expDate: exp.date, expLabel: formatExpDate(exp.date, dte), dte,
@@ -577,10 +602,23 @@ export default function ScreenerPage() {
       }
     }
 
-    setRows(allRows);
+    // Store raw rows for client-side re-filtering
+    rawRowsRef.current = allRows;
+
+    // Apply current filters
+    const filtered = allRows.filter(row => {
+      if (!matchDeltaAbs(row.delta, deltaFilter)) return false;
+      if (!matchMoneyness(row.moneynessPct, moneynessFilter)) return false;
+      if (!matchYield(row.annYieldBid, yieldFilter)) return false;
+      if (!matchOI(row.openInterest, oiFilter)) return false;
+      if (!matchVol(row.volume, volFilter)) return false;
+      return true;
+    });
+
+    setRows(filtered);
     setLoading(false);
     setLoaded(true);
-  }, [selectedETFs, expFilter, deltaFilter, moneynessFilter, yieldFilter, oiFilter, volFilter, getExpsToFetch]);
+  }, [expFilter, deltaFilter, moneynessFilter, yieldFilter, oiFilter, volFilter, getExpsToFetch]);
 
   // Sorted rows
   const sortedRows = useMemo(() => {
@@ -682,7 +720,7 @@ export default function ScreenerPage() {
                     value={etfSearch}
                     onChange={e => { setEtfSearch(e.target.value); setShowEtfDropdown(true); }}
                     onFocus={() => setShowEtfDropdown(true)}
-                    placeholder={selectedETFs.length === 0 ? 'All ETFs...' : ''}
+                    placeholder={selectedETFs.length === 0 ? 'Select ETFs...' : ''}
                     className="bg-transparent text-xs outline-none flex-1 min-w-[60px]"
                     style={{ color: 'var(--text)' }}
                   />
@@ -805,10 +843,15 @@ export default function ScreenerPage() {
               </button>
             </div>
 
-            {/* VIX Chart - fills remaining horizontal space */}
+            {/* VIX Chart - manual refresh only */}
             <div className="ml-auto flex-shrink-0">
               <div className="rounded-lg p-2" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)' }}>
-                <div className="text-[10px] font-medium uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>VIX</div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>VIX</span>
+                  <button onClick={loadVix} disabled={vixLoading} className="p-0.5 rounded transition-opacity hover:opacity-70 disabled:opacity-50">
+                    <RefreshCw className={`w-3 h-3 ${vixLoading ? 'animate-spin' : ''}`} style={{ color: 'var(--text-muted)' }} />
+                  </button>
+                </div>
                 {vixLoading && !vixData ? (
                   <div className="flex items-center justify-center" style={{ width: 160, height: 60 }}>
                     <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--text-muted)' }} />
@@ -824,6 +867,11 @@ export default function ScreenerPage() {
                         {vixStatus.text}
                       </span>
                     </div>
+                    {lastVixUpdate && (
+                      <div className="text-[9px] mt-0.5" style={{ color: 'var(--text-dim)' }}>
+                        {lastVixUpdate.toLocaleTimeString()}
+                      </div>
+                    )}
                   </>
                 ) : (
                   <div className="flex items-center justify-center text-xs" style={{ width: 160, height: 60, color: 'var(--text-muted)' }}>N/A</div>
@@ -839,6 +887,34 @@ export default function ScreenerPage() {
             </div>
           )}
         </div>
+
+        {/* Confirmation dialog (Opt 6) */}
+        {showConfirm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+            <div className="rounded-xl p-6 max-w-sm mx-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+              <h3 className="text-sm font-semibold mb-2" style={{ color: 'var(--text)' }}>Scan All ETFs?</h3>
+              <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
+                Scanning all ETFs will make approximately 40-80 API calls. Proceed?
+              </p>
+              <div className="flex gap-2 justify-end">
+                <button
+                  onClick={() => setShowConfirm(false)}
+                  className="px-3 py-1.5 text-xs font-medium rounded-lg"
+                  style={{ backgroundColor: 'var(--border)', color: 'var(--text-secondary)' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => executeLoad(ETF_LIST)}
+                  className="px-4 py-1.5 text-white text-xs font-medium rounded-lg"
+                  style={{ backgroundColor: 'var(--accent)' }}
+                >
+                  Confirm
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Results header */}
         <div className="flex items-center justify-between mb-2 px-1">

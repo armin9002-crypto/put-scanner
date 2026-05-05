@@ -1,13 +1,20 @@
 import type { PriceData, OptionsChainData, ExpirationDate, OptionContract } from './types';
+import { getBatchPriceCache, setBatchPriceCache, getSparklineCache, setSparklineCache } from './cache';
+import type { BatchPriceData, CachedSparkline } from './cache';
 
 const API_BASE = '/.netlify/functions';
 
-export async function fetchPrice(ticker: string): Promise<PriceData> {
-  const res = await fetch(`${API_BASE}/price?ticker=${encodeURIComponent(ticker)}`);
-  if (!res.ok) throw new Error(`Failed to fetch price for ${ticker}`);
+export async function fetchBatchPrices(tickers: string[]): Promise<BatchPriceData> {
+  const cached = getBatchPriceCache();
+  if (cached) return cached;
+
+  const res = await fetch(`${API_BASE}/prices?tickers=${encodeURIComponent(tickers.join(','))}`);
+  if (!res.ok) throw new Error('Failed to fetch batch prices');
   const data = await res.json();
   if (data.error) throw new Error(data.error);
-  return { price: data.price, change: data.change, changePercent: data.changePct };
+
+  setBatchPriceCache(data);
+  return data;
 }
 
 export async function fetchOptions(ticker: string, date?: number): Promise<OptionsChainData> {
@@ -116,22 +123,47 @@ export interface SparklineData {
   change: number;
   changePercent: number;
   sparkline: number[];
+  cachedAt?: number;
 }
 
 export async function fetchSparkline(ticker: string): Promise<SparklineData> {
+  const cached = getSparklineCache(ticker);
+  if (cached) {
+    return {
+      price: cached.price,
+      change: cached.change,
+      changePercent: cached.changePercent,
+      sparkline: cached.sparkline,
+      cachedAt: cached.cachedAt,
+    };
+  }
+
   const res = await fetch(`${API_BASE}/price?ticker=${encodeURIComponent(ticker)}&range=1d&interval=1m`);
   if (!res.ok) throw new Error(`Failed to fetch sparkline for ${ticker}`);
   const data = await res.json();
   if (data.error) throw new Error(data.error);
-  return {
+
+  const result: SparklineData = {
     price: data.price,
     change: data.change,
     changePercent: data.changePct,
     sparkline: data.sparkline || [],
   };
+
+  setSparklineCache(ticker, {
+    price: result.price,
+    change: result.change,
+    changePercent: result.changePercent,
+    sparkline: result.sparkline,
+  });
+
+  return result;
 }
 
-export interface ExtendedPriceData extends PriceData {
+export interface ExtendedPriceData {
+  price: number;
+  change: number;
+  changePercent: number;
   fiveDay: number | null;
   oneMonth: number | null;
   threeMonth: number | null;

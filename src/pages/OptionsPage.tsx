@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import type { OptionsChainData, SortField, SortDirection } from '../lib/types';
 import { ETF_LIST } from '../lib/etfs';
@@ -131,17 +131,24 @@ export default function OptionsPage() {
   const [sortDir, setSortDir] = useState<SortDirection>('asc');
   const [showVolOI, setShowVolOI] = useState(false);
 
+  // Ref guard to prevent duplicate fetches
+  const fetchKeyRef = useRef<string>('');
+
   const loadData = useCallback(async (expDate?: number) => {
     if (!ticker) return;
+    const key = `${ticker}:${expDate ?? 'default'}`;
+    if (fetchKeyRef.current === key && optionsData) return;
+    fetchKeyRef.current = key;
+
     setLoading(true);
     setError(null);
     try {
-      const [opts, price] = await Promise.all([
+      const [opts, ext] = await Promise.all([
         fetchOptions(ticker, expDate),
         fetchExtendedPrice(ticker),
       ]);
       setOptionsData(opts);
-      setExtendedPrice(price);
+      setExtendedPrice(ext);
       if (!expDate && opts.expirations.length > 0) {
         setSelectedExp(opts.expirations[0].date);
       }
@@ -155,14 +162,20 @@ export default function OptionsPage() {
 
   const loadExpiration = useCallback(async (expDate: number) => {
     if (!ticker) return;
+    const key = `${ticker}:${expDate}`;
+    if (fetchKeyRef.current === key) return;
+    fetchKeyRef.current = key;
+
     setSelectedExp(expDate);
     setLoading(true);
     setError(null);
     try {
-      const opts = await fetchOptions(ticker, expDate);
+      const [opts, ext] = await Promise.all([
+        fetchOptions(ticker, expDate),
+        fetchExtendedPrice(ticker),
+      ]);
       setOptionsData(opts);
-      const price = await fetchExtendedPrice(ticker);
-      setExtendedPrice(price);
+      setExtendedPrice(ext);
       setLastUpdated(new Date());
     } catch (err: any) {
       setError(err.message || 'Failed to load expiration data');
@@ -171,8 +184,12 @@ export default function OptionsPage() {
     }
   }, [ticker]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    fetchKeyRef.current = '';
+    loadData();
+  }, [ticker]);
 
+  // Extract price from options response (Opt 5) — prefer extended price, fall back to options data
   const currentPrice = extendedPrice?.price ?? optionsData?.currentPrice ?? 0;
   const changePositive = extendedPrice ? extendedPrice.changePercent >= 0 : true;
 
@@ -418,7 +435,11 @@ export default function OptionsPage() {
                 <span>Last updated: {lastUpdated.toLocaleTimeString()}</span>
               )}
               <button
-                onClick={() => selectedExp ? loadExpiration(selectedExp) : loadData()}
+                onClick={() => {
+                  fetchKeyRef.current = '';
+                  if (selectedExp) loadExpiration(selectedExp);
+                  else loadData();
+                }}
                 disabled={loading}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-lg disabled:opacity-50 transition-all"
                 style={{ backgroundColor: 'var(--border)', color: 'var(--text)' }}

@@ -2,11 +2,11 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ETF_LIST } from '../lib/etfs';
 import type { ETFInfo } from '../lib/types';
-import { fetchSparkline } from '../lib/api';
-import type { SparklineData } from '../lib/api';
+import { fetchBatchPrices, fetchSparkline } from '../lib/api';
+import type { SparklineData, BatchPriceData } from '../lib/api';
 import ETFCard from '../components/ETFCard';
 import SparklineChart from '../components/SparklineChart';
-import { Search, ShieldCheck, Loader2 } from 'lucide-react';
+import { Search, ShieldCheck, Loader2, RefreshCw } from 'lucide-react';
 
 const LEVERAGE_OPTIONS = ['All', '2x', '3x'] as const;
 const TYPE_OPTIONS = ['All', 'Broad Index', 'Sector', 'Commodity', 'Country'] as const;
@@ -31,12 +31,30 @@ export default function HomePage() {
   const [leverageFilter, setLeverageFilter] = useState<string>('All');
   const [typeFilter, setTypeFilter] = useState<string>('All');
 
-  // Market data
+  // Batch price data
+  const [prices, setPrices] = useState<BatchPriceData>({});
+  const [pricesLoading, setPricesLoading] = useState(true);
+
+  // Market sparkline data (manual refresh only)
   const [qqqData, setQqqData] = useState<SparklineData | null>(null);
   const [vixData, setVixData] = useState<SparklineData | null>(null);
   const [marketLoading, setMarketLoading] = useState(true);
   const [lastMarketUpdate, setLastMarketUpdate] = useState<Date | null>(null);
 
+  // Load batch prices once on mount
+  const loadPrices = useCallback(async () => {
+    setPricesLoading(true);
+    try {
+      const tickers = ETF_LIST.map(e => e.ticker);
+      const data = await fetchBatchPrices(tickers);
+      setPrices(data);
+    } catch { /* ignore */ }
+    setPricesLoading(false);
+  }, []);
+
+  useEffect(() => { loadPrices(); }, [loadPrices]);
+
+  // Load market sparklines (manual refresh only, with cache)
   const loadMarketData = useCallback(async () => {
     setMarketLoading(true);
     try {
@@ -47,18 +65,11 @@ export default function HomePage() {
       if (qqq.status === 'fulfilled') setQqqData(qqq.value);
       if (vix.status === 'fulfilled') setVixData(vix.value);
       setLastMarketUpdate(new Date());
-    } catch {
-      // silently ignore
-    } finally {
-      setMarketLoading(false);
-    }
+    } catch { /* ignore */ }
+    setMarketLoading(false);
   }, []);
 
-  useEffect(() => {
-    loadMarketData();
-    const interval = setInterval(loadMarketData, 60000);
-    return () => clearInterval(interval);
-  }, [loadMarketData]);
+  useEffect(() => { loadMarketData(); }, [loadMarketData]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
@@ -152,7 +163,12 @@ export default function HomePage() {
           <div className="flex items-start gap-4 ml-auto">
             {/* QQQ Chart */}
             <div className="rounded-lg p-2" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-              <div className="text-[10px] font-medium uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>QQQ</div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>QQQ</span>
+                <button onClick={loadMarketData} disabled={marketLoading} className="p-0.5 rounded transition-opacity hover:opacity-70 disabled:opacity-50">
+                  <RefreshCw className={`w-3 h-3 ${marketLoading ? 'animate-spin' : ''}`} style={{ color: 'var(--text-muted)' }} />
+                </button>
+              </div>
               {marketLoading && !qqqData ? (
                 <div className="flex items-center justify-center" style={{ width: 160, height: 60 }}>
                   <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--text-muted)' }} />
@@ -176,7 +192,12 @@ export default function HomePage() {
 
             {/* VIX Chart */}
             <div className="rounded-lg p-2" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-              <div className="text-[10px] font-medium uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>VIX</div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>VIX</span>
+                <button onClick={loadMarketData} disabled={marketLoading} className="p-0.5 rounded transition-opacity hover:opacity-70 disabled:opacity-50">
+                  <RefreshCw className={`w-3 h-3 ${marketLoading ? 'animate-spin' : ''}`} style={{ color: 'var(--text-muted)' }} />
+                </button>
+              </div>
               {marketLoading && !vixData ? (
                 <div className="flex items-center justify-center" style={{ width: 160, height: 60 }}>
                   <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--text-muted)' }} />
@@ -208,7 +229,12 @@ export default function HomePage() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {filtered.map(etf => (
-            <ETFCard key={etf.ticker} etf={etf} onClick={() => navigate(`/options/${etf.ticker}`)} />
+            <ETFCard
+              key={etf.ticker}
+              etf={etf}
+              onClick={() => navigate(`/options/${etf.ticker}`)}
+              priceData={prices[etf.ticker] ?? null}
+            />
           ))}
         </div>
 
