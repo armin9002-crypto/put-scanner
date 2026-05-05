@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { ETFInfo, PriceData } from '../lib/types';
-import { fetchPrice } from '../lib/api';
+import type { ETFInfo } from '../lib/types';
+import { fetchExtendedPrice } from '../lib/api';
+import type { ExtendedPriceData } from '../lib/api';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 
 interface ETFCardProps {
@@ -8,12 +9,57 @@ interface ETFCardProps {
   onClick: () => void;
 }
 
-function Skeleton() {
-  return <div className="h-3.5 w-14 rounded animate-pulse" style={{ backgroundColor: 'var(--border)' }} />;
+function Skeleton({ w = 14 }: { w?: number }) {
+  return <div className="h-3.5 rounded animate-pulse" style={{ backgroundColor: 'var(--border)', width: w }} />;
+}
+
+function PerfCell({ label, value }: { label: string; value: number | null }) {
+  if (value == null) {
+    return (
+      <div className="text-center">
+        <div className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>{label}</div>
+        <div className="text-[10px] font-mono" style={{ color: 'var(--text-dim)' }}>—</div>
+      </div>
+    );
+  }
+  const isPositive = value >= 0;
+  const display = isPositive ? `+${value.toFixed(1)}%` : `${value.toFixed(1)}%`;
+  return (
+    <div className="text-center">
+      <div className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>{label}</div>
+      <div className="text-[10px] font-mono" style={{ color: isPositive ? 'var(--green)' : 'var(--red)' }}>{display}</div>
+    </div>
+  );
+}
+
+function FiftyTwoWeekCell({ value }: { value: number | null }) {
+  if (value == null) {
+    return (
+      <div className="text-center">
+        <div className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>52W Hi</div>
+        <div className="text-[10px] font-mono" style={{ color: 'var(--text-dim)' }}>—</div>
+      </div>
+    );
+  }
+  // value is negative (how far below high). If within 1%, show "Near High"
+  if (value >= -1) {
+    return (
+      <div className="text-center">
+        <div className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>52W Hi</div>
+        <div className="text-[10px] font-mono" style={{ color: 'var(--green)' }}>Near High</div>
+      </div>
+    );
+  }
+  return (
+    <div className="text-center">
+      <div className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>52W Hi</div>
+      <div className="text-[10px] font-mono" style={{ color: 'var(--red)' }}>{value.toFixed(1)}%</div>
+    </div>
+  );
 }
 
 export default function ETFCard({ etf, onClick }: ETFCardProps) {
-  const [priceData, setPriceData] = useState<PriceData | null>(null);
+  const [priceData, setPriceData] = useState<ExtendedPriceData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
@@ -21,7 +67,7 @@ export default function ETFCard({ etf, onClick }: ETFCardProps) {
     setLoading(true);
     setError(false);
     try {
-      const data = await fetchPrice(etf.ticker);
+      const data = await fetchExtendedPrice(etf.ticker);
       setPriceData(data);
     } catch {
       setError(true);
@@ -54,9 +100,9 @@ export default function ETFCard({ etf, onClick }: ETFCardProps) {
       <p className="text-xs mb-0.5 leading-snug line-clamp-1" style={{ color: 'var(--text-muted)' }}>{etf.name}</p>
       <p className="text-xs mb-2" style={{ color: 'var(--text-dim)' }}>{etf.underlying}</p>
 
-      <div className="flex items-end justify-between">
+      <div className="flex items-end justify-between mb-2">
         {loading ? (
-          <Skeleton />
+          <Skeleton w={60} />
         ) : error ? (
           <span className="text-[10px]" style={{ color: 'var(--red)', opacity: 0.6 }}>Price unavailable</span>
         ) : priceData ? (
@@ -72,6 +118,32 @@ export default function ETFCard({ etf, onClick }: ETFCardProps) {
           </div>
         ) : null}
       </div>
+
+      {/* Performance grid */}
+      {loading ? (
+        <div className="grid grid-cols-4 gap-1">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="text-center">
+              <Skeleton w={24} />
+              <Skeleton w={30} />
+            </div>
+          ))}
+        </div>
+      ) : priceData ? (
+        <div className="grid grid-cols-4 gap-1">
+          <PerfCell label="5D" value={priceData.fiveDay} />
+          <PerfCell label="1M" value={priceData.oneMonth} />
+          <PerfCell label="3M" value={priceData.threeMonth} />
+          <FiftyTwoWeekCell value={priceData.fiftyTwoWeekHighPct} />
+        </div>
+      ) : (
+        <div className="grid grid-cols-4 gap-1">
+          <PerfCell label="5D" value={null} />
+          <PerfCell label="1M" value={null} />
+          <PerfCell label="3M" value={null} />
+          <FiftyTwoWeekCell value={null} />
+        </div>
+      )}
     </button>
   );
 }

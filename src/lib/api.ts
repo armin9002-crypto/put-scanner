@@ -130,3 +130,26 @@ export async function fetchSparkline(ticker: string): Promise<SparklineData> {
     sparkline: data.sparkline || [],
   };
 }
+
+export interface ExtendedPriceData extends PriceData {
+  fiveDay: number | null;
+  oneMonth: number | null;
+  threeMonth: number | null;
+  fiftyTwoWeekHighPct: number | null;
+}
+
+export async function fetchExtendedPrice(ticker: string): Promise<ExtendedPriceData> {
+  const res = await fetch(`${API_BASE}/price?ticker=${encodeURIComponent(ticker)}&extended=true`);
+  if (!res.ok) throw new Error(`Failed to fetch extended price for ${ticker}`);
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  return {
+    price: data.price,
+    change: data.change,
+    changePercent: data.changePct,
+    fiveDay: data.fiveDay ?? null,
+    oneMonth: data.oneMonth ?? null,
+    threeMonth: data.threeMonth ?? null,
+    fiftyTwoWeekHighPct: data.fiftyTwoWeekHighPct ?? null,
+  };
+}

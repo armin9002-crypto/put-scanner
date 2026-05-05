@@ -1,8 +1,10 @@
-import { useState, useMemo, useCallback, useRef } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ETF_LIST } from '../lib/etfs';
-import type { ETFInfo, OptionsChainData, ExpirationDate } from '../lib/types';
-import { fetchOptions, calculatePutDelta, formatPrice, formatNumber } from '../lib/api';
+import type { ETFInfo, OptionsChainData } from '../lib/types';
+import { fetchOptions, fetchSparkline, calculatePutDelta, formatPrice, formatNumber } from '../lib/api';
+import type { SparklineData } from '../lib/api';
+import SparklineChart from '../components/SparklineChart';
 import { Search, X, ChevronUp, ChevronDown, Loader2, AlertTriangle } from 'lucide-react';
 
 // --- Types ---
@@ -216,11 +218,12 @@ function formatExpDate(ts: number, dte: number): string {
   return `${mm}/${dd}/${yy} (${dte})`;
 }
 
-function formatExpLabel(ts: number, dte: number): string {
+function formatExpDropdownLabel(ts: number, dte: number): string {
   const d = new Date(ts * 1000);
-  const monthDay = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const month = d.toLocaleDateString('en-US', { month: 'short' });
+  const day = d.getDate();
   const yr = `'${String(d.getFullYear() % 100).padStart(2, '0')}`;
-  return `${monthDay} ${yr} (${dte} DTE)`;
+  return `${month} ${day}, ${yr}`;
 }
 
 function computeMoneyness(currentPrice: number, strike: number): { pct: number; label: string; color: string } {
@@ -232,6 +235,20 @@ function computeMoneyness(currentPrice: number, strike: number): { pct: number; 
   return { pct, label: `${absPct.toFixed(2)}% ITM`, color: 'var(--red)' };
 }
 
+function vixColor(vix: number): string {
+  if (vix < 15) return 'var(--green)';
+  if (vix < 20) return 'var(--yellow)';
+  if (vix < 30) return 'var(--orange)';
+  return 'var(--red)';
+}
+
+function vixLabel(vix: number): { text: string; color: string } {
+  if (vix < 15) return { text: 'Low', color: 'var(--green)' };
+  if (vix < 20) return { text: 'Moderate', color: 'var(--yellow)' };
+  if (vix < 30) return { text: 'Elevated', color: 'var(--orange)' };
+  return { text: 'High', color: 'var(--red)' };
+}
+
 // --- Component ---
 
 export default function ScreenerPage() {
@@ -241,11 +258,9 @@ export default function ScreenerPage() {
   const [selectedETFs, setSelectedETFs] = useState<ETFInfo[]>([]);
   const [etfSearch, setEtfSearch] = useState('');
   const [showEtfDropdown, setShowEtfDropdown] = useState(false);
-  const [selectedExps, setSelectedExps] = useState<{ date: number; label: string; dte: number }[]>([]);
+  const [expFilter, setExpFilter] = useState('all');
   const [availableExps, setAvailableExps] = useState<{ date: number; label: string; dte: number }[]>([]);
-  const [expSearch, setExpSearch] = useState('');
-  const [showExpDropdown, setShowExpDropdown] = useState(false);
-  const [fetchingDates, setFetchingDates] = useState(false);
+  const [datesLoaded, setDatesLoaded] = useState(false);
   const [deltaFilter, setDeltaFilter] = useState('all');
   const [moneynessFilter, setMoneynessFilter] = useState('all');
   const [yieldFilter, setYieldFilter] = useState('all');
@@ -266,7 +281,27 @@ export default function ScreenerPage() {
 
   // Cache
   const cacheRef = useRef<Map<string, OptionsChainData>>(new Map());
-  const lastFetchKeyRef = useRef<string>('');
+
+  // VIX data
+  const [vixData, setVixData] = useState<SparklineData | null>(null);
+  const [vixLoading, setVixLoading] = useState(true);
+
+  const loadVix = useCallback(async () => {
+    try {
+      const data = await fetchSparkline('^VIX');
+      setVixData(data);
+    } catch { /* ignore */ }
+    setVixLoading(false);
+  }, []);
+
+  useEffect(() => {
+    loadVix();
+    const interval = setInterval(loadVix, 60000);
+    return () => clearInterval(interval);
+  }, [loadVix]);
+
+  const vixLineColor = vixData ? vixColor(vixData.price) : 'var(--yellow)';
+  const vixStatus = vixData ? vixLabel(vixData.price) : { text: '', color: '' };
 
   // ETF dropdown
   const etfOptions = useMemo(() => {
@@ -288,54 +323,51 @@ export default function ScreenerPage() {
     setSelectedETFs(prev => prev.filter(e => e.ticker !== ticker));
   };
 
-  // Expiration dropdown
-  const expOptions = useMemo(() => {
-    const q = expSearch.toLowerCase().trim();
-    const filtered = availableExps.filter(e => !selectedExps.find(s => s.date === e.date));
-    if (!q) return filtered;
-    return filtered.filter(e => e.label.toLowerCase().includes(q) || String(e.dte).includes(q));
-  }, [expSearch, availableExps, selectedExps]);
+  // Build expiration dropdown options from availableExps
+  const expDropdownOptions = useMemo(() => {
+    const opts: { value: string; label: string }[] = [{ value: 'all', label: 'All dates' }];
+    // Check if any expirations have DTE <= 30
+    const hasShortDated = availableExps.some(e => e.dte <= 30);
+    if (hasShortDated) {
+      opts.push({ value: 'lte_30dte', label: '\u226430 DTE' });
+    }
+    // Add individual dates with DTE > 30
+    for (const exp of availableExps) {
+      if (exp.dte > 30) {
+        opts.push({ value: `date_${exp.date}`, label: formatExpDropdownLabel(exp.date, exp.dte) });
+      }
+    }
+    return opts;
+  }, [availableExps]);
 
-  const addExp = (exp: { date: number; label: string; dte: number }) => {
-    setSelectedExps(prev => [...prev, exp].sort((a, b) => a.date - b.date));
-    setExpSearch('');
-    setShowExpDropdown(false);
-  };
-
-  const removeExp = (date: number) => {
-    setSelectedExps(prev => prev.filter(e => e.date !== date));
-  };
-
+  // Nearest only shortcut
   const selectNearestOnly = () => {
-    // For each ETF, find the nearest expiry
-    const nearestByTicker = new Map<string, { date: number; label: string; dte: number }>();
+    // Find the single nearest date across all cached ETFs
+    const nearestDates = new Map<number, number>();
     for (const [key, data] of cacheRef.current.entries()) {
       if (!key.endsWith(':initial')) continue;
-      const ticker = key.replace(':initial', '');
       if (data.expirations.length > 0) {
         const nearest = data.expirations[0];
-        const existing = nearestByTicker.get(ticker);
-        if (!existing || nearest.dte < existing.dte) {
-          nearestByTicker.set(ticker, { date: nearest.date, label: formatExpLabel(nearest.date, nearest.dte), dte: nearest.dte });
+        if (!nearestDates.has(nearest.date) || nearest.dte < nearestDates.get(nearest.date)!) {
+          nearestDates.set(nearest.date, nearest.dte);
         }
       }
     }
-    // Collect unique nearest dates
-    const uniqueDates = new Map<number, { date: number; label: string; dte: number }>();
-    for (const exp of nearestByTicker.values()) {
-      if (!uniqueDates.has(exp.date)) {
-        uniqueDates.set(exp.date, exp);
-      }
+    // Pick the overall nearest
+    let best: { date: number; dte: number } | null = null;
+    for (const [date, dte] of nearestDates.entries()) {
+      if (!best || dte < best.dte) best = { date, dte };
     }
-    setSelectedExps(Array.from(uniqueDates.values()).sort((a, b) => a.date - b.date));
+    if (best) {
+      setExpFilter(`date_${best.date}`);
+    }
   };
 
   // Clear filters
   const clearFilters = () => {
     setSelectedETFs([]);
     setEtfSearch('');
-    setSelectedExps([]);
-    setAvailableExps([]);
+    setExpFilter('all');
     setDeltaFilter('all');
     setMoneynessFilter('all');
     setYieldFilter('all');
@@ -343,16 +375,26 @@ export default function ScreenerPage() {
     setVolFilter('all');
   };
 
+  // Determine which expirations to include based on filter
+  const getExpsToFetch = useCallback((allExps: { date: number; dte: number }[]) => {
+    if (expFilter === 'all') return allExps;
+    if (expFilter === 'lte_30dte') return allExps.filter(e => e.dte <= 30);
+    if (expFilter.startsWith('date_')) {
+      const targetDate = parseInt(expFilter.replace('date_', ''));
+      return allExps.filter(e => e.date === targetDate);
+    }
+    return allExps;
+  }, [expFilter]);
+
   // Load data
   const handleLoad = useCallback(async () => {
     const etfsToScan = selectedETFs.length > 0 ? selectedETFs : ETF_LIST;
-    const fetchKey = `${etfsToScan.map(e => e.ticker).sort().join(',')}:${selectedExps.map(e => e.date).sort().join(',')}`;
 
     setLoading(true);
     setSlowWarning(false);
     setRows([]);
 
-    // Phase 1: Fetch initial data for each ETF if not cached
+    // Phase 1: Fetch initial data for each ETF
     const initialResults = new Map<string, OptionsChainData>();
     const tasks1 = etfsToScan.map(etf => async () => {
       try {
@@ -376,21 +418,21 @@ export default function ScreenerPage() {
 
     await concurrentFetch(tasks1, 5);
 
-    // Also update available expirations
+    // Collect all unique expirations
     const allExps = new Map<number, { date: number; label: string; dte: number }>();
     for (const [, data] of initialResults) {
       for (const exp of data.expirations) {
         if (!allExps.has(exp.date)) {
-          allExps.set(exp.date, { date: exp.date, label: formatExpLabel(exp.date, exp.dte), dte: exp.dte });
+          allExps.set(exp.date, { date: exp.date, label: formatExpDropdownLabel(exp.date, exp.dte), dte: exp.dte });
         }
       }
     }
-    setAvailableExps(Array.from(allExps.values()).sort((a, b) => a.date - b.date));
+    const sortedExps = Array.from(allExps.values()).sort((a, b) => a.date - b.date);
+    setAvailableExps(sortedExps);
+    setDatesLoaded(true);
 
-    // Phase 2: Determine which expirations to fetch
-    const expsToFetch = selectedExps.length > 0
-      ? selectedExps
-      : Array.from(allExps.values());
+    // Phase 2: Determine which expirations to fetch based on filter
+    const expsToFetch = getExpsToFetch(sortedExps);
 
     const fetchTasks: (() => Promise<void>)[] = [];
     let totalFetches = initialResults.size;
@@ -463,7 +505,6 @@ export default function ScreenerPage() {
           const volOI = (p.volume != null && p.volume > 0 && p.openInterest != null && p.openInterest > 0)
             ? p.volume / p.openInterest : null;
 
-          // Apply filters
           if (!matchDeltaAbs(delta, deltaFilter)) continue;
           if (!matchMoneyness(moneynessPct, moneynessFilter)) continue;
           if (!matchYield(annYieldBid, yieldFilter)) continue;
@@ -484,11 +525,10 @@ export default function ScreenerPage() {
       }
     }
 
-    lastFetchKeyRef.current = fetchKey;
     setRows(allRows);
     setLoading(false);
     setLoaded(true);
-  }, [selectedETFs, selectedExps, deltaFilter, moneynessFilter, yieldFilter, oiFilter, volFilter]);
+  }, [selectedETFs, expFilter, deltaFilter, moneynessFilter, yieldFilter, oiFilter, volFilter, getExpsToFetch]);
 
   // Sorted rows
   const sortedRows = useMemo(() => {
@@ -615,54 +655,30 @@ export default function ScreenerPage() {
               </div>
             </div>
 
-            {/* Expiration - multi-select with chips */}
-            <div className="min-w-[180px]">
-              <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>
-                Expiration
-                {fetchingDates && <Loader2 className="w-3 h-3 inline ml-1 animate-spin" />}
-              </label>
-              <div className="relative">
-                <div className="flex flex-wrap gap-1 p-1.5 rounded-lg min-h-[32px]" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)' }}>
-                  {selectedExps.map(e => (
-                    <span key={e.date} className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs rounded" style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)', border: '1px solid var(--accent-border)' }}>
-                      {e.label}
-                      <button onClick={() => removeExp(e.date)} className="hover:opacity-70"><X className="w-3 h-3" /></button>
-                    </span>
-                  ))}
-                  <input
-                    type="text"
-                    value={expSearch}
-                    onChange={e => { setExpSearch(e.target.value); setShowExpDropdown(true); }}
-                    onFocus={() => setShowExpDropdown(true)}
-                    placeholder={selectedExps.length === 0 ? 'All dates...' : ''}
-                    className="bg-transparent text-xs outline-none flex-1 min-w-[60px]"
-                    style={{ color: 'var(--text)' }}
-                  />
-                </div>
-                {showExpDropdown && expOptions.length > 0 && (
-                  <div className="absolute z-50 top-full left-0 right-0 mt-1 max-h-40 overflow-y-auto shadow-xl rounded-lg" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-                    {expOptions.slice(0, 30).map(e => (
-                      <button
-                        key={e.date}
-                        onClick={() => addExp(e)}
-                        className="w-full text-left px-3 py-1.5 text-xs transition-colors"
-                        style={{ color: 'var(--text)' }}
-                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--accent-bg)')}
-                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
-                      >
-                        {e.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <button
-                onClick={selectNearestOnly}
-                className="mt-1 text-[10px] px-2 py-0.5 rounded transition-colors"
-                style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)' }}
+            {/* Expiration - single-select dropdown */}
+            <div>
+              <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Expiration</label>
+              <select
+                value={expFilter}
+                onChange={e => setExpFilter(e.target.value)}
+                disabled={!datesLoaded}
+                className="rounded-lg px-2 py-1.5 text-xs outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
               >
-                Nearest only
-              </button>
+                {!datesLoaded && <option value="all">Load first...</option>}
+                {datesLoaded && expDropdownOptions.map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+              {datesLoaded && (
+                <button
+                  onClick={selectNearestOnly}
+                  className="ml-1 text-[10px] px-2 py-0.5 rounded transition-colors"
+                  style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)' }}
+                >
+                  Nearest only
+                </button>
+              )}
             </div>
 
             {/* Delta (abs) */}
@@ -733,6 +749,32 @@ export default function ScreenerPage() {
               >
                 Clear
               </button>
+            </div>
+
+            {/* VIX Chart - fills remaining horizontal space */}
+            <div className="ml-auto flex-shrink-0">
+              <div className="rounded-lg p-2" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)' }}>
+                <div className="text-[10px] font-medium uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>VIX</div>
+                {vixLoading && !vixData ? (
+                  <div className="flex items-center justify-center" style={{ width: 160, height: 60 }}>
+                    <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--text-muted)' }} />
+                  </div>
+                ) : vixData ? (
+                  <>
+                    <SparklineChart data={vixData.sparkline} color={vixLineColor} width={160} height={60} />
+                    <div className="flex items-center justify-between mt-1">
+                      <span className="text-xs font-mono font-semibold" style={{ color: 'var(--text)' }}>
+                        {vixData.price.toFixed(2)}
+                      </span>
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ color: vixStatus.color, backgroundColor: `${vixStatus.color}15` }}>
+                        {vixStatus.text}
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex items-center justify-center text-xs" style={{ width: 160, height: 60, color: 'var(--text-muted)' }}>N/A</div>
+                )}
+              </div>
             </div>
           </div>
 
