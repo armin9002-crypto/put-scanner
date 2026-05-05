@@ -5,11 +5,12 @@ interface SparklineChartProps {
   color: string;
   width?: number;
   height?: number;
+  fillGradient?: boolean;
 }
 
-export default function SparklineChart({ data, color, width = 160, height = 60 }: SparklineChartProps) {
-  const path = useMemo(() => {
-    if (data.length < 2) return '';
+export default function SparklineChart({ data, color, width = 160, height = 60, fillGradient = false }: SparklineChartProps) {
+  const { path, areaPath } = useMemo(() => {
+    if (data.length < 2) return { path: '', areaPath: '' };
     const min = Math.min(...data);
     const max = Math.max(...data);
     const range = max - min || 1;
@@ -20,10 +21,13 @@ export default function SparklineChart({ data, color, width = 160, height = 60 }
     const points = data.map((v, i) => {
       const x = padding + (i / (data.length - 1)) * w;
       const y = padding + h - ((v - min) / range) * h;
-      return `${x},${y}`;
+      return { x, y };
     });
 
-    return `M${points.join(' L')}`;
+    const linePath = `M${points.map(p => `${p.x},${p.y}`).join(' L')}`;
+    const areaPath = `${linePath} L${points[points.length - 1].x},${padding + h} L${points[0].x},${padding + h} Z`;
+
+    return { path: linePath, areaPath };
   }, [data, width, height]);
 
   if (data.length < 2) {
@@ -34,8 +38,19 @@ export default function SparklineChart({ data, color, width = 160, height = 60 }
     );
   }
 
+  const gradientId = `sparkline-grad-${color.replace(/[^a-zA-Z0-9]/g, '')}`;
+
   return (
     <svg width={width} height={height} className="overflow-visible">
+      {fillGradient && (
+        <defs>
+          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.2" />
+            <stop offset="100%" stopColor={color} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+      )}
+      {fillGradient && <path d={areaPath} fill={`url(#${gradientId})`} />}
       <path d={path} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
     </svg>
   );

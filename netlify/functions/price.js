@@ -31,10 +31,10 @@ exports.handler = async function(event, context) {
       response.sparkline = closes.filter(v => v != null);
     }
 
-    // If extended data requested, include performance metrics
+    // If extended data requested, include performance metrics and intraday sparkline
     if (extended) {
-      const closes = result.indicators?.quote?.[0]?.close || [];
-      const filtered = closes.filter(v => v != null);
+      const dailyCloses = result.indicators?.quote?.[0]?.close || [];
+      const filtered = dailyCloses.filter(v => v != null);
       const len = filtered.length;
 
       // 5-day change: compare current price to 5 trading days ago
@@ -44,14 +44,14 @@ exports.handler = async function(event, context) {
         if (past > 0) fiveDay = ((price - past) / past) * 100;
       }
 
-      // 1-month change: ~30 calendar days ago
+      // 1-month change: ~22 trading days ago
       let oneMonth = null;
       if (len >= 22) {
         const past = filtered[len - 22];
         if (past > 0) oneMonth = ((price - past) / past) * 100;
       }
 
-      // 3-month change: ~90 calendar days ago
+      // 3-month change: ~66 trading days ago
       let threeMonth = null;
       if (len >= 66) {
         const past = filtered[len - 66];
@@ -69,6 +69,19 @@ exports.handler = async function(event, context) {
       response.oneMonth = oneMonth;
       response.threeMonth = threeMonth;
       response.fiftyTwoWeekHighPct = fiftyTwoWeekHighPct;
+
+      // Also fetch intraday sparkline for extended requests
+      try {
+        const intradayUrl = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1m&range=1d`;
+        const intradayRes = await fetch(intradayUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }
+        });
+        const intradayData = await intradayRes.json();
+        const intradayCloses = intradayData.chart?.result?.[0]?.indicators?.quote?.[0]?.close || [];
+        response.sparkline = intradayCloses.filter(v => v != null);
+      } catch {
+        response.sparkline = [];
+      }
     }
 
     return {

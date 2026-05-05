@@ -136,6 +136,7 @@ export interface ExtendedPriceData extends PriceData {
   oneMonth: number | null;
   threeMonth: number | null;
   fiftyTwoWeekHighPct: number | null;
+  sparkline: number[];
 }
 
 export async function fetchExtendedPrice(ticker: string): Promise<ExtendedPriceData> {
@@ -151,5 +152,6 @@ export async function fetchExtendedPrice(ticker: string): Promise<ExtendedPriceD
     oneMonth: data.oneMonth ?? null,
     threeMonth: data.threeMonth ?? null,
     fiftyTwoWeekHighPct: data.fiftyTwoWeekHighPct ?? null,
+    sparkline: data.sparkline || [],
   };
 }

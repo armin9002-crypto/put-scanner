@@ -2,7 +2,9 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import type { OptionsChainData, SortField, SortDirection } from '../lib/types';
 import { ETF_LIST } from '../lib/etfs';
-import { fetchOptions, fetchPrice, calculatePutDelta, formatPrice, formatYield, yieldColor, formatNumber } from '../lib/api';
+import { fetchOptions, fetchExtendedPrice, calculatePutDelta, formatPrice, formatYield, yieldColor, formatNumber } from '../lib/api';
+import type { ExtendedPriceData } from '../lib/api';
+import SparklineChart from '../components/SparklineChart';
 import {
   ArrowLeft, RefreshCw, TrendingUp, TrendingDown, AlertCircle,
   ChevronUp, ChevronDown
@@ -17,6 +19,7 @@ interface EnrichedPut {
   impliedVolatility: number | null;
   volume: number | null;
   openInterest: number | null;
+  volOI: number | null;
   nomYieldBid: number | null;
   annYieldBid: number | null;
   nomYieldAsk: number | null;
@@ -28,15 +31,72 @@ interface EnrichedPut {
   otmItmColor: string;
 }
 
-function SkeletonRow() {
+function SkeletonRow({ colCount }: { colCount: number }) {
   return (
     <tr style={{ borderBottom: '1px solid var(--border)' }}>
-      {Array.from({ length: 15 }).map((_, i) => (
+      {Array.from({ length: colCount }).map((_, i) => (
         <td key={i} className="px-3 py-1.5">
           <div className="h-3.5 w-16 rounded animate-pulse" style={{ backgroundColor: 'var(--border)' }} />
         </td>
       ))}
     </tr>
+  );
+}
+
+function PerfCell({ label, value }: { label: string; value: number | null }) {
+  if (value == null) {
+    return (
+      <div className="text-center">
+        <div className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>{label}</div>
+        <div className="text-[10px] font-mono" style={{ color: 'var(--text-dim)' }}>—</div>
+      </div>
+    );
+  }
+  const isPositive = value >= 0;
+  const display = isPositive ? `+${value.toFixed(1)}%` : `${value.toFixed(1)}%`;
+  return (
+    <div className="text-center">
+      <div className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>{label}</div>
+      <div className="text-[10px] font-mono" style={{ color: isPositive ? 'var(--green)' : 'var(--red)' }}>{display}</div>
+    </div>
+  );
+}
+
+function FiftyTwoWeekCell({ value }: { value: number | null }) {
+  if (value == null) {
+    return (
+      <div className="text-center">
+        <div className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>52W Hi</div>
+        <div className="text-[10px] font-mono" style={{ color: 'var(--text-dim)' }}>—</div>
+      </div>
+    );
+  }
+  if (value >= -1) {
+    return (
+      <div className="text-center">
+        <div className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>52W Hi</div>
+        <div className="text-[10px] font-mono" style={{ color: 'var(--green)' }}>Near High</div>
+      </div>
+    );
+  }
+  return (
+    <div className="text-center">
+      <div className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>52W Hi</div>
+      <div className="text-[10px] font-mono" style={{ color: 'var(--red)' }}>{value.toFixed(1)}%</div>
+    </div>
+  );
+}
+
+function PerfSkeleton() {
+  return (
+    <div className="grid grid-cols-4 gap-2">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div key={i} className="text-center">
+          <div className="h-2.5 w-6 rounded animate-pulse mx-auto mb-1" style={{ backgroundColor: 'var(--border)' }} />
+          <div className="h-3 w-10 rounded animate-pulse mx-auto" style={{ backgroundColor: 'var(--border)' }} />
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -62,13 +122,14 @@ export default function OptionsPage() {
   const etf = ETF_LIST.find(e => e.ticker === ticker);
 
   const [optionsData, setOptionsData] = useState<OptionsChainData | null>(null);
-  const [priceData, setPriceData] = useState<{ price: number; change: number; changePercent: number } | null>(null);
+  const [extendedPrice, setExtendedPrice] = useState<ExtendedPriceData | null>(null);
   const [selectedExp, setSelectedExp] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [sortField, setSortField] = useState<SortField>('strike');
   const [sortDir, setSortDir] = useState<SortDirection>('asc');
+  const [showVolOI, setShowVolOI] = useState(false);
 
   const loadData = useCallback(async (expDate?: number) => {
     if (!ticker) return;
@@ -77,10 +138,10 @@ export default function OptionsPage() {
     try {
       const [opts, price] = await Promise.all([
         fetchOptions(ticker, expDate),
-        fetchPrice(ticker),
+        fetchExtendedPrice(ticker),
       ]);
       setOptionsData(opts);
-      setPriceData(price);
+      setExtendedPrice(price);
       if (!expDate && opts.expirations.length > 0) {
         setSelectedExp(opts.expirations[0].date);
       }
@@ -100,8 +161,8 @@ export default function OptionsPage() {
     try {
       const opts = await fetchOptions(ticker, expDate);
       setOptionsData(opts);
-      const price = await fetchPrice(ticker);
-      setPriceData(price);
+      const price = await fetchExtendedPrice(ticker);
+      setExtendedPrice(price);
       setLastUpdated(new Date());
     } catch (err: any) {
       setError(err.message || 'Failed to load expiration data');
@@ -112,8 +173,8 @@ export default function OptionsPage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const currentPrice = priceData?.price ?? optionsData?.currentPrice ?? 0;
-  const changePositive = priceData ? priceData.changePercent >= 0 : true;
+  const currentPrice = extendedPrice?.price ?? optionsData?.currentPrice ?? 0;
+  const changePositive = extendedPrice ? extendedPrice.changePercent >= 0 : true;
 
   const enrichedPuts = useMemo((): EnrichedPut[] => {
     if (!optionsData?.puts) return [];
@@ -143,6 +204,9 @@ export default function OptionsPage() {
         ? (p.last / p.strike) * 100 : null;
       const annYieldLast = nomYieldLast != null ? nomYieldLast * (365 / dte) : null;
 
+      const volOI = (p.volume != null && p.volume > 0 && p.openInterest != null && p.openInterest > 0)
+        ? p.volume / p.openInterest : null;
+
       let otmItmPct: number | null = null;
       let otmItmLabel = '';
       let otmItmColor = '';
@@ -164,7 +228,7 @@ export default function OptionsPage() {
 
       return {
         strike: p.strike, last: p.last, bid: p.bid, ask: p.ask, delta,
-        impliedVolatility: p.impliedVolatility, volume: p.volume, openInterest: p.openInterest,
+        impliedVolatility: p.impliedVolatility, volume: p.volume, openInterest: p.openInterest, volOI,
         nomYieldBid, annYieldBid, nomYieldAsk, annYieldAsk, nomYieldLast, annYieldLast,
         otmItmPct, otmItmLabel, otmItmColor,
       };
@@ -228,7 +292,8 @@ export default function OptionsPage() {
     return 'rgba(34,197,94,0.03)';
   }
 
-  const columns: { field: SortField; label: string; align: string }[] = [
+  // Column definitions
+  const baseColumns: { field: SortField; label: string; align: string }[] = [
     { field: 'strike', label: 'Strike', align: 'text-left' },
     { field: 'last', label: 'Last', align: 'text-right' },
     { field: 'bid', label: 'Bid', align: 'text-right' },
@@ -236,8 +301,6 @@ export default function OptionsPage() {
     { field: 'delta', label: 'Delta', align: 'text-right' },
     { field: 'otmItm', label: '% OTM / % ITM', align: 'text-right' },
     { field: 'iv', label: 'IV', align: 'text-right' },
-    { field: 'volume', label: 'Volume', align: 'text-right' },
-    { field: 'openInterest', label: 'Open Interest', align: 'text-right' },
     { field: 'nomYieldBid', label: 'Nom. Yield (Bid)', align: 'text-right' },
     { field: 'annYieldBid', label: 'Ann. Yield (Bid)', align: 'text-right' },
     { field: 'nomYieldAsk', label: 'Nom. Yield (Ask)', align: 'text-right' },
@@ -246,7 +309,17 @@ export default function OptionsPage() {
     { field: 'annYieldLast', label: 'Ann. Yield (Last)', align: 'text-right' },
   ];
 
+  const volOIColumns: { field: SortField; label: string; align: string }[] = [
+    { field: 'volume', label: 'Volume', align: 'text-right' },
+    { field: 'openInterest', label: 'Open Interest', align: 'text-right' },
+  ];
+
+  const columns = showVolOI ? [...baseColumns, ...volOIColumns] : baseColumns;
   const colCount = columns.length;
+
+  // Sparkline data
+  const sparklineData = extendedPrice?.sparkline ?? [];
+  const sparklineColor = changePositive ? 'var(--green)' : 'var(--red)';
 
   if (!etf) {
     return (
@@ -282,19 +355,65 @@ export default function OptionsPage() {
         {/* Price bar */}
         <div className="rounded-xl p-5 mb-6" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
           <div className="flex flex-wrap items-center gap-6">
-            <div>
+            {/* Price + change */}
+            <div className="flex-shrink-0">
               <span className="text-3xl font-bold font-mono" style={{ color: 'var(--text)' }}>
                 ${currentPrice > 0 ? currentPrice.toFixed(2) : '—'}
               </span>
-              {priceData && (
-                <div className={`flex items-center gap-1.5 text-sm font-mono mt-1`} style={{ color: changePositive ? 'var(--green)' : 'var(--red)' }}>
+              {extendedPrice && (
+                <div className="flex items-center gap-1.5 text-sm font-mono mt-1" style={{ color: changePositive ? 'var(--green)' : 'var(--red)' }}>
                   {changePositive ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-                  <span>{changePositive ? '+$' : '-$'}{Math.abs(priceData.change).toFixed(2)}</span>
-                  <span>({changePositive ? '+' : '-'}{Math.abs(priceData.changePercent).toFixed(2)}%)</span>
+                  <span>{changePositive ? '+$' : '-$'}{Math.abs(extendedPrice.change).toFixed(2)}</span>
+                  <span>({changePositive ? '+' : '-'}{Math.abs(extendedPrice.changePercent).toFixed(2)}%)</span>
                 </div>
               )}
             </div>
+
+            {/* Sparkline chart - hidden on mobile */}
+            <div className="hidden sm:block flex-shrink-0">
+              {loading && !extendedPrice ? (
+                <div className="flex items-center justify-center" style={{ width: 220, height: 55 }}>
+                  <div className="h-3.5 w-20 rounded animate-pulse" style={{ backgroundColor: 'var(--border)' }} />
+                </div>
+              ) : sparklineData.length >= 2 ? (
+                <SparklineChart data={sparklineData} color={sparklineColor} width={220} height={55} fillGradient />
+              ) : (
+                <div className="flex items-center justify-center text-xs" style={{ width: 220, height: 55, color: 'var(--text-dim)' }}>No intraday data</div>
+              )}
+            </div>
+
+            {/* Performance metrics */}
+            <div className="flex-shrink-0 min-w-[140px]">
+              {loading && !extendedPrice ? (
+                <PerfSkeleton />
+              ) : extendedPrice ? (
+                <div className="grid grid-cols-4 gap-2">
+                  <PerfCell label="5D" value={extendedPrice.fiveDay} />
+                  <PerfCell label="1M" value={extendedPrice.oneMonth} />
+                  <PerfCell label="3M" value={extendedPrice.threeMonth} />
+                  <FiftyTwoWeekCell value={extendedPrice.fiftyTwoWeekHighPct} />
+                </div>
+              ) : (
+                <div className="grid grid-cols-4 gap-2">
+                  <PerfCell label="5D" value={null} />
+                  <PerfCell label="1M" value={null} />
+                  <PerfCell label="3M" value={null} />
+                  <FiftyTwoWeekCell value={null} />
+                </div>
+              )}
+            </div>
+
+            {/* Right side: last updated + refresh + vol/OI toggle */}
             <div className="ml-auto flex items-center gap-3 text-xs" style={{ color: 'var(--text-muted)' }}>
+              <label className="flex items-center gap-1.5 text-xs cursor-pointer" style={{ color: 'var(--text-muted)' }}>
+                <input
+                  type="checkbox"
+                  checked={showVolOI}
+                  onChange={e => setShowVolOI(e.target.checked)}
+                  className="rounded"
+                />
+                Show Volume / OI
+              </label>
               {lastUpdated && (
                 <span>Last updated: {lastUpdated.toLocaleTimeString()}</span>
               )}
@@ -369,7 +488,7 @@ export default function OptionsPage() {
               </thead>
               <tbody>
                 {loading ? (
-                  Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} />)
+                  Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} colCount={colCount} />)
                 ) : (
                   (() => {
                     const byStrike = [...enrichedPuts].sort((a, b) => a.strike - b.strike);
@@ -430,12 +549,6 @@ export default function OptionsPage() {
                             {put.impliedVolatility != null ? put.impliedVolatility.toFixed(1) + '%' : '—'}
                           </td>
                           <td className="px-3 py-1.5 text-right font-mono" style={{ color: 'var(--text-secondary)' }}>
-                            {formatNumber(put.volume)}
-                          </td>
-                          <td className="px-3 py-1.5 text-right font-mono" style={{ color: 'var(--text-secondary)' }}>
-                            {formatNumber(put.openInterest)}
-                          </td>
-                          <td className="px-3 py-1.5 text-right font-mono" style={{ color: 'var(--text-secondary)' }}>
                             {put.nomYieldBid != null ? formatYield(put.nomYieldBid) : '—'}
                           </td>
                           <td className="px-3 py-1.5 text-right font-mono font-medium" style={{ color: put.annYieldBid != null ? yieldColor(put.annYieldBid) : 'var(--text-dim)' }}>
@@ -453,6 +566,16 @@ export default function OptionsPage() {
                           <td className="px-3 py-1.5 text-right font-mono font-medium" style={{ color: put.annYieldLast != null ? yieldColor(put.annYieldLast) : 'var(--text-dim)' }}>
                             {put.annYieldLast != null ? formatYield(put.annYieldLast) : '—'}
                           </td>
+                          {showVolOI && (
+                            <>
+                              <td className="px-3 py-1.5 text-right font-mono" style={{ color: 'var(--text-secondary)' }}>
+                                {formatNumber(put.volume)}
+                              </td>
+                              <td className="px-3 py-1.5 text-right font-mono" style={{ color: 'var(--text-secondary)' }}>
+                                {formatNumber(put.openInterest)}
+                              </td>
+                            </>
+                          )}
                         </tr>
                       );
                     });
