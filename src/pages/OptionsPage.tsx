@@ -170,12 +170,9 @@ export default function OptionsPage() {
     setLoading(true);
     setError(null);
     try {
-      const [opts, ext] = await Promise.all([
-        fetchOptions(ticker, expDate),
-        fetchExtendedPrice(ticker),
-      ]);
+      // Only fetch options — preserve existing price state (Opt 5)
+      const opts = await fetchOptions(ticker, expDate);
       setOptionsData(opts);
-      setExtendedPrice(ext);
       setLastUpdated(new Date());
     } catch (err: any) {
       setError(err.message || 'Failed to load expiration data');

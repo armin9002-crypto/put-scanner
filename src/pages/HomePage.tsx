@@ -227,6 +227,13 @@ export default function HomePage() {
           </div>
         )}
 
+        {pricesLoading && (
+          <div className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+            <Loader2 className="w-3 h-3 inline animate-spin mr-1" />
+            Loading prices...
+          </div>
+        )}
+
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {filtered.map(etf => (
             <ETFCard

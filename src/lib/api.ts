@@ -1,78 +1,88 @@
-import type { PriceData, OptionsChainData, ExpirationDate, OptionContract } from './types';
-import { getBatchPriceCache, setBatchPriceCache, getSparklineCache, setSparklineCache } from './cache';
+import type { OptionsChainData, ExpirationDate, OptionContract } from './types';
+import { threeLayerCache, BATCH_PRICE_KEY, BATCH_PRICE_MEM_TTL, BATCH_PRICE_LS_TTL, SPARKLINE_MEM_TTL, SPARKLINE_LS_TTL, OPTIONS_MEM_TTL, OPTIONS_LS_TTL, EXTENDED_PRICE_MEM_TTL, EXTENDED_PRICE_LS_TTL, setBatchPriceCache as writeBatchCache, setSparklineCache as writeSparklineCache, setOptionsCache as writeOptionsCache, setExtendedPriceCache as writeExtendedCache } from './cache';
 import type { BatchPriceData, CachedSparkline } from './cache';
 
 const API_BASE = '/.netlify/functions';
 
 export async function fetchBatchPrices(tickers: string[]): Promise<BatchPriceData> {
-  const cached = getBatchPriceCache();
-  if (cached) return cached;
-
-  const res = await fetch(`${API_BASE}/prices?tickers=${encodeURIComponent(tickers.join(','))}`);
-  if (!res.ok) throw new Error('Failed to fetch batch prices');
-  const data = await res.json();
-  if (data.error) throw new Error(data.error);
-
-  setBatchPriceCache(data);
-  return data;
+  return threeLayerCache<BatchPriceData>(
+    BATCH_PRICE_KEY,
+    BATCH_PRICE_MEM_TTL,
+    BATCH_PRICE_LS_TTL,
+    async () => {
+      const res = await fetch(`${API_BASE}/prices?tickers=${encodeURIComponent(tickers.join(','))}`);
+      if (!res.ok) throw new Error('Failed to fetch batch prices');
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      return data;
+    }
+  );
 }
 
 export async function fetchOptions(ticker: string, date?: number): Promise<OptionsChainData> {
-  let url = `${API_BASE}/options?ticker=${encodeURIComponent(ticker)}`;
-  if (date) url += `&date=${date}`;
+  const cacheKey = `options_${ticker}_${date ?? 'initial'}`;
+  return threeLayerCache<OptionsChainData>(
+    cacheKey,
+    OPTIONS_MEM_TTL,
+    OPTIONS_LS_TTL,
+    async () => {
+      let url = `${API_BASE}/options?ticker=${encodeURIComponent(ticker)}`;
+      if (date) url += `&date=${date}`;
 
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Failed to fetch options for ${ticker}`);
-  const data = await res.json();
-  if (data.error) throw new Error(data.error);
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Failed to fetch options for ${ticker}`);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
 
-  const result = data?.optionChain?.result?.[0];
-  if (!result) throw new Error('No options data available');
+      const result = data?.optionChain?.result?.[0];
+      if (!result) throw new Error('No options data available');
 
-  const currentPrice = result.quote?.regularMarketPrice ?? 0;
-  const expDates: number[] = result.expirationDates || [];
+      const currentPrice = result.quote?.regularMarketPrice ?? 0;
+      const expDates: number[] = result.expirationDates || [];
 
-  const currentYear = new Date().getFullYear();
+      const currentYear = new Date().getFullYear();
 
-  const expirations: ExpirationDate[] = expDates.map((ts: number) => {
-    const dte = Math.max(1, Math.ceil((ts * 1000 - Date.now()) / (1000 * 60 * 60 * 24)));
-    const d = new Date(ts * 1000);
-    const monthDay = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    const label = d.getFullYear() !== currentYear
-      ? `${monthDay} '${String(d.getFullYear() % 100).padStart(2, '0')}`
-      : monthDay;
-    return { date: ts, label, dte };
-  });
+      const expirations: ExpirationDate[] = expDates.map((ts: number) => {
+        const dte = Math.max(1, Math.ceil((ts * 1000 - Date.now()) / (1000 * 60 * 60 * 24)));
+        const d = new Date(ts * 1000);
+        const monthDay = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const label = d.getFullYear() !== currentYear
+          ? `${monthDay} '${String(d.getFullYear() % 100).padStart(2, '0')}`
+          : monthDay;
+        return { date: ts, label, dte };
+      });
 
-  const putsRaw = result.options?.[0]?.puts || [];
+      const putsRaw = result.options?.[0]?.puts || [];
 
-  const puts: OptionContract[] = putsRaw
-    .filter((p: any) => p.strike != null)
-    .map((p: any) => {
-      const yahooDelta = p.greeks?.delta ?? p.delta ?? null;
-      const delta = yahooDelta != null && yahooDelta !== 0
-        ? (yahooDelta > 0 ? -yahooDelta : yahooDelta)
-        : null;
+      const puts: OptionContract[] = putsRaw
+        .filter((p: any) => p.strike != null)
+        .map((p: any) => {
+          const yahooDelta = p.greeks?.delta ?? p.delta ?? null;
+          const delta = yahooDelta != null && yahooDelta !== 0
+            ? (yahooDelta > 0 ? -yahooDelta : yahooDelta)
+            : null;
 
-      let iv: number | null = null;
-      const rawIv = p.impliedVolatility;
-      if (rawIv != null && rawIv !== 0) {
-        iv = rawIv > 5 ? rawIv : rawIv * 100;
-      }
+          let iv: number | null = null;
+          const rawIv = p.impliedVolatility;
+          if (rawIv != null && rawIv !== 0) {
+            iv = rawIv > 5 ? rawIv : rawIv * 100;
+          }
 
-      return {
-        strike: p.strike,
-        last: p.lastPrice ?? null,
-        bid: p.bid ?? null,
-        ask: p.ask ?? null,
-        delta,
-        impliedVolatility: iv,
-        volume: p.volume ?? null,
-        openInterest: p.openInterest ?? null,
-      };
-    });
+          return {
+            strike: p.strike,
+            last: p.lastPrice ?? null,
+            bid: p.bid ?? null,
+            ask: p.ask ?? null,
+            delta,
+            impliedVolatility: iv,
+            volume: p.volume ?? null,
+            openInterest: p.openInterest ?? null,
+          };
+        });
 
-  return { expirations, puts, currentPrice };
+      return { expirations, puts, currentPrice };
+    }
+  );
 }
 
 function normalCDF(x: number): number {
@@ -127,37 +137,25 @@ export interface SparklineData {
 }
 
 export async function fetchSparkline(ticker: string): Promise<SparklineData> {
-  const cached = getSparklineCache(ticker);
-  if (cached) {
-    return {
-      price: cached.price,
-      change: cached.change,
-      changePercent: cached.changePercent,
-      sparkline: cached.sparkline,
-      cachedAt: cached.cachedAt,
-    };
-  }
+  const cacheKey = `sparkline_${ticker}`;
+  return threeLayerCache<SparklineData>(
+    cacheKey,
+    SPARKLINE_MEM_TTL,
+    SPARKLINE_LS_TTL,
+    async () => {
+      const res = await fetch(`${API_BASE}/price?ticker=${encodeURIComponent(ticker)}&range=1d&interval=1m`);
+      if (!res.ok) throw new Error(`Failed to fetch sparkline for ${ticker}`);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
 
-  const res = await fetch(`${API_BASE}/price?ticker=${encodeURIComponent(ticker)}&range=1d&interval=1m`);
-  if (!res.ok) throw new Error(`Failed to fetch sparkline for ${ticker}`);
-  const data = await res.json();
-  if (data.error) throw new Error(data.error);
-
-  const result: SparklineData = {
-    price: data.price,
-    change: data.change,
-    changePercent: data.changePct,
-    sparkline: data.sparkline || [],
-  };
-
-  setSparklineCache(ticker, {
-    price: result.price,
-    change: result.change,
-    changePercent: result.changePercent,
-    sparkline: result.sparkline,
-  });
-
-  return result;
+      return {
+        price: data.price,
+        change: data.change,
+        changePercent: data.changePct,
+        sparkline: data.sparkline || [],
+      };
+    }
+  );
 }
 
 export interface ExtendedPriceData {
@@ -172,18 +170,51 @@ export interface ExtendedPriceData {
 }
 
 export async function fetchExtendedPrice(ticker: string): Promise<ExtendedPriceData> {
-  const res = await fetch(`${API_BASE}/price?ticker=${encodeURIComponent(ticker)}&extended=true`);
-  if (!res.ok) throw new Error(`Failed to fetch extended price for ${ticker}`);
-  const data = await res.json();
-  if (data.error) throw new Error(data.error);
-  return {
-    price: data.price,
-    change: data.change,
-    changePercent: data.changePct,
-    fiveDay: data.fiveDay ?? null,
-    oneMonth: data.oneMonth ?? null,
-    threeMonth: data.threeMonth ?? null,
-    fiftyTwoWeekHighPct: data.fiftyTwoWeekHighPct ?? null,
-    sparkline: data.sparkline || [],
-  };
+  const cacheKey = `extended_price_${ticker}`;
+  return threeLayerCache<ExtendedPriceData>(
+    cacheKey,
+    EXTENDED_PRICE_MEM_TTL,
+    EXTENDED_PRICE_LS_TTL,
+    async () => {
+      const res = await fetch(`${API_BASE}/price?ticker=${encodeURIComponent(ticker)}&extended=true`);
+      if (!res.ok) throw new Error(`Failed to fetch extended price for ${ticker}`);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      return {
+        price: data.price,
+        change: data.change,
+        changePercent: data.changePct,
+        fiveDay: data.fiveDay ?? null,
+        oneMonth: data.oneMonth ?? null,
+        threeMonth: data.threeMonth ?? null,
+        fiftyTwoWeekHighPct: data.fiftyTwoWeekHighPct ?? null,
+        sparkline: data.sparkline || [],
+      };
+    }
+  );
+}
+
+// Concurrency-limited fetch for screener (Opt 4)
+export async function fetchWithConcurrencyLimit<T>(
+  tasks: (() => Promise<T>)[],
+  limit = 5
+): Promise<PromiseSettledResult<T>[]> {
+  const results: Promise<T>[] = [];
+  const executing: Promise<void>[] = [];
+
+  for (const task of tasks) {
+    const p = task();
+    results.push(p);
+    const e: Promise<void> = p.then(() => {
+      executing.splice(executing.indexOf(e), 1);
+    }).catch(() => {
+      executing.splice(executing.indexOf(e), 1);
+    });
+    executing.push(e);
+    if (executing.length >= limit) {
+      await Promise.race(executing);
+    }
+  }
+
+  return Promise.allSettled(results);
 }

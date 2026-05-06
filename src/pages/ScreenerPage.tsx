@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ETF_LIST } from '../lib/etfs';
 import type { ETFInfo, OptionsChainData } from '../lib/types';
-import { fetchOptions, fetchSparkline, calculatePutDelta, formatPrice, formatNumber } from '../lib/api';
+import { fetchOptions, fetchSparkline, fetchWithConcurrencyLimit, calculatePutDelta, formatPrice, formatNumber } from '../lib/api';
 import type { SparklineData } from '../lib/api';
 import { getExpirationsCache, setExpirationsCache } from '../lib/cache';
 import SparklineChart from '../components/SparklineChart';
@@ -175,17 +175,6 @@ function matchVol(vol: number | null, filter: string): boolean {
   return vol > threshold;
 }
 
-async function concurrentFetch(tasks: (() => Promise<void>)[], concurrency: number): Promise<void> {
-  let i = 0;
-  const run = async (): Promise<void> => {
-    while (i < tasks.length) {
-      const idx = i++;
-      await tasks[idx]();
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(concurrency, tasks.length) }, () => run()));
-}
-
 function deltaColor(d: number): string {
   const abs = Math.abs(d);
   if (abs >= 0.7) return '#dc2626';
@@ -255,11 +244,11 @@ function vixLabel(vix: number): { text: string; color: string } {
 export default function ScreenerPage() {
   const navigate = useNavigate();
 
-  // Filters
+  // Filters — default expiry to ≤30 DTE (Opt 3)
   const [selectedETFs, setSelectedETFs] = useState<ETFInfo[]>([]);
   const [etfSearch, setEtfSearch] = useState('');
   const [showEtfDropdown, setShowEtfDropdown] = useState(false);
-  const [expFilter, setExpFilter] = useState('all');
+  const [expFilter, setExpFilter] = useState('lte_30dte');
   const [availableExps, setAvailableExps] = useState<{ date: number; label: string; dte: number }[]>([]);
   const [datesLoaded, setDatesLoaded] = useState(false);
   const [loadingDates, setLoadingDates] = useState(false);
@@ -284,11 +273,11 @@ export default function ScreenerPage() {
   const [sortField, setSortField] = useState<ScreenerSortField>('annYieldBid');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
 
-  // Cache for raw options data (Opt 6 — client-side re-filtering)
+  // Cache for raw options data (client-side re-filtering)
   const cacheRef = useRef<Map<string, OptionsChainData>>(new Map());
   const rawRowsRef = useRef<ScreenerRow[]>([]);
 
-  // VIX data — manual refresh only (Opt 3)
+  // VIX data — manual refresh only
   const [vixData, setVixData] = useState<SparklineData | null>(null);
   const [vixLoading, setVixLoading] = useState(true);
   const [lastVixUpdate, setLastVixUpdate] = useState<Date | null>(null);
@@ -308,7 +297,7 @@ export default function ScreenerPage() {
   const vixLineColor = vixData ? vixColor(vixData.price) : 'var(--yellow)';
   const vixStatus = vixData ? vixLabel(vixData.price) : { text: '', color: '' };
 
-  // Auto-fetch available expiration dates on mount (with localStorage cache, Opt 6)
+  // Auto-fetch available expiration dates on mount (with memory + localStorage cache)
   const PREFETCH_ETFS = ['TQQQ', 'LABU', 'SSO', 'SOXL', 'UPRO', 'TNA', 'FAS'];
 
   useEffect(() => {
@@ -322,25 +311,24 @@ export default function ScreenerPage() {
     let cancelled = false;
     (async () => {
       setLoadingDates(true);
-      const allExps = new Map<number, { date: number; label: string; dte: number }>();
-      const results = await Promise.allSettled(
-        PREFETCH_ETFS.map(async ticker => {
-          try {
-            const cacheKey = `${ticker}:initial`;
-            let data: OptionsChainData;
-            if (cacheRef.current.has(cacheKey)) {
-              data = cacheRef.current.get(cacheKey)!;
-            } else {
-              data = await fetchOptions(ticker);
-              cacheRef.current.set(cacheKey, data);
-            }
-            return data;
-          } catch {
-            return null;
+      const tasks = PREFETCH_ETFS.map(ticker => async () => {
+        try {
+          const cacheKey = `${ticker}:initial`;
+          if (cacheRef.current.has(cacheKey)) {
+            return cacheRef.current.get(cacheKey)!;
           }
-        })
-      );
+          const data = await fetchOptions(ticker);
+          cacheRef.current.set(cacheKey, data);
+          return data;
+        } catch {
+          return null;
+        }
+      });
+
+      const results = await fetchWithConcurrencyLimit(tasks, 5);
       if (cancelled) return;
+
+      const allExps = new Map<number, { date: number; label: string; dte: number }>();
       for (const result of results) {
         if (result.status !== 'fulfilled' || !result.value) continue;
         const data = result.value;
@@ -423,11 +411,11 @@ export default function ScreenerPage() {
     }
   };
 
-  // Clear filters
+  // Clear filters — reset to lte_30dte default
   const clearFilters = () => {
     setSelectedETFs([]);
     setEtfSearch('');
-    setExpFilter('all');
+    setExpFilter('lte_30dte');
     setDeltaFilter('all');
     setMoneynessFilter('all');
     setYieldFilter('all');
@@ -436,17 +424,21 @@ export default function ScreenerPage() {
   };
 
   // Determine which expirations to include based on filter
+  // Hard limit: max 2 expiry dates (Opt 3)
   const getExpsToFetch = useCallback((allExps: { date: number; dte: number }[]) => {
-    if (expFilter === 'all') return allExps;
-    if (expFilter === 'lte_30dte') return allExps.filter(e => e.dte <= 30);
+    if (expFilter === 'all') return allExps.slice(0, 2); // hard limit
+    if (expFilter === 'lte_30dte') {
+      const shortDated = allExps.filter(e => e.dte <= 30);
+      return shortDated.slice(0, 2); // max 2 short-dated
+    }
     if (expFilter.startsWith('date_')) {
       const targetDate = parseInt(expFilter.replace('date_', ''));
       return allExps.filter(e => e.date === targetDate);
     }
-    return allExps;
+    return allExps.slice(0, 2);
   }, [expFilter]);
 
-  // Client-side re-filtering (Opt 6) — when filters change but data is already loaded
+  // Client-side re-filtering — when filters change but data is already loaded
   useEffect(() => {
     if (!loaded || rawRowsRef.current.length === 0) return;
     const filtered = rawRowsRef.current.filter(row => {
@@ -462,13 +454,12 @@ export default function ScreenerPage() {
 
   // Load data
   const handleLoad = useCallback(async () => {
-    // If no ETFs selected, show confirmation (Opt 6)
     if (selectedETFs.length === 0) {
       setShowConfirm(true);
       return;
     }
     await executeLoad(selectedETFs);
-  }, [selectedETFs, expFilter, deltaFilter, moneynessFilter, yieldFilter, oiFilter, volFilter]);
+  }, [selectedETFs]);
 
   const executeLoad = useCallback(async (etfsToScan: ETFInfo[]) => {
     setShowConfirm(false);
@@ -476,7 +467,7 @@ export default function ScreenerPage() {
     setSlowWarning(false);
     setRows([]);
 
-    // Phase 1: Fetch initial data for each ETF
+    // Phase 1: Fetch initial data for each ETF with concurrency limit (Opt 4)
     const initialResults = new Map<string, OptionsChainData>();
     const tasks1 = etfsToScan.map(etf => async () => {
       try {
@@ -498,7 +489,7 @@ export default function ScreenerPage() {
       if (Date.now() - startTime > 30000) setSlowWarning(true);
     }, 1000);
 
-    await concurrentFetch(tasks1, 5);
+    await fetchWithConcurrencyLimit(tasks1, 5);
 
     // Collect all unique expirations
     const allExps = new Map<number, { date: number; label: string; dte: number }>();
@@ -514,7 +505,7 @@ export default function ScreenerPage() {
     setDatesLoaded(true);
     setExpirationsCache(sortedExps);
 
-    // Phase 2: Determine which expirations to fetch based on filter
+    // Phase 2: Determine which expirations to fetch based on filter (max 2)
     const expsToFetch = getExpsToFetch(sortedExps);
 
     const fetchTasks: (() => Promise<void>)[] = [];
@@ -540,7 +531,7 @@ export default function ScreenerPage() {
 
     setProgress({ current: initialResults.size, total: totalFetches });
     if (fetchTasks.length > 0) {
-      await concurrentFetch(fetchTasks, 5);
+      await fetchWithConcurrencyLimit(fetchTasks, 5);
     }
 
     clearInterval(slowCheck);
@@ -602,10 +593,8 @@ export default function ScreenerPage() {
       }
     }
 
-    // Store raw rows for client-side re-filtering
     rawRowsRef.current = allRows;
 
-    // Apply current filters
     const filtered = allRows.filter(row => {
       if (!matchDeltaAbs(row.delta, deltaFilter)) return false;
       if (!matchMoneyness(row.moneynessPct, moneynessFilter)) return false;
@@ -698,6 +687,8 @@ export default function ScreenerPage() {
 
   const columns = showVolOI ? [...baseColumns, ...volOIColumns] : baseColumns;
 
+  const progressPct = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
+
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
       <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
@@ -745,7 +736,7 @@ export default function ScreenerPage() {
               </div>
             </div>
 
-            {/* Expiration - single-select dropdown */}
+            {/* Expiration - single-select dropdown (max 2 expiries enforced by getExpsToFetch) */}
             <div>
               <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>
                 Expiration
@@ -757,7 +748,7 @@ export default function ScreenerPage() {
                 className="rounded-lg px-2 py-1.5 text-xs outline-none cursor-pointer"
                 style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
               >
-                {loadingDates && !datesLoaded && <option value="all">Loading dates...</option>}
+                {loadingDates && !datesLoaded && <option value="lte_30dte">Loading dates...</option>}
                 {expDropdownOptions.map(o => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
@@ -828,11 +819,11 @@ export default function ScreenerPage() {
               <button
                 onClick={handleLoad}
                 disabled={loading}
-                className="px-4 py-1.5 text-white text-xs font-medium rounded-lg disabled:opacity-50 transition-all flex items-center gap-1.5"
+                className="px-4 py-1.5 text-white text-xs font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-1.5"
                 style={{ backgroundColor: 'var(--accent)' }}
               >
                 {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
-                {loading ? `Loading ${progress.current}/${progress.total}...` : 'Load'}
+                {loading ? `Scanning... (${progress.current} of ${progress.total})` : 'Load'}
               </button>
               <button
                 onClick={clearFilters}
@@ -880,6 +871,21 @@ export default function ScreenerPage() {
             </div>
           </div>
 
+          {/* Progress bar (Opt 6) */}
+          {loading && progress.total > 0 && (
+            <div className="mt-3">
+              <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--border)' }}>
+                <div
+                  className="h-full rounded-full transition-all duration-300"
+                  style={{ width: `${progressPct}%`, backgroundColor: 'var(--accent)' }}
+                />
+              </div>
+              <div className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                {progressPct}% complete
+              </div>
+            </div>
+          )}
+
           {slowWarning && (
             <div className="flex items-center gap-2 mt-3 text-xs" style={{ color: 'var(--yellow)' }}>
               <AlertTriangle className="w-3.5 h-3.5" />
@@ -888,7 +894,7 @@ export default function ScreenerPage() {
           )}
         </div>
 
-        {/* Confirmation dialog (Opt 6) */}
+        {/* Confirmation dialog */}
         {showConfirm && (
           <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
             <div className="rounded-xl p-6 max-w-sm mx-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
@@ -1045,3 +1051,6 @@ export default function ScreenerPage() {
     </div>
   );
 }
+
+
+export default ScreenerPage
