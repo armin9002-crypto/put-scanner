@@ -112,7 +112,7 @@
 body {
   background-color: var(--bg);
   color: var(--text);
-  font-family: system-ui, -apple-system, 'Inter', sans-serif;
+  font-family: 'Arial Narrow', 'Barlow Condensed', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

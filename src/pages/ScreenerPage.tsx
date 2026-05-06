@@ -1051,6 +1051,3 @@ export default function ScreenerPage() {
     </div>
   );
 }
-
-
-export default ScreenerPage

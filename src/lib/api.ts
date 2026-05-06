@@ -1,6 +1,7 @@
 import type { OptionsChainData, ExpirationDate, OptionContract } from './types';
-import { threeLayerCache, BATCH_PRICE_KEY, BATCH_PRICE_MEM_TTL, BATCH_PRICE_LS_TTL, SPARKLINE_MEM_TTL, SPARKLINE_LS_TTL, OPTIONS_MEM_TTL, OPTIONS_LS_TTL, EXTENDED_PRICE_MEM_TTL, EXTENDED_PRICE_LS_TTL, setBatchPriceCache as writeBatchCache, setSparklineCache as writeSparklineCache, setOptionsCache as writeOptionsCache, setExtendedPriceCache as writeExtendedCache } from './cache';
-import type { BatchPriceData, CachedSparkline } from './cache';
+import { threeLayerCache, BATCH_PRICE_KEY, BATCH_PRICE_MEM_TTL, BATCH_PRICE_LS_TTL, SPARKLINE_MEM_TTL, SPARKLINE_LS_TTL, OPTIONS_MEM_TTL, OPTIONS_LS_TTL, EXTENDED_PRICE_MEM_TTL, EXTENDED_PRICE_LS_TTL } from './cache';
+import type { BatchPriceData } from './cache';
+import { isValidBatchPriceData } from './memoryCache';
 
 const API_BASE = '/.netlify/functions';
 
@@ -15,7 +16,8 @@ export async function fetchBatchPrices(tickers: string[]): Promise<BatchPriceDat
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       return data;
-    }
+    },
+    isValidBatchPriceData
   );
 }
 
