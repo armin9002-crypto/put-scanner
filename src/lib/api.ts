@@ -11,11 +11,19 @@ export async function fetchBatchPrices(tickers: string[]): Promise<BatchPriceDat
     BATCH_PRICE_MEM_TTL,
     BATCH_PRICE_LS_TTL,
     async () => {
-      const res = await fetch(`${API_BASE}/prices?tickers=${encodeURIComponent(tickers.join(','))}`);
-      if (!res.ok) throw new Error('Failed to fetch batch prices');
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      return data;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      try {
+        const res = await fetch(`${API_BASE}/prices?tickers=${encodeURIComponent(tickers.join(','))}`, {
+          signal: controller.signal,
+        });
+        if (!res.ok) throw new Error('Failed to fetch batch prices');
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        return data;
+      } finally {
+        clearTimeout(timeout);
+      }
     },
     isValidBatchPriceData
   );
@@ -194,6 +202,24 @@ export async function fetchExtendedPrice(ticker: string): Promise<ExtendedPriceD
       };
     }
   );
+}
+
+export interface IVRankData {
+  currentIV: number | null;
+  ivRank: number | null;
+  ivPercentile: number | null;
+}
+
+export async function fetchIVRank(ticker: string): Promise<IVRankData> {
+  const res = await fetch(`${API_BASE}/ivrank?ticker=${encodeURIComponent(ticker)}`);
+  if (!res.ok) throw new Error(`Failed to fetch IV Rank for ${ticker}`);
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  return {
+    currentIV: data.currentIV ?? null,
+    ivRank: data.ivRank ?? null,
+    ivPercentile: data.ivPercentile ?? null,
+  };
 }
 
 // Concurrency-limited fetch for screener (Opt 4)

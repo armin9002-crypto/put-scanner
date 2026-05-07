@@ -1,7 +1,6 @@
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
 import { ShieldCheck, ScanLine, BarChart3, Moon, Sun, BookOpen } from 'lucide-react';
 import { ThemeProvider, useTheme } from './lib/theme';
-import type { Theme } from './lib/theme';
 import HomePage from './pages/HomePage';
 import OptionsPage from './pages/OptionsPage';
 import ScreenerPage from './pages/ScreenerPage';
@@ -28,19 +27,19 @@ function ThemeToggle() {
 function NavBar() {
   return (
     <nav className="sticky top-0 z-50" style={{ backgroundColor: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center h-11">
-        <div className="flex items-center gap-2 mr-6">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 flex items-center h-11">
+        <div className="flex items-center gap-2 mr-3 sm:mr-6">
           <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'var(--accent-bg)' }}>
             <ShieldCheck className="w-4 h-4" style={{ color: 'var(--accent)' }} />
           </div>
-          <span className="text-sm font-bold tracking-tight" style={{ color: 'var(--text)' }}>Put Premium</span>
+          <span className="text-sm font-bold tracking-tight hidden sm:inline" style={{ color: 'var(--text)' }}>Put Premium</span>
         </div>
         <div className="flex items-center gap-1">
           <NavLink
             to="/"
             end
-            className={({ isActive }) =>
-              `flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all`
+            className={() =>
+              `flex items-center gap-1.5 px-3 py-2 sm:py-1.5 rounded-lg text-xs font-medium transition-all min-h-[44px] sm:min-h-0`
             }
             style={({ isActive }) => ({
               backgroundColor: isActive ? 'var(--accent-bg)' : 'transparent',
@@ -48,12 +47,12 @@ function NavBar() {
             })}
           >
             <ScanLine className="w-3.5 h-3.5" />
-            Scanner
+            <span className="sm:inline">Scanner</span>
           </NavLink>
           <NavLink
             to="/screener"
-            className={({ isActive }) =>
-              `flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all`
+            className={() =>
+              `flex items-center gap-1.5 px-3 py-2 sm:py-1.5 rounded-lg text-xs font-medium transition-all min-h-[44px] sm:min-h-0`
             }
             style={({ isActive }) => ({
               backgroundColor: isActive ? 'var(--accent-bg)' : 'transparent',
@@ -61,7 +60,7 @@ function NavBar() {
             })}
           >
             <BarChart3 className="w-3.5 h-3.5" />
-            Screener
+            <span className="sm:inline">Screener</span>
           </NavLink>
         </div>
         <div className="ml-auto">

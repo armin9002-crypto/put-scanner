@@ -1,9 +1,9 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ETF_LIST } from '../lib/etfs';
-import type { ETFInfo } from '../lib/types';
 import { fetchBatchPrices, fetchSparkline } from '../lib/api';
-import type { SparklineData, BatchPriceData } from '../lib/api';
+import type { SparklineData } from '../lib/api';
+import type { BatchPriceData } from '../lib/cache';
 import ETFCard from '../components/ETFCard';
 import SparklineChart from '../components/SparklineChart';
 import { Search, ShieldCheck, Loader2, RefreshCw } from 'lucide-react';
@@ -114,21 +114,21 @@ export default function HomePage() {
             placeholder="Filter by ticker or underlying index..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-11 pr-4 py-3 rounded-xl text-sm outline-none transition-all"
+            className="w-full pl-11 pr-4 py-3.5 sm:py-3 rounded-xl text-sm outline-none transition-all"
             style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}
           />
         </div>
 
-        <div className="flex flex-wrap items-start gap-4 mb-6">
+        <div className="flex flex-col lg:flex-row lg:flex-wrap lg:items-start gap-4 mb-6">
           {/* Filters */}
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3">
             <span className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Leverage</span>
             <div className="flex gap-1.5">
               {LEVERAGE_OPTIONS.map(opt => (
                 <button
                   key={opt}
                   onClick={() => setLeverageFilter(opt)}
-                  className="px-3 py-1 rounded-lg text-sm font-medium transition-all"
+                  className="px-3 py-1.5 sm:py-1 rounded-lg text-sm font-medium transition-all min-h-[44px] sm:min-h-0"
                   style={{
                     backgroundColor: leverageFilter === opt ? 'var(--accent)' : 'var(--surface)',
                     color: leverageFilter === opt ? 'white' : 'var(--text-muted)',
@@ -140,13 +140,13 @@ export default function HomePage() {
               ))}
             </div>
 
-            <span className="text-xs font-medium uppercase tracking-wider ml-2" style={{ color: 'var(--text-muted)' }}>Type</span>
+            <span className="text-xs font-medium uppercase tracking-wider sm:ml-2" style={{ color: 'var(--text-muted)' }}>Type</span>
             <div className="flex gap-1.5">
               {TYPE_OPTIONS.map(opt => (
                 <button
                   key={opt}
                   onClick={() => setTypeFilter(opt)}
-                  className="px-3 py-1 rounded-lg text-sm font-medium transition-all"
+                  className="px-3 py-1.5 sm:py-1 rounded-lg text-sm font-medium transition-all min-h-[44px] sm:min-h-0"
                   style={{
                     backgroundColor: typeFilter === opt ? 'var(--accent)' : 'var(--surface)',
                     color: typeFilter === opt ? 'white' : 'var(--text-muted)',
@@ -159,8 +159,8 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Market Charts Widget */}
-          <div className="flex items-start gap-4 ml-auto">
+          {/* Market Charts Widget - hidden on mobile, visible on lg+ */}
+          <div className="hidden lg:flex items-start gap-4 lg:ml-auto">
             {/* QQQ Chart */}
             <div className="rounded-lg p-2" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
               <div className="flex items-center justify-between mb-1">
@@ -234,7 +234,7 @@ export default function HomePage() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 sm:gap-3">
           {filtered.map(etf => (
             <ETFCard
               key={etf.ticker}

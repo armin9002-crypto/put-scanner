@@ -4,11 +4,24 @@ import { TrendingUp, TrendingDown } from 'lucide-react';
 interface ETFCardProps {
   etf: ETFInfo;
   onClick: () => void;
-  priceData?: { price: number; change: number; changePct: number } | null;
+  priceData?: { price: number; change: number; changePct: number; fiftyTwoWeekHigh: number | null; fiftyTwoWeekLow: number | null } | null;
 }
 
 function Skeleton({ w = 14 }: { w?: number }) {
   return <div className="h-3.5 rounded animate-pulse" style={{ backgroundColor: 'var(--border)', width: w }} />;
+}
+
+function fiftyTwoWeekPosition(price: number, high: number, low: number): number {
+  if (high <= low) return 50;
+  return ((price - low) / (high - low)) * 100;
+}
+
+function fiftyTwoWeekPosColor(price: number, high: number, low: number): string {
+  const pos = fiftyTwoWeekPosition(price, high, low);
+  if (pos >= 80) return 'var(--green)';
+  if (pos >= 50) return 'var(--yellow)';
+  if (pos >= 20) return 'var(--orange)';
+  return 'var(--red)';
 }
 
 export default function ETFCard({ etf, onClick, priceData }: ETFCardProps) {
@@ -45,6 +58,25 @@ export default function ETFCard({ etf, onClick, priceData }: ETFCardProps) {
               <span>{changePositive ? '+$' : '-$'}{Math.abs(priceData.change).toFixed(2)}</span>
               <span>({changePositive ? '+' : '-'}{Math.abs(priceData.changePct).toFixed(2)}%)</span>
             </div>
+            {priceData.fiftyTwoWeekHigh != null && priceData.fiftyTwoWeekLow != null && priceData.fiftyTwoWeekHigh > priceData.fiftyTwoWeekLow && (
+              <div className="mt-1.5">
+                <div className="flex items-center justify-between text-[9px] mb-0.5">
+                  <span style={{ color: 'var(--text-dim)' }}>52W Position</span>
+                  <span className="font-mono font-semibold" style={{ color: fiftyTwoWeekPosColor(priceData.price, priceData.fiftyTwoWeekHigh, priceData.fiftyTwoWeekLow) }}>
+                    {fiftyTwoWeekPosition(priceData.price, priceData.fiftyTwoWeekHigh, priceData.fiftyTwoWeekLow).toFixed(0)}%
+                  </span>
+                </div>
+                <div className="h-1 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--border)' }}>
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{
+                      width: `${Math.max(2, Math.min(100, fiftyTwoWeekPosition(priceData.price, priceData.fiftyTwoWeekHigh, priceData.fiftyTwoWeekLow)))}%`,
+                      backgroundColor: fiftyTwoWeekPosColor(priceData.price, priceData.fiftyTwoWeekHigh, priceData.fiftyTwoWeekLow),
+                    }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div>

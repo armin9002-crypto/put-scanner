@@ -1,4 +1,4 @@
-import { getMemCache, setMemCache, clearMemCache, isValidBatchPriceData } from './memoryCache';
+import { getMemCache, setMemCache, clearMemCache } from './memoryCache';
 
 const TEN_MIN = 10 * 60 * 1000;
 const FIFTEEN_MIN = 15 * 60 * 1000;
@@ -88,7 +88,7 @@ export function threeLayerCache<T>(
 
 // Batch prices: memory 10 min, localStorage 15 min
 export interface BatchPriceData {
-  [ticker: string]: { price: number; change: number; changePct: number };
+  [ticker: string]: { price: number; change: number; changePct: number; fiftyTwoWeekHigh: number | null; fiftyTwoWeekLow: number | null };
 }
 
 export const BATCH_PRICE_KEY = 'price_cache_batch';

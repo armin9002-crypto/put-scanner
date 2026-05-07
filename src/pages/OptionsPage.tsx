@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import type { OptionsChainData, SortField, SortDirection } from '../lib/types';
 import { ETF_LIST } from '../lib/etfs';
-import { fetchOptions, fetchExtendedPrice, calculatePutDelta, formatPrice, formatYield, yieldColor, formatNumber } from '../lib/api';
-import type { ExtendedPriceData } from '../lib/api';
+import { fetchOptions, fetchExtendedPrice, calculatePutDelta, formatPrice, formatYield, yieldColor, formatNumber, fetchIVRank } from '../lib/api';
+import type { ExtendedPriceData, IVRankData } from '../lib/api';
 import SparklineChart from '../components/SparklineChart';
 import {
   ArrowLeft, RefreshCw, TrendingUp, TrendingDown, AlertCircle,
@@ -116,6 +116,13 @@ function ivColor(iv: number | null): string {
   return 'var(--red)';
 }
 
+function ivRankColor(rank: number): string {
+  if (rank >= 70) return 'var(--red)';
+  if (rank >= 50) return 'var(--orange)';
+  if (rank >= 30) return 'var(--yellow)';
+  return 'var(--green)';
+}
+
 export default function OptionsPage() {
   const { ticker } = useParams<{ ticker: string }>();
   const navigate = useNavigate();
@@ -130,6 +137,7 @@ export default function OptionsPage() {
   const [sortField, setSortField] = useState<SortField>('strike');
   const [sortDir, setSortDir] = useState<SortDirection>('asc');
   const [showVolOI, setShowVolOI] = useState(false);
+  const [ivRankData, setIvRankData] = useState<IVRankData | null>(null);
 
   // Ref guard to prevent duplicate fetches
   const fetchKeyRef = useRef<string>('');
@@ -149,6 +157,8 @@ export default function OptionsPage() {
       ]);
       setOptionsData(opts);
       setExtendedPrice(ext);
+      // Lazy-load IV Rank (non-blocking)
+      fetchIVRank(ticker).then(setIvRankData).catch(() => {});
       if (!expDate && opts.expirations.length > 0) {
         setSelectedExp(opts.expirations[0].date);
       }
@@ -249,33 +259,6 @@ export default function OptionsPage() {
     });
   }, [optionsData, selectedExp, currentPrice]);
 
-  const sortedPuts = useMemo(() => {
-    const sorted = [...enrichedPuts];
-    sorted.sort((a, b) => {
-      let aVal: number, bVal: number;
-      switch (sortField) {
-        case 'strike': aVal = a.strike; bVal = b.strike; break;
-        case 'last': aVal = a.last ?? -1; bVal = b.last ?? -1; break;
-        case 'bid': aVal = a.bid ?? -1; bVal = b.bid ?? -1; break;
-        case 'ask': aVal = a.ask ?? -1; bVal = b.ask ?? -1; break;
-        case 'delta': aVal = a.delta; bVal = b.delta; break;
-        case 'otmItm': aVal = a.otmItmPct ?? -1; bVal = b.otmItmPct ?? -1; break;
-        case 'iv': aVal = a.impliedVolatility ?? -1; bVal = b.impliedVolatility ?? -1; break;
-        case 'volume': aVal = a.volume ?? -1; bVal = b.volume ?? -1; break;
-        case 'openInterest': aVal = a.openInterest ?? -1; bVal = b.openInterest ?? -1; break;
-        case 'nomYieldBid': aVal = a.nomYieldBid ?? -1; bVal = b.nomYieldBid ?? -1; break;
-        case 'annYieldBid': aVal = a.annYieldBid ?? -1; bVal = b.annYieldBid ?? -1; break;
-        case 'nomYieldAsk': aVal = a.nomYieldAsk ?? -1; bVal = b.nomYieldAsk ?? -1; break;
-        case 'annYieldAsk': aVal = a.annYieldAsk ?? -1; bVal = b.annYieldAsk ?? -1; break;
-        case 'nomYieldLast': aVal = a.nomYieldLast ?? -1; bVal = b.nomYieldLast ?? -1; break;
-        case 'annYieldLast': aVal = a.annYieldLast ?? -1; bVal = b.annYieldLast ?? -1; break;
-        default: aVal = a.strike; bVal = b.strike;
-      }
-      return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
-    });
-    return sorted;
-  }, [enrichedPuts, sortField, sortDir]);
-
   function handleSort(field: SortField) {
     if (sortField === field) {
       setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -307,25 +290,25 @@ export default function OptionsPage() {
   }
 
   // Column definitions
-  const baseColumns: { field: SortField; label: string; align: string }[] = [
+  const baseColumns: { field: SortField; label: string; align: string; hideOnMobile?: boolean; hideOnTablet?: boolean }[] = [
     { field: 'strike', label: 'Strike', align: 'text-left' },
-    { field: 'last', label: 'Last', align: 'text-right' },
+    { field: 'last', label: 'Last', align: 'text-right', hideOnMobile: true },
     { field: 'bid', label: 'Bid', align: 'text-right' },
     { field: 'ask', label: 'Ask', align: 'text-right' },
     { field: 'delta', label: 'Delta', align: 'text-right' },
-    { field: 'otmItm', label: '% OTM / % ITM', align: 'text-right' },
-    { field: 'iv', label: 'IV', align: 'text-right' },
-    { field: 'nomYieldBid', label: 'Nom. Yield (Bid)', align: 'text-right' },
+    { field: 'otmItm', label: '% OTM / % ITM', align: 'text-right', hideOnMobile: true },
+    { field: 'iv', label: 'IV', align: 'text-right', hideOnMobile: true },
+    { field: 'nomYieldBid', label: 'Nom. Yield (Bid)', align: 'text-right', hideOnMobile: true, hideOnTablet: true },
     { field: 'annYieldBid', label: 'Ann. Yield (Bid)', align: 'text-right' },
-    { field: 'nomYieldAsk', label: 'Nom. Yield (Ask)', align: 'text-right' },
-    { field: 'annYieldAsk', label: 'Ann. Yield (Ask)', align: 'text-right' },
-    { field: 'nomYieldLast', label: 'Nom. Yield (Last)', align: 'text-right' },
-    { field: 'annYieldLast', label: 'Ann. Yield (Last)', align: 'text-right' },
+    { field: 'nomYieldAsk', label: 'Nom. Yield (Ask)', align: 'text-right', hideOnMobile: true, hideOnTablet: true },
+    { field: 'annYieldAsk', label: 'Ann. Yield (Ask)', align: 'text-right', hideOnMobile: true },
+    { field: 'nomYieldLast', label: 'Nom. Yield (Last)', align: 'text-right', hideOnMobile: true, hideOnTablet: true },
+    { field: 'annYieldLast', label: 'Ann. Yield (Last)', align: 'text-right', hideOnMobile: true, hideOnTablet: true },
   ];
 
-  const volOIColumns: { field: SortField; label: string; align: string }[] = [
-    { field: 'volume', label: 'Volume', align: 'text-right' },
-    { field: 'openInterest', label: 'Open Interest', align: 'text-right' },
+  const volOIColumns: { field: SortField; label: string; align: string; hideOnMobile?: boolean; hideOnTablet?: boolean }[] = [
+    { field: 'volume', label: 'Volume', align: 'text-right', hideOnMobile: true },
+    { field: 'openInterest', label: 'Open Interest', align: 'text-right', hideOnMobile: true },
   ];
 
   const columns = showVolOI ? [...baseColumns, ...volOIColumns] : baseColumns;
@@ -350,28 +333,28 @@ export default function OptionsPage() {
     <div className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
       <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Header */}
-        <div className="flex items-center gap-4 mb-6">
+        <div className="flex items-center gap-3 sm:gap-4 mb-4 sm:mb-6">
           <button
             onClick={() => navigate('/')}
-            className="p-2 rounded-lg transition-all"
+            className="p-2 rounded-lg transition-all min-h-[44px] min-w-[44px] flex items-center justify-center"
             style={{ color: 'var(--text-muted)' }}
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <div className="flex-1">
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold font-mono" style={{ color: 'var(--text)' }}>{etf.ticker}</h1>
-              <span className="text-sm" style={{ color: 'var(--text-muted)' }}>{etf.name}</span>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <h1 className="text-xl sm:text-2xl font-bold font-mono" style={{ color: 'var(--text)' }}>{etf.ticker}</h1>
+              <span className="text-xs sm:text-sm truncate" style={{ color: 'var(--text-muted)' }}>{etf.name}</span>
             </div>
           </div>
         </div>
 
         {/* Price bar */}
-        <div className="rounded-xl p-5 mb-6" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-          <div className="flex flex-wrap items-center gap-6">
+        <div className="rounded-xl p-3 sm:p-5 mb-4 sm:mb-6" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3 sm:gap-6">
             {/* Price + change */}
             <div className="flex-shrink-0">
-              <span className="text-3xl font-bold font-mono" style={{ color: 'var(--text)' }}>
+              <span className="text-2xl sm:text-3xl font-bold font-mono" style={{ color: 'var(--text)' }}>
                 ${currentPrice > 0 ? currentPrice.toFixed(2) : '—'}
               </span>
               {extendedPrice && (
@@ -396,8 +379,8 @@ export default function OptionsPage() {
               )}
             </div>
 
-            {/* Performance metrics */}
-            <div className="flex-shrink-0 min-w-[140px]">
+            {/* Performance metrics - hidden on mobile */}
+            <div className="hidden sm:block flex-shrink-0 min-w-[140px]">
               {loading && !extendedPrice ? (
                 <PerfSkeleton />
               ) : extendedPrice ? (
@@ -417,9 +400,25 @@ export default function OptionsPage() {
               )}
             </div>
 
+            {/* IV Rank Badge */}
+            {ivRankData && ivRankData.ivRank != null && (
+              <div className="flex-shrink-0">
+                <div
+                  className="px-3 py-1.5 rounded-lg text-center"
+                  style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}
+                  title={`IV Rank: ${ivRankData.ivRank.toFixed(1)}% | IV Percentile: ${ivRankData.ivPercentile?.toFixed(1) ?? '—'}% | Current IV: ${ivRankData.currentIV?.toFixed(1) ?? '—'}%`}
+                >
+                  <div className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>IV Rank</div>
+                  <div className="text-sm font-mono font-bold" style={{ color: ivRankColor(ivRankData.ivRank) }}>
+                    {ivRankData.ivRank.toFixed(0)}%
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Right side: last updated + refresh + vol/OI toggle */}
-            <div className="ml-auto flex items-center gap-3 text-xs" style={{ color: 'var(--text-muted)' }}>
-              <label className="flex items-center gap-1.5 text-xs cursor-pointer" style={{ color: 'var(--text-muted)' }}>
+            <div className="flex items-center gap-2 sm:gap-3 text-xs sm:ml-auto" style={{ color: 'var(--text-muted)' }}>
+              <label className="flex items-center gap-1.5 text-xs cursor-pointer min-h-[44px] sm:min-h-0" style={{ color: 'var(--text-muted)' }}>
                 <input
                   type="checkbox"
                   checked={showVolOI}
@@ -429,7 +428,7 @@ export default function OptionsPage() {
                 Show Volume / OI
               </label>
               {lastUpdated && (
-                <span>Last updated: {lastUpdated.toLocaleTimeString()}</span>
+                <span className="hidden sm:inline">Last updated: {lastUpdated.toLocaleTimeString()}</span>
               )}
               <button
                 onClick={() => {
@@ -438,11 +437,11 @@ export default function OptionsPage() {
                   else loadData();
                 }}
                 disabled={loading}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg disabled:opacity-50 transition-all"
+                className="flex items-center gap-1.5 px-3 py-2.5 sm:py-2 rounded-lg disabled:opacity-50 transition-all min-h-[44px] sm:min-h-0"
                 style={{ backgroundColor: 'var(--border)', color: 'var(--text)' }}
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-                Refresh
+                <span className="sm:inline">Refresh</span>
               </button>
             </div>
           </div>
@@ -450,12 +449,12 @@ export default function OptionsPage() {
 
         {/* Expiration selector */}
         {optionsData && optionsData.expirations.length > 0 && (
-          <div className="flex flex-wrap gap-2 mb-6">
+          <div className="flex gap-2 mb-4 sm:mb-6 overflow-x-auto pb-1 -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap">
             {optionsData.expirations.map(exp => (
               <button
                 key={exp.date}
                 onClick={() => loadExpiration(exp.date)}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                className="px-3 py-2 sm:py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap flex-shrink-0 min-h-[44px] sm:min-h-0"
                 style={{
                   backgroundColor: selectedExp === exp.date ? 'var(--accent)' : 'var(--surface)',
                   color: selectedExp === exp.date ? 'white' : 'var(--text-muted)',
@@ -489,7 +488,7 @@ export default function OptionsPage() {
                       onClick={() => handleSort(col.field)}
                       className={`px-3 py-1.5 text-xs uppercase tracking-wider font-medium cursor-pointer transition-colors select-none whitespace-nowrap ${col.align} ${
                         col.field === 'strike' ? 'sticky left-0 z-[3] border-r' : ''
-                      }`}
+                      } ${col.hideOnMobile ? 'hidden md:table-cell' : ''} ${col.hideOnTablet ? 'hidden lg:table-cell' : ''}`}
                       style={{
                         color: 'var(--text-muted)',
                         backgroundColor: col.field === 'strike' ? 'var(--surface-alt)' : undefined,
@@ -554,34 +553,34 @@ export default function OptionsPage() {
                               )}
                             </div>
                           </td>
-                          <td className="px-3 py-1.5 text-right font-mono" style={{ color: 'var(--text)' }}>{formatPrice(put.last)}</td>
+                          <td className="px-3 py-1.5 text-right font-mono hidden md:table-cell" style={{ color: 'var(--text)' }}>{formatPrice(put.last)}</td>
                           <td className="px-3 py-1.5 text-right font-mono" style={{ color: 'var(--text)' }}>{formatPrice(put.bid)}</td>
                           <td className="px-3 py-1.5 text-right font-mono" style={{ color: 'var(--text)' }}>{formatPrice(put.ask)}</td>
                           <td className="px-3 py-1.5 text-right font-mono" style={{ color: deltaColor(put.delta) }}>
                             {put.delta.toFixed(2)}
                           </td>
-                          <td className="px-3 py-1.5 text-right font-mono text-xs" style={{ color: put.otmItmColor }}>
+                          <td className="px-3 py-1.5 text-right font-mono text-xs hidden md:table-cell" style={{ color: put.otmItmColor }}>
                             {put.otmItmLabel || '—'}
                           </td>
-                          <td className="px-3 py-1.5 text-right font-mono" style={{ color: ivColor(put.impliedVolatility) }}>
+                          <td className="px-3 py-1.5 text-right font-mono hidden md:table-cell" style={{ color: ivColor(put.impliedVolatility) }}>
                             {put.impliedVolatility != null ? put.impliedVolatility.toFixed(1) + '%' : '—'}
                           </td>
-                          <td className="px-3 py-1.5 text-right font-mono" style={{ color: 'var(--text-secondary)' }}>
+                          <td className="px-3 py-1.5 text-right font-mono hidden lg:table-cell" style={{ color: 'var(--text-secondary)' }}>
                             {put.nomYieldBid != null ? formatYield(put.nomYieldBid) : '—'}
                           </td>
                           <td className="px-3 py-1.5 text-right font-mono font-medium" style={{ color: put.annYieldBid != null ? yieldColor(put.annYieldBid) : 'var(--text-dim)' }}>
                             {put.annYieldBid != null ? formatYield(put.annYieldBid) : '—'}
                           </td>
-                          <td className="px-3 py-1.5 text-right font-mono" style={{ color: 'var(--text-secondary)' }}>
+                          <td className="px-3 py-1.5 text-right font-mono hidden lg:table-cell" style={{ color: 'var(--text-secondary)' }}>
                             {put.nomYieldAsk != null ? formatYield(put.nomYieldAsk) : '—'}
                           </td>
-                          <td className="px-3 py-1.5 text-right font-mono font-medium" style={{ color: put.annYieldAsk != null ? yieldColor(put.annYieldAsk) : 'var(--text-dim)' }}>
+                          <td className="px-3 py-1.5 text-right font-mono font-medium hidden md:table-cell" style={{ color: put.annYieldAsk != null ? yieldColor(put.annYieldAsk) : 'var(--text-dim)' }}>
                             {put.annYieldAsk != null ? formatYield(put.annYieldAsk) : '—'}
                           </td>
-                          <td className="px-3 py-1.5 text-right font-mono" style={{ color: 'var(--text-secondary)' }}>
+                          <td className="px-3 py-1.5 text-right font-mono hidden lg:table-cell" style={{ color: 'var(--text-secondary)' }}>
                             {put.nomYieldLast != null ? formatYield(put.nomYieldLast) : '—'}
                           </td>
-                          <td className="px-3 py-1.5 text-right font-mono font-medium" style={{ color: put.annYieldLast != null ? yieldColor(put.annYieldLast) : 'var(--text-dim)' }}>
+                          <td className="px-3 py-1.5 text-right font-mono font-medium hidden lg:table-cell" style={{ color: put.annYieldLast != null ? yieldColor(put.annYieldLast) : 'var(--text-dim)' }}>
                             {put.annYieldLast != null ? formatYield(put.annYieldLast) : '—'}
                           </td>
                           {showVolOI && (
