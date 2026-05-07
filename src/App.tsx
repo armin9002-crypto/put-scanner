@@ -1,9 +1,10 @@
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
-import { ShieldCheck, ScanLine, BarChart3, Moon, Sun, BookOpen } from 'lucide-react';
+import { ShieldCheck, ScanLine, BarChart3, Moon, Sun, BookOpen, Star } from 'lucide-react';
 import { ThemeProvider, useTheme } from './lib/theme';
 import HomePage from './pages/HomePage';
 import OptionsPage from './pages/OptionsPage';
 import ScreenerPage from './pages/ScreenerPage';
+import WatchlistPage from './pages/WatchlistPage';
 
 function ThemeToggle() {
   const { theme, cycleTheme } = useTheme();
@@ -62,6 +63,19 @@ function NavBar() {
             <BarChart3 className="w-3.5 h-3.5" />
             <span className="sm:inline">Screener</span>
           </NavLink>
+          <NavLink
+            to="/watchlist"
+            className={() =>
+              `flex items-center gap-1.5 px-3 py-2 sm:py-1.5 rounded-lg text-xs font-medium transition-all min-h-[44px] sm:min-h-0`
+            }
+            style={({ isActive }) => ({
+              backgroundColor: isActive ? 'var(--accent-bg)' : 'transparent',
+              color: isActive ? 'var(--accent-light)' : 'var(--text-muted)',
+            })}
+          >
+            <Star className="w-3.5 h-3.5" />
+            <span className="sm:inline">Watchlist</span>
+          </NavLink>
         </div>
         <div className="ml-auto">
           <ThemeToggle />
@@ -78,6 +92,7 @@ function AppContent() {
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/screener" element={<ScreenerPage />} />
+        <Route path="/watchlist" element={<WatchlistPage />} />
         <Route path="/options/:ticker" element={<OptionsPage />} />
       </Routes>
     </BrowserRouter>

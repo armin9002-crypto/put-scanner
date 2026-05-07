@@ -88,7 +88,7 @@ export function threeLayerCache<T>(
 
 // Batch prices: memory 10 min, localStorage 15 min
 export interface BatchPriceData {
-  [ticker: string]: { price: number; change: number; changePct: number; fiftyTwoWeekHigh: number | null; fiftyTwoWeekLow: number | null };
+  [ticker: string]: { price: number; change: number; changePct: number; high52w: number | null; low52w: number | null };
 }
 
 export const BATCH_PRICE_KEY = 'price_cache_batch';

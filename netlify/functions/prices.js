@@ -23,8 +23,8 @@ exports.handler = async function(event, context) {
         price: item.regularMarketPrice ?? 0,
         change: item.regularMarketChange ?? 0,
         changePct: item.regularMarketChangePercent ?? 0,
-        fiftyTwoWeekHigh: item.fiftyTwoWeekHigh ?? null,
-        fiftyTwoWeekLow: item.fiftyTwoWeekLow ?? null,
+        high52w: item.fiftyTwoWeekHigh ?? null,
+        low52w: item.fiftyTwoWeekLow ?? null,
       };
     }
 

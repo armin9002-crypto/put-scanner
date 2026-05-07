@@ -4,10 +4,12 @@ import type { OptionsChainData, SortField, SortDirection } from '../lib/types';
 import { ETF_LIST } from '../lib/etfs';
 import { fetchOptions, fetchExtendedPrice, calculatePutDelta, formatPrice, formatYield, yieldColor, formatNumber, fetchIVRank } from '../lib/api';
 import type { ExtendedPriceData, IVRankData } from '../lib/api';
+import { addToWatchlist, removeFromWatchlist, isInWatchlist, makeWatchlistId } from '../lib/watchlist';
+import type { WatchlistItem } from '../lib/watchlist';
 import SparklineChart from '../components/SparklineChart';
 import {
   ArrowLeft, RefreshCw, TrendingUp, TrendingDown, AlertCircle,
-  ChevronUp, ChevronDown
+  ChevronUp, ChevronDown, Star
 } from 'lucide-react';
 
 interface EnrichedPut {
@@ -138,6 +140,7 @@ export default function OptionsPage() {
   const [sortDir, setSortDir] = useState<SortDirection>('asc');
   const [showVolOI, setShowVolOI] = useState(false);
   const [ivRankData, setIvRankData] = useState<IVRankData | null>(null);
+  const [watchlistIds, setWatchlistIds] = useState<Set<string>>(new Set());
 
   // Ref guard to prevent duplicate fetches
   const fetchKeyRef = useRef<string>('');
@@ -195,6 +198,48 @@ export default function OptionsPage() {
     fetchKeyRef.current = '';
     loadData();
   }, [ticker]);
+
+  // Refresh watchlist state when selectedExp changes
+  useEffect(() => {
+    if (!ticker || !selectedExp) return;
+    const ids = new Set<string>();
+    const exp = optionsData?.expirations.find(e => e.date === selectedExp);
+    if (exp) {
+      const d = new Date(exp.date * 1000);
+      const expiry = d.toISOString().split('T')[0];
+      optionsData?.puts.forEach(p => {
+        const id = makeWatchlistId(ticker, expiry, p.strike);
+        if (isInWatchlist(id)) ids.add(id);
+      });
+    }
+    setWatchlistIds(ids);
+  }, [ticker, selectedExp, optionsData]);
+
+  const toggleWatchlist = useCallback((put: { strike: number }) => {
+    if (!ticker || !selectedExp) return;
+    const exp = optionsData?.expirations.find(e => e.date === selectedExp);
+    if (!exp) return;
+    const d = new Date(exp.date * 1000);
+    const expiry = d.toISOString().split('T')[0];
+    const id = makeWatchlistId(ticker, expiry, put.strike);
+
+    if (isInWatchlist(id)) {
+      removeFromWatchlist(id);
+      setWatchlistIds(prev => { const next = new Set(prev); next.delete(id); return next; });
+    } else {
+      const item: WatchlistItem = {
+        id,
+        ticker,
+        expiry,
+        expiryFormatted: exp.label,
+        strike: put.strike,
+        addedAt: Date.now(),
+        note: '',
+      };
+      addToWatchlist(item);
+      setWatchlistIds(prev => new Set(prev).add(id));
+    }
+  }, [ticker, selectedExp, optionsData]);
 
   // Extract price from options response (Opt 5) — prefer extended price, fall back to options data
   const currentPrice = extendedPrice?.price ?? optionsData?.currentPrice ?? 0;
@@ -482,6 +527,7 @@ export default function OptionsPage() {
             <table className="w-full text-sm">
               <thead className="sticky top-0 z-10">
                 <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
+                  <th className="px-1 py-1.5 w-8" style={{ color: 'var(--text-muted)' }}></th>
                   {columns.map(col => (
                     <th
                       key={col.field}
@@ -516,7 +562,7 @@ export default function OptionsPage() {
                       if (!dividerInserted && put.strike >= currentPrice && idx > 0) {
                         rows.push(
                           <tr key="divider">
-                            <td colSpan={colCount} className="px-0 py-0">
+                            <td colSpan={colCount + 1} className="px-0 py-0">
                               <div className="relative py-1 px-4" style={{ backgroundColor: 'var(--accent-bg)', borderTop: '1px solid var(--accent-border)', borderBottom: '1px solid var(--accent-border)' }}>
                                 <span className="text-xs font-medium" style={{ color: 'var(--accent)' }}>
                                   Current Price: ${currentPrice.toFixed(2)}
@@ -532,6 +578,10 @@ export default function OptionsPage() {
                       const rowIdx = rows.length;
                       const bg = rowBg(put.strike);
                       const altBg = rowIdx % 2 !== 0 ? 'var(--row-alt)' : 'transparent';
+                      const expForId = optionsData?.expirations.find(e => e.date === selectedExp);
+                      const expiryIso = expForId ? new Date(expForId.date * 1000).toISOString().split('T')[0] : '';
+                      const wlId = makeWatchlistId(ticker ?? '', expiryIso, put.strike);
+                      const isWatched = watchlistIds.has(wlId);
 
                       rows.push(
                         <tr
@@ -539,6 +589,18 @@ export default function OptionsPage() {
                           className="transition-colors"
                           style={{ borderBottom: '1px solid var(--border)', backgroundColor: altBg }}
                         >
+                          <td className="px-1 py-1.5 text-center">
+                            <button
+                              onClick={() => toggleWatchlist(put)}
+                              className="transition-opacity hover:opacity-70 min-h-[44px] flex items-center justify-center"
+                              title={isWatched ? 'Remove from watchlist' : 'Add to watchlist'}
+                            >
+                              <Star
+                                className={`w-3.5 h-3.5 ${isWatched ? 'fill-current' : ''}`}
+                                style={{ color: isWatched ? 'var(--accent-light)' : 'var(--text-dim)' }}
+                              />
+                            </button>
+                          </td>
                           <td className="px-3 py-1.5 text-left whitespace-nowrap sticky left-0 z-[2] border-r" style={{ borderColor: 'var(--border)', backgroundColor: bg }}>
                             <div className="flex items-center gap-1.5">
                               <span className="font-mono font-semibold" style={{ color: 'var(--text)' }}>{formatPrice(put.strike)}</span>
