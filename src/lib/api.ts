@@ -12,7 +12,7 @@ export async function fetchBatchPrices(tickers: string[]): Promise<BatchPriceDat
     BATCH_PRICE_LS_TTL,
     async () => {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 8000);
+      const timeout = setTimeout(() => controller.abort(), 10000);
       try {
         const res = await fetch(`${API_BASE}/prices?tickers=${encodeURIComponent(tickers.join(','))}`, {
           signal: controller.signal,

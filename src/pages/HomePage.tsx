@@ -1,15 +1,19 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ETF_LIST } from '../lib/etfs';
 import { fetchBatchPrices, fetchSparkline } from '../lib/api';
 import type { SparklineData } from '../lib/api';
 import type { BatchPriceData } from '../lib/cache';
 import ETFCard from '../components/ETFCard';
 import SparklineChart from '../components/SparklineChart';
-import { Search, ShieldCheck, Loader2, RefreshCw } from 'lucide-react';
+import { Search, ShieldCheck, Loader2, RefreshCw, AlertCircle } from 'lucide-react';
+
+const HARDCODED_TICKERS = 'AGQ,BNKU,BOIL,BULZ,CURE,CWEB,DDM,DFEN,DIG,DPST,ERX,FAS,FNGU,GDXU,GUSH,HIBL,INDL,LABU,MIDU,NAIL,NRGU,NUGT,OILU,PILL,QLD,RETL,ROM,RXL,SOXL,SSO,TECL,TNA,TPOR,TQQQ,UCO,UDOW,UGL,UPRO,UTSL,UWM,UYG,WANT,WEBL,YINN';
 
 const LEVERAGE_OPTIONS = ['All', '2x', '3x'] as const;
 const TYPE_OPTIONS = ['All', 'Broad Index', 'Sector', 'Commodity', 'Country'] as const;
+
+// Import ETF_LIST for filtering only
+import { ETF_LIST } from '../lib/etfs';
 
 function vixColor(vix: number): string {
   if (vix < 15) return 'var(--green)';
@@ -34,6 +38,8 @@ export default function HomePage() {
   // Batch price data
   const [prices, setPrices] = useState<BatchPriceData>({});
   const [pricesLoading, setPricesLoading] = useState(true);
+  const [pricesError, setPricesError] = useState<string | null>(null);
+  const skeletonTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Market sparkline data (manual refresh only)
   const [qqqData, setQqqData] = useState<SparklineData | null>(null);
@@ -41,18 +47,52 @@ export default function HomePage() {
   const [marketLoading, setMarketLoading] = useState(true);
   const [lastMarketUpdate, setLastMarketUpdate] = useState<Date | null>(null);
 
-  // Load batch prices once on mount
+  // Load batch prices with 10-second hard timeout
   const loadPrices = useCallback(async () => {
     setPricesLoading(true);
-    try {
-      const tickers = ETF_LIST.map(e => e.ticker);
-      const data = await fetchBatchPrices(tickers);
-      setPrices(data);
-    } catch { /* ignore */ }
-    setPricesLoading(false);
-  }, []);
+    setPricesError(null);
 
-  useEffect(() => { loadPrices(); }, [loadPrices]);
+    // Max 10 seconds for skeleton loader
+    if (skeletonTimerRef.current) clearTimeout(skeletonTimerRef.current);
+    skeletonTimerRef.current = setTimeout(() => {
+      setPricesLoading(false);
+      if (Object.keys(prices).length === 0) {
+        setPricesError('Price data unavailable');
+      }
+    }, 10000);
+
+    try {
+      const tickers = HARDCODED_TICKERS.split(',');
+      const fetchPromise = fetchBatchPrices(tickers);
+
+      // 10-second hard timeout
+      const timeoutPromise = new Promise<null>((_, reject) =>
+        setTimeout(() => reject(new Error('Request timed out')), 10000)
+      );
+
+      const data = await Promise.race([fetchPromise, timeoutPromise]) as BatchPriceData;
+
+      if (!data || Object.keys(data).length === 0) {
+        setPricesError('Price data unavailable');
+      } else {
+        const validCount = Object.values(data).filter((v: any) => v?.price != null && v.price > 0).length;
+        if (validCount < 10) {
+          setPricesError('Partial data received — some prices unavailable');
+        }
+        setPrices(data);
+      }
+    } catch (err: any) {
+      setPricesError(err.message || 'Price data unavailable');
+    } finally {
+      if (skeletonTimerRef.current) {
+        clearTimeout(skeletonTimerRef.current);
+        skeletonTimerRef.current = null;
+      }
+      setPricesLoading(false);
+    }
+  }, [prices]);
+
+  useEffect(() => { loadPrices(); }, []);
 
   // Load market sparklines (manual refresh only, with cache)
   const loadMarketData = useCallback(async () => {
@@ -91,6 +131,8 @@ export default function HomePage() {
   const qqqLineColor = qqqUp ? 'var(--green)' : 'var(--red)';
   const vixLineColor = vixData ? vixColor(vixData.price) : 'var(--yellow)';
   const vixStatus = vixData ? vixLabel(vixData.price) : { text: '', color: '' };
+
+  const hasPrices = Object.keys(prices).length > 0;
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
@@ -173,7 +215,7 @@ export default function HomePage() {
                 <div className="flex items-center justify-center" style={{ width: 160, height: 60 }}>
                   <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--text-muted)' }} />
                 </div>
-              ) : qqqData ? (
+              ) : qqqData && qqqData.sparkline.length >= 2 ? (
                 <>
                   <SparklineChart data={qqqData.sparkline} color={qqqLineColor} width={160} height={60} />
                   <div className="flex items-center justify-between mt-1">
@@ -186,7 +228,7 @@ export default function HomePage() {
                   </div>
                 </>
               ) : (
-                <div className="flex items-center justify-center text-xs" style={{ width: 160, height: 60, color: 'var(--text-muted)' }}>N/A</div>
+                <div className="flex items-center justify-center text-xs" style={{ width: 160, height: 60, color: 'var(--text-dim)' }}>Market data unavailable</div>
               )}
             </div>
 
@@ -202,7 +244,7 @@ export default function HomePage() {
                 <div className="flex items-center justify-center" style={{ width: 160, height: 60 }}>
                   <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--text-muted)' }} />
                 </div>
-              ) : vixData ? (
+              ) : vixData && vixData.sparkline.length >= 2 ? (
                 <>
                   <SparklineChart data={vixData.sparkline} color={vixLineColor} width={160} height={60} />
                   <div className="flex items-center justify-between mt-1">
@@ -215,7 +257,7 @@ export default function HomePage() {
                   </div>
                 </>
               ) : (
-                <div className="flex items-center justify-center text-xs" style={{ width: 160, height: 60, color: 'var(--text-muted)' }}>N/A</div>
+                <div className="flex items-center justify-center text-xs" style={{ width: 160, height: 60, color: 'var(--text-dim)' }}>Market data unavailable</div>
               )}
             </div>
           </div>
@@ -227,10 +269,26 @@ export default function HomePage() {
           </div>
         )}
 
-        {pricesLoading && (
+        {/* Price loading/error state */}
+        {pricesLoading && !hasPrices && (
           <div className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
             <Loader2 className="w-3 h-3 inline animate-spin mr-1" />
             Loading prices...
+          </div>
+        )}
+
+        {pricesError && !pricesLoading && (
+          <div className="rounded-xl p-4 mb-4 flex items-center gap-3" style={{ backgroundColor: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.15)' }}>
+            <AlertCircle className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--red)' }} />
+            <span className="text-xs" style={{ color: 'var(--red)' }}>{pricesError}</span>
+            <button
+              onClick={loadPrices}
+              className="ml-auto flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg transition-all"
+              style={{ backgroundColor: 'var(--border)', color: 'var(--text)' }}
+            >
+              <RefreshCw className="w-3 h-3" />
+              Retry
+            </button>
           </div>
         )}
 
@@ -241,6 +299,8 @@ export default function HomePage() {
               etf={etf}
               onClick={() => navigate(`/options/${etf.ticker}`)}
               priceData={prices[etf.ticker] ?? null}
+              priceError={!pricesLoading && !!pricesError && !prices[etf.ticker]}
+              onRetry={loadPrices}
             />
           ))}
         </div>

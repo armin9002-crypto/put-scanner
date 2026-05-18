@@ -3,6 +3,7 @@ import { getMemCache, setMemCache, clearMemCache } from './memoryCache';
 const TEN_MIN = 10 * 60 * 1000;
 const FIFTEEN_MIN = 15 * 60 * 1000;
 const THIRTY_MIN = 30 * 60 * 1000;
+const ONE_HOUR = 60 * 60 * 1000;
 const TWO_HOURS = 2 * 60 * 60 * 1000;
 
 function getStorage(): Storage | null {
@@ -86,14 +87,14 @@ export function threeLayerCache<T>(
 
 // --- Specific cache helpers with TTLs ---
 
-// Batch prices: memory 10 min, localStorage 15 min
+// Batch prices: memory 60 min, localStorage 60 min (end-of-day data)
 export interface BatchPriceData {
-  [ticker: string]: { price: number; change: number; changePct: number; high52w: number | null; low52w: number | null };
+  [ticker: string]: { price: number | null; change: number | null; changePct: number | null; high52w: number | null; low52w: number | null };
 }
 
 export const BATCH_PRICE_KEY = 'price_cache_batch';
-export const BATCH_PRICE_MEM_TTL = TEN_MIN;
-export const BATCH_PRICE_LS_TTL = FIFTEEN_MIN;
+export const BATCH_PRICE_MEM_TTL = ONE_HOUR;
+export const BATCH_PRICE_LS_TTL = ONE_HOUR;
 
 // Sparkline: memory 10 min, localStorage 15 min
 export interface CachedSparkline {

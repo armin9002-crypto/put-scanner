@@ -4,7 +4,9 @@ import { TrendingUp, TrendingDown } from 'lucide-react';
 interface ETFCardProps {
   etf: ETFInfo;
   onClick: () => void;
-  priceData?: { price: number; change: number; changePct: number; high52w: number | null; low52w: number | null } | null;
+  priceData?: { price: number | null; change: number | null; changePct: number | null; high52w: number | null; low52w: number | null } | null;
+  priceError?: boolean;
+  onRetry?: () => void;
 }
 
 function Skeleton({ w = 14 }: { w?: number }) {
@@ -32,9 +34,10 @@ function ivEnvStyle(price: number, high: number | null, low: number | null): { b
   return { borderColor: '#475569', bgTint: 'transparent', badge: 'Low IV', badgeColor: '#475569' };
 }
 
-export default function ETFCard({ etf, onClick, priceData }: ETFCardProps) {
-  const changePositive = priceData ? priceData.changePct >= 0 : true;
-  const ivEnv = priceData ? ivEnvStyle(priceData.price, priceData.high52w, priceData.low52w) : null;
+export default function ETFCard({ etf, onClick, priceData, priceError, onRetry }: ETFCardProps) {
+  const hasValidPrice = priceData && priceData.price != null && priceData.price > 0;
+  const changePositive = hasValidPrice ? (priceData!.changePct ?? 0) >= 0 : true;
+  const ivEnv = hasValidPrice ? ivEnvStyle(priceData!.price!, priceData!.high52w, priceData!.low52w) : null;
 
   return (
     <button
@@ -58,34 +61,49 @@ export default function ETFCard({ etf, onClick, priceData }: ETFCardProps) {
       <p className="text-xs mb-2" style={{ color: 'var(--text-dim)' }}>{etf.underlying}</p>
 
       <div className="flex items-end justify-between">
-        {priceData ? (
+        {hasValidPrice ? (
           <div className="flex-1">
             <span className="text-base font-semibold font-mono" style={{ color: 'var(--text)' }}>
-              ${priceData.price.toFixed(2)}
+              ${priceData!.price!.toFixed(2)}
             </span>
-            <div className="flex items-center gap-1 text-xs font-mono mt-0.5" style={{ color: changePositive ? 'var(--green)' : 'var(--red)' }}>
-              {changePositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-              <span>{changePositive ? '+$' : '-$'}{Math.abs(priceData.change).toFixed(2)}</span>
-              <span>({changePositive ? '+' : '-'}{Math.abs(priceData.changePct).toFixed(2)}%)</span>
-            </div>
-            {priceData.high52w != null && priceData.low52w != null && priceData.high52w > priceData.low52w && (
+            {priceData!.change != null && priceData!.changePct != null && (
+              <div className="flex items-center gap-1 text-xs font-mono mt-0.5" style={{ color: changePositive ? 'var(--green)' : 'var(--red)' }}>
+                {changePositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                <span>{changePositive ? '+$' : '-$'}{Math.abs(priceData!.change).toFixed(2)}</span>
+                <span>({changePositive ? '+' : '-'}{Math.abs(priceData!.changePct).toFixed(2)}%)</span>
+              </div>
+            )}
+            {priceData!.high52w != null && priceData!.low52w != null && priceData!.high52w > priceData!.low52w && (
               <div className="mt-1.5">
                 <div className="flex items-center justify-between text-[9px] mb-0.5">
                   <span style={{ color: 'var(--text-dim)' }}>52W Position</span>
-                  <span className="font-mono font-semibold" style={{ color: fiftyTwoWeekPosColor(priceData.price, priceData.high52w, priceData.low52w) }}>
-                    {fiftyTwoWeekPosition(priceData.price, priceData.high52w, priceData.low52w).toFixed(0)}%
+                  <span className="font-mono font-semibold" style={{ color: fiftyTwoWeekPosColor(priceData!.price!, priceData!.high52w, priceData!.low52w) }}>
+                    {fiftyTwoWeekPosition(priceData!.price!, priceData!.high52w, priceData!.low52w).toFixed(0)}%
                   </span>
                 </div>
                 <div className="h-1 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--border)' }}>
                   <div
                     className="h-full rounded-full transition-all"
                     style={{
-                      width: `${Math.max(2, Math.min(100, fiftyTwoWeekPosition(priceData.price, priceData.high52w, priceData.low52w)))}%`,
-                      backgroundColor: fiftyTwoWeekPosColor(priceData.price, priceData.high52w, priceData.low52w),
+                      width: `${Math.max(2, Math.min(100, fiftyTwoWeekPosition(priceData!.price!, priceData!.high52w, priceData!.low52w)))}%`,
+                      backgroundColor: fiftyTwoWeekPosColor(priceData!.price!, priceData!.high52w, priceData!.low52w),
                     }}
                   />
                 </div>
               </div>
+            )}
+          </div>
+        ) : priceError ? (
+          <div>
+            <span className="text-xs" style={{ color: 'var(--text-dim)' }}>Price unavailable</span>
+            {onRetry && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onRetry(); }}
+                className="block text-[10px] mt-0.5 underline"
+                style={{ color: 'var(--accent-light)' }}
+              >
+                Retry
+              </button>
             )}
           </div>
         ) : (
