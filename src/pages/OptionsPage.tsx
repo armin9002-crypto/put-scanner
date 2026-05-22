@@ -125,8 +125,9 @@ function ivRankColor(rank: number): string {
   return 'var(--green)';
 }
 
-const EXPIRY_ROW_TOP = 44;
-const TABLE_HEADER_TOP = 92;
+const PRICE_HEADER_TOP = 56;
+const EXPIRY_ROW_TOP = 144;
+const TABLE_HEADER_TOP = 200;
 
 export default function OptionsPage() {
   const { ticker } = useParams<{ ticker: string }>();
@@ -290,11 +291,11 @@ export default function OptionsPage() {
         } else if (p.strike < currentPrice) {
           otmItmPct = ((currentPrice - p.strike) / currentPrice) * 100;
           otmItmLabel = otmItmPct.toFixed(1) + '% OTM';
-          otmItmColor = 'var(--green)';
+          otmItmColor = 'var(--red)';
         } else {
           otmItmPct = ((p.strike - currentPrice) / currentPrice) * 100;
           otmItmLabel = otmItmPct.toFixed(1) + '% ITM';
-          otmItmColor = 'var(--red)';
+          otmItmColor = 'var(--green)';
         }
       }
 
@@ -373,9 +374,9 @@ export default function OptionsPage() {
 
   function rowBg(strike: number): string {
     const m = getMoneyness(strike);
-    if (m === 'itm') return 'rgba(239,68,68,0.04)';
+    if (m === 'itm') return 'rgba(34,197,94,0.03)';
     if (m === 'atm') return 'rgba(234,179,8,0.06)';
-    return 'rgba(34,197,94,0.03)';
+    return 'rgba(239,68,68,0.04)';
   }
 
   // Column definitions
@@ -442,8 +443,10 @@ export default function OptionsPage() {
         {/* Price bar */}
         <div
           data-layout="price-header"
-          className="rounded-xl p-3 sm:p-5 mb-4 sm:mb-6 bg-[#12121a]"
+          className="sticky-stack rounded-xl p-3 sm:p-5 mb-4 sm:mb-6 bg-[#12121a]"
           style={{
+            top: PRICE_HEADER_TOP,
+            zIndex: 30,
             overflow: 'visible',
             height: 'auto',
             backgroundColor: 'var(--surface)',
@@ -550,10 +553,10 @@ export default function OptionsPage() {
         {optionsData && optionsData.expirations.length > 0 && (
           <div
             data-layout="expiry-row"
-            className="sticky-stack flex gap-2 mb-4 sm:mb-6 overflow-x-auto pb-2 pt-2 -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap bg-[#0a0a0f]"
+            className="sticky-stack flex gap-2 mb-4 sm:mb-6 overflow-x-auto py-2 -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap bg-[#0a0a0f]"
             style={{
               top: EXPIRY_ROW_TOP,
-              zIndex: 30,
+              zIndex: 20,
               backgroundColor: 'var(--bg)',
               boxShadow: '0 1px 0 var(--border)',
             }}
@@ -588,13 +591,20 @@ export default function OptionsPage() {
         <div className="rounded-xl" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
           <div className="overflow-x-auto xl:overflow-x-visible">
             <table className="w-full table-fixed text-xs">
-              <thead>
+              <thead
+                className="sticky-stack"
+                style={{
+                  top: TABLE_HEADER_TOP,
+                  zIndex: 10,
+                  backgroundColor: 'var(--surface-alt)',
+                }}
+              >
                 <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
                   <th
                     className="sticky-stack px-2 py-1.5 w-6 text-[11px]"
                     style={{
                       top: TABLE_HEADER_TOP,
-                      zIndex: 20,
+                      zIndex: 10,
                       color: 'var(--text-muted)',
                       backgroundColor: 'var(--surface-alt)',
                     }}
@@ -609,7 +619,7 @@ export default function OptionsPage() {
                       } ${col.hideOnMobile ? 'hidden md:table-cell' : ''} ${col.hideOnTablet ? 'hidden lg:table-cell' : ''}`}
                       style={{
                         top: TABLE_HEADER_TOP,
-                        zIndex: col.field === 'strike' ? 22 : 20,
+                        zIndex: col.field === 'strike' ? 12 : 10,
                         color: 'var(--text-muted)',
                         backgroundColor: 'var(--surface-alt)',
                         borderColor: 'var(--border)',
@@ -679,10 +689,10 @@ export default function OptionsPage() {
                             <div className="flex items-center gap-1.5">
                               <span className="font-mono font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{formatPrice(put.strike)}</span>
                               {moneyness === 'itm' && (
-                                <span className="text-[9px] font-bold px-1 py-0.5 rounded" style={{ backgroundColor: 'rgba(239,68,68,0.15)', color: 'var(--red)', border: '1px solid rgba(239,68,68,0.2)' }}>ITM</span>
+                                <span className="text-[9px] font-bold px-1 py-0.5 rounded" style={{ backgroundColor: 'rgba(34,197,94,0.15)', color: 'var(--green)', border: '1px solid rgba(34,197,94,0.2)' }}>ITM</span>
                               )}
                               {moneyness === 'otm' && (
-                                <span className="text-[9px] font-bold px-1 py-0.5 rounded" style={{ backgroundColor: 'rgba(34,197,94,0.15)', color: 'var(--green)', border: '1px solid rgba(34,197,94,0.2)' }}>OTM</span>
+                                <span className="text-[9px] font-bold px-1 py-0.5 rounded" style={{ backgroundColor: 'rgba(239,68,68,0.15)', color: 'var(--red)', border: '1px solid rgba(239,68,68,0.2)' }}>OTM</span>
                               )}
                               {moneyness === 'atm' && (
                                 <span className="text-[9px] font-bold px-1 py-0.5 rounded" style={{ backgroundColor: 'rgba(234,179,8,0.15)', color: 'var(--yellow)', border: '1px solid rgba(234,179,8,0.2)' }}>ATM</span>

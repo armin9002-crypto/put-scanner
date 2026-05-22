@@ -31,8 +31,8 @@ function computeMoneyness(currentPrice: number, strike: number): { pct: number; 
   const pct = ((currentPrice - strike) / currentPrice) * 100;
   const absPct = Math.abs(pct);
   if (absPct < 0.5) return { pct, label: 'ATM', color: 'var(--yellow)' };
-  if (pct > 0) return { pct, label: `${absPct.toFixed(1)}% OTM`, color: 'var(--green)' };
-  return { pct, label: `${absPct.toFixed(1)}% ITM`, color: 'var(--red)' };
+  if (pct > 0) return { pct, label: `${absPct.toFixed(1)}% OTM`, color: 'var(--red)' };
+  return { pct, label: `${absPct.toFixed(1)}% ITM`, color: 'var(--green)' };
 }
 
 function calcDte(expiry: string): number {
