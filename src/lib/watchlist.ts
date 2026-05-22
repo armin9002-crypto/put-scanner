@@ -63,10 +63,12 @@ export function updateWatchlistNote(id: string, note: string): WatchlistItem[] {
 }
 
 export function clearExpiredItems(): WatchlistItem[] {
-  const now = Date.now();
+  const now = new Date();
+  const todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   const items = getWatchlist().filter(i => {
-    const expDate = new Date(i.expiry + 'T23:59:59').getTime();
-    return expDate > now;
+    const [year, month, day] = i.expiry.split('-').map(Number);
+    const expiryUTC = Date.UTC(year, month - 1, day);
+    return expiryUTC >= todayUTC;
   });
   saveWatchlist(items);
   return items;

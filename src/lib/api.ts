@@ -5,6 +5,30 @@ import { clearMemCache, isValidBatchPriceData } from './memoryCache';
 
 const API_BASE = '/api';
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function calculateDTE(expirationTimestamp: number): number {
+  const now = new Date();
+  const todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const expiryDate = new Date(expirationTimestamp * 1000);
+  const expiryUTC = Date.UTC(
+    expiryDate.getUTCFullYear(),
+    expiryDate.getUTCMonth(),
+    expiryDate.getUTCDate()
+  );
+  const dte = Math.round((expiryUTC - todayUTC) / (1000 * 60 * 60 * 24));
+  return Math.max(0, dte);
+}
+
+function formatExpirationLabel(timestamp: number, currentUtcYear: number): string {
+  const d = new Date(timestamp * 1000);
+  const monthDay = `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`;
+  const year = d.getUTCFullYear();
+  return year !== currentUtcYear
+    ? `${monthDay} '${String(year % 100).padStart(2, '0')}`
+    : monthDay;
+}
+
 export async function fetchBatchPrices(tickers: string[]): Promise<BatchPriceData> {
   return threeLayerCache<BatchPriceData>(
     BATCH_PRICE_KEY,
@@ -35,7 +59,7 @@ export function clearBatchPriceCache(): void {
 }
 
 export async function fetchOptions(ticker: string, date?: number): Promise<OptionsChainData> {
-  const cacheKey = `options_${ticker}_${date ?? 'initial'}`;
+  const cacheKey = `options_v2_${ticker}_${date ?? 'initial'}`;
   return threeLayerCache<OptionsChainData>(
     cacheKey,
     OPTIONS_MEM_TTL,
@@ -55,15 +79,11 @@ export async function fetchOptions(ticker: string, date?: number): Promise<Optio
       const currentPrice = result.quote?.regularMarketPrice ?? 0;
       const expDates: number[] = result.expirationDates || [];
 
-      const currentYear = new Date().getFullYear();
+      const currentYear = new Date().getUTCFullYear();
 
       const expirations: ExpirationDate[] = expDates.map((ts: number) => {
-        const dte = Math.max(1, Math.ceil((ts * 1000 - Date.now()) / (1000 * 60 * 60 * 24)));
-        const d = new Date(ts * 1000);
-        const monthDay = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        const label = d.getFullYear() !== currentYear
-          ? `${monthDay} '${String(d.getFullYear() % 100).padStart(2, '0')}`
-          : monthDay;
+        const dte = calculateDTE(ts);
+        const label = formatExpirationLabel(ts, currentYear);
         return { date: ts, label, dte };
       });
 

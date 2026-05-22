@@ -36,8 +36,12 @@ function computeMoneyness(currentPrice: number, strike: number): { pct: number; 
 }
 
 function calcDte(expiry: string): number {
-  const expDate = new Date(expiry + 'T23:59:59').getTime();
-  return Math.ceil((expDate - Date.now()) / (1000 * 60 * 60 * 24));
+  const [year, month, day] = expiry.split('-').map(Number);
+  const now = new Date();
+  const todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const expiryUTC = Date.UTC(year, month - 1, day);
+  const dte = Math.round((expiryUTC - todayUTC) / (1000 * 60 * 60 * 24));
+  return Math.max(0, dte);
 }
 
 function annYieldColor(y: number | null): string {

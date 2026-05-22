@@ -123,6 +123,8 @@ const IVRANK_OPTIONS = [
 
 // --- Helpers ---
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
 function matchDeltaAbs(delta: number, filter: string): boolean {
   if (filter === 'all') return true;
   const abs = Math.abs(delta);
@@ -240,17 +242,17 @@ function ivRankColor(rank: number): string {
 
 function formatExpDate(ts: number, dte: number): string {
   const d = new Date(ts * 1000);
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  const yy = String(d.getFullYear() % 100).padStart(2, '0');
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  const yy = String(d.getUTCFullYear() % 100).padStart(2, '0');
   return `${mm}/${dd}/${yy} (${dte})`;
 }
 
 function formatExpDropdownLabel(ts: number, _dte: number): string {
   const d = new Date(ts * 1000);
-  const month = d.toLocaleDateString('en-US', { month: 'short' });
-  const day = d.getDate();
-  const yr = `'${String(d.getFullYear() % 100).padStart(2, '0')}`;
+  const month = MONTHS[d.getUTCMonth()];
+  const day = d.getUTCDate();
+  const yr = `'${String(d.getUTCFullYear() % 100).padStart(2, '0')}`;
   return `${month} ${day}, ${yr}`;
 }
 
@@ -420,9 +422,9 @@ export default function ScreenerPage() {
     for (const exp of availableExps) {
       if (exp.dte > 30) {
         const d = new Date(exp.date * 1000);
-        const month = d.toLocaleDateString('en-US', { month: 'short' });
-        const day = d.getDate();
-        const yr = `'${String(d.getFullYear() % 100).padStart(2, '0')}`;
+        const month = MONTHS[d.getUTCMonth()];
+        const day = d.getUTCDate();
+        const yr = `'${String(d.getUTCFullYear() % 100).padStart(2, '0')}`;
         opts.push({ value: `date_${exp.date}`, label: `${month} ${day}, ${yr} (${exp.dte} DTE)` });
       }
     }

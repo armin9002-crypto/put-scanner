@@ -9,7 +9,7 @@ import type { WatchlistItem } from '../lib/watchlist';
 import SparklineChart from '../components/SparklineChart';
 import {
   ArrowLeft, RefreshCw, TrendingUp, TrendingDown, AlertCircle,
-  ChevronUp, ChevronDown, Star
+  ChevronUp, ChevronDown, ChevronsUpDown, Star
 } from 'lucide-react';
 
 interface EnrichedPut {
@@ -307,17 +307,58 @@ export default function OptionsPage() {
     });
   }, [optionsData, selectedExp, currentPrice]);
 
+  const sortedPuts = useMemo(() => {
+    return [...enrichedPuts].sort((a, b) => {
+      const getValue = (put: EnrichedPut): number | string | null => {
+        switch (sortField) {
+          case 'strike': return put.strike;
+          case 'last': return put.last;
+          case 'bid': return put.bid;
+          case 'ask': return put.ask;
+          case 'delta': return put.delta;
+          case 'otmItm': return put.otmItmPct;
+          case 'iv': return put.impliedVolatility;
+          case 'volume': return put.volume;
+          case 'openInterest': return put.openInterest;
+          case 'volOI': return put.volOI;
+          case 'nomYieldBid': return put.nomYieldBid;
+          case 'annYieldBid': return put.annYieldBid;
+          case 'nomYieldAsk': return put.nomYieldAsk;
+          case 'annYieldAsk': return put.annYieldAsk;
+          case 'nomYieldLast': return put.nomYieldLast;
+          case 'annYieldLast': return put.annYieldLast;
+          default: return put.strike;
+        }
+      };
+
+      const aVal = getValue(a);
+      const bVal = getValue(b);
+      if (aVal == null && bVal == null) return 0;
+      if (aVal == null) return 1;
+      if (bVal == null) return -1;
+
+      const comparison = typeof aVal === 'number' && typeof bVal === 'number'
+        ? aVal - bVal
+        : String(aVal).localeCompare(String(bVal));
+      return sortDir === 'asc' ? comparison : -comparison;
+    });
+  }, [enrichedPuts, sortField, sortDir]);
+
+  function defaultSortDirection(field: SortField): SortDirection {
+    return field.includes('Yield') ? 'desc' : 'asc';
+  }
+
   function handleSort(field: SortField) {
     if (sortField === field) {
       setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     } else {
       setSortField(field);
-      setSortDir('asc');
+      setSortDir(defaultSortDirection(field));
     }
   }
 
   function SortIcon({ field }: { field: SortField }) {
-    if (sortField !== field) return <ChevronUp className="w-3 h-3 opacity-40" style={{ color: 'var(--text-muted)' }} />;
+    if (sortField !== field) return <ChevronsUpDown className="w-3 h-3 opacity-40" style={{ color: 'var(--text-muted)' }} />;
     return sortDir === 'asc'
       ? <ChevronUp className="w-3 h-3" style={{ color: 'var(--accent)' }} />
       : <ChevronDown className="w-3 h-3" style={{ color: 'var(--accent)' }} />;
@@ -587,12 +628,12 @@ export default function OptionsPage() {
                   Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} colCount={colCount + 1} />)
                 ) : (
                   (() => {
-                    const byStrike = [...enrichedPuts].sort((a, b) => a.strike - b.strike);
                     const rows: JSX.Element[] = [];
                     let dividerInserted = false;
+                    const showCurrentPriceDivider = sortField === 'strike' && sortDir === 'asc';
 
-                    byStrike.forEach((put, idx) => {
-                      if (!dividerInserted && put.strike >= currentPrice && idx > 0) {
+                    sortedPuts.forEach((put, idx) => {
+                      if (showCurrentPriceDivider && !dividerInserted && put.strike >= currentPrice && idx > 0) {
                         rows.push(
                           <tr key="divider">
                             <td colSpan={colCount + 1} className="px-0 py-0">
