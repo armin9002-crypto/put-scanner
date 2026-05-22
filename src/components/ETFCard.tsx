@@ -10,7 +10,7 @@ interface ETFCardProps {
     changePct: number | null;
     high52w: number | null;
     low52w: number | null;
-    fiftyTwoWeekChangePct: number | null;
+    fiftyTwoWeekHighPct: number | null;
     posIn52wRange: number | null;
   } | null;
   priceError?: boolean;
@@ -98,9 +98,7 @@ export default function ETFCard({ etf, onClick, priceData, priceError, onRetry }
   const hasValidPrice = priceData && priceData.price != null && priceData.price > 0;
   const changePositive = hasValidPrice ? (priceData!.changePct ?? 0) >= 0 : true;
   const ivEnv = hasValidPrice ? ivEnvStyle(priceData!.price!, priceData!.high52w, priceData!.low52w) : null;
-  const hi52Pct = priceData?.price != null && priceData.high52w != null && priceData.high52w > 0
-    ? ((priceData.price - priceData.high52w) / priceData.high52w) * 100
-    : null;
+  const hi52Pct = priceData?.fiftyTwoWeekHighPct ?? null;
   const pos52w = priceData?.posIn52wRange ?? null;
 
   return (

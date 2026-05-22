@@ -125,12 +125,8 @@ function ivRankColor(rank: number): string {
   return 'var(--green)';
 }
 
-const NAV_HEIGHT = 56;
-const PRICE_HEADER_HEIGHT = 80;
-const EXPIRY_ROW_HEIGHT = 52;
-const PRICE_HEADER_TOP = NAV_HEIGHT;
-const EXPIRY_ROW_TOP = NAV_HEIGHT + PRICE_HEADER_HEIGHT;
-const TABLE_HEADER_TOP = NAV_HEIGHT + PRICE_HEADER_HEIGHT + EXPIRY_ROW_HEIGHT;
+const EXPIRY_ROW_TOP = 44;
+const TABLE_HEADER_TOP = 92;
 
 export default function OptionsPage() {
   const { ticker } = useParams<{ ticker: string }>();
@@ -405,10 +401,8 @@ export default function OptionsPage() {
         {/* Price bar */}
         <div
           data-layout="price-header"
-          className="sticky-stack rounded-xl p-3 sm:p-5 mb-4 sm:mb-6 bg-[#12121a]"
+          className="rounded-xl p-3 sm:p-5 mb-4 sm:mb-6 bg-[#12121a]"
           style={{
-            top: PRICE_HEADER_TOP,
-            zIndex: 30,
             overflow: 'visible',
             height: 'auto',
             backgroundColor: 'var(--surface)',
@@ -518,7 +512,7 @@ export default function OptionsPage() {
             className="sticky-stack flex gap-2 mb-4 sm:mb-6 overflow-x-auto pb-2 pt-2 -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap bg-[#0a0a0f]"
             style={{
               top: EXPIRY_ROW_TOP,
-              zIndex: 20,
+              zIndex: 30,
               backgroundColor: 'var(--bg)',
             }}
           >
@@ -556,8 +550,8 @@ export default function OptionsPage() {
                 className="sticky-stack"
                 style={{
                   top: TABLE_HEADER_TOP,
-                  zIndex: 10,
-                  backgroundColor: 'var(--surface)',
+                  zIndex: 20,
+                  backgroundColor: 'var(--surface-alt)',
                 }}
               >
                 <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>

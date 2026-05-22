@@ -39,7 +39,7 @@ export default async function handler(req, res) {
       const posIn52wRange = price != null && high52w != null && low52w != null && high52w > low52w
         ? ((price - low52w) / (high52w - low52w)) * 100
         : null;
-      const fiftyTwoWeekChangePct = price != null && high52w != null && high52w > 0
+      const fiftyTwoWeekHighPct = price != null && high52w != null && high52w > 0
         ? ((price - high52w) / high52w) * 100
         : null;
 
@@ -49,7 +49,7 @@ export default async function handler(req, res) {
         changePct,
         high52w,
         low52w,
-        fiftyTwoWeekChangePct,
+        fiftyTwoWeekHighPct,
         posIn52wRange,
       };
     }
