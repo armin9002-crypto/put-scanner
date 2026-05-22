@@ -5,7 +5,7 @@ import type { SparklineData } from '../lib/api';
 import type { BatchPriceData } from '../lib/cache';
 import ETFCard from '../components/ETFCard';
 import SparklineChart from '../components/SparklineChart';
-import { Search, ShieldCheck, Loader2, RefreshCw, AlertCircle } from 'lucide-react';
+import { Search, ShieldCheck, Loader2, RefreshCw } from 'lucide-react';
 
 const HARDCODED_TICKERS = 'AGQ,BNKU,BOIL,BULZ,CURE,CWEB,DDM,DFEN,DIG,DPST,ERX,FAS,FNGU,GDXU,GUSH,HIBL,INDL,LABU,MIDU,NAIL,NRGU,NUGT,OILU,PILL,QLD,RETL,ROM,RXL,SOXL,SSO,TECL,TNA,TPOR,TQQQ,UCO,UDOW,UGL,UPRO,UTSL,UWM,UYG,WANT,WEBL,YINN';
 
@@ -131,8 +131,6 @@ export default function HomePage() {
   const qqqLineColor = qqqUp ? 'var(--green)' : 'var(--red)';
   const vixLineColor = vixData ? vixColor(vixData.price) : 'var(--yellow)';
   const vixStatus = vixData ? vixLabel(vixData.price) : { text: '', color: '' };
-
-  const hasPrices = Object.keys(prices).length > 0;
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
@@ -266,29 +264,6 @@ export default function HomePage() {
         {lastMarketUpdate && (
           <div className="text-[10px] mb-4" style={{ color: 'var(--text-dim)' }}>
             Market data updated: {lastMarketUpdate.toLocaleTimeString()}
-          </div>
-        )}
-
-        {/* Price loading/error state */}
-        {pricesLoading && !hasPrices && (
-          <div className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
-            <Loader2 className="w-3 h-3 inline animate-spin mr-1" />
-            Loading prices...
-          </div>
-        )}
-
-        {pricesError && !pricesLoading && (
-          <div className="rounded-xl p-4 mb-4 flex items-center gap-3" style={{ backgroundColor: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.15)' }}>
-            <AlertCircle className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--red)' }} />
-            <span className="text-xs" style={{ color: 'var(--red)' }}>{pricesError}</span>
-            <button
-              onClick={loadPrices}
-              className="ml-auto flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg transition-all"
-              style={{ backgroundColor: 'var(--border)', color: 'var(--text)' }}
-            >
-              <RefreshCw className="w-3 h-3" />
-              Retry
-            </button>
           </div>
         )}
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import type { OptionsChainData, SortField, SortDirection } from '../lib/types';
 import { ETF_LIST } from '../lib/etfs';
@@ -37,7 +37,7 @@ function SkeletonRow({ colCount }: { colCount: number }) {
   return (
     <tr style={{ borderBottom: '1px solid var(--border)' }}>
       {Array.from({ length: colCount }).map((_, i) => (
-        <td key={i} className="px-3 py-1.5">
+        <td key={i} className="px-2 py-1.5">
           <div className="h-3.5 w-16 rounded animate-pulse" style={{ backgroundColor: 'var(--border)' }} />
         </td>
       ))}
@@ -144,6 +144,30 @@ export default function OptionsPage() {
 
   // Ref guard to prevent duplicate fetches
   const fetchKeyRef = useRef<string>('');
+  const priceHeaderRef = useRef<HTMLDivElement | null>(null);
+  const expiryRowRef = useRef<HTMLDivElement | null>(null);
+  const [stickyOffsets, setStickyOffsets] = useState({ priceHeader: 0, expiryRow: 0 });
+
+  useLayoutEffect(() => {
+    const updateStickyOffsets = () => {
+      setStickyOffsets({
+        priceHeader: priceHeaderRef.current?.offsetHeight ?? 0,
+        expiryRow: expiryRowRef.current?.offsetHeight ?? 0,
+      });
+    };
+
+    updateStickyOffsets();
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateStickyOffsets) : null;
+    if (observer) {
+      if (priceHeaderRef.current) observer.observe(priceHeaderRef.current);
+      if (expiryRowRef.current) observer.observe(expiryRowRef.current);
+    }
+    window.addEventListener('resize', updateStickyOffsets);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', updateStickyOffsets);
+    };
+  }, [optionsData, extendedPrice, ivRankData, showVolOI, loading]);
 
   const loadData = useCallback(async (expDate?: number) => {
     if (!ticker) return;
@@ -335,25 +359,26 @@ export default function OptionsPage() {
   }
 
   // Column definitions
-  const baseColumns: { field: SortField; label: string; align: string; hideOnMobile?: boolean; hideOnTablet?: boolean }[] = [
-    { field: 'strike', label: 'Strike', align: 'text-left' },
-    { field: 'last', label: 'Last', align: 'text-right', hideOnMobile: true },
-    { field: 'bid', label: 'Bid', align: 'text-right' },
-    { field: 'ask', label: 'Ask', align: 'text-right' },
-    { field: 'delta', label: 'Delta', align: 'text-right' },
-    { field: 'otmItm', label: '% OTM / % ITM', align: 'text-right', hideOnMobile: true },
-    { field: 'iv', label: 'IV', align: 'text-right', hideOnMobile: true },
-    { field: 'nomYieldBid', label: 'Nom. Yield (Bid)', align: 'text-right', hideOnMobile: true, hideOnTablet: true },
-    { field: 'annYieldBid', label: 'Ann. Yield (Bid)', align: 'text-right' },
-    { field: 'nomYieldAsk', label: 'Nom. Yield (Ask)', align: 'text-right', hideOnMobile: true, hideOnTablet: true },
-    { field: 'annYieldAsk', label: 'Ann. Yield (Ask)', align: 'text-right', hideOnMobile: true },
-    { field: 'nomYieldLast', label: 'Nom. Yield (Last)', align: 'text-right', hideOnMobile: true, hideOnTablet: true },
-    { field: 'annYieldLast', label: 'Ann. Yield (Last)', align: 'text-right', hideOnMobile: true, hideOnTablet: true },
+  const baseColumns: { field: SortField; label: string; fullLabel: string; align: string; widthClass: string; hideOnMobile?: boolean; hideOnTablet?: boolean }[] = [
+    { field: 'strike', label: 'Strike', fullLabel: 'Strike', align: 'text-left', widthClass: 'w-24' },
+    { field: 'last', label: 'Last', fullLabel: 'Last', align: 'text-right', widthClass: 'w-14', hideOnMobile: true },
+    { field: 'bid', label: 'Bid', fullLabel: 'Bid', align: 'text-right', widthClass: 'w-14' },
+    { field: 'ask', label: 'Ask', fullLabel: 'Ask', align: 'text-right', widthClass: 'w-14' },
+    { field: 'delta', label: 'Delta', fullLabel: 'Delta', align: 'text-right', widthClass: 'w-14' },
+    { field: 'otmItm', label: 'Moneyness', fullLabel: '% OTM / % ITM', align: 'text-right', widthClass: 'w-24', hideOnMobile: true },
+    { field: 'iv', label: 'IV', fullLabel: 'IV', align: 'text-right', widthClass: 'w-14', hideOnMobile: true },
+    { field: 'nomYieldBid', label: 'NY Bid', fullLabel: 'Nom. Yield (Bid)', align: 'text-right', widthClass: 'w-20', hideOnMobile: true, hideOnTablet: true },
+    { field: 'annYieldBid', label: 'AY Bid', fullLabel: 'Ann. Yield (Bid)', align: 'text-right', widthClass: 'w-20' },
+    { field: 'nomYieldAsk', label: 'NY Ask', fullLabel: 'Nom. Yield (Ask)', align: 'text-right', widthClass: 'w-20', hideOnMobile: true, hideOnTablet: true },
+    { field: 'annYieldAsk', label: 'AY Ask', fullLabel: 'Ann. Yield (Ask)', align: 'text-right', widthClass: 'w-20', hideOnMobile: true },
+    { field: 'nomYieldLast', label: 'NY Last', fullLabel: 'Nom. Yield (Last)', align: 'text-right', widthClass: 'w-20', hideOnMobile: true, hideOnTablet: true },
+    { field: 'annYieldLast', label: 'AY Last', fullLabel: 'Ann. Yield (Last)', align: 'text-right', widthClass: 'w-20', hideOnMobile: true, hideOnTablet: true },
   ];
 
-  const volOIColumns: { field: SortField; label: string; align: string; hideOnMobile?: boolean; hideOnTablet?: boolean }[] = [
-    { field: 'volume', label: 'Volume', align: 'text-right', hideOnMobile: true },
-    { field: 'openInterest', label: 'Open Interest', align: 'text-right', hideOnMobile: true },
+  const volOIColumns: { field: SortField; label: string; fullLabel: string; align: string; widthClass: string; hideOnMobile?: boolean; hideOnTablet?: boolean }[] = [
+    { field: 'volume', label: 'Volume', fullLabel: 'Volume', align: 'text-right', widthClass: 'w-16', hideOnMobile: true },
+    { field: 'openInterest', label: 'OI', fullLabel: 'Open Interest', align: 'text-right', widthClass: 'w-16', hideOnMobile: true },
+    { field: 'volOI', label: 'Vol/OI', fullLabel: 'Volume / Open Interest', align: 'text-right', widthClass: 'w-14', hideOnMobile: true },
   ];
 
   const columns = showVolOI ? [...baseColumns, ...volOIColumns] : baseColumns;
@@ -395,7 +420,12 @@ export default function OptionsPage() {
         </div>
 
         {/* Price bar */}
-        <div className="rounded-xl p-3 sm:p-5 mb-4 sm:mb-6" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+        <div
+          ref={priceHeaderRef}
+          data-layout="price-header"
+          className="sticky top-0 z-40 rounded-xl p-3 sm:p-5 mb-4 sm:mb-6 bg-[#12121a]"
+          style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
+        >
           <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3 sm:gap-6">
             {/* Price + change */}
             <div className="flex-shrink-0">
@@ -494,7 +524,12 @@ export default function OptionsPage() {
 
         {/* Expiration selector */}
         {optionsData && optionsData.expirations.length > 0 && (
-          <div className="flex gap-2 mb-4 sm:mb-6 overflow-x-auto pb-1 -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap">
+          <div
+            ref={expiryRowRef}
+            data-layout="expiry-row"
+            className="sticky z-30 flex gap-2 mb-4 sm:mb-6 overflow-x-auto pb-2 pt-2 -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap bg-[#0a0a0f]"
+            style={{ top: stickyOffsets.priceHeader, backgroundColor: 'var(--bg)' }}
+          >
             {optionsData.expirations.map(exp => (
               <button
                 key={exp.date}
@@ -523,16 +558,17 @@ export default function OptionsPage() {
 
         {/* Options table */}
         <div className="rounded-xl overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 z-10">
+          <div className="overflow-x-auto xl:overflow-x-hidden">
+            <table className="w-full table-fixed text-xs">
+              <thead className="sticky z-20" style={{ top: stickyOffsets.priceHeader + stickyOffsets.expiryRow }}>
                 <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
-                  <th className="px-1 py-1.5 w-8" style={{ color: 'var(--text-muted)' }}></th>
+                  <th className="px-2 py-1.5 w-6 text-[11px]" style={{ color: 'var(--text-muted)' }}></th>
                   {columns.map(col => (
                     <th
                       key={col.field}
                       onClick={() => handleSort(col.field)}
-                      className={`px-3 py-1.5 text-xs uppercase tracking-wider font-medium cursor-pointer transition-colors select-none whitespace-nowrap ${col.align} ${
+                      title={col.fullLabel}
+                      className={`px-2 py-1.5 text-[11px] uppercase tracking-wider font-medium cursor-pointer transition-colors select-none whitespace-nowrap ${col.align} ${col.widthClass} ${
                         col.field === 'strike' ? 'sticky left-0 z-[3] border-r' : ''
                       } ${col.hideOnMobile ? 'hidden md:table-cell' : ''} ${col.hideOnTablet ? 'hidden lg:table-cell' : ''}`}
                       style={{
@@ -551,7 +587,7 @@ export default function OptionsPage() {
               </thead>
               <tbody>
                 {loading ? (
-                  Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} colCount={colCount} />)
+                  Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} colCount={colCount + 1} />)
                 ) : (
                   (() => {
                     const byStrike = [...enrichedPuts].sort((a, b) => a.strike - b.strike);
@@ -589,7 +625,7 @@ export default function OptionsPage() {
                           className="transition-colors"
                           style={{ borderBottom: '1px solid var(--border)', backgroundColor: altBg }}
                         >
-                          <td className="px-1 py-1.5 text-center">
+                          <td className="px-2 py-1.5 text-center text-xs w-6">
                             <button
                               onClick={() => toggleWatchlist(put)}
                               className="transition-opacity hover:opacity-70 min-h-[44px] flex items-center justify-center"
@@ -601,9 +637,9 @@ export default function OptionsPage() {
                               />
                             </button>
                           </td>
-                          <td className="px-3 py-1.5 text-left whitespace-nowrap sticky left-0 z-[2] border-r" style={{ borderColor: 'var(--border)', backgroundColor: bg }}>
+                          <td className="px-2 py-1.5 text-left text-xs whitespace-nowrap sticky left-0 z-[2] border-r w-24" style={{ borderColor: 'var(--border)', backgroundColor: bg }}>
                             <div className="flex items-center gap-1.5">
-                              <span className="font-mono font-semibold" style={{ color: 'var(--text)' }}>{formatPrice(put.strike)}</span>
+                              <span className="font-mono font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{formatPrice(put.strike)}</span>
                               {moneyness === 'itm' && (
                                 <span className="text-[9px] font-bold px-1 py-0.5 rounded" style={{ backgroundColor: 'rgba(239,68,68,0.15)', color: 'var(--red)', border: '1px solid rgba(239,68,68,0.2)' }}>ITM</span>
                               )}
@@ -615,43 +651,46 @@ export default function OptionsPage() {
                               )}
                             </div>
                           </td>
-                          <td className="px-3 py-1.5 text-right font-mono hidden md:table-cell" style={{ color: 'var(--text)' }}>{formatPrice(put.last)}</td>
-                          <td className="px-3 py-1.5 text-right font-mono" style={{ color: 'var(--text)' }}>{formatPrice(put.bid)}</td>
-                          <td className="px-3 py-1.5 text-right font-mono" style={{ color: 'var(--text)' }}>{formatPrice(put.ask)}</td>
-                          <td className="px-3 py-1.5 text-right font-mono" style={{ color: deltaColor(put.delta) }}>
+                          <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums hidden md:table-cell w-14" style={{ color: 'var(--text)' }}>{formatPrice(put.last)}</td>
+                          <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums w-14" style={{ color: 'var(--text)' }}>{formatPrice(put.bid)}</td>
+                          <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums w-14" style={{ color: 'var(--text)' }}>{formatPrice(put.ask)}</td>
+                          <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums w-14" style={{ color: deltaColor(put.delta) }}>
                             {put.delta.toFixed(2)}
                           </td>
-                          <td className="px-3 py-1.5 text-right font-mono text-xs hidden md:table-cell" style={{ color: put.otmItmColor }}>
+                          <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums hidden md:table-cell w-24" style={{ color: put.otmItmColor }}>
                             {put.otmItmLabel || '—'}
                           </td>
-                          <td className="px-3 py-1.5 text-right font-mono hidden md:table-cell" style={{ color: ivColor(put.impliedVolatility) }}>
+                          <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums hidden md:table-cell w-14" style={{ color: ivColor(put.impliedVolatility) }}>
                             {put.impliedVolatility != null ? put.impliedVolatility.toFixed(1) + '%' : '—'}
                           </td>
-                          <td className="px-3 py-1.5 text-right font-mono hidden lg:table-cell" style={{ color: 'var(--text-secondary)' }}>
+                          <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums hidden lg:table-cell w-20" style={{ color: 'var(--text-secondary)' }}>
                             {put.nomYieldBid != null ? formatYield(put.nomYieldBid) : '—'}
                           </td>
-                          <td className="px-3 py-1.5 text-right font-mono font-medium" style={{ color: put.annYieldBid != null ? yieldColor(put.annYieldBid) : 'var(--text-dim)' }}>
+                          <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums font-medium w-20" style={{ color: put.annYieldBid != null ? yieldColor(put.annYieldBid) : 'var(--text-dim)' }}>
                             {put.annYieldBid != null ? formatYield(put.annYieldBid) : '—'}
                           </td>
-                          <td className="px-3 py-1.5 text-right font-mono hidden lg:table-cell" style={{ color: 'var(--text-secondary)' }}>
+                          <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums hidden lg:table-cell w-20" style={{ color: 'var(--text-secondary)' }}>
                             {put.nomYieldAsk != null ? formatYield(put.nomYieldAsk) : '—'}
                           </td>
-                          <td className="px-3 py-1.5 text-right font-mono font-medium hidden md:table-cell" style={{ color: put.annYieldAsk != null ? yieldColor(put.annYieldAsk) : 'var(--text-dim)' }}>
+                          <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums font-medium hidden md:table-cell w-20" style={{ color: put.annYieldAsk != null ? yieldColor(put.annYieldAsk) : 'var(--text-dim)' }}>
                             {put.annYieldAsk != null ? formatYield(put.annYieldAsk) : '—'}
                           </td>
-                          <td className="px-3 py-1.5 text-right font-mono hidden lg:table-cell" style={{ color: 'var(--text-secondary)' }}>
+                          <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums hidden lg:table-cell w-20" style={{ color: 'var(--text-secondary)' }}>
                             {put.nomYieldLast != null ? formatYield(put.nomYieldLast) : '—'}
                           </td>
-                          <td className="px-3 py-1.5 text-right font-mono font-medium hidden lg:table-cell" style={{ color: put.annYieldLast != null ? yieldColor(put.annYieldLast) : 'var(--text-dim)' }}>
+                          <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums font-medium hidden lg:table-cell w-20" style={{ color: put.annYieldLast != null ? yieldColor(put.annYieldLast) : 'var(--text-dim)' }}>
                             {put.annYieldLast != null ? formatYield(put.annYieldLast) : '—'}
                           </td>
                           {showVolOI && (
                             <>
-                              <td className="px-3 py-1.5 text-right font-mono" style={{ color: 'var(--text-secondary)' }}>
+                              <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums hidden md:table-cell w-16" style={{ color: 'var(--text-secondary)' }}>
                                 {formatNumber(put.volume)}
                               </td>
-                              <td className="px-3 py-1.5 text-right font-mono" style={{ color: 'var(--text-secondary)' }}>
+                              <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums hidden md:table-cell w-16" style={{ color: 'var(--text-secondary)' }}>
                                 {formatNumber(put.openInterest)}
+                              </td>
+                              <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums hidden md:table-cell w-14" style={{ color: 'var(--text-secondary)' }}>
+                                {put.volOI != null ? put.volOI.toFixed(2) : 'â€”'}
                               </td>
                             </>
                           )}
