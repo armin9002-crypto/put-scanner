@@ -514,6 +514,7 @@ export default function OptionsPage() {
               top: EXPIRY_ROW_TOP,
               zIndex: 30,
               backgroundColor: 'var(--bg)',
+              boxShadow: '0 1px 0 var(--border)',
             }}
           >
             {optionsData.expirations.map(exp => (
@@ -543,30 +544,33 @@ export default function OptionsPage() {
         )}
 
         {/* Options table */}
-        <div className="rounded-xl overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-          <div className="overflow-x-auto xl:overflow-x-hidden">
+        <div className="rounded-xl" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+          <div className="overflow-x-auto xl:overflow-x-visible">
             <table className="w-full table-fixed text-xs">
-              <thead
-                className="sticky-stack"
-                style={{
-                  top: TABLE_HEADER_TOP,
-                  zIndex: 20,
-                  backgroundColor: 'var(--surface-alt)',
-                }}
-              >
+              <thead>
                 <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
-                  <th className="px-2 py-1.5 w-6 text-[11px]" style={{ color: 'var(--text-muted)' }}></th>
+                  <th
+                    className="sticky-stack px-2 py-1.5 w-6 text-[11px]"
+                    style={{
+                      top: TABLE_HEADER_TOP,
+                      zIndex: 20,
+                      color: 'var(--text-muted)',
+                      backgroundColor: 'var(--surface-alt)',
+                    }}
+                  ></th>
                   {columns.map(col => (
                     <th
                       key={col.field}
                       onClick={() => handleSort(col.field)}
                       title={col.fullLabel}
-                      className={`px-2 py-1.5 text-[11px] uppercase tracking-wider font-medium cursor-pointer transition-colors select-none whitespace-nowrap ${col.align} ${col.widthClass} ${
-                        col.field === 'strike' ? 'sticky left-0 z-[3] border-r' : ''
+                      className={`sticky-stack px-2 py-1.5 text-[11px] uppercase tracking-wider font-medium cursor-pointer transition-colors select-none whitespace-nowrap ${col.align} ${col.widthClass} ${
+                        col.field === 'strike' ? 'left-0 border-r' : ''
                       } ${col.hideOnMobile ? 'hidden md:table-cell' : ''} ${col.hideOnTablet ? 'hidden lg:table-cell' : ''}`}
                       style={{
+                        top: TABLE_HEADER_TOP,
+                        zIndex: col.field === 'strike' ? 22 : 20,
                         color: 'var(--text-muted)',
-                        backgroundColor: col.field === 'strike' ? 'var(--surface-alt)' : undefined,
+                        backgroundColor: 'var(--surface-alt)',
                         borderColor: 'var(--border)',
                       }}
                     >

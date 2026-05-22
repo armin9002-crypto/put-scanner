@@ -6,7 +6,15 @@ export default async function handler(req, res) {
   const timeout = setTimeout(() => controller.abort(), 10000);
 
   try {
-    const url = `https://query1.finance.yahoo.com/v7/finance/spark?symbols=${encodeURIComponent(tickers)}&range=1d&interval=1d`;
+    const symbols = tickers
+      .split(',')
+      .map(symbol => symbol.trim())
+      .filter(Boolean);
+
+    const chunks = [];
+    for (let i = 0; i < symbols.length; i += 20) {
+      chunks.push(symbols.slice(i, i + 20));
+    }
 
     const headers = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -14,21 +22,29 @@ export default async function handler(req, res) {
       'Accept-Language': 'en-US,en;q=0.9',
     };
 
-    const yahooRes = await fetch(url, { headers, signal: controller.signal });
-    const rawText = await yahooRes.text();
-    console.log('Yahoo prices response status:', yahooRes.status);
-    console.log('Yahoo prices raw response:', rawText.substring(0, 500));
+    const sparkResults = [];
+    for (const chunk of chunks) {
+      const url = `https://query1.finance.yahoo.com/v7/finance/spark?symbols=${encodeURIComponent(chunk.join(','))}&range=1d&interval=1d`;
+      const yahooRes = await fetch(url, { headers, signal: controller.signal });
+      const rawText = await yahooRes.text();
+      console.log('Yahoo prices chunk:', chunk.join(','));
+      console.log('Yahoo prices response status:', yahooRes.status);
+      console.log('Yahoo prices raw response:', rawText.substring(0, 500));
 
-    const data = JSON.parse(rawText);
-    console.log('Result count:', data?.spark?.result?.length);
+      const data = JSON.parse(rawText);
+      if (data?.spark?.result?.length) {
+        sparkResults.push(...data.spark.result);
+      }
+    }
+    console.log('Result count:', sparkResults.length);
 
-    if (!data?.spark?.result) {
+    if (sparkResults.length === 0) {
       res.setHeader('Access-Control-Allow-Origin', '*');
       return res.status(500).json({ error: 'No results from Yahoo' });
     }
 
     const prices = {};
-    for (const item of data.spark.result) {
+    for (const item of sparkResults) {
       const meta = item.response?.[0]?.meta || {};
       const price = meta.regularMarketPrice ?? null;
       const prev = meta.chartPreviousClose ?? null;
