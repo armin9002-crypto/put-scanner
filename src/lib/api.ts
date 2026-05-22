@@ -1,7 +1,7 @@
 import type { OptionsChainData, ExpirationDate, OptionContract } from './types';
-import { threeLayerCache, BATCH_PRICE_KEY, BATCH_PRICE_MEM_TTL, BATCH_PRICE_LS_TTL, SPARKLINE_MEM_TTL, SPARKLINE_LS_TTL, OPTIONS_MEM_TTL, OPTIONS_LS_TTL, EXTENDED_PRICE_MEM_TTL, EXTENDED_PRICE_LS_TTL } from './cache';
+import { threeLayerCache, clearLsCache, BATCH_PRICE_KEY, BATCH_PRICE_MEM_TTL, BATCH_PRICE_LS_TTL, SPARKLINE_MEM_TTL, SPARKLINE_LS_TTL, OPTIONS_MEM_TTL, OPTIONS_LS_TTL, EXTENDED_PRICE_MEM_TTL, EXTENDED_PRICE_LS_TTL } from './cache';
 import type { BatchPriceData } from './cache';
-import { isValidBatchPriceData } from './memoryCache';
+import { clearMemCache, isValidBatchPriceData } from './memoryCache';
 
 const API_BASE = '/api';
 
@@ -27,6 +27,11 @@ export async function fetchBatchPrices(tickers: string[]): Promise<BatchPriceDat
     },
     isValidBatchPriceData
   );
+}
+
+export function clearBatchPriceCache(): void {
+  clearMemCache(BATCH_PRICE_KEY);
+  clearLsCache(BATCH_PRICE_KEY);
 }
 
 export async function fetchOptions(ticker: string, date?: number): Promise<OptionsChainData> {

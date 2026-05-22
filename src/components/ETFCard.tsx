@@ -10,11 +10,8 @@ interface ETFCardProps {
     changePct: number | null;
     high52w: number | null;
     low52w: number | null;
-    fiveDay: number | null;
-    oneMonth: number | null;
-    threeMonth: number | null;
     fiftyTwoWeekChangePct: number | null;
-    fiftyTwoWeekHighPct?: number | null;
+    posIn52wRange: number | null;
   } | null;
   priceError?: boolean;
   onRetry?: () => void;
@@ -37,17 +34,47 @@ function ivEnvStyle(price: number, high: number | null, low: number | null): { b
   return { borderColor: '#475569', bgTint: 'transparent', badge: 'Low IV', badgeColor: '#475569' };
 }
 
+function formatSignedDollar(value: number | null): string {
+  if (value == null) return '--';
+  return `${value >= 0 ? '+$' : '-$'}${Math.abs(value).toFixed(2)}`;
+}
+
 function formatSignedPct(value: number | null): string {
   if (value == null) return '--';
   return `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`;
 }
 
-function MetricCell({ label, value }: { label: string; value: number | null }) {
-  const color = value == null ? 'var(--text-dim)' : value >= 0 ? 'var(--green)' : 'var(--red)';
+function formatWholePct(value: number | null): string {
+  if (value == null) return '--';
+  return `${value.toFixed(0)}%`;
+}
+
+function changeColor(value: number | null): string {
+  return value == null ? 'var(--text-dim)' : value >= 0 ? 'var(--green)' : 'var(--red)';
+}
+
+function posColor(value: number | null): string {
+  if (value == null) return 'var(--text-dim)';
+  if (value > 60) return 'var(--green)';
+  if (value >= 40) return 'var(--yellow)';
+  return 'var(--red)';
+}
+
+function MetricCell({ label, value, formatter = formatSignedPct, color }: { label: string; value: number | null; formatter?: (value: number | null) => string; color?: string }) {
+  const resolvedColor = color ?? changeColor(value);
   return (
     <div>
       <div className="text-[10px] uppercase tracking-wider leading-none" style={{ color: 'var(--text-dim)' }}>{label}</div>
-      <div className="text-xs font-mono tabular-nums mt-0.5" style={{ color }}>{formatSignedPct(value)}</div>
+      <div className="text-xs font-mono tabular-nums mt-0.5" style={{ color: resolvedColor }}>{formatter(value)}</div>
+    </div>
+  );
+}
+
+function RangeMetricCell({ label, value }: { label: string; value: number | null }) {
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wider leading-none" style={{ color: 'var(--text-dim)' }}>{label}</div>
+      <div className="text-xs font-mono tabular-nums mt-0.5" style={{ color: posColor(value) }}>{formatWholePct(value)}</div>
     </div>
   );
 }
@@ -58,10 +85,10 @@ function PricePlaceholder() {
       <div className="text-lg font-bold font-mono" style={{ color: 'var(--text-dim)' }}>$--</div>
       <div className="text-xs font-mono mt-0.5" style={{ color: 'var(--text-dim)' }}>-- (--)</div>
       <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 mt-2">
-        <MetricCell label="5D" value={null} />
-        <MetricCell label="1M" value={null} />
-        <MetricCell label="3M" value={null} />
+        <MetricCell label="Day $" value={null} formatter={formatSignedDollar} />
+        <MetricCell label="Day %" value={null} />
         <MetricCell label="52W Hi" value={null} />
+        <RangeMetricCell label="52W Pos" value={null} />
       </div>
     </div>
   );
@@ -71,7 +98,10 @@ export default function ETFCard({ etf, onClick, priceData, priceError, onRetry }
   const hasValidPrice = priceData && priceData.price != null && priceData.price > 0;
   const changePositive = hasValidPrice ? (priceData!.changePct ?? 0) >= 0 : true;
   const ivEnv = hasValidPrice ? ivEnvStyle(priceData!.price!, priceData!.high52w, priceData!.low52w) : null;
-  const hi52Pct = priceData?.fiftyTwoWeekHighPct ?? null;
+  const hi52Pct = priceData?.price != null && priceData.high52w != null && priceData.high52w > 0
+    ? ((priceData.price - priceData.high52w) / priceData.high52w) * 100
+    : null;
+  const pos52w = priceData?.posIn52wRange ?? null;
 
   return (
     <button
@@ -108,10 +138,10 @@ export default function ETFCard({ etf, onClick, priceData, priceError, onRetry }
               </div>
             )}
             <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 mt-2">
-              <MetricCell label="5D" value={priceData!.fiveDay} />
-              <MetricCell label="1M" value={priceData!.oneMonth} />
-              <MetricCell label="3M" value={priceData!.threeMonth} />
+              <MetricCell label="Day $" value={priceData!.change} formatter={formatSignedDollar} />
+              <MetricCell label="Day %" value={priceData!.changePct} />
               <MetricCell label="52W Hi" value={hi52Pct} />
+              <RangeMetricCell label="52W Pos" value={pos52w} />
             </div>
           </div>
         ) : priceError ? (

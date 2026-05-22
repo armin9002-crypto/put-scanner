@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { fetchBatchPrices, fetchSparkline } from '../lib/api';
+import { clearBatchPriceCache, fetchBatchPrices, fetchSparkline } from '../lib/api';
 import type { SparklineData } from '../lib/api';
 import type { BatchPriceData } from '../lib/cache';
 import ETFCard from '../components/ETFCard';
@@ -48,7 +48,8 @@ export default function HomePage() {
   const [lastMarketUpdate, setLastMarketUpdate] = useState<Date | null>(null);
 
   // Load batch prices with 10-second hard timeout
-  const loadPrices = useCallback(async () => {
+  const loadPrices = useCallback(async (clearCache = false) => {
+    if (clearCache) clearBatchPriceCache();
     setPricesLoading(true);
     setPricesError(null);
 
@@ -275,7 +276,7 @@ export default function HomePage() {
               onClick={() => navigate(`/options/${etf.ticker}`)}
               priceData={prices[etf.ticker] ?? null}
               priceError={!pricesLoading && !!pricesError && !prices[etf.ticker]}
-              onRetry={loadPrices}
+              onRetry={() => loadPrices(true)}
             />
           ))}
         </div>

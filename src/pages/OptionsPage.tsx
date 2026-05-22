@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import type { OptionsChainData, SortField, SortDirection } from '../lib/types';
 import { ETF_LIST } from '../lib/etfs';
@@ -125,6 +125,13 @@ function ivRankColor(rank: number): string {
   return 'var(--green)';
 }
 
+const NAV_HEIGHT = 56;
+const PRICE_HEADER_HEIGHT = 80;
+const EXPIRY_ROW_HEIGHT = 52;
+const PRICE_HEADER_TOP = NAV_HEIGHT;
+const EXPIRY_ROW_TOP = NAV_HEIGHT + PRICE_HEADER_HEIGHT;
+const TABLE_HEADER_TOP = NAV_HEIGHT + PRICE_HEADER_HEIGHT + EXPIRY_ROW_HEIGHT;
+
 export default function OptionsPage() {
   const { ticker } = useParams<{ ticker: string }>();
   const navigate = useNavigate();
@@ -144,30 +151,6 @@ export default function OptionsPage() {
 
   // Ref guard to prevent duplicate fetches
   const fetchKeyRef = useRef<string>('');
-  const priceHeaderRef = useRef<HTMLDivElement | null>(null);
-  const expiryRowRef = useRef<HTMLDivElement | null>(null);
-  const [stickyOffsets, setStickyOffsets] = useState({ priceHeader: 0, expiryRow: 0 });
-
-  useLayoutEffect(() => {
-    const updateStickyOffsets = () => {
-      setStickyOffsets({
-        priceHeader: priceHeaderRef.current?.offsetHeight ?? 0,
-        expiryRow: expiryRowRef.current?.offsetHeight ?? 0,
-      });
-    };
-
-    updateStickyOffsets();
-    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateStickyOffsets) : null;
-    if (observer) {
-      if (priceHeaderRef.current) observer.observe(priceHeaderRef.current);
-      if (expiryRowRef.current) observer.observe(expiryRowRef.current);
-    }
-    window.addEventListener('resize', updateStickyOffsets);
-    return () => {
-      observer?.disconnect();
-      window.removeEventListener('resize', updateStickyOffsets);
-    };
-  }, [optionsData, extendedPrice, ivRankData, showVolOI, loading]);
 
   const loadData = useCallback(async (expDate?: number) => {
     if (!ticker) return;
@@ -421,10 +404,16 @@ export default function OptionsPage() {
 
         {/* Price bar */}
         <div
-          ref={priceHeaderRef}
           data-layout="price-header"
-          className="sticky top-0 z-40 rounded-xl p-3 sm:p-5 mb-4 sm:mb-6 bg-[#12121a]"
-          style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
+          className="sticky-stack rounded-xl p-3 sm:p-5 mb-4 sm:mb-6 bg-[#12121a]"
+          style={{
+            top: PRICE_HEADER_TOP,
+            zIndex: 30,
+            overflow: 'visible',
+            height: 'auto',
+            backgroundColor: 'var(--surface)',
+            border: '1px solid var(--border)',
+          }}
         >
           <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3 sm:gap-6">
             {/* Price + change */}
@@ -525,10 +514,13 @@ export default function OptionsPage() {
         {/* Expiration selector */}
         {optionsData && optionsData.expirations.length > 0 && (
           <div
-            ref={expiryRowRef}
             data-layout="expiry-row"
-            className="sticky z-30 flex gap-2 mb-4 sm:mb-6 overflow-x-auto pb-2 pt-2 -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap bg-[#0a0a0f]"
-            style={{ top: stickyOffsets.priceHeader, backgroundColor: 'var(--bg)' }}
+            className="sticky-stack flex gap-2 mb-4 sm:mb-6 overflow-x-auto pb-2 pt-2 -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap bg-[#0a0a0f]"
+            style={{
+              top: EXPIRY_ROW_TOP,
+              zIndex: 20,
+              backgroundColor: 'var(--bg)',
+            }}
           >
             {optionsData.expirations.map(exp => (
               <button
@@ -560,7 +552,14 @@ export default function OptionsPage() {
         <div className="rounded-xl overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
           <div className="overflow-x-auto xl:overflow-x-hidden">
             <table className="w-full table-fixed text-xs">
-              <thead className="sticky z-20" style={{ top: stickyOffsets.priceHeader + stickyOffsets.expiryRow }}>
+              <thead
+                className="sticky-stack"
+                style={{
+                  top: TABLE_HEADER_TOP,
+                  zIndex: 10,
+                  backgroundColor: 'var(--surface)',
+                }}
+              >
                 <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
                   <th className="px-2 py-1.5 w-6 text-[11px]" style={{ color: 'var(--text-muted)' }}></th>
                   {columns.map(col => (
@@ -690,7 +689,7 @@ export default function OptionsPage() {
                                 {formatNumber(put.openInterest)}
                               </td>
                               <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums hidden md:table-cell w-14" style={{ color: 'var(--text-secondary)' }}>
-                                {put.volOI != null ? put.volOI.toFixed(2) : 'â€”'}
+                                {put.volOI != null ? put.volOI.toFixed(2) : '--'}
                               </td>
                             </>
                           )}

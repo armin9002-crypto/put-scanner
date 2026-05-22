@@ -95,15 +95,12 @@ export interface BatchPriceData {
     changePct: number | null;
     high52w: number | null;
     low52w: number | null;
-    fiveDay: number | null;
-    oneMonth: number | null;
-    threeMonth: number | null;
     fiftyTwoWeekChangePct: number | null;
-    fiftyTwoWeekHighPct?: number | null;
+    posIn52wRange: number | null;
   };
 }
 
-export const BATCH_PRICE_KEY = 'price_cache_batch_v2';
+export const BATCH_PRICE_KEY = 'price_cache_batch_v3';
 export const BATCH_PRICE_MEM_TTL = ONE_HOUR;
 export const BATCH_PRICE_LS_TTL = ONE_HOUR;
 

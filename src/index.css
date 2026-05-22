@@ -133,3 +133,8 @@ input, select, textarea {
 .animate-fade-in {
   animation: fadeIn 0.25s ease-out;
 }
+
+.sticky-stack {
+  position: -webkit-sticky;
+  position: sticky;
+}
