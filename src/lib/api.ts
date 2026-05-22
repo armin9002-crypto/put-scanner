@@ -3,7 +3,7 @@ import { threeLayerCache, BATCH_PRICE_KEY, BATCH_PRICE_MEM_TTL, BATCH_PRICE_LS_T
 import type { BatchPriceData } from './cache';
 import { isValidBatchPriceData } from './memoryCache';
 
-const API_BASE = '/.netlify/functions';
+const API_BASE = '/api';
 
 export async function fetchBatchPrices(tickers: string[]): Promise<BatchPriceData> {
   return threeLayerCache<BatchPriceData>(
