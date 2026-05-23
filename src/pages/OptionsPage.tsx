@@ -9,7 +9,7 @@ import type { WatchlistItem } from '../lib/watchlist';
 import SparklineChart from '../components/SparklineChart';
 import {
   ArrowLeft, RefreshCw, TrendingUp, TrendingDown, AlertCircle,
-  ChevronUp, ChevronDown, ChevronsUpDown, Star
+  ChevronUp, ChevronDown, ChevronsUpDown, Star, BarChart3
 } from 'lucide-react';
 
 interface EnrichedPut {
@@ -42,6 +42,42 @@ function SkeletonRow({ colCount }: { colCount: number }) {
         </td>
       ))}
     </tr>
+  );
+}
+
+function OptionsEmptyState({
+  type,
+  onRefresh,
+  loading,
+}: {
+  type: 'empty' | 'error';
+  onRefresh: () => void;
+  loading: boolean;
+}) {
+  const Icon = type === 'empty' ? BarChart3 : AlertCircle;
+  const title = type === 'empty' ? 'No options data available' : 'Failed to load options data';
+  const subtitle = type === 'empty'
+    ? 'This ETF may have illiquid options or Yahoo Finance returned no data. Try refreshing or check back during market hours.'
+    : 'Failed to load options data — click Refresh to try again.';
+
+  return (
+    <div
+      className="rounded-xl py-16 px-6 text-center"
+      style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
+    >
+      <Icon className="w-10 h-10 mx-auto mb-4" style={{ color: 'var(--text-dim)' }} />
+      <h2 className="text-lg font-semibold mb-2" style={{ color: 'var(--text)' }}>{title}</h2>
+      <p className="text-sm max-w-md mx-auto mb-6" style={{ color: 'var(--text-muted)' }}>{subtitle}</p>
+      <button
+        onClick={onRefresh}
+        disabled={loading}
+        className="inline-flex items-center gap-2 px-4 py-2.5 sm:py-2 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-all min-h-[44px] sm:min-h-0"
+        style={{ backgroundColor: 'var(--accent)' }}
+      >
+        <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+        Refresh
+      </button>
+    </div>
   );
 }
 
@@ -404,6 +440,15 @@ export default function OptionsPage() {
 
   const columns = showVolOI ? [...baseColumns, ...volOIColumns] : baseColumns;
   const colCount = columns.length;
+  const hasEmptyOptions = !loading && !!optionsData && (
+    optionsData.expirations.length === 0 || optionsData.puts.length === 0
+  );
+
+  const handleRefresh = useCallback(() => {
+    fetchKeyRef.current = '';
+    if (selectedExp) loadExpiration(selectedExp);
+    else loadData();
+  }, [loadData, loadExpiration, selectedExp]);
 
   // Sparkline data
   const sparklineData = extendedPrice?.sparkline ?? [];
@@ -533,11 +578,7 @@ export default function OptionsPage() {
                 <span className="hidden sm:inline">Last updated: {lastUpdated.toLocaleTimeString()}</span>
               )}
               <button
-                onClick={() => {
-                  fetchKeyRef.current = '';
-                  if (selectedExp) loadExpiration(selectedExp);
-                  else loadData();
-                }}
+                onClick={handleRefresh}
                 disabled={loading}
                 className="flex items-center gap-1.5 px-3 py-2.5 sm:py-2 rounded-lg disabled:opacity-50 transition-all min-h-[44px] sm:min-h-0"
                 style={{ backgroundColor: 'var(--border)', color: 'var(--text)' }}
@@ -579,15 +620,12 @@ export default function OptionsPage() {
           </div>
         )}
 
-        {/* Error state */}
-        {error && (
-          <div className="rounded-xl p-6 mb-6 flex items-center gap-3" style={{ backgroundColor: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}>
-            <AlertCircle className="w-5 h-5 flex-shrink-0" style={{ color: 'var(--red)' }} />
-            <p className="text-sm" style={{ color: 'var(--red)' }}>{error}</p>
-          </div>
-        )}
-
         {/* Options table */}
+        {error ? (
+          <OptionsEmptyState type="error" onRefresh={handleRefresh} loading={loading} />
+        ) : hasEmptyOptions ? (
+          <OptionsEmptyState type="empty" onRefresh={handleRefresh} loading={loading} />
+        ) : (
         <div className="rounded-xl" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
           <div className="overflow-x-auto xl:overflow-x-visible">
             <table className="w-full table-fixed text-xs">
@@ -756,6 +794,7 @@ export default function OptionsPage() {
             <div className="py-12 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No put options data available for this expiration.</div>
           )}
         </div>
+        )}
 
         <footer className="mt-8 pb-6 text-center">
           <p className="text-xs" style={{ color: 'var(--text-dim)' }}>Data delayed up to 15 minutes. Not financial advice.</p>

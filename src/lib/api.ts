@@ -74,10 +74,11 @@ export async function fetchOptions(ticker: string, date?: number): Promise<Optio
       if (data.error) throw new Error(data.error);
 
       const result = data?.optionChain?.result?.[0];
-      if (!result) throw new Error('No options data available');
+      if (!result) return { expirations: [], puts: [], currentPrice: 0 };
 
       const currentPrice = result.quote?.regularMarketPrice ?? 0;
       const expDates: number[] = result.expirationDates || [];
+      const putsRaw = result.options?.[0]?.puts ?? [];
 
       const currentYear = new Date().getUTCFullYear();
 
@@ -87,7 +88,9 @@ export async function fetchOptions(ticker: string, date?: number): Promise<Optio
         return { date: ts, label, dte };
       });
 
-      const putsRaw = result.options?.[0]?.puts || [];
+      if (expirations.length === 0 || putsRaw.length === 0) {
+        return { expirations, puts: [], currentPrice };
+      }
 
       const puts: OptionContract[] = putsRaw
         .filter((p: any) => p.strike != null)
