@@ -20,5 +20,11 @@ export function isValidBatchPriceData(data: any): boolean {
   const keys = Object.keys(data);
   if (keys.length < 10) return false;
   const validCount = keys.filter(k => data[k]?.price != null && data[k].price > 0).length;
-  return validCount >= 10;
+  const hasPerformanceFields = keys.some(k =>
+    data[k]?.fiveDay !== undefined &&
+    data[k]?.oneMonth !== undefined &&
+    data[k]?.threeMonth !== undefined &&
+    data[k]?.fiftyTwoWeekHighPct !== undefined
+  );
+  return validCount >= 10 && hasPerformanceFields;
 }

@@ -65,12 +65,53 @@ export default async function handler(req, res) {
         changePct,
         high52w,
         low52w,
+        fiveDay: null,
+        oneMonth: null,
+        threeMonth: null,
         fiftyTwoWeekHighPct,
         posIn52wRange,
       };
     }
 
+    const historicalResults = [];
+    for (const chunk of chunks) {
+      const url = `https://query2.finance.yahoo.com/v7/finance/spark?symbols=${encodeURIComponent(chunk.join(','))}&range=3mo&interval=1d`;
+      const yahooRes = await fetch(url, { headers, signal: controller.signal });
+      const rawText = await yahooRes.text();
+      console.log('Yahoo historical prices chunk:', chunk.join(','));
+      console.log('Yahoo historical prices response status:', yahooRes.status);
+
+      const data = JSON.parse(rawText);
+      if (data?.spark?.result?.length) {
+        historicalResults.push(...data.spark.result);
+      }
+    }
+
     res.setHeader('Access-Control-Allow-Origin', '*');
+    for (const item of historicalResults) {
+      const symbol = item.symbol;
+      const closes = item.response?.[0]?.indicators?.quote?.[0]?.close ?? [];
+      const validCloses = closes.filter(c => c !== null && c !== undefined);
+      if (validCloses.length > 0) {
+        const currentPrice = prices[symbol]?.price ?? validCloses[validCloses.length - 1];
+        const fiveDay = validCloses.length >= 6
+          ? ((currentPrice - validCloses[validCloses.length - 6]) / validCloses[validCloses.length - 6]) * 100
+          : null;
+        const oneMonth = validCloses.length >= 22
+          ? ((currentPrice - validCloses[validCloses.length - 22]) / validCloses[validCloses.length - 22]) * 100
+          : null;
+        const threeMonth = validCloses.length >= 2
+          ? ((currentPrice - validCloses[0]) / validCloses[0]) * 100
+          : null;
+
+        if (prices[symbol]) {
+          prices[symbol].fiveDay = fiveDay;
+          prices[symbol].oneMonth = oneMonth;
+          prices[symbol].threeMonth = threeMonth;
+        }
+      }
+    }
+
     return res.status(200).json(prices);
 
   } catch(e) {
