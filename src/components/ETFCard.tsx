@@ -49,9 +49,9 @@ function changeColor(value: number | null): string {
 function MetricCell({ label, value, formatter = formatSignedPct, color }: { label: string; value: number | null; formatter?: (value: number | null) => string; color?: string }) {
   const resolvedColor = color ?? changeColor(value);
   return (
-    <div>
-      <div className="text-[10px] uppercase tracking-wider leading-none" style={{ color: 'var(--text-dim)' }}>{label}</div>
-      <div className="text-xs font-mono tabular-nums mt-0.5" style={{ color: resolvedColor }}>{formatter(value)}</div>
+    <div className="min-w-0 content-center">
+      <div className="text-[9px] uppercase tracking-wider leading-none" style={{ color: 'var(--text-dim)' }}>{label}</div>
+      <div className="text-xs font-mono font-medium tabular-nums mt-0.5 truncate" style={{ color: resolvedColor }}>{formatter(value)}</div>
     </div>
   );
 }
@@ -59,9 +59,9 @@ function MetricCell({ label, value, formatter = formatSignedPct, color }: { labe
 function FiftyTwoWeekHighCell({ value }: { value: number | null }) {
   const nearHigh = value != null && value >= -2;
   return (
-    <div>
-      <div className="text-[10px] uppercase tracking-wider leading-none" style={{ color: 'var(--text-dim)' }}>52W Hi</div>
-      <div className="text-xs font-mono tabular-nums mt-0.5" style={{ color: value == null ? 'var(--text-dim)' : nearHigh ? 'var(--green)' : 'var(--red)' }}>
+    <div className="min-w-0 content-center">
+      <div className="text-[9px] uppercase tracking-wider leading-none" style={{ color: 'var(--text-dim)' }}>52W Hi</div>
+      <div className="text-xs font-mono font-medium tabular-nums mt-0.5 truncate" style={{ color: value == null ? 'var(--text-dim)' : nearHigh ? 'var(--green)' : 'var(--red)' }}>
         {value == null ? '--' : nearHigh ? 'Near Hi' : formatSignedPct(value)}
       </div>
     </div>
@@ -73,16 +73,14 @@ function PerformanceMetrics({
   oneMonth,
   threeMonth,
   fiftyTwoWeekHighPct,
-  reserveBadgeSpace = false,
 }: {
   fiveDay: number | null;
   oneMonth: number | null;
   threeMonth: number | null;
   fiftyTwoWeekHighPct: number | null;
-  reserveBadgeSpace?: boolean;
 }) {
   return (
-    <div className={`grid grid-cols-2 gap-x-3 gap-y-0.5 mt-1.5 ${reserveBadgeSpace ? 'pr-12' : ''}`}>
+    <div className="h-full flex-1 grid grid-cols-2 gap-x-2 gap-y-1 content-center">
       <MetricCell label="5D" value={fiveDay} />
       <MetricCell label="1M" value={oneMonth} />
       <MetricCell label="3M" value={threeMonth} />
@@ -93,15 +91,14 @@ function PerformanceMetrics({
 
 function PricePlaceholder({ showPriceSkeleton = false }: { showPriceSkeleton?: boolean }) {
   return (
-    <div className="mt-1">
+    <>
       {showPriceSkeleton ? (
         <Skeleton w={72} />
       ) : (
-        <div className="text-base font-semibold font-mono" style={{ color: 'var(--text-dim)' }}>$--</div>
+        <div className="text-base font-semibold font-mono leading-tight" style={{ color: 'var(--text-dim)' }}>$--</div>
       )}
-      <div className="text-xs font-mono mt-0.5" style={{ color: 'var(--text-dim)' }}>-- (--)</div>
-      <PerformanceMetrics fiveDay={null} oneMonth={null} threeMonth={null} fiftyTwoWeekHighPct={null} />
-    </div>
+      <div className="text-xs font-mono leading-tight" style={{ color: 'var(--text-dim)' }}>-- (--)</div>
+    </>
   );
 }
 
@@ -121,59 +118,70 @@ export default function ETFCard({ etf, onClick, priceData, priceError, onRetry }
         boxShadow: 'var(--shadow)',
       }}
     >
-      <div className="flex items-start justify-between gap-2 mb-1">
-        <span className="text-xl font-bold font-mono tracking-tight leading-none" style={{ color: 'var(--text)' }}>{etf.ticker}</span>
-        <span className="text-xs font-semibold px-1.5 py-0.5 rounded-md leading-none" style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)', border: '1px solid var(--accent-border)' }}>
-          {etf.leverage}
-        </span>
-      </div>
+      <span className="absolute top-2 right-2 text-xs font-semibold px-1.5 py-0.5 rounded-md leading-none" style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)', border: '1px solid var(--accent-border)' }}>
+        {etf.leverage}
+      </span>
 
-      <p className="text-xs mb-0.5 leading-tight truncate" style={{ color: 'var(--text-muted)' }}>{etf.name}</p>
-      <p className="text-xs mb-1 leading-tight truncate" style={{ color: 'var(--text-dim)' }}>{etf.underlying}</p>
+      <div className="flex flex-row gap-3 pr-8">
+        <div className="flex flex-col justify-between flex-shrink-0 w-1/2 min-w-0">
+          <div>
+            <div className="flex items-baseline gap-1.5 min-w-0">
+              <span className="text-lg font-bold font-mono tracking-tight leading-none flex-shrink-0" style={{ color: 'var(--text)' }}>{etf.ticker}</span>
+              <span className="text-xs leading-tight truncate" style={{ color: 'var(--text-muted)' }}>{etf.name}</span>
+            </div>
+            <div className="text-xs leading-tight truncate mt-0.5" style={{ color: 'var(--text-dim)' }}>{etf.underlying}</div>
+          </div>
 
-      <div>
+          <div className="mt-1">
+            {hasValidPrice ? (
+              <>
+                <div className="text-base font-semibold font-mono tabular-nums leading-tight" style={{ color: 'var(--text)' }}>
+                  ${priceData!.price!.toFixed(2)}
+                </div>
+                {priceData!.change != null && priceData!.changePct != null && (
+                  <div className="flex items-center gap-1 text-xs font-mono tabular-nums leading-tight" style={{ color: changePositive ? 'var(--green)' : 'var(--red)' }}>
+                    {changePositive ? <TrendingUp className="w-3 h-3 flex-shrink-0" /> : <TrendingDown className="w-3 h-3 flex-shrink-0" />}
+                    <span>{changePositive ? '+$' : '-$'}{Math.abs(priceData!.change).toFixed(2)}</span>
+                    <span>({changePositive ? '+' : '-'}{Math.abs(priceData!.changePct).toFixed(2)}%)</span>
+                  </div>
+                )}
+              </>
+            ) : priceError ? (
+              <>
+                <PricePlaceholder />
+                {onRetry && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onRetry(); }}
+                    className="block text-[10px] mt-0.5 underline"
+                    style={{ color: 'var(--accent-light)' }}
+                  >
+                    Retry
+                  </button>
+                )}
+              </>
+            ) : (
+              <PricePlaceholder showPriceSkeleton />
+            )}
+          </div>
+        </div>
+
         {hasValidPrice ? (
-          <div>
-            <span className="text-base font-semibold font-mono tabular-nums" style={{ color: 'var(--text)' }}>
-              ${priceData!.price!.toFixed(2)}
-            </span>
-            {priceData!.change != null && priceData!.changePct != null && (
-              <div className="flex items-center gap-1 text-xs font-mono tabular-nums mt-0.5" style={{ color: changePositive ? 'var(--green)' : 'var(--red)' }}>
-                {changePositive ? <TrendingUp className="w-3 h-3 flex-shrink-0" /> : <TrendingDown className="w-3 h-3 flex-shrink-0" />}
-                <span>{changePositive ? '+$' : '-$'}{Math.abs(priceData!.change).toFixed(2)}</span>
-                <span>({changePositive ? '+' : '-'}{Math.abs(priceData!.changePct).toFixed(2)}%)</span>
-              </div>
-            )}
-            <PerformanceMetrics
-              fiveDay={priceData!.fiveDay ?? null}
-              oneMonth={priceData!.oneMonth ?? null}
-              threeMonth={priceData!.threeMonth ?? null}
-              fiftyTwoWeekHighPct={priceData!.fiftyTwoWeekHighPct ?? null}
-              reserveBadgeSpace={!!ivEnv}
-            />
-          </div>
-        ) : priceError ? (
-          <div>
-            <PricePlaceholder />
-            {onRetry && (
-              <button
-                onClick={(e) => { e.stopPropagation(); onRetry(); }}
-                className="block text-[10px] mt-1 underline"
-                style={{ color: 'var(--accent-light)' }}
-              >
-                Retry
-              </button>
-            )}
-          </div>
+          <PerformanceMetrics
+            fiveDay={priceData!.fiveDay ?? null}
+            oneMonth={priceData!.oneMonth ?? null}
+            threeMonth={priceData!.threeMonth ?? null}
+            fiftyTwoWeekHighPct={priceData!.fiftyTwoWeekHighPct ?? null}
+          />
         ) : (
-          <PricePlaceholder showPriceSkeleton />
-        )}
-        {ivEnv && (
-          <span className="hidden sm:block absolute right-3 bottom-3 text-[10px] font-semibold leading-none" style={{ color: ivEnv.badgeColor }}>
-            {ivEnv.badge}
-          </span>
+          <PerformanceMetrics fiveDay={null} oneMonth={null} threeMonth={null} fiftyTwoWeekHighPct={null} />
         )}
       </div>
+
+      {ivEnv && (
+        <span className="hidden sm:block absolute right-2 bottom-2 text-[10px] font-semibold leading-none" style={{ color: ivEnv.badgeColor }}>
+          {ivEnv.badge}
+        </span>
+      )}
     </button>
   );
 }
