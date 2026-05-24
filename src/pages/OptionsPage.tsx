@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import type { OptionsChainData, SortField, SortDirection } from '../lib/types';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import type { ExpirationDate, OptionsChainData, SortField, SortDirection } from '../lib/types';
 import { ETF_LIST } from '../lib/etfs';
 import { fetchOptions, fetchExtendedPrice, calculatePutDelta, formatPrice, formatYield, yieldColor, formatNumber, fetchIVRank } from '../lib/api';
 import type { ExtendedPriceData, IVRankData } from '../lib/api';
@@ -165,9 +165,25 @@ const PRICE_HEADER_TOP = 56;
 const EXPIRY_ROW_TOP = 144;
 const TABLE_HEADER_TOP = 200;
 
+function resolvePreferredExpiration(expirations: ExpirationDate[], expiryParam: string | null): number | null {
+  if (expirations.length === 0) return null;
+  if (expiryParam === 'lte_30dte') {
+    return expirations.find(exp => exp.dte <= 30)?.date ?? expirations[0].date;
+  }
+  if (expiryParam) {
+    const requestedDate = Number(expiryParam);
+    if (Number.isFinite(requestedDate) && expirations.some(exp => exp.date === requestedDate)) {
+      return requestedDate;
+    }
+  }
+  return expirations[0].date;
+}
+
 export default function OptionsPage() {
   const { ticker } = useParams<{ ticker: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const expiryParam = searchParams.get('expiry');
   const etf = ETF_LIST.find(e => e.ticker === ticker);
 
   const [optionsData, setOptionsData] = useState<OptionsChainData | null>(null);
@@ -194,16 +210,20 @@ export default function OptionsPage() {
     setLoading(true);
     setError(null);
     try {
-      const [opts, ext] = await Promise.all([
+      const [initialOpts, ext] = await Promise.all([
         fetchOptions(ticker, expDate),
         fetchExtendedPrice(ticker),
       ]);
+      const preferredExp = expDate ?? resolvePreferredExpiration(initialOpts.expirations, expiryParam);
+      const opts = !expDate && preferredExp && preferredExp !== initialOpts.expirations[0]?.date
+        ? await fetchOptions(ticker, preferredExp)
+        : initialOpts;
       setOptionsData(opts);
       setExtendedPrice(ext);
       // Lazy-load IV Rank (non-blocking)
       fetchIVRank(ticker).then(setIvRankData).catch(() => {});
-      if (!expDate && opts.expirations.length > 0) {
-        setSelectedExp(opts.expirations[0].date);
+      if (preferredExp) {
+        setSelectedExp(preferredExp);
       }
       setLastUpdated(new Date());
     } catch (err: any) {
@@ -211,7 +231,7 @@ export default function OptionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [ticker]);
+  }, [ticker, expiryParam]);
 
   const loadExpiration = useCallback(async (expDate: number) => {
     if (!ticker) return;
@@ -237,7 +257,7 @@ export default function OptionsPage() {
   useEffect(() => {
     fetchKeyRef.current = '';
     loadData();
-  }, [ticker]);
+  }, [ticker, expiryParam, loadData]);
 
   // Refresh watchlist state when selectedExp changes
   useEffect(() => {

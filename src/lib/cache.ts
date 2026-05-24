@@ -145,17 +145,21 @@ export interface CachedExpirations {
 
 export const EXPIRATIONS_MEM_TTL = TWO_HOURS;
 export const EXPIRATIONS_LS_TTL = TWO_HOURS;
+const EXPIRATIONS_CACHE_KEY = 'expiry_dates_cache';
+const LEGACY_EXPIRATIONS_CACHE_KEY = 'screener_expirations_v2';
 
 export function getExpirationsCache(): CachedExpirations | null {
-  const mem = getMemCache('screener_expirations_v2', EXPIRATIONS_MEM_TTL);
+  const mem = getMemCache(EXPIRATIONS_CACHE_KEY, EXPIRATIONS_MEM_TTL);
   if (mem) return mem as CachedExpirations;
-  return getCached<CachedExpirations>('screener_expirations_v2', EXPIRATIONS_LS_TTL);
+  const cached = getCached<CachedExpirations>(EXPIRATIONS_CACHE_KEY, EXPIRATIONS_LS_TTL);
+  if (cached) return cached;
+  return getCached<CachedExpirations>(LEGACY_EXPIRATIONS_CACHE_KEY, EXPIRATIONS_LS_TTL);
 }
 
 export function setExpirationsCache(expirations: CachedExpirations['expirations']): void {
   const data = { expirations, cachedAt: Date.now() };
-  setMemCache('screener_expirations_v2', data);
-  setCache('screener_expirations_v2', data);
+  setMemCache(EXPIRATIONS_CACHE_KEY, data);
+  setCache(EXPIRATIONS_CACHE_KEY, data);
 }
 
 // Extended price: memory 10 min, localStorage 15 min

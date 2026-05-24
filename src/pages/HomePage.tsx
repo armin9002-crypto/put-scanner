@@ -1,9 +1,11 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { clearBatchPriceCache, fetchBatchPrices, fetchSparkline } from '../lib/api';
+import { clearBatchPriceCache, fetchBatchPrices, fetchOptions, fetchSparkline } from '../lib/api';
 import type { SparklineData } from '../lib/api';
+import { getExpirationsCache, setExpirationsCache } from '../lib/cache';
 import type { BatchPriceData } from '../lib/cache';
 import ETFCard from '../components/ETFCard';
+import ExpirationFilter, { buildExpirationOptions, formatExpirationDropdownLabel } from '../components/ExpirationFilter';
 import SparklineChart from '../components/SparklineChart';
 import { Search, ShieldCheck, Loader2, RefreshCw } from 'lucide-react';
 
@@ -11,6 +13,7 @@ const HARDCODED_TICKERS = 'AGQ,BOIL,BRZU,BULZ,CURE,CWEB,DDM,DFEN,DIG,DPST,DUSL,E
 
 const LEVERAGE_OPTIONS = ['All', '2x', '3x'] as const;
 const TYPE_OPTIONS = ['All', 'Broad Index', 'Sector', 'Commodity', 'Country'] as const;
+const EXPIRATION_PREFETCH_ETFS = ['TQQQ', 'SOXL', 'UPRO', 'TNA', 'FAS'];
 
 // Import ETF_LIST for filtering only
 import { ETF_LIST } from '../lib/etfs';
@@ -34,6 +37,10 @@ export default function HomePage() {
   const [search, setSearch] = useState('');
   const [leverageFilter, setLeverageFilter] = useState<string>('All');
   const [typeFilter, setTypeFilter] = useState<string>('All');
+  const [expFilter, setExpFilter] = useState('all');
+  const [availableExps, setAvailableExps] = useState<{ date: number; label: string; dte: number }[]>([]);
+  const [datesLoaded, setDatesLoaded] = useState(false);
+  const [loadingDates, setLoadingDates] = useState(false);
 
   // Batch price data
   const [prices, setPrices] = useState<BatchPriceData>({});
@@ -95,6 +102,46 @@ export default function HomePage() {
 
   useEffect(() => { loadPrices(); }, []);
 
+  useEffect(() => {
+    const cached = getExpirationsCache();
+    if (cached && cached.expirations.length > 0) {
+      setAvailableExps(cached.expirations);
+      setDatesLoaded(true);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      setLoadingDates(true);
+      const results = await Promise.allSettled(
+        EXPIRATION_PREFETCH_ETFS.map(ticker => fetchOptions(ticker))
+      );
+      if (cancelled) return;
+
+      const allExps = new Map<number, { date: number; label: string; dte: number }>();
+      for (const result of results) {
+        if (result.status !== 'fulfilled') continue;
+        for (const exp of result.value.expirations) {
+          if (!allExps.has(exp.date)) {
+            allExps.set(exp.date, {
+              date: exp.date,
+              label: formatExpirationDropdownLabel(exp.date),
+              dte: exp.dte,
+            });
+          }
+        }
+      }
+
+      const sorted = Array.from(allExps.values()).sort((a, b) => a.date - b.date);
+      setAvailableExps(sorted);
+      setDatesLoaded(true);
+      setLoadingDates(false);
+      setExpirationsCache(sorted);
+    })();
+
+    return () => { cancelled = true; };
+  }, []);
+
   // Load market sparklines (manual refresh only, with cache)
   const loadMarketData = useCallback(async () => {
     setMarketLoading(true);
@@ -127,6 +174,18 @@ export default function HomePage() {
       return true;
     });
   }, [search, leverageFilter, typeFilter]);
+
+  const expDropdownOptions = useMemo(() => buildExpirationOptions(availableExps), [availableExps]);
+
+  const buildOptionsPath = useCallback((ticker: string) => {
+    if (expFilter === 'lte_30dte') {
+      return `/options/${ticker}?expiry=lte_30dte`;
+    }
+    if (expFilter.startsWith('date_')) {
+      return `/options/${ticker}?expiry=${encodeURIComponent(expFilter.replace('date_', ''))}`;
+    }
+    return `/options/${ticker}`;
+  }, [expFilter]);
 
   const qqqUp = qqqData ? qqqData.changePercent >= 0 : true;
   const qqqLineColor = qqqUp ? 'var(--green)' : 'var(--red)';
@@ -198,6 +257,14 @@ export default function HomePage() {
                 </button>
               ))}
             </div>
+
+            <ExpirationFilter
+              value={expFilter}
+              onChange={setExpFilter}
+              options={expDropdownOptions}
+              loadingDates={loadingDates}
+              datesLoaded={datesLoaded}
+            />
           </div>
 
           {/* Market Charts Widget - hidden on mobile, visible on lg+ */}
@@ -273,7 +340,8 @@ export default function HomePage() {
             <ETFCard
               key={etf.ticker}
               etf={etf}
-              onClick={() => navigate(`/options/${etf.ticker}`)}
+              selectedExpiryFilter={expFilter}
+              onClick={() => navigate(buildOptionsPath(etf.ticker))}
               priceData={prices[etf.ticker] ?? null}
               priceError={!pricesLoading && !!pricesError && !prices[etf.ticker]}
               onRetry={() => loadPrices(true)}

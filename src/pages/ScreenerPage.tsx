@@ -6,6 +6,7 @@ import { fetchOptions, fetchSparkline, fetchWithConcurrencyLimit, calculatePutDe
 import type { SparklineData } from '../lib/api';
 import { getExpirationsCache, setExpirationsCache } from '../lib/cache';
 import SparklineChart from '../components/SparklineChart';
+import ExpirationFilter, { buildExpirationOptions, formatExpirationDropdownLabel } from '../components/ExpirationFilter';
 import { Search, X, ChevronUp, ChevronDown, Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
 
 // --- Types ---
@@ -122,8 +123,6 @@ const IVRANK_OPTIONS = [
 ];
 
 // --- Helpers ---
-
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 function matchDeltaAbs(delta: number, filter: string): boolean {
   if (filter === 'all') return true;
@@ -248,14 +247,6 @@ function formatExpDate(ts: number, dte: number): string {
   return `${mm}/${dd}/${yy} (${dte})`;
 }
 
-function formatExpDropdownLabel(ts: number, _dte: number): string {
-  const d = new Date(ts * 1000);
-  const month = MONTHS[d.getUTCMonth()];
-  const day = d.getUTCDate();
-  const yr = `'${String(d.getUTCFullYear() % 100).padStart(2, '0')}`;
-  return `${month} ${day}, ${yr}`;
-}
-
 function computeMoneyness(currentPrice: number, strike: number): { pct: number; label: string; color: string } {
   if (currentPrice <= 0) return { pct: 0, label: '—', color: 'var(--text-muted)' };
   const pct = ((currentPrice - strike) / currentPrice) * 100;
@@ -377,7 +368,7 @@ export default function ScreenerPage() {
           if (!allExps.has(exp.date)) {
             allExps.set(exp.date, {
               date: exp.date,
-              label: formatExpDropdownLabel(exp.date, exp.dte),
+              label: formatExpirationDropdownLabel(exp.date),
               dte: exp.dte,
             });
           }
@@ -414,21 +405,7 @@ export default function ScreenerPage() {
 
   // Build expiration dropdown options from availableExps
   const expDropdownOptions = useMemo(() => {
-    const opts: { value: string; label: string }[] = [{ value: 'all', label: 'All dates' }];
-    const hasShortDated = availableExps.some(e => e.dte <= 30);
-    if (hasShortDated) {
-      opts.push({ value: 'lte_30dte', label: '\u226430 DTE' });
-    }
-    for (const exp of availableExps) {
-      if (exp.dte > 30) {
-        const d = new Date(exp.date * 1000);
-        const month = MONTHS[d.getUTCMonth()];
-        const day = d.getUTCDate();
-        const yr = `'${String(d.getUTCFullYear() % 100).padStart(2, '0')}`;
-        opts.push({ value: `date_${exp.date}`, label: `${month} ${day}, ${yr} (${exp.dte} DTE)` });
-      }
-    }
-    return opts;
+    return buildExpirationOptions(availableExps);
   }, [availableExps]);
 
   // Nearest only shortcut
@@ -551,7 +528,7 @@ export default function ScreenerPage() {
     for (const [, data] of initialResults) {
       for (const exp of data.expirations) {
         if (!allExps.has(exp.date)) {
-          allExps.set(exp.date, { date: exp.date, label: formatExpDropdownLabel(exp.date, exp.dte), dte: exp.dte });
+          allExps.set(exp.date, { date: exp.date, label: formatExpirationDropdownLabel(exp.date), dte: exp.dte });
         }
       }
     }
@@ -797,21 +774,13 @@ export default function ScreenerPage() {
 
             {/* Expiration - single-select dropdown (max 2 expiries enforced by getExpsToFetch) */}
             <div>
-              <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>
-                Expiration
-                {loadingDates && <Loader2 className="w-3 h-3 inline ml-1 animate-spin" />}
-              </label>
-              <select
+              <ExpirationFilter
                 value={expFilter}
-                onChange={e => setExpFilter(e.target.value)}
-                className="rounded-lg px-2 py-1.5 text-xs outline-none cursor-pointer"
-                style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
-              >
-                {loadingDates && !datesLoaded && <option value="lte_30dte">Loading dates...</option>}
-                {expDropdownOptions.map(o => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
+                onChange={setExpFilter}
+                options={expDropdownOptions}
+                loadingDates={loadingDates}
+                datesLoaded={datesLoaded}
+              />
               {datesLoaded && (
                 <button
                   onClick={selectNearestOnly}

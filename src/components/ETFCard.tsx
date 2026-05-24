@@ -4,6 +4,7 @@ import { TrendingUp, TrendingDown } from 'lucide-react';
 interface ETFCardProps {
   etf: ETFInfo;
   onClick: () => void;
+  selectedExpiryFilter?: string;
   priceData?: {
     price: number | null;
     change: number | null;
@@ -102,7 +103,7 @@ function PricePlaceholder({ showPriceSkeleton = false }: { showPriceSkeleton?: b
   );
 }
 
-export default function ETFCard({ etf, onClick, priceData, priceError, onRetry }: ETFCardProps) {
+export default function ETFCard({ etf, onClick, selectedExpiryFilter, priceData, priceError, onRetry }: ETFCardProps) {
   const hasValidPrice = priceData && priceData.price != null && priceData.price > 0;
   const changePositive = hasValidPrice ? (priceData!.changePct ?? 0) >= 0 : true;
   const ivEnv = hasValidPrice ? ivEnvStyle(priceData!.price!, priceData!.high52w, priceData!.low52w) : null;
@@ -110,6 +111,7 @@ export default function ETFCard({ etf, onClick, priceData, priceError, onRetry }
   return (
     <button
       onClick={onClick}
+      data-expiry-filter={selectedExpiryFilter}
       className="group rounded-xl p-3 text-left transition-all duration-200 w-full relative"
       style={{
         backgroundColor: ivEnv ? ivEnv.bgTint : 'var(--surface)',
