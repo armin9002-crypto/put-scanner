@@ -626,49 +626,51 @@ export default function OptionsPage() {
         ) : hasEmptyOptions ? (
           <OptionsEmptyState type="empty" onRefresh={handleRefresh} loading={loading} />
         ) : (
-        <div className="rounded-xl" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-          <div className="overflow-x-auto xl:overflow-x-visible">
-            <table className="w-full table-fixed text-xs">
-              <thead
-                className="sticky-stack z-10 bg-[#12121a] border-b-2 border-[#1e1e2e]"
-                style={{
-                  top: TABLE_HEADER_TOP,
-                  zIndex: 10,
-                  backgroundColor: 'var(--surface)',
-                  borderBottom: '2px solid var(--border)',
-                }}
-              >
-                <tr style={{ backgroundColor: 'var(--surface)' }}>
-                  <th
-                    className="px-2 py-1.5 w-6 text-[11px]"
-                    style={{
-                      color: 'var(--text-muted)',
-                      backgroundColor: 'var(--surface)',
-                    }}
-                  ></th>
-                  {columns.map(col => (
+          <div className="rounded-xl" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+            <div className="overflow-x-auto xl:overflow-x-visible">
+              <table className="w-full table-fixed text-xs">
+                <thead
+                  className="bg-[#12121a] border-b-2 border-[#1e1e2e]"
+                  style={{
+                    backgroundColor: 'var(--surface)',
+                    borderBottom: '2px solid var(--border)',
+                  }}
+                >
+                  <tr style={{ backgroundColor: 'var(--surface)' }}>
                     <th
-                      key={col.field}
-                      onClick={() => handleSort(col.field)}
-                      title={col.fullLabel}
-                      className={`px-2 py-1.5 text-[11px] uppercase tracking-wider font-medium cursor-pointer transition-colors select-none whitespace-nowrap ${col.align} ${col.widthClass} ${
-                        col.field === 'strike' ? 'left-0 border-r' : ''
-                      } ${col.hideOnMobile ? 'hidden md:table-cell' : ''} ${col.hideOnTablet ? 'hidden lg:table-cell' : ''}`}
+                      className="sticky-stack top-[200px] z-10 px-2 py-1.5 w-6 text-[11px] bg-[#12121a]"
                       style={{
+                        top: TABLE_HEADER_TOP,
+                        zIndex: 10,
                         color: 'var(--text-muted)',
                         backgroundColor: 'var(--surface)',
-                        borderColor: 'var(--border)',
                       }}
-                    >
-                      <span className="inline-flex items-center gap-1">
-                        {col.label}
-                        <SortIcon field={col.field} />
-                      </span>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
+                    ></th>
+                    {columns.map(col => (
+                      <th
+                        key={col.field}
+                        onClick={() => handleSort(col.field)}
+                        title={col.fullLabel}
+                        className={`sticky-stack top-[200px] px-2 py-1.5 text-[11px] uppercase tracking-wider font-medium cursor-pointer transition-colors select-none whitespace-nowrap bg-[#12121a] ${col.align} ${col.widthClass} ${
+                          col.field === 'strike' ? 'left-0 z-20 border-r' : 'z-10'
+                        } ${col.hideOnMobile ? 'hidden md:table-cell' : ''} ${col.hideOnTablet ? 'hidden lg:table-cell' : ''}`}
+                        style={{
+                          top: TABLE_HEADER_TOP,
+                          zIndex: col.field === 'strike' ? 20 : 10,
+                          color: 'var(--text-muted)',
+                          backgroundColor: 'var(--surface)',
+                          borderColor: 'var(--border)',
+                        }}
+                      >
+                        <span className="inline-flex items-center gap-1">
+                          {col.label}
+                          <SortIcon field={col.field} />
+                        </span>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
                 {loading ? (
                   Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} colCount={colCount + 1} />)
                 ) : (
@@ -720,7 +722,7 @@ export default function OptionsPage() {
                               />
                             </button>
                           </td>
-                          <td className="px-2 py-1.5 text-left text-xs whitespace-nowrap border-r w-24" style={{ borderColor: 'var(--border)', backgroundColor: bg }}>
+                          <td className="sticky-stack left-0 z-[2] px-2 py-1.5 text-left text-xs whitespace-nowrap border-r w-24" style={{ borderColor: 'var(--border)', backgroundColor: bg }}>
                             <div className="flex items-center gap-1.5">
                               <span className="font-mono font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{formatPrice(put.strike)}</span>
                               {moneyness === 'itm' && (
@@ -784,13 +786,13 @@ export default function OptionsPage() {
                     return rows;
                   })()
                 )}
-              </tbody>
-            </table>
+                </tbody>
+              </table>
+            </div>
+            {!loading && enrichedPuts.length === 0 && !error && (
+              <div className="py-12 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No put options data available for this expiration.</div>
+            )}
           </div>
-          {!loading && enrichedPuts.length === 0 && !error && (
-            <div className="py-12 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No put options data available for this expiration.</div>
-          )}
-        </div>
         )}
 
         <footer className="mt-8 pb-6 text-center">
