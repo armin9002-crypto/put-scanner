@@ -165,18 +165,36 @@ const PRICE_HEADER_TOP = 56;
 const EXPIRY_ROW_TOP = 144;
 const TABLE_HEADER_TOP = 200;
 
-function resolvePreferredExpiration(expirations: ExpirationDate[], expiryParam: string | null): number | null {
-  if (expirations.length === 0) return null;
-  if (expiryParam === 'lte_30dte') {
-    return expirations.find(exp => exp.dte <= 30)?.date ?? expirations[0].date;
+function parseExpiryParam(expiryParam: string | null): number | null {
+  if (!expiryParam) return null;
+  const numeric = Number(expiryParam);
+  if (Number.isFinite(numeric)) return numeric;
+  const isoMatch = expiryParam.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!isoMatch) return null;
+  const [, year, month, day] = isoMatch;
+  return Math.floor(Date.UTC(Number(year), Number(month) - 1, Number(day)) / 1000);
+}
+
+function resolvePreferredExpiration(
+  expirations: ExpirationDate[],
+  expiryParam: string | null
+): { date: number | null; fromScanner: boolean } {
+  if (expirations.length === 0) return { date: null, fromScanner: false };
+  if (expiryParam === 'lte30' || expiryParam === 'lte_30dte') {
+    const shortDated = expirations.find(exp => exp.dte <= 30);
+    return {
+      date: shortDated?.date ?? expirations[0].date,
+      fromScanner: !!shortDated,
+    };
   }
-  if (expiryParam) {
-    const requestedDate = Number(expiryParam);
-    if (Number.isFinite(requestedDate) && expirations.some(exp => exp.date === requestedDate)) {
-      return requestedDate;
-    }
+  const requestedDate = parseExpiryParam(expiryParam);
+  if (requestedDate != null && expirations.some(exp => exp.date === requestedDate)) {
+    return {
+      date: requestedDate,
+      fromScanner: requestedDate !== expirations[0].date,
+    };
   }
-  return expirations[0].date;
+  return { date: expirations[0].date, fromScanner: false };
 }
 
 export default function OptionsPage() {
@@ -197,6 +215,7 @@ export default function OptionsPage() {
   const [showVolOI, setShowVolOI] = useState(false);
   const [ivRankData, setIvRankData] = useState<IVRankData | null>(null);
   const [watchlistIds, setWatchlistIds] = useState<Set<string>>(new Set());
+  const [showScannerPreselectBadge, setShowScannerPreselectBadge] = useState(false);
 
   // Ref guard to prevent duplicate fetches
   const fetchKeyRef = useRef<string>('');
@@ -214,17 +233,20 @@ export default function OptionsPage() {
         fetchOptions(ticker, expDate),
         fetchExtendedPrice(ticker),
       ]);
-      const preferredExp = expDate ?? resolvePreferredExpiration(initialOpts.expirations, expiryParam);
-      const opts = !expDate && preferredExp && preferredExp !== initialOpts.expirations[0]?.date
-        ? await fetchOptions(ticker, preferredExp)
+      const preferredExp = expDate
+        ? { date: expDate, fromScanner: false }
+        : resolvePreferredExpiration(initialOpts.expirations, expiryParam);
+      const opts = !expDate && preferredExp.date && preferredExp.date !== initialOpts.expirations[0]?.date
+        ? await fetchOptions(ticker, preferredExp.date)
         : initialOpts;
       setOptionsData(opts);
       setExtendedPrice(ext);
       // Lazy-load IV Rank (non-blocking)
       fetchIVRank(ticker).then(setIvRankData).catch(() => {});
-      if (preferredExp) {
-        setSelectedExp(preferredExp);
+      if (preferredExp.date) {
+        setSelectedExp(preferredExp.date);
       }
+      setShowScannerPreselectBadge(preferredExp.fromScanner);
       setLastUpdated(new Date());
     } catch (err: any) {
       setError(err.message || 'Failed to load options data');
@@ -239,6 +261,7 @@ export default function OptionsPage() {
     if (fetchKeyRef.current === key) return;
     fetchKeyRef.current = key;
 
+    setShowScannerPreselectBadge(false);
     setSelectedExp(expDate);
     setLoading(true);
     setError(null);
@@ -637,6 +660,14 @@ export default function OptionsPage() {
                 {exp.label} ({exp.dte} DTE)
               </button>
             ))}
+            {showScannerPreselectBadge && (
+              <span
+                className="self-center px-2 py-1 rounded-md text-[10px] whitespace-nowrap flex-shrink-0"
+                style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
+              >
+                Pre-selected from Scanner
+              </span>
+            )}
           </div>
         )}
 

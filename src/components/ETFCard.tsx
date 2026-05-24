@@ -3,7 +3,7 @@ import { TrendingUp, TrendingDown } from 'lucide-react';
 
 interface ETFCardProps {
   etf: ETFInfo;
-  onClick: () => void;
+  onClick: (selectedExpiryFilter?: string) => void;
   selectedExpiryFilter?: string;
   priceData?: {
     price: number | null;
@@ -110,7 +110,7 @@ export default function ETFCard({ etf, onClick, selectedExpiryFilter, priceData,
 
   return (
     <button
-      onClick={onClick}
+      onClick={() => onClick(selectedExpiryFilter)}
       data-expiry-filter={selectedExpiryFilter}
       className="group rounded-xl p-3 text-left transition-all duration-200 w-full relative"
       style={{

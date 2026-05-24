@@ -177,12 +177,17 @@ export default function HomePage() {
 
   const expDropdownOptions = useMemo(() => buildExpirationOptions(availableExps), [availableExps]);
 
-  const buildOptionsPath = useCallback((ticker: string) => {
-    if (expFilter === 'lte_30dte') {
-      return `/options/${ticker}?expiry=lte_30dte`;
+  const handleExpirationChange = useCallback((value: string) => {
+    console.log('[Scanner] selected expiry filter:', value);
+    setExpFilter(value);
+  }, []);
+
+  const buildOptionsPath = useCallback((ticker: string, selectedExpiryFilter = expFilter) => {
+    if (selectedExpiryFilter === 'lte_30dte') {
+      return `/options/${ticker}?expiry=lte30`;
     }
-    if (expFilter.startsWith('date_')) {
-      return `/options/${ticker}?expiry=${encodeURIComponent(expFilter.replace('date_', ''))}`;
+    if (selectedExpiryFilter.startsWith('date_')) {
+      return `/options/${ticker}?expiry=${encodeURIComponent(selectedExpiryFilter.replace('date_', ''))}`;
     }
     return `/options/${ticker}`;
   }, [expFilter]);
@@ -260,7 +265,7 @@ export default function HomePage() {
 
             <ExpirationFilter
               value={expFilter}
-              onChange={setExpFilter}
+              onChange={handleExpirationChange}
               options={expDropdownOptions}
               loadingDates={loadingDates}
               datesLoaded={datesLoaded}
@@ -341,7 +346,7 @@ export default function HomePage() {
               key={etf.ticker}
               etf={etf}
               selectedExpiryFilter={expFilter}
-              onClick={() => navigate(buildOptionsPath(etf.ticker))}
+              onClick={(selectedExpiryFilter) => navigate(buildOptionsPath(etf.ticker, selectedExpiryFilter))}
               priceData={prices[etf.ticker] ?? null}
               priceError={!pricesLoading && !!pricesError && !prices[etf.ticker]}
               onRetry={() => loadPrices(true)}
