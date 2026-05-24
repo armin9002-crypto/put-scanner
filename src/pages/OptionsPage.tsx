@@ -488,7 +488,7 @@ export default function OptionsPage() {
         {/* Price bar */}
         <div
           data-layout="price-header"
-          className="sticky-stack rounded-xl p-3 sm:p-5 mb-4 sm:mb-6 bg-[#12121a]"
+          className="sticky-stack z-30 rounded-xl p-3 sm:p-5 mb-4 sm:mb-6 bg-[#12121a] border-b border-[#1e1e2e]"
           style={{
             top: PRICE_HEADER_TOP,
             zIndex: 30,
@@ -594,7 +594,7 @@ export default function OptionsPage() {
         {optionsData && optionsData.expirations.length > 0 && (
           <div
             data-layout="expiry-row"
-            className="sticky-stack flex gap-2 mb-4 sm:mb-6 overflow-x-auto py-2 -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap bg-[#0a0a0f]"
+            className="sticky-stack z-20 flex gap-2 mb-4 sm:mb-6 overflow-x-auto pt-2 pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap bg-[#0a0a0f]"
             style={{
               top: EXPIRY_ROW_TOP,
               zIndex: 20,
@@ -630,21 +630,20 @@ export default function OptionsPage() {
           <div className="overflow-x-auto xl:overflow-x-visible">
             <table className="w-full table-fixed text-xs">
               <thead
-                className="sticky-stack"
+                className="sticky-stack z-10 bg-[#12121a] border-b-2 border-[#1e1e2e]"
                 style={{
                   top: TABLE_HEADER_TOP,
                   zIndex: 10,
-                  backgroundColor: 'var(--surface-alt)',
+                  backgroundColor: 'var(--surface)',
+                  borderBottom: '2px solid var(--border)',
                 }}
               >
-                <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
+                <tr style={{ backgroundColor: 'var(--surface)' }}>
                   <th
-                    className="sticky-stack px-2 py-1.5 w-6 text-[11px]"
+                    className="px-2 py-1.5 w-6 text-[11px]"
                     style={{
-                      top: TABLE_HEADER_TOP,
-                      zIndex: 10,
                       color: 'var(--text-muted)',
-                      backgroundColor: 'var(--surface-alt)',
+                      backgroundColor: 'var(--surface)',
                     }}
                   ></th>
                   {columns.map(col => (
@@ -652,14 +651,12 @@ export default function OptionsPage() {
                       key={col.field}
                       onClick={() => handleSort(col.field)}
                       title={col.fullLabel}
-                      className={`sticky-stack px-2 py-1.5 text-[11px] uppercase tracking-wider font-medium cursor-pointer transition-colors select-none whitespace-nowrap ${col.align} ${col.widthClass} ${
+                      className={`px-2 py-1.5 text-[11px] uppercase tracking-wider font-medium cursor-pointer transition-colors select-none whitespace-nowrap ${col.align} ${col.widthClass} ${
                         col.field === 'strike' ? 'left-0 border-r' : ''
                       } ${col.hideOnMobile ? 'hidden md:table-cell' : ''} ${col.hideOnTablet ? 'hidden lg:table-cell' : ''}`}
                       style={{
-                        top: TABLE_HEADER_TOP,
-                        zIndex: col.field === 'strike' ? 12 : 10,
                         color: 'var(--text-muted)',
-                        backgroundColor: 'var(--surface-alt)',
+                        backgroundColor: 'var(--surface)',
                         borderColor: 'var(--border)',
                       }}
                     >
@@ -723,7 +720,7 @@ export default function OptionsPage() {
                               />
                             </button>
                           </td>
-                          <td className="px-2 py-1.5 text-left text-xs whitespace-nowrap sticky left-0 z-[2] border-r w-24" style={{ borderColor: 'var(--border)', backgroundColor: bg }}>
+                          <td className="px-2 py-1.5 text-left text-xs whitespace-nowrap border-r w-24" style={{ borderColor: 'var(--border)', backgroundColor: bg }}>
                             <div className="flex items-center gap-1.5">
                               <span className="font-mono font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{formatPrice(put.strike)}</span>
                               {moneyness === 'itm' && (
