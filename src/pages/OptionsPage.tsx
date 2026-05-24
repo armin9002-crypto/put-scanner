@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import type { ExpirationDate, OptionsChainData, SortField, SortDirection } from '../lib/types';
 import { ETF_LIST } from '../lib/etfs';
 import { fetchOptions, fetchExtendedPrice, calculatePutDelta, formatPrice, formatYield, yieldColor, formatNumber, fetchIVRank } from '../lib/api';
@@ -180,8 +180,15 @@ function resolvePreferredExpiration(
   expiryParam: string | null
 ): { date: number | null; fromScanner: boolean } {
   if (expirations.length === 0) return { date: null, fromScanner: false };
+  console.log('Pre-selected expiry logic running:', { expiryParam, expirations });
   if (expiryParam === 'lte30' || expiryParam === 'lte_30dte') {
     const shortDated = expirations.find(exp => exp.dte <= 30);
+    console.log('Pre-selected expiry resolved:', {
+      mode: 'lte30',
+      requested: expiryParam,
+      resolved: shortDated?.date ?? expirations[0].date,
+      matched: !!shortDated,
+    });
     return {
       date: shortDated?.date ?? expirations[0].date,
       fromScanner: !!shortDated,
@@ -189,19 +196,35 @@ function resolvePreferredExpiration(
   }
   const requestedDate = parseExpiryParam(expiryParam);
   if (requestedDate != null && expirations.some(exp => exp.date === requestedDate)) {
+    console.log('Pre-selected expiry resolved:', {
+      mode: 'specific',
+      requested: expiryParam,
+      parsed: requestedDate,
+      matched: true,
+    });
     return {
       date: requestedDate,
       fromScanner: requestedDate !== expirations[0].date,
     };
   }
+  console.log('Pre-selected expiry resolved:', {
+    mode: 'fallback',
+    requested: expiryParam,
+    parsed: requestedDate,
+    resolved: expirations[0].date,
+  });
   return { date: expirations[0].date, fromScanner: false };
 }
 
 export default function OptionsPage() {
+  const location = useLocation();
   const { ticker } = useParams<{ ticker: string }>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const expiryParam = searchParams.get('expiry');
+  console.log('Options page mounted');
+  console.log('location.state:', location.state);
+  console.log('searchParams expiry:', searchParams.get('expiry'));
   const etf = ETF_LIST.find(e => e.ticker === ticker);
 
   const [optionsData, setOptionsData] = useState<OptionsChainData | null>(null);
@@ -216,6 +239,7 @@ export default function OptionsPage() {
   const [ivRankData, setIvRankData] = useState<IVRankData | null>(null);
   const [watchlistIds, setWatchlistIds] = useState<Set<string>>(new Set());
   const [showScannerPreselectBadge, setShowScannerPreselectBadge] = useState(false);
+  console.log('Initial selectedExpiry:', selectedExp);
 
   // Ref guard to prevent duplicate fetches
   const fetchKeyRef = useRef<string>('');
@@ -236,6 +260,12 @@ export default function OptionsPage() {
       const preferredExp = expDate
         ? { date: expDate, fromScanner: false }
         : resolvePreferredExpiration(initialOpts.expirations, expiryParam);
+      console.log('Pre-selected expiry load result:', {
+        requested: expiryParam,
+        expDate,
+        preferredExp,
+        nearest: initialOpts.expirations[0]?.date ?? null,
+      });
       const opts = !expDate && preferredExp.date && preferredExp.date !== initialOpts.expirations[0]?.date
         ? await fetchOptions(ticker, preferredExp.date)
         : initialOpts;
@@ -524,6 +554,9 @@ export default function OptionsPage() {
             <div className="flex items-center gap-2 sm:gap-3">
               <h1 className="text-xl sm:text-2xl font-bold font-mono" style={{ color: 'var(--text)' }}>{etf.ticker}</h1>
               <span className="text-xs sm:text-sm truncate" style={{ color: 'var(--text-muted)' }}>{etf.name}</span>
+              <span className="text-xs bg-red-500 text-white px-2 py-0.5 rounded">
+                Expiry param: {expiryParam ?? (location.state as { selectedExpiry?: string | number } | null)?.selectedExpiry ?? 'none'}
+              </span>
             </div>
           </div>
         </div>

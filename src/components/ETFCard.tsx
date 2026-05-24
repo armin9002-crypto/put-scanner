@@ -5,6 +5,8 @@ interface ETFCardProps {
   etf: ETFInfo;
   onClick: (selectedExpiryFilter?: string) => void;
   selectedExpiryFilter?: string;
+  debugNavigatePath?: string;
+  debugNavigateOptions?: unknown;
   priceData?: {
     price: number | null;
     change: number | null;
@@ -103,14 +105,27 @@ function PricePlaceholder({ showPriceSkeleton = false }: { showPriceSkeleton?: b
   );
 }
 
-export default function ETFCard({ etf, onClick, selectedExpiryFilter, priceData, priceError, onRetry }: ETFCardProps) {
+export default function ETFCard({
+  etf,
+  onClick,
+  selectedExpiryFilter,
+  debugNavigatePath,
+  debugNavigateOptions,
+  priceData,
+  priceError,
+  onRetry,
+}: ETFCardProps) {
   const hasValidPrice = priceData && priceData.price != null && priceData.price > 0;
   const changePositive = hasValidPrice ? (priceData!.changePct ?? 0) >= 0 : true;
   const ivEnv = hasValidPrice ? ivEnvStyle(priceData!.price!, priceData!.high52w, priceData!.low52w) : null;
 
   return (
     <button
-      onClick={() => onClick(selectedExpiryFilter)}
+      onClick={() => {
+        console.log('Card clicked, navigating with expiry:', selectedExpiryFilter);
+        console.log('Navigate args:', debugNavigatePath, debugNavigateOptions);
+        onClick(selectedExpiryFilter);
+      }}
       data-expiry-filter={selectedExpiryFilter}
       className="group rounded-xl p-3 text-left transition-all duration-200 w-full relative"
       style={{

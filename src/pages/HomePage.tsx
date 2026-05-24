@@ -180,6 +180,7 @@ export default function HomePage() {
   const handleExpirationChange = useCallback((value: string) => {
     console.log('[Scanner] selected expiry filter:', value);
     setExpFilter(value);
+    console.log('Scanner expiry selected:', value);
   }, []);
 
   const buildOptionsPath = useCallback((ticker: string, selectedExpiryFilter = expFilter) => {
@@ -196,6 +197,8 @@ export default function HomePage() {
   const qqqLineColor = qqqUp ? 'var(--green)' : 'var(--red)';
   const vixLineColor = vixData ? vixColor(vixData.price) : 'var(--yellow)';
   const vixStatus = vixData ? vixLabel(vixData.price) : { text: '', color: '' };
+
+  console.log('Passing expiry to cards:', expFilter);
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
@@ -346,7 +349,14 @@ export default function HomePage() {
               key={etf.ticker}
               etf={etf}
               selectedExpiryFilter={expFilter}
-              onClick={(selectedExpiryFilter) => navigate(buildOptionsPath(etf.ticker, selectedExpiryFilter))}
+              debugNavigatePath={buildOptionsPath(etf.ticker, expFilter)}
+              debugNavigateOptions={undefined}
+              onClick={(selectedExpiryFilter) => {
+                const path = buildOptionsPath(etf.ticker, selectedExpiryFilter);
+                const options = undefined;
+                console.log('Navigate args:', path, options);
+                navigate(path);
+              }}
               priceData={prices[etf.ticker] ?? null}
               priceError={!pricesLoading && !!pricesError && !prices[etf.ticker]}
               onRetry={() => loadPrices(true)}
