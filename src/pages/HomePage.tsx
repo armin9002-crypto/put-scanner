@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { clearBatchPriceCache, fetchBatchPrices, fetchOptions, fetchSparkline } from '../lib/api';
+import { clearBatchPriceCache, fetchBatchPrices, fetchOptions, fetchSparkline, fetchWithConcurrencyLimit } from '../lib/api';
 import type { SparklineData } from '../lib/api';
 import { getExpirationsCache, setExpirationsCache } from '../lib/cache';
 import type { BatchPriceData } from '../lib/cache';
@@ -13,10 +13,37 @@ const HARDCODED_TICKERS = 'AGQ,BOIL,BRZU,BULZ,CURE,CWEB,DDM,DFEN,DIG,DPST,DUSL,E
 
 const LEVERAGE_OPTIONS = ['All', '2x', '3x'] as const;
 const TYPE_OPTIONS = ['All', 'Broad Index', 'Sector', 'Commodity', 'Country'] as const;
-const EXPIRATION_PREFETCH_ETFS = ['TQQQ', 'SOXL', 'UPRO', 'TNA', 'FAS'];
+const EXPIRY_AVAILABILITY_CACHE_KEY = 'scanner_expiry_availability_cache_v1';
+const EXPIRY_AVAILABILITY_TTL = 2 * 60 * 60 * 1000;
 
 // Import ETF_LIST for filtering only
 import { ETF_LIST } from '../lib/etfs';
+
+interface ExpiryAvailabilityCache {
+  expirations: { date: number; label: string; dte: number }[];
+  availability: Record<string, number[]>;
+}
+
+function getExpiryAvailabilityCache(): ExpiryAvailabilityCache | null {
+  try {
+    const raw = localStorage.getItem(EXPIRY_AVAILABILITY_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (Date.now() - parsed.timestamp > EXPIRY_AVAILABILITY_TTL) {
+      localStorage.removeItem(EXPIRY_AVAILABILITY_CACHE_KEY);
+      return null;
+    }
+    return parsed.data as ExpiryAvailabilityCache;
+  } catch {
+    return null;
+  }
+}
+
+function setExpiryAvailabilityCache(data: ExpiryAvailabilityCache): void {
+  try {
+    localStorage.setItem(EXPIRY_AVAILABILITY_CACHE_KEY, JSON.stringify({ data, timestamp: Date.now() }));
+  } catch { /* ignore unavailable storage */ }
+}
 
 function vixColor(vix: number): string {
   if (vix < 15) return 'var(--green)';
@@ -39,6 +66,7 @@ export default function HomePage() {
   const [typeFilter, setTypeFilter] = useState<string>('All');
   const [expFilter, setExpFilter] = useState('all');
   const [availableExps, setAvailableExps] = useState<{ date: number; label: string; dte: number }[]>([]);
+  const [expiryAvailability, setExpiryAvailability] = useState<Record<string, number[]>>({});
   const [datesLoaded, setDatesLoaded] = useState(false);
   const [loadingDates, setLoadingDates] = useState(false);
 
@@ -103,25 +131,40 @@ export default function HomePage() {
   useEffect(() => { loadPrices(); }, []);
 
   useEffect(() => {
+    const availabilityCache = getExpiryAvailabilityCache();
+    if (availabilityCache && availabilityCache.expirations.length > 0) {
+      setAvailableExps(availabilityCache.expirations);
+      setExpiryAvailability(availabilityCache.availability);
+      setDatesLoaded(true);
+      return;
+    }
+
     const cached = getExpirationsCache();
     if (cached && cached.expirations.length > 0) {
       setAvailableExps(cached.expirations);
-      setDatesLoaded(true);
-      return;
     }
 
     let cancelled = false;
     (async () => {
       setLoadingDates(true);
-      const results = await Promise.allSettled(
-        EXPIRATION_PREFETCH_ETFS.map(ticker => fetchOptions(ticker))
-      );
+      const tasks = ETF_LIST.map(etf => async () => {
+        try {
+          const data = await fetchOptions(etf.ticker);
+          return { ticker: etf.ticker, data };
+        } catch {
+          return null;
+        }
+      });
+      const results = await fetchWithConcurrencyLimit(tasks, 5);
       if (cancelled) return;
 
       const allExps = new Map<number, { date: number; label: string; dte: number }>();
+      const availability: Record<string, number[]> = {};
       for (const result of results) {
-        if (result.status !== 'fulfilled') continue;
-        for (const exp of result.value.expirations) {
+        if (result.status !== 'fulfilled' || !result.value) continue;
+        const { ticker, data } = result.value;
+        availability[ticker] = data.expirations.map(exp => exp.date);
+        for (const exp of data.expirations) {
           if (!allExps.has(exp.date)) {
             allExps.set(exp.date, {
               date: exp.date,
@@ -134,9 +177,11 @@ export default function HomePage() {
 
       const sorted = Array.from(allExps.values()).sort((a, b) => a.date - b.date);
       setAvailableExps(sorted);
+      setExpiryAvailability(availability);
       setDatesLoaded(true);
       setLoadingDates(false);
       setExpirationsCache(sorted);
+      setExpiryAvailabilityCache({ expirations: sorted, availability });
     })();
 
     return () => { cancelled = true; };
@@ -161,6 +206,7 @@ export default function HomePage() {
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
+    const dateToDte = new Map(availableExps.map(exp => [exp.date, exp.dte]));
     return ETF_LIST.filter(e => {
       if (q && !e.ticker.toLowerCase().includes(q) && !e.underlying.toLowerCase().includes(q) && !e.name.toLowerCase().includes(q)) {
         return false;
@@ -171,34 +217,32 @@ export default function HomePage() {
       if (typeFilter !== 'All' && e.type !== typeFilter) {
         return false;
       }
+      if (expFilter === 'lte_30dte') {
+        const dates = expiryAvailability[e.ticker] ?? [];
+        if (!dates.some(date => (dateToDte.get(date) ?? Infinity) <= 30)) {
+          return false;
+        }
+      } else if (expFilter.startsWith('date_')) {
+        const targetDate = Number(expFilter.replace('date_', ''));
+        const dates = expiryAvailability[e.ticker] ?? [];
+        if (!dates.includes(targetDate)) {
+          return false;
+        }
+      }
       return true;
     });
-  }, [search, leverageFilter, typeFilter]);
+  }, [search, leverageFilter, typeFilter, expFilter, expiryAvailability, availableExps]);
 
   const expDropdownOptions = useMemo(() => buildExpirationOptions(availableExps), [availableExps]);
 
   const handleExpirationChange = useCallback((value: string) => {
-    console.log('[Scanner] selected expiry filter:', value);
     setExpFilter(value);
-    console.log('Scanner expiry selected:', value);
   }, []);
-
-  const buildOptionsPath = useCallback((ticker: string, selectedExpiryFilter = expFilter) => {
-    if (selectedExpiryFilter === 'lte_30dte') {
-      return `/options/${ticker}?expiry=lte30`;
-    }
-    if (selectedExpiryFilter.startsWith('date_')) {
-      return `/options/${ticker}?expiry=${encodeURIComponent(selectedExpiryFilter.replace('date_', ''))}`;
-    }
-    return `/options/${ticker}`;
-  }, [expFilter]);
 
   const qqqUp = qqqData ? qqqData.changePercent >= 0 : true;
   const qqqLineColor = qqqUp ? 'var(--green)' : 'var(--red)';
   const vixLineColor = vixData ? vixColor(vixData.price) : 'var(--yellow)';
   const vixStatus = vixData ? vixLabel(vixData.price) : { text: '', color: '' };
-
-  console.log('Passing expiry to cards:', expFilter);
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
@@ -348,15 +392,7 @@ export default function HomePage() {
             <ETFCard
               key={etf.ticker}
               etf={etf}
-              selectedExpiryFilter={expFilter}
-              debugNavigatePath={buildOptionsPath(etf.ticker, expFilter)}
-              debugNavigateOptions={undefined}
-              onClick={(selectedExpiryFilter) => {
-                const path = buildOptionsPath(etf.ticker, selectedExpiryFilter);
-                const options = undefined;
-                console.log('Navigate args:', path, options);
-                navigate(path);
-              }}
+              onClick={() => navigate(`/options/${etf.ticker}`)}
               priceData={prices[etf.ticker] ?? null}
               priceError={!pricesLoading && !!pricesError && !prices[etf.ticker]}
               onRetry={() => loadPrices(true)}
