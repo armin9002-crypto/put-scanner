@@ -726,16 +726,16 @@ export default function ScreenerPage() {
   const progressPct = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
+    <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>
+      <div className="max-w-[1600px] mx-auto px-3 sm:px-6 lg:px-8 py-4">
         {/* Filter Bar */}
         <div className="rounded-xl p-3 sm:p-4 mb-3 sm:mb-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-3">
+          <div className="grid grid-cols-1 min-[430px]:grid-cols-2 sm:flex sm:flex-row sm:flex-wrap sm:items-end gap-3">
             {/* ETF Selector */}
-            <div className="w-full sm:min-w-[180px] sm:w-auto">
+            <div className="w-full sm:min-w-[180px] sm:w-auto min-w-0 min-[430px]:col-span-2 sm:col-span-1">
               <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>ETFs</label>
               <div className="relative">
-                <div className="flex flex-wrap gap-1 p-1.5 rounded-lg min-h-[32px]" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)' }}>
+                <div className="flex flex-wrap gap-1 p-1.5 rounded-lg min-h-[44px] sm:min-h-[32px]" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)' }}>
                   {selectedETFs.map(e => (
                     <span key={e.ticker} className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs rounded" style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)', border: '1px solid var(--accent-border)' }}>
                       {e.ticker}
@@ -748,7 +748,7 @@ export default function ScreenerPage() {
                     onChange={e => { setEtfSearch(e.target.value); setShowEtfDropdown(true); }}
                     onFocus={() => setShowEtfDropdown(true)}
                     placeholder={selectedETFs.length === 0 ? 'Select ETFs...' : ''}
-                    className="bg-transparent text-xs outline-none flex-1 min-w-[60px]"
+                    className="bg-transparent text-base sm:text-xs outline-none flex-1 min-w-[90px]"
                     style={{ color: 'var(--text)' }}
                   />
                 </div>
@@ -773,7 +773,7 @@ export default function ScreenerPage() {
             </div>
 
             {/* Expiration - single-select dropdown (max 2 expiries enforced by getExpsToFetch) */}
-            <div>
+            <div className="w-full sm:w-auto min-w-0">
               <ExpirationFilter
                 value={expFilter}
                 onChange={setExpFilter}
@@ -784,7 +784,7 @@ export default function ScreenerPage() {
               {datesLoaded && (
                 <button
                   onClick={selectNearestOnly}
-                  className="ml-1 text-[10px] px-2 py-0.5 rounded transition-colors"
+                  className="mt-1 sm:ml-1 text-[10px] px-2 py-1 rounded transition-colors min-h-[32px]"
                   style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)' }}
                 >
                   Nearest only
@@ -793,71 +793,71 @@ export default function ScreenerPage() {
             </div>
 
             {/* Delta (abs) */}
-            <div>
+            <div className="w-full sm:w-auto min-w-0">
               <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Delta (abs)</label>
               <select value={deltaFilter} onChange={e => setDeltaFilter(e.target.value)}
-                className="rounded-lg px-2 py-1.5 text-xs outline-none cursor-pointer"
+                className="w-full sm:w-auto rounded-lg px-3 py-2 sm:py-1.5 text-base sm:text-xs outline-none cursor-pointer min-h-[44px] sm:min-h-0"
                 style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
                 {DELTA_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
 
             {/* Moneyness */}
-            <div>
+            <div className="w-full sm:w-auto min-w-0">
               <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Moneyness</label>
               <select value={moneynessFilter} onChange={e => setMoneynessFilter(e.target.value)}
-                className="rounded-lg px-2 py-1.5 text-xs outline-none cursor-pointer"
+                className="w-full sm:w-auto rounded-lg px-3 py-2 sm:py-1.5 text-base sm:text-xs outline-none cursor-pointer min-h-[44px] sm:min-h-0"
                 style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
                 {MONEYNESS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
 
             {/* Ann Yield */}
-            <div>
+            <div className="w-full sm:w-auto min-w-0">
               <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Ann. Yield</label>
               <select value={yieldFilter} onChange={e => setYieldFilter(e.target.value)}
-                className="rounded-lg px-2 py-1.5 text-xs outline-none cursor-pointer"
+                className="w-full sm:w-auto rounded-lg px-3 py-2 sm:py-1.5 text-base sm:text-xs outline-none cursor-pointer min-h-[44px] sm:min-h-0"
                 style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
                 {YIELD_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
 
             {/* Min OI */}
-            <div>
+            <div className="w-full sm:w-auto min-w-0">
               <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Min OI</label>
               <select value={oiFilter} onChange={e => setOiFilter(e.target.value)}
-                className="rounded-lg px-2 py-1.5 text-xs outline-none cursor-pointer"
+                className="w-full sm:w-auto rounded-lg px-3 py-2 sm:py-1.5 text-base sm:text-xs outline-none cursor-pointer min-h-[44px] sm:min-h-0"
                 style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
                 {OI_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
 
             {/* Min Volume */}
-            <div>
+            <div className="w-full sm:w-auto min-w-0">
               <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Min Vol</label>
               <select value={volFilter} onChange={e => setVolFilter(e.target.value)}
-                className="rounded-lg px-2 py-1.5 text-xs outline-none cursor-pointer"
+                className="w-full sm:w-auto rounded-lg px-3 py-2 sm:py-1.5 text-base sm:text-xs outline-none cursor-pointer min-h-[44px] sm:min-h-0"
                 style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
                 {VOL_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
 
             {/* IV Rank */}
-            <div>
+            <div className="w-full sm:w-auto min-w-0">
               <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>IV Rank</label>
               <select value={ivRankFilter} onChange={e => setIvRankFilter(e.target.value)}
-                className="rounded-lg px-2 py-1.5 text-xs outline-none cursor-pointer"
+                className="w-full sm:w-auto rounded-lg px-3 py-2 sm:py-1.5 text-base sm:text-xs outline-none cursor-pointer min-h-[44px] sm:min-h-0"
                 style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
                 {IVRANK_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
 
             {/* Buttons */}
-            <div className="flex gap-2">
+            <div className="flex gap-2 w-full sm:w-auto">
               <button
                 onClick={handleLoad}
                 disabled={loading}
-                className="px-4 py-1.5 text-white text-xs font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-1.5"
+                className="flex-1 sm:flex-none justify-center px-4 py-2 sm:py-1.5 text-white text-xs font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-1.5 min-h-[44px] sm:min-h-0"
                 style={{ backgroundColor: 'var(--accent)' }}
               >
                 {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
@@ -865,7 +865,7 @@ export default function ScreenerPage() {
               </button>
               <button
                 onClick={clearFilters}
-                className="px-3 py-1.5 text-xs font-medium rounded-lg transition-all"
+                className="px-3 py-2 sm:py-1.5 text-xs font-medium rounded-lg transition-all min-h-[44px] sm:min-h-0"
                 style={{ backgroundColor: 'var(--border)', color: 'var(--text-secondary)' }}
               >
                 Clear
@@ -961,11 +961,11 @@ export default function ScreenerPage() {
         )}
 
         {/* Results header */}
-        <div className="flex items-center justify-between mb-2 px-1">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2 px-1">
           <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
             {loaded ? `Showing ${sortedRows.length} results` : ''}
           </span>
-          <label className="flex items-center gap-1.5 text-xs cursor-pointer" style={{ color: 'var(--text-muted)' }}>
+          <label className="flex items-center gap-1.5 text-xs cursor-pointer min-h-[40px]" style={{ color: 'var(--text-muted)' }}>
             <input
               type="checkbox"
               checked={showVolOI}
@@ -977,9 +977,9 @@ export default function ScreenerPage() {
         </div>
 
         {/* Table */}
-        <div className="rounded-xl overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
+        <div className="rounded-xl overflow-hidden max-w-full" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+          <div className="overflow-x-auto max-w-full">
+            <table className="min-w-[560px] md:min-w-0 w-full text-xs">
               <thead className="sticky top-0 z-10">
                 <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
                   {columns.map(col => (

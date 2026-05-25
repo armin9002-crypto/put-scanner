@@ -115,10 +115,23 @@ body {
   font-family: 'Arial Narrow', 'Barlow Condensed', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
 }
 
 input, select, textarea {
   color-scheme: var(--input-scheme);
+}
+
+input, select, textarea, button {
+  font: inherit;
+}
+
+@media (max-width: 640px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
 }
 
 .font-mono {

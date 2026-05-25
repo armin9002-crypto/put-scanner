@@ -245,15 +245,15 @@ export default function HomePage() {
   const vixStatus = vixData ? vixLabel(vixData.price) : { text: '', color: '' };
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <header className="mb-8">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'var(--accent-bg)' }}>
+    <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-5 sm:py-8">
+        <header className="mb-5 sm:mb-8">
+          <div className="flex items-center gap-3 mb-2 min-w-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'var(--accent-bg)' }}>
               <ShieldCheck className="w-5 h-5" style={{ color: 'var(--accent)' }} />
             </div>
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--text)' }}>Put Premium Scanner</h1>
+            <div className="min-w-0">
+              <h1 className="text-xl sm:text-2xl font-bold tracking-tight truncate" style={{ color: 'var(--text)' }}>Put Premium Scanner</h1>
               <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Leveraged ETF Options Screener</p>
             </div>
           </div>
@@ -266,21 +266,21 @@ export default function HomePage() {
             placeholder="Filter by ticker or underlying index..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-11 pr-4 py-3.5 sm:py-3 rounded-xl text-sm outline-none transition-all"
+            className="w-full pl-11 pr-4 py-3.5 sm:py-3 rounded-xl text-base sm:text-sm outline-none transition-all"
             style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}
           />
         </div>
 
         <div className="flex flex-col lg:flex-row lg:flex-wrap lg:items-start gap-4 mb-6">
           {/* Filters */}
-          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3">
+          <div className="grid grid-cols-1 sm:flex sm:flex-row sm:flex-wrap sm:items-center gap-3 w-full lg:w-auto min-w-0">
             <span className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Leverage</span>
-            <div className="flex gap-1.5">
+            <div className="grid grid-cols-3 gap-1.5 sm:flex">
               {LEVERAGE_OPTIONS.map(opt => (
                 <button
                   key={opt}
                   onClick={() => setLeverageFilter(opt)}
-                  className="px-3 py-1.5 sm:py-1 rounded-lg text-sm font-medium transition-all min-h-[44px] sm:min-h-0"
+                  className="px-3 py-2 sm:py-1 rounded-lg text-sm font-medium transition-all min-h-[44px] sm:min-h-0"
                   style={{
                     backgroundColor: leverageFilter === opt ? 'var(--accent)' : 'var(--surface)',
                     color: leverageFilter === opt ? 'white' : 'var(--text-muted)',
@@ -293,12 +293,12 @@ export default function HomePage() {
             </div>
 
             <span className="text-xs font-medium uppercase tracking-wider sm:ml-2" style={{ color: 'var(--text-muted)' }}>Type</span>
-            <div className="flex gap-1.5">
+            <div className="grid grid-cols-2 min-[430px]:grid-cols-3 sm:flex gap-1.5 min-w-0">
               {TYPE_OPTIONS.map(opt => (
                 <button
                   key={opt}
                   onClick={() => setTypeFilter(opt)}
-                  className="px-3 py-1.5 sm:py-1 rounded-lg text-sm font-medium transition-all min-h-[44px] sm:min-h-0"
+                  className="px-2.5 py-2 sm:px-3 sm:py-1 rounded-lg text-sm font-medium transition-all min-h-[44px] sm:min-h-0 truncate"
                   style={{
                     backgroundColor: typeFilter === opt ? 'var(--accent)' : 'var(--surface)',
                     color: typeFilter === opt ? 'white' : 'var(--text-muted)',
@@ -387,7 +387,7 @@ export default function HomePage() {
           </div>
         )}
 
-        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
           {filtered.map(etf => (
             <ETFCard
               key={etf.ticker}

@@ -86,25 +86,25 @@ function getDefaultSoldPrice(option: OptionDetail): number | null {
 
 function MetricCard({ label, value, color = 'var(--text)' }: { label: string; value: string; color?: string }) {
   return (
-    <div className="rounded-lg p-3" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
+    <div className="rounded-lg p-2.5 sm:p-3 min-w-0" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
       <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-dim)' }}>{label}</div>
-      <div className="text-base font-mono font-semibold tabular-nums" style={{ color }}>{value}</div>
+      <div className="text-sm sm:text-base font-mono font-semibold tabular-nums break-words" style={{ color }}>{value}</div>
     </div>
   );
 }
 
 function DetailRow({ label, value, color, compact = false }: { label: string; value: string; color?: string; compact?: boolean }) {
   return (
-    <div className={`flex items-center justify-between gap-3 border-b last:border-b-0 ${compact ? 'py-1' : 'py-1.5'}`} style={{ borderColor: 'var(--border)' }}>
-      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{label}</span>
-      <span className="text-xs font-mono tabular-nums text-right" style={{ color: color ?? 'var(--text)' }}>{value}</span>
+    <div className={`flex items-start justify-between gap-3 border-b last:border-b-0 min-w-0 ${compact ? 'py-1' : 'py-1.5'}`} style={{ borderColor: 'var(--border)' }}>
+      <span className="text-xs min-w-0" style={{ color: 'var(--text-muted)' }}>{label}</span>
+      <span className="text-xs font-mono tabular-nums text-right min-w-0 break-words" style={{ color: color ?? 'var(--text)' }}>{value}</span>
     </div>
   );
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="rounded-lg p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+    <section className="rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
       <h3 className="text-[11px] uppercase tracking-wider font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>{title}</h3>
       {children}
     </section>
@@ -183,12 +183,12 @@ export default function OptionDetailDrawer({
         className="absolute inset-0 bg-black/50"
       />
       <aside
-        className="absolute inset-x-0 bottom-0 max-h-[92vh] overflow-y-auto rounded-t-2xl p-4 shadow-2xl sm:inset-y-0 sm:left-auto sm:right-0 sm:h-full sm:max-h-none sm:w-[440px] sm:rounded-none sm:p-5"
+        className="absolute inset-x-0 bottom-0 max-h-[94vh] w-full overflow-y-auto rounded-t-2xl p-3 shadow-2xl sm:inset-y-0 sm:left-auto sm:right-0 sm:h-full sm:max-h-none sm:w-[440px] sm:rounded-none sm:p-5"
         style={{ backgroundColor: 'var(--bg)', borderLeft: '1px solid var(--border)' }}
       >
-        <div className="flex items-start justify-between gap-3 mb-4">
-          <div>
-            <h2 className="text-xl font-bold font-mono" style={{ color: 'var(--text)' }}>
+        <div className="flex items-start justify-between gap-3 mb-4 min-w-0">
+          <div className="min-w-0">
+            <h2 className="text-lg sm:text-xl font-bold font-mono break-words" style={{ color: 'var(--text)' }}>
               {ticker} {formatCurrency(option.strike, option.strike % 1 === 0 ? 0 : 2)} Put
             </h2>
             <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
@@ -200,6 +200,7 @@ export default function OptionDetailDrawer({
           </div>
           <button
             onClick={onClose}
+            aria-label="Close option detail drawer"
             className="p-2 rounded-lg transition-all min-h-[44px] min-w-[44px] flex items-center justify-center"
             style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
           >
@@ -207,7 +208,7 @@ export default function OptionDetailDrawer({
           </button>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 mb-3">
+        <div className="grid grid-cols-2 gap-2 mb-3 min-w-0">
           <MetricCard label="Premium / Contract" value={formatCurrency(premiumPerContract)} color="var(--accent-light)" />
           <MetricCard label="Breakeven" value={formatCurrency(breakeven)} />
           <MetricCard label="Downside Cushion" value={formatPercent(downsideCushion)} color={isValidNumber(downsideCushion) && downsideCushion >= 0 ? 'var(--green)' : 'var(--red)'} />
@@ -216,16 +217,17 @@ export default function OptionDetailDrawer({
 
         <div className="space-y-3">
           <Section title="Position Calculator">
-            <div className="grid grid-cols-2 gap-2 mb-3">
+            <div className="grid grid-cols-1 min-[390px]:grid-cols-2 gap-2 mb-3">
               <label className="block">
                 <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Contracts</span>
                 <input
                   type="number"
                   min={1}
                   step={1}
+                  inputMode="numeric"
                   value={contracts}
                   onChange={event => setContracts(Math.max(1, Math.floor(Number(event.target.value) || 1)))}
-                  className="w-full rounded-lg px-3 py-2 text-sm font-mono outline-none"
+                  className="w-full rounded-lg px-3 py-2 text-base sm:text-sm font-mono outline-none min-h-[44px]"
                   style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
                 />
               </label>
@@ -235,17 +237,18 @@ export default function OptionDetailDrawer({
                   type="number"
                   min={0}
                   step="0.01"
+                  inputMode="decimal"
                   value={soldPrice}
                   onChange={event => {
                     const next = event.target.value;
                     if (next === '' || Number(next) >= 0) setSoldPrice(next);
                   }}
-                  className="w-full rounded-lg px-3 py-2 text-sm font-mono outline-none"
+                  className="w-full rounded-lg px-3 py-2 text-base sm:text-sm font-mono outline-none min-h-[44px]"
                   style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
                 />
               </label>
             </div>
-            <div className="flex gap-2 mb-3">
+            <div className="flex flex-wrap gap-2 mb-3">
               {[
                 ['Bid', bid],
                 ['Mid', mid],
@@ -255,7 +258,7 @@ export default function OptionDetailDrawer({
                   key={label as string}
                   onClick={() => setSoldPriceFromQuote(value as number | null)}
                   disabled={!isValidNumber(value as number | null)}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="px-3 py-2 sm:py-1.5 rounded-lg text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed min-h-[40px]"
                   style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)', border: '1px solid var(--accent-border)' }}
                 >
                   {label}

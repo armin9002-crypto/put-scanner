@@ -15,7 +15,7 @@ function ThemeToggle() {
   return (
     <button
       onClick={cycleTheme}
-      className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium transition-all"
+      className="flex items-center justify-center gap-1.5 px-2 py-2 sm:py-1.5 rounded-lg text-xs font-medium transition-all min-h-[40px] min-w-[40px]"
       style={{ color: 'var(--text-muted)' }}
       title={`Switch theme (current: ${label})`}
     >
@@ -28,19 +28,19 @@ function ThemeToggle() {
 function NavBar() {
   return (
     <nav className="sticky top-0 z-50" style={{ backgroundColor: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 flex items-center h-11">
-        <div className="flex items-center gap-2 mr-3 sm:mr-6">
+      <div className="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8 flex items-center gap-1 min-h-11 overflow-x-auto">
+        <div className="flex items-center gap-2 mr-1 sm:mr-5 flex-shrink-0">
           <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'var(--accent-bg)' }}>
             <ShieldCheck className="w-4 h-4" style={{ color: 'var(--accent)' }} />
           </div>
           <span className="text-sm font-bold tracking-tight hidden sm:inline" style={{ color: 'var(--text)' }}>Put Premium</span>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 min-w-0 flex-1 sm:flex-none">
           <NavLink
             to="/"
             end
             className={() =>
-              `flex items-center gap-1.5 px-3 py-2 sm:py-1.5 rounded-lg text-xs font-medium transition-all min-h-[44px] sm:min-h-0`
+              `flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-2 sm:py-1.5 rounded-lg text-[11px] sm:text-xs font-medium transition-all min-h-[40px] sm:min-h-0 flex-1 sm:flex-none whitespace-nowrap`
             }
             style={({ isActive }) => ({
               backgroundColor: isActive ? 'var(--accent-bg)' : 'transparent',
@@ -53,7 +53,7 @@ function NavBar() {
           <NavLink
             to="/screener"
             className={() =>
-              `flex items-center gap-1.5 px-3 py-2 sm:py-1.5 rounded-lg text-xs font-medium transition-all min-h-[44px] sm:min-h-0`
+              `flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-2 sm:py-1.5 rounded-lg text-[11px] sm:text-xs font-medium transition-all min-h-[40px] sm:min-h-0 flex-1 sm:flex-none whitespace-nowrap`
             }
             style={({ isActive }) => ({
               backgroundColor: isActive ? 'var(--accent-bg)' : 'transparent',
@@ -66,7 +66,7 @@ function NavBar() {
           <NavLink
             to="/watchlist"
             className={() =>
-              `flex items-center gap-1.5 px-3 py-2 sm:py-1.5 rounded-lg text-xs font-medium transition-all min-h-[44px] sm:min-h-0`
+              `flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-2 sm:py-1.5 rounded-lg text-[11px] sm:text-xs font-medium transition-all min-h-[40px] sm:min-h-0 flex-1 sm:flex-none whitespace-nowrap`
             }
             style={({ isActive }) => ({
               backgroundColor: isActive ? 'var(--accent-bg)' : 'transparent',
@@ -77,7 +77,7 @@ function NavBar() {
             <span className="sm:inline">Watchlist</span>
           </NavLink>
         </div>
-        <div className="ml-auto">
+        <div className="ml-1 flex-shrink-0">
           <ThemeToggle />
         </div>
       </div>

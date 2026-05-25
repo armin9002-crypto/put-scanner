@@ -539,10 +539,10 @@ export default function OptionsPage() {
   }
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
-      <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>
+      <div className="max-w-[1400px] mx-auto px-3 sm:px-6 lg:px-8 py-5 sm:py-6">
         {/* Header */}
-        <div className="flex items-center gap-3 sm:gap-4 mb-4 sm:mb-6">
+        <div className="flex items-center gap-2 sm:gap-4 mb-4 sm:mb-6 min-w-0">
           <button
             onClick={() => navigate('/')}
             className="p-2 rounded-lg transition-all min-h-[44px] min-w-[44px] flex items-center justify-center"
@@ -551,7 +551,7 @@ export default function OptionsPage() {
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 sm:gap-3">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
               <h1 className="text-xl sm:text-2xl font-bold font-mono" style={{ color: 'var(--text)' }}>{etf.ticker}</h1>
               <span className="text-xs sm:text-sm truncate" style={{ color: 'var(--text-muted)' }}>{etf.name}</span>
             </div>
@@ -561,7 +561,7 @@ export default function OptionsPage() {
         {/* Price bar */}
         <div
           data-layout="price-header"
-          className="sticky-stack z-30 rounded-xl p-3 sm:p-5 mb-4 sm:mb-6 bg-[#12121a] border-b border-[#1e1e2e]"
+          className="sticky-stack z-30 rounded-xl p-2.5 sm:p-5 mb-3 sm:mb-6 bg-[#12121a] border-b border-[#1e1e2e]"
           style={{
             top: PRICE_HEADER_TOP,
             zIndex: 30,
@@ -571,14 +571,14 @@ export default function OptionsPage() {
             border: '1px solid var(--border)',
           }}
         >
-          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3 sm:gap-6">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-6 min-w-0">
             {/* Price + change */}
-            <div className="flex-shrink-0">
-              <span className="text-2xl sm:text-3xl font-bold font-mono" style={{ color: 'var(--text)' }}>
+            <div className="flex-shrink-0 min-w-0">
+              <span className="text-xl sm:text-3xl font-bold font-mono" style={{ color: 'var(--text)' }}>
                 ${currentPrice > 0 ? currentPrice.toFixed(2) : '—'}
               </span>
               {extendedPrice && (
-                <div className="flex items-center gap-1.5 text-sm font-mono mt-1" style={{ color: changePositive ? 'var(--green)' : 'var(--red)' }}>
+                <div className="flex items-center gap-1.5 text-xs sm:text-sm font-mono mt-1 min-w-0" style={{ color: changePositive ? 'var(--green)' : 'var(--red)' }}>
                   {changePositive ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
                   <span>{changePositive ? '+$' : '-$'}{Math.abs(extendedPrice.change).toFixed(2)}</span>
                   <span>({changePositive ? '+' : '-'}{Math.abs(extendedPrice.changePercent).toFixed(2)}%)</span>
@@ -638,7 +638,7 @@ export default function OptionsPage() {
 
             {/* Right side: last updated + refresh + vol/OI toggle */}
             <div className="flex items-center gap-2 sm:gap-3 text-xs sm:ml-auto" style={{ color: 'var(--text-muted)' }}>
-              <label className="flex items-center gap-1.5 text-xs cursor-pointer min-h-[44px] sm:min-h-0" style={{ color: 'var(--text-muted)' }}>
+              <label className="flex items-center gap-1.5 text-xs cursor-pointer min-h-[40px] sm:min-h-0" style={{ color: 'var(--text-muted)' }}>
                 <input
                   type="checkbox"
                   checked={showVolOI}
@@ -653,7 +653,7 @@ export default function OptionsPage() {
               <button
                 onClick={handleRefresh}
                 disabled={loading}
-                className="flex items-center gap-1.5 px-3 py-2.5 sm:py-2 rounded-lg disabled:opacity-50 transition-all min-h-[44px] sm:min-h-0"
+                className="flex items-center gap-1.5 px-3 py-2 sm:py-2 rounded-lg disabled:opacity-50 transition-all min-h-[40px] sm:min-h-0"
                 style={{ backgroundColor: 'var(--border)', color: 'var(--text)' }}
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -667,7 +667,7 @@ export default function OptionsPage() {
         {optionsData && optionsData.expirations.length > 0 && (
           <div
             data-layout="expiry-row"
-            className="sticky-stack z-20 flex gap-2 mb-4 sm:mb-6 overflow-x-auto pt-2 pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap bg-[#0a0a0f]"
+            className="sticky-stack z-20 flex gap-2 mb-3 sm:mb-6 overflow-x-auto pt-2 pb-2 -mx-3 px-3 sm:mx-0 sm:px-0 sm:flex-wrap bg-[#0a0a0f]"
             style={{
               top: EXPIRY_ROW_TOP,
               zIndex: 20,
@@ -707,9 +707,9 @@ export default function OptionsPage() {
         ) : hasEmptyOptions ? (
           <OptionsEmptyState type="empty" onRefresh={handleRefresh} loading={loading} />
         ) : (
-          <div className="rounded-xl" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-            <div className="overflow-x-auto xl:overflow-x-visible">
-              <table className="w-full table-fixed text-xs">
+          <div className="rounded-xl max-w-full overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+            <div className="overflow-x-auto max-w-full xl:overflow-x-visible">
+              <table className="min-w-[520px] md:min-w-0 w-full table-fixed text-xs">
                 <thead
                   className="bg-[#12121a] border-b-2 border-[#1e1e2e]"
                   style={{
@@ -719,7 +719,7 @@ export default function OptionsPage() {
                 >
                   <tr style={{ backgroundColor: 'var(--surface)' }}>
                     <th
-                      className="sticky-stack top-[200px] z-10 px-2 py-1.5 w-6 text-[11px] bg-[#12121a]"
+                      className="sticky-stack top-[200px] z-10 px-1.5 sm:px-2 py-1.5 w-6 text-[10px] sm:text-[11px] bg-[#12121a]"
                       style={{
                         top: TABLE_HEADER_TOP,
                         zIndex: 10,
@@ -732,7 +732,7 @@ export default function OptionsPage() {
                         key={col.field}
                         onClick={() => handleSort(col.field)}
                         title={col.fullLabel}
-                        className={`sticky-stack top-[200px] px-2 py-1.5 text-[11px] uppercase tracking-wider font-medium cursor-pointer transition-colors select-none whitespace-nowrap bg-[#12121a] ${col.align} ${col.widthClass} ${
+                        className={`sticky-stack top-[200px] px-1.5 sm:px-2 py-1.5 text-[10px] sm:text-[11px] uppercase tracking-wider font-medium cursor-pointer transition-colors select-none whitespace-nowrap bg-[#12121a] ${col.align} ${col.widthClass} ${
                           col.field === 'strike' ? 'left-0 z-20 border-r' : 'z-10'
                         } ${col.hideOnMobile ? 'hidden md:table-cell' : ''} ${col.hideOnTablet ? 'hidden lg:table-cell' : ''}`}
                         style={{
@@ -798,13 +798,13 @@ export default function OptionsPage() {
                             boxShadow: isSelected ? 'inset 3px 0 0 var(--accent)' : 'none',
                           }}
                         >
-                          <td className="px-2 py-1.5 text-center text-xs w-6">
+                          <td className="px-1.5 sm:px-2 py-1.5 text-center text-xs w-6">
                             <button
                               onClick={(event) => {
                                 event.stopPropagation();
                                 toggleWatchlist(put);
                               }}
-                              className="transition-opacity hover:opacity-70 min-h-[44px] flex items-center justify-center"
+                              className="transition-opacity hover:opacity-70 min-h-[44px] min-w-[32px] flex items-center justify-center"
                               title={isWatched ? 'Remove from watchlist' : 'Add to watchlist'}
                             >
                               <Star
@@ -813,7 +813,7 @@ export default function OptionsPage() {
                               />
                             </button>
                           </td>
-                          <td className="sticky-stack left-0 z-[2] px-2 py-1.5 text-left text-xs whitespace-nowrap border-r w-24" style={{ borderColor: 'var(--border)', backgroundColor: isSelected ? 'var(--accent-bg)' : bg }}>
+                          <td className="sticky-stack left-0 z-[2] px-1.5 sm:px-2 py-1.5 text-left text-xs whitespace-nowrap border-r w-24" style={{ borderColor: 'var(--border)', backgroundColor: isSelected ? 'var(--accent-bg)' : bg }}>
                             <div className="flex items-center gap-1.5">
                               <span className="font-mono font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{formatPrice(put.strike)}</span>
                               {moneyness === 'itm' && (

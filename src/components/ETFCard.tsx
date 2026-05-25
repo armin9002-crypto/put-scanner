@@ -51,7 +51,7 @@ function MetricCell({ label, value, formatter = formatSignedPct, color }: { labe
   return (
     <div className="min-w-0 content-center">
       <div className="text-[9px] uppercase tracking-wider leading-none" style={{ color: 'var(--text-dim)' }}>{label}</div>
-      <div className="text-xs font-mono font-medium tabular-nums mt-0.5 truncate" style={{ color: resolvedColor }}>{formatter(value)}</div>
+      <div className="text-xs font-mono font-medium tabular-nums mt-0.5 truncate" title={formatter(value)} style={{ color: resolvedColor }}>{formatter(value)}</div>
     </div>
   );
 }
@@ -116,7 +116,7 @@ export default function ETFCard({
   return (
     <button
       onClick={onClick}
-      className="group rounded-xl p-3 text-left transition-all duration-200 w-full relative"
+      className="group rounded-xl p-3 text-left transition-all duration-200 w-full relative min-w-0"
       style={{
         backgroundColor: ivEnv ? ivEnv.bgTint : 'var(--surface)',
         border: `1px solid ${ivEnv ? ivEnv.borderColor : 'var(--border)'}`,
@@ -128,8 +128,8 @@ export default function ETFCard({
         {etf.leverage}
       </span>
 
-      <div className="flex flex-row gap-3 pr-8">
-        <div className="flex flex-col justify-between flex-shrink-0 w-1/2 min-w-0">
+      <div className="flex flex-row gap-3 pr-8 min-w-0">
+        <div className="flex flex-col justify-between flex-shrink-0 w-[52%] sm:w-1/2 min-w-0">
           <div>
             <div className="flex items-baseline gap-1.5 min-w-0">
               <span className="text-lg font-bold font-mono tracking-tight leading-none flex-shrink-0" style={{ color: 'var(--text)' }}>{etf.ticker}</span>
@@ -145,10 +145,10 @@ export default function ETFCard({
                   ${priceData!.price!.toFixed(2)}
                 </div>
                 {priceData!.change != null && priceData!.changePct != null && (
-                  <div className="flex items-center gap-1 text-xs font-mono tabular-nums leading-tight" style={{ color: changePositive ? 'var(--green)' : 'var(--red)' }}>
-                    {changePositive ? <TrendingUp className="w-3 h-3 flex-shrink-0" /> : <TrendingDown className="w-3 h-3 flex-shrink-0" />}
-                    <span>{changePositive ? '+$' : '-$'}{Math.abs(priceData!.change).toFixed(2)}</span>
-                    <span>({changePositive ? '+' : '-'}{Math.abs(priceData!.changePct).toFixed(2)}%)</span>
+                <div className="flex items-center gap-1 text-xs font-mono tabular-nums leading-tight min-w-0" style={{ color: changePositive ? 'var(--green)' : 'var(--red)' }}>
+                  {changePositive ? <TrendingUp className="w-3 h-3 flex-shrink-0" /> : <TrendingDown className="w-3 h-3 flex-shrink-0" />}
+                    <span className="truncate">{changePositive ? '+$' : '-$'}{Math.abs(priceData!.change).toFixed(2)}</span>
+                    <span className="truncate">({changePositive ? '+' : '-'}{Math.abs(priceData!.changePct).toFixed(2)}%)</span>
                   </div>
                 )}
               </>

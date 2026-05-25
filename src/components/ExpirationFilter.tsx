@@ -52,7 +52,7 @@ export default function ExpirationFilter({
   datesLoaded: boolean;
 }) {
   return (
-    <div>
+    <div className="w-full sm:w-auto min-w-0">
       <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>
         Expiration
         {loadingDates && <Loader2 className="w-3 h-3 inline ml-1 animate-spin" />}
@@ -60,7 +60,7 @@ export default function ExpirationFilter({
       <select
         value={value}
         onChange={e => onChange(e.target.value)}
-        className="rounded-lg px-2 py-1.5 text-xs outline-none cursor-pointer"
+        className="w-full sm:w-auto max-w-full rounded-lg px-3 py-2 sm:py-1.5 text-base sm:text-xs outline-none cursor-pointer min-h-[44px] sm:min-h-0"
         style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
       >
         {loadingDates && !datesLoaded && <option value={value} disabled>Loading...</option>}

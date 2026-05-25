@@ -383,17 +383,17 @@ export default function WatchlistPage() {
   ];
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>
+      <div className="max-w-[1600px] mx-auto px-3 sm:px-6 lg:px-8 py-5 sm:py-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-          <div>
+          <div className="min-w-0">
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight" style={{ color: 'var(--text)' }}>Watchlist</h1>
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Saved puts — click refresh to update prices.</p>
           </div>
           <button
             onClick={handleRefresh}
             disabled={loading || items.length === 0}
-            className="flex items-center justify-center gap-1.5 px-4 py-2 sm:py-1.5 text-white text-xs font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all min-h-[44px] sm:min-h-0"
+            className="flex w-full sm:w-auto items-center justify-center gap-1.5 px-4 py-2 sm:py-1.5 text-white text-xs font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all min-h-[44px] sm:min-h-0"
             style={{ backgroundColor: 'var(--accent)' }}
           >
             {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
@@ -414,8 +414,113 @@ export default function WatchlistPage() {
             <p className="text-xs" style={{ color: 'var(--text-dim)' }}>Open an options chain and click the star on any strike to save it here.</p>
           </div>
         ) : (
-          <div className="rounded-xl overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-            <div className="overflow-x-auto">
+          <>
+            <div className="md:hidden space-y-2">
+              {sortedRows.map(row => {
+                const mutedStyle = row.expired || row.status === 'unavailable' ? { opacity: 0.65 } : {};
+                return (
+                  <div
+                    key={row.id}
+                    className="rounded-xl p-3"
+                    style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', ...mutedStyle }}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <button
+                        onClick={() => navigate(`/options/${row.ticker}?expiry=${row.expiryTimestamp}`)}
+                        className="min-w-0 text-left"
+                      >
+                        <div className="font-mono text-lg font-bold" style={{ color: 'var(--accent-light)' }}>{row.ticker}</div>
+                        <div className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
+                          {row.expiryFormatted} {isFiniteNumber(row.dte) ? `(${row.dte} DTE)` : ''}
+                        </div>
+                      </button>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <span
+                          className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded"
+                          style={{ color: statusColor(row.status, row.expired), backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}
+                        >
+                          {(row.status === 'refresh_failed' || row.status === 'unavailable') && <AlertTriangle className="w-3 h-3" />}
+                          {row.statusLabel}
+                        </span>
+                        <button
+                          onClick={() => handleRemove(row.id)}
+                          className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg"
+                          title={confirmRemove === row.id ? 'Click again to remove' : 'Remove from watchlist'}
+                          style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}
+                        >
+                          <Star className="w-4 h-4 fill-current" style={{ color: confirmRemove === row.id ? 'var(--red)' : 'var(--accent-light)' }} />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-2 mt-3 text-xs">
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Strike</div>
+                        <div className="font-mono" style={{ color: 'var(--text)' }}>{formatMoney(row.strike)}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Price</div>
+                        <div className="font-mono" style={{ color: 'var(--text)' }}>{formatMoney(row.currentPrice)}</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Bid / Ask</div>
+                        <div className="font-mono" style={{ color: 'var(--text)' }}>{formatMoney(row.bid)} / {formatMoney(row.ask)}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Ann Yld Bid</div>
+                        <div className="font-mono font-medium" style={{ color: annYieldColor(row.annYieldBid) }}>{formatPercentValue(row.annYieldBid)}</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Moneyness</div>
+                        <div className="font-mono" style={{ color: row.moneynessColor }}>{row.moneynessLabel}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Delta / IV</div>
+                        <div className="font-mono" style={{ color: 'var(--text)' }}>
+                          {isFiniteNumber(row.delta) ? row.delta.toFixed(2) : '—'} / {isFiniteNumber(row.iv) ? row.iv.toFixed(1) + '%' : '—'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 pt-2" style={{ borderTop: '1px solid var(--border)' }}>
+                      {editingNote === row.id ? (
+                        <input
+                          type="text"
+                          value={noteText}
+                          onChange={event => setNoteText(event.target.value.slice(0, 60))}
+                          onBlur={() => handleNoteSave(row.id)}
+                          onKeyDown={event => {
+                            if (event.key === 'Enter') handleNoteSave(row.id);
+                            if (event.key === 'Escape') {
+                              setEditingNote(null);
+                              setNoteText('');
+                            }
+                          }}
+                          autoFocus
+                          className="w-full bg-transparent text-base outline-none border-b"
+                          style={{ color: 'var(--text)', borderColor: 'var(--accent)' }}
+                          maxLength={60}
+                        />
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setEditingNote(row.id);
+                            setNoteText(row.note);
+                          }}
+                          className="w-full min-h-[40px] text-left text-xs"
+                          style={{ color: row.note ? 'var(--text-secondary)' : 'var(--text-dim)' }}
+                        >
+                          {row.note || 'Add note...'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+          <div className="hidden md:block rounded-xl overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+            <div className="overflow-x-auto max-w-full">
               <table className="w-full text-xs">
                 <thead className="sticky top-0 z-10">
                   <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
@@ -524,6 +629,7 @@ export default function WatchlistPage() {
               </table>
             </div>
           </div>
+          </>
         )}
 
         <footer className="mt-8 pb-6 text-center">
