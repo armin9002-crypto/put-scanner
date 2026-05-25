@@ -727,7 +727,7 @@ export default function ScreenerPage() {
 
   return (
     <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>
-      <div className="max-w-[1600px] mx-auto px-3 sm:px-6 lg:px-8 py-4">
+      <div className="max-w-[1600px] mx-auto px-3 sm:px-5 lg:px-8 py-4">
         {/* Filter Bar */}
         <div className="rounded-xl p-3 sm:p-4 mb-3 sm:mb-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
           <div className="grid grid-cols-1 min-[430px]:grid-cols-2 sm:flex sm:flex-row sm:flex-wrap sm:items-end gap-3">
@@ -978,8 +978,8 @@ export default function ScreenerPage() {
 
         {/* Table */}
         <div className="rounded-xl overflow-hidden max-w-full" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-          <div className="overflow-x-auto max-w-full">
-            <table className="min-w-[560px] md:min-w-0 w-full text-xs">
+          <div className="overflow-x-auto max-w-full overscroll-contain">
+            <table className="min-w-[560px] md:min-w-[1120px] xl:min-w-0 w-full text-xs">
               <thead className="sticky top-0 z-10">
                 <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
                   {columns.map(col => (

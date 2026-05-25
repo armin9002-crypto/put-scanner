@@ -187,10 +187,10 @@ export default function InteractivePriceChartModal({
       />
 
       <div
-        className="relative z-[91] flex max-h-[96vh] sm:max-h-[90vh] w-full sm:max-w-5xl flex-col overflow-hidden rounded-t-2xl sm:rounded-2xl shadow-2xl"
+        className="relative z-[91] flex max-h-[96vh] sm:max-h-[90vh] w-full sm:w-[min(96vw,900px)] lg:w-[min(94vw,1100px)] flex-col overflow-hidden rounded-t-2xl sm:rounded-2xl shadow-2xl"
         style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
       >
-        <div className="flex items-start justify-between gap-3 border-b p-4 sm:p-5" style={{ borderColor: 'var(--border)' }}>
+        <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-start sm:justify-between sm:p-5" style={{ borderColor: 'var(--border)' }}>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-lg sm:text-xl font-semibold font-mono" style={{ color: 'var(--text)' }}>
@@ -215,7 +215,7 @@ export default function InteractivePriceChartModal({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 sm:flex-shrink-0">
             <button
               type="button"
               onClick={() => loadChart(true)}
@@ -238,7 +238,7 @@ export default function InteractivePriceChartModal({
           </div>
         </div>
 
-        <div className="overflow-y-auto p-4 sm:p-5">
+        <div className="overflow-y-auto p-3 sm:p-5">
           <div className="mb-4 flex gap-2 overflow-x-auto pb-1 sm:flex-wrap">
             {TIMEFRAMES.map(option => (
               <button
@@ -286,7 +286,7 @@ export default function InteractivePriceChartModal({
           ) : (
             <>
               <div className="rounded-xl p-3 sm:p-4" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
-                <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <div className="mb-3 grid grid-cols-1 gap-2 md:grid-cols-3">
                   <div className="rounded-lg p-3" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
                     <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Hover Point</div>
                     <div className="mt-1 font-mono text-sm tabular-nums" style={{ color: 'var(--text)' }}>{formatCurrency(activePoint?.price)}</div>
@@ -322,7 +322,7 @@ export default function InteractivePriceChartModal({
                 <svg
                   ref={svgRef}
                   viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
-                  className="h-[300px] w-full touch-none select-none sm:h-[360px]"
+                  className="h-[260px] w-full touch-none select-none sm:h-[340px] lg:h-[380px]"
                   onPointerMove={updateHoveredPoint}
                   onPointerLeave={() => setHoveredIndex(null)}
                   onClick={handleChartClick}

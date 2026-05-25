@@ -541,7 +541,7 @@ export default function OptionsPage() {
 
   return (
     <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>
-      <div className="max-w-[1400px] mx-auto px-3 sm:px-6 lg:px-8 py-5 sm:py-6">
+      <div className="max-w-[1400px] mx-auto px-3 sm:px-5 lg:px-8 py-4 sm:py-6">
         {/* Header */}
         <div className="flex items-center gap-2 sm:gap-4 mb-4 sm:mb-6 min-w-0">
           <button
@@ -572,7 +572,7 @@ export default function OptionsPage() {
             border: '1px solid var(--border)',
           }}
         >
-          <div className="flex flex-wrap items-center gap-2 sm:gap-6 min-w-0">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-4 lg:gap-6 min-w-0">
             {/* Price + change */}
             <div className="flex-shrink-0 min-w-0">
               <span className="text-xl sm:text-3xl font-bold font-mono" style={{ color: 'var(--text)' }}>
@@ -588,7 +588,7 @@ export default function OptionsPage() {
             </div>
 
             {/* Sparkline chart - hidden on mobile */}
-            <div className="hidden sm:block flex-shrink-0">
+            <div className="hidden sm:block flex-shrink-0 min-w-0">
               {loading && !extendedPrice ? (
                 <div className="flex items-center justify-center" style={{ width: 220, height: 55 }}>
                   <div className="h-3.5 w-20 rounded animate-pulse" style={{ backgroundColor: 'var(--border)' }} />
@@ -615,7 +615,7 @@ export default function OptionsPage() {
             </div>
 
             {/* Performance metrics - hidden on mobile */}
-            <div className="hidden sm:block flex-shrink-0 min-w-[140px]">
+            <div className="hidden sm:block flex-shrink-0 min-w-[140px] lg:min-w-[160px]">
               {loading && !extendedPrice ? (
                 <PerfSkeleton />
               ) : extendedPrice ? (
@@ -652,7 +652,7 @@ export default function OptionsPage() {
             )}
 
             {/* Right side: last updated + refresh + vol/OI toggle */}
-            <div className="flex items-center gap-2 sm:gap-3 text-xs sm:ml-auto" style={{ color: 'var(--text-muted)' }}>
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs sm:ml-auto min-w-0" style={{ color: 'var(--text-muted)' }}>
               <label className="flex items-center gap-1.5 text-xs cursor-pointer min-h-[40px] sm:min-h-0" style={{ color: 'var(--text-muted)' }}>
                 <input
                   type="checkbox"
@@ -724,7 +724,7 @@ export default function OptionsPage() {
         ) : (
           <div className="rounded-xl max-w-full overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
             <div className="max-h-[calc(100vh-230px)] min-h-[260px] max-w-full overflow-auto overscroll-contain sm:max-h-[calc(100vh-250px)]">
-              <table className="min-w-[520px] md:min-w-0 w-full table-fixed text-xs">
+              <table className="min-w-[520px] md:min-w-[980px] lg:min-w-[1180px] xl:min-w-0 w-full table-fixed text-xs">
                 <thead
                   className="bg-[#12121a]"
                   style={{

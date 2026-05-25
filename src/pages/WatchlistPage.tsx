@@ -393,7 +393,7 @@ export default function WatchlistPage() {
 
   return (
     <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>
-      <div className="max-w-[1800px] mx-auto px-2 sm:px-4 lg:px-6 py-5 sm:py-6">
+      <div className="max-w-[1800px] mx-auto px-2 sm:px-4 lg:px-6 py-4 sm:py-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
           <div className="min-w-0">
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight" style={{ color: 'var(--text)' }}>Watchlist</h1>
@@ -529,7 +529,7 @@ export default function WatchlistPage() {
             </div>
 
           <div className="hidden md:block rounded-xl overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-            <div className="overflow-x-auto max-w-full">
+            <div className="overflow-x-auto max-w-full overscroll-contain">
               <table className="min-w-max w-full text-[11px]">
                 <thead className="sticky top-0 z-10">
                   <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>

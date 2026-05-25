@@ -183,7 +183,7 @@ export default function OptionDetailDrawer({
         className="absolute inset-0 bg-black/50"
       />
       <aside
-        className="absolute inset-x-0 bottom-0 max-h-[94vh] w-full overflow-y-auto rounded-t-2xl p-3 shadow-2xl sm:inset-y-0 sm:left-auto sm:right-0 sm:h-full sm:max-h-none sm:w-[440px] sm:rounded-none sm:p-5"
+        className="absolute inset-x-0 bottom-0 max-h-[94vh] w-full overflow-y-auto rounded-t-2xl p-3 shadow-2xl sm:inset-y-0 sm:left-auto sm:right-0 sm:h-full sm:max-h-none sm:w-[480px] md:w-[520px] lg:w-[560px] sm:rounded-none sm:p-5"
         style={{ backgroundColor: 'var(--bg)', borderLeft: '1px solid var(--border)' }}
       >
         <div className="flex items-start justify-between gap-3 mb-4 min-w-0">
@@ -208,7 +208,7 @@ export default function OptionDetailDrawer({
           </button>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 mb-3 min-w-0">
+        <div className="grid grid-cols-1 min-[390px]:grid-cols-2 gap-2 mb-3 min-w-0">
           <MetricCard label="Premium / Contract" value={formatCurrency(premiumPerContract)} color="var(--accent-light)" />
           <MetricCard label="Breakeven" value={formatCurrency(breakeven)} />
           <MetricCard label="Downside Cushion" value={formatPercent(downsideCushion)} color={isValidNumber(downsideCushion) && downsideCushion >= 0 ? 'var(--green)' : 'var(--red)'} />

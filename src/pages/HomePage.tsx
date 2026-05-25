@@ -336,9 +336,9 @@ export default function HomePage() {
           />
         </div>
 
-        <div className="flex flex-col xl:flex-row xl:items-start gap-3 mb-4">
+        <div className="flex flex-col lg:flex-row lg:items-start gap-3 mb-4">
           {/* Filters */}
-          <div className="w-full xl:flex-1 rounded-xl p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+          <div className="w-full lg:flex-1 rounded-xl p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
             <div className="grid grid-cols-1 md:grid-cols-[auto_minmax(220px,320px)] gap-3 md:items-end">
               <div>
                 <span className="block text-xs font-medium uppercase tracking-wider mb-1.5" style={{ color: 'var(--text-muted)' }}>Leverage</span>
@@ -390,7 +390,7 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 min-[430px]:grid-cols-3 xl:w-[500px] gap-2">
+          <div className="grid grid-cols-1 min-[430px]:grid-cols-3 lg:w-[420px] xl:w-[500px] gap-2">
             <MarketChartCard ticker="QQQ" chartTicker="QQQ" data={qqqData} loading={marketLoading} onRefresh={loadMarketData} onOpenChart={(chartTicker, displayTicker) => setChartModal({ ticker: chartTicker, displayTicker })} />
             <MarketChartCard ticker="SPY" chartTicker="SPY" data={spyData} loading={marketLoading} onRefresh={loadMarketData} onOpenChart={(chartTicker, displayTicker) => setChartModal({ ticker: chartTicker, displayTicker })} />
             <MarketChartCard ticker="VIX" chartTicker="^VIX" data={vixData} loading={marketLoading} onRefresh={loadMarketData} onOpenChart={(chartTicker, displayTicker) => setChartModal({ ticker: chartTicker, displayTicker })} />
