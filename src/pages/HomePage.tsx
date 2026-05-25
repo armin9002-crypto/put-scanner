@@ -7,6 +7,7 @@ import type { BatchPriceData } from '../lib/cache';
 import ETFCard from '../components/ETFCard';
 import ExpirationFilter, { buildExpirationOptions, formatExpirationDropdownLabel } from '../components/ExpirationFilter';
 import SparklineChart from '../components/SparklineChart';
+import InteractivePriceChartModal from '../components/InteractivePriceChartModal';
 import { Search, Loader2, RefreshCw } from 'lucide-react';
 
 const HARDCODED_TICKERS = 'AGQ,BOIL,BRZU,BULZ,CURE,CWEB,DDM,DFEN,DIG,DPST,DUSL,EDC,ERX,EURL,FAS,FNGU,GUSH,HIBL,INDL,LABU,MIDU,NAIL,NUGT,QLD,ROM,SOXL,SSO,TECL,TNA,TQQQ,UCO,UDOW,UGL,UPRO,URTY,USD,UTSL,UWM,UYG,UYM,WEBL,YINN';
@@ -58,27 +59,52 @@ function chartReferenceClose(data: SparklineData): number | null {
 
 function MarketChartCard({
   ticker,
+  chartTicker,
   data,
   loading,
   onRefresh,
+  onOpenChart,
 }: {
   ticker: 'QQQ' | 'SPY' | 'VIX';
+  chartTicker: string;
   data: SparklineData | null;
   loading: boolean;
   onRefresh: () => void;
+  onOpenChart: (ticker: string, displayTicker: string) => void;
 }) {
   const changePct = data?.changePercent ?? 0;
   const color = data ? marketChangeColor(ticker, changePct) : 'var(--yellow)';
   const prefix = ticker === 'VIX' ? '' : '$';
 
   return (
-    <div className="rounded-lg p-2 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => data && onOpenChart(chartTicker, ticker)}
+      onKeyDown={(event) => {
+        if ((event.key === 'Enter' || event.key === ' ') && data) {
+          event.preventDefault();
+          onOpenChart(chartTicker, ticker);
+        }
+      }}
+      className="rounded-lg p-2 min-w-0 cursor-pointer transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-indigo-500/60"
+      style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
+      aria-label={`Open ${ticker} interactive price chart`}
+    >
       <div className="flex items-center justify-between gap-2 mb-1">
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="text-[10px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>{ticker}</span>
           <span className="text-[9px] font-medium px-1 py-0.5 rounded" style={{ color: 'var(--text-dim)', backgroundColor: 'var(--surface-alt)' }}>1D</span>
         </div>
-        <button onClick={onRefresh} disabled={loading} className="p-1 rounded transition-opacity hover:opacity-70 disabled:opacity-50" aria-label="Refresh market charts">
+        <button
+          onClick={(event) => {
+            event.stopPropagation();
+            onRefresh();
+          }}
+          disabled={loading}
+          className="p-1 rounded transition-opacity hover:opacity-70 disabled:opacity-50"
+          aria-label="Refresh market charts"
+        >
           <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} style={{ color: 'var(--text-muted)' }} />
         </button>
       </div>
@@ -134,6 +160,7 @@ export default function HomePage() {
   const [vixData, setVixData] = useState<SparklineData | null>(null);
   const [marketLoading, setMarketLoading] = useState(true);
   const [lastMarketUpdate, setLastMarketUpdate] = useState<Date | null>(null);
+  const [chartModal, setChartModal] = useState<{ ticker: string; displayTicker: string } | null>(null);
 
   // Load batch prices with 10-second hard timeout
   const loadPrices = useCallback(async (clearCache = false) => {
@@ -364,9 +391,9 @@ export default function HomePage() {
           </div>
 
           <div className="grid grid-cols-1 min-[430px]:grid-cols-3 xl:w-[500px] gap-2">
-            <MarketChartCard ticker="QQQ" data={qqqData} loading={marketLoading} onRefresh={loadMarketData} />
-            <MarketChartCard ticker="SPY" data={spyData} loading={marketLoading} onRefresh={loadMarketData} />
-            <MarketChartCard ticker="VIX" data={vixData} loading={marketLoading} onRefresh={loadMarketData} />
+            <MarketChartCard ticker="QQQ" chartTicker="QQQ" data={qqqData} loading={marketLoading} onRefresh={loadMarketData} onOpenChart={(chartTicker, displayTicker) => setChartModal({ ticker: chartTicker, displayTicker })} />
+            <MarketChartCard ticker="SPY" chartTicker="SPY" data={spyData} loading={marketLoading} onRefresh={loadMarketData} onOpenChart={(chartTicker, displayTicker) => setChartModal({ ticker: chartTicker, displayTicker })} />
+            <MarketChartCard ticker="VIX" chartTicker="^VIX" data={vixData} loading={marketLoading} onRefresh={loadMarketData} onOpenChart={(chartTicker, displayTicker) => setChartModal({ ticker: chartTicker, displayTicker })} />
           </div>
         </div>
 
@@ -399,6 +426,13 @@ export default function HomePage() {
           <p className="text-xs" style={{ color: 'var(--text-dim)' }}>Data delayed up to 15 minutes. Not financial advice.</p>
         </footer>
       </div>
+
+      <InteractivePriceChartModal
+        isOpen={chartModal != null}
+        ticker={chartModal?.ticker ?? ''}
+        displayTicker={chartModal?.displayTicker}
+        onClose={() => setChartModal(null)}
+      />
     </div>
   );
 }

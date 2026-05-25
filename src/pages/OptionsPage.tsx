@@ -8,6 +8,7 @@ import { addToWatchlist, removeFromWatchlist, isInWatchlist, makeWatchlistId } f
 import type { WatchlistItem } from '../lib/watchlist';
 import SparklineChart from '../components/SparklineChart';
 import OptionDetailDrawer from '../components/OptionDetailDrawer';
+import InteractivePriceChartModal from '../components/InteractivePriceChartModal';
 import {
   ArrowLeft, RefreshCw, TrendingUp, TrendingDown, AlertCircle,
   ChevronUp, ChevronDown, ChevronsUpDown, Star, BarChart3
@@ -221,6 +222,7 @@ export default function OptionsPage() {
   const [watchlistIds, setWatchlistIds] = useState<Set<string>>(new Set());
   const [showScannerPreselectBadge, setShowScannerPreselectBadge] = useState(false);
   const [selectedOption, setSelectedOption] = useState<EnrichedPut | null>(null);
+  const [showPriceChart, setShowPriceChart] = useState(false);
 
   // Ref guard to prevent duplicate fetches
   const fetchKeyRef = useRef<string>('');
@@ -593,7 +595,21 @@ export default function OptionsPage() {
                   <div className="h-3.5 w-20 rounded animate-pulse" style={{ backgroundColor: 'var(--border)' }} />
                 </div>
               ) : sparklineData.length >= 2 ? (
-                <SparklineChart data={sparklineData} color={sparklineColor} width={220} height={55} fillGradient />
+                <button
+                  type="button"
+                  onClick={() => setShowPriceChart(true)}
+                  className="block rounded-lg p-1 transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-indigo-500/60"
+                  aria-label={`Open ${ticker} interactive price chart`}
+                >
+                  <SparklineChart
+                    data={sparklineData}
+                    color={sparklineColor}
+                    width={220}
+                    height={55}
+                    fillGradient
+                    referenceValue={extendedPrice?.previousClose ?? null}
+                  />
+                </button>
               ) : (
                 <div className="flex items-center justify-center text-xs" style={{ width: 220, height: 55, color: 'var(--text-dim)' }}>No intraday data</div>
               )}
@@ -898,6 +914,13 @@ export default function OptionsPage() {
         dte={selectedExpiration?.dte ?? null}
         underlyingPrice={currentPrice > 0 ? currentPrice : null}
         onClose={() => setSelectedOption(null)}
+      />
+
+      <InteractivePriceChartModal
+        isOpen={showPriceChart}
+        ticker={ticker ?? ''}
+        displayTicker={ticker ?? ''}
+        onClose={() => setShowPriceChart(false)}
       />
     </div>
   );
