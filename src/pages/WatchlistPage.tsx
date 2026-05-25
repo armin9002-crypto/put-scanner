@@ -29,12 +29,15 @@ interface LiveRow extends WatchlistItem {
   openInterest: number | null;
   nomYieldBid: number | null;
   annYieldBid: number | null;
+  nomYieldAsk: number | null;
   annYieldAsk: number | null;
+  nomYieldLast: number | null;
+  annYieldLast: number | null;
   status: WatchlistStatus;
   statusLabel: string;
 }
 
-type SortField = 'ticker' | 'strike' | 'expiry' | 'dte' | 'price' | 'moneyness' | 'bid' | 'ask' | 'last' | 'delta' | 'iv' | 'nomYieldBid' | 'annYieldBid' | 'annYieldAsk' | 'added' | 'status';
+type SortField = 'ticker' | 'strike' | 'expiry' | 'dte' | 'moneyness' | 'bid' | 'ask' | 'last' | 'delta' | 'iv' | 'nomYieldBid' | 'annYieldBid' | 'nomYieldAsk' | 'annYieldAsk' | 'nomYieldLast' | 'annYieldLast' | 'added';
 type SortDir = 'asc' | 'desc';
 
 function isFiniteNumber(value: unknown): value is number {
@@ -133,6 +136,7 @@ function buildRow(item: WatchlistItem): LiveRow {
   const last = snapshot.last ?? null;
   const bidYield = calcYield(bid, item.strike, dte);
   const askYield = calcYield(ask, item.strike, dte);
+  const lastYield = calcYield(last, item.strike, dte);
   const moneyness = computeMoneyness(currentPrice, item.strike);
   const status = expired ? 'expired' : item.status ?? 'stale';
 
@@ -153,7 +157,10 @@ function buildRow(item: WatchlistItem): LiveRow {
     openInterest: snapshot.openInterest ?? null,
     nomYieldBid: bidYield.nominal,
     annYieldBid: bidYield.annualized,
+    nomYieldAsk: askYield.nominal,
     annYieldAsk: askYield.annualized,
+    nomYieldLast: lastYield.nominal,
+    annYieldLast: lastYield.annualized,
     status,
     statusLabel: statusLabel(status, expired),
   };
@@ -326,7 +333,6 @@ export default function WatchlistPage() {
         case 'strike': aVal = a.strike; bVal = b.strike; break;
         case 'expiry': aVal = a.expiry; bVal = b.expiry; break;
         case 'dte': aVal = a.dte ?? Number.MAX_SAFE_INTEGER; bVal = b.dte ?? Number.MAX_SAFE_INTEGER; break;
-        case 'price': aVal = a.currentPrice ?? -1; bVal = b.currentPrice ?? -1; break;
         case 'moneyness': aVal = a.moneynessPct ?? -999; bVal = b.moneynessPct ?? -999; break;
         case 'bid': aVal = a.bid ?? -1; bVal = b.bid ?? -1; break;
         case 'ask': aVal = a.ask ?? -1; bVal = b.ask ?? -1; break;
@@ -335,9 +341,11 @@ export default function WatchlistPage() {
         case 'iv': aVal = a.iv ?? -1; bVal = b.iv ?? -1; break;
         case 'nomYieldBid': aVal = a.nomYieldBid ?? -1; bVal = b.nomYieldBid ?? -1; break;
         case 'annYieldBid': aVal = a.annYieldBid ?? -1; bVal = b.annYieldBid ?? -1; break;
+        case 'nomYieldAsk': aVal = a.nomYieldAsk ?? -1; bVal = b.nomYieldAsk ?? -1; break;
         case 'annYieldAsk': aVal = a.annYieldAsk ?? -1; bVal = b.annYieldAsk ?? -1; break;
+        case 'nomYieldLast': aVal = a.nomYieldLast ?? -1; bVal = b.nomYieldLast ?? -1; break;
+        case 'annYieldLast': aVal = a.annYieldLast ?? -1; bVal = b.annYieldLast ?? -1; break;
         case 'added': aVal = a.addedAt; bVal = b.addedAt; break;
-        case 'status': aVal = a.statusLabel; bVal = b.statusLabel; break;
         default: aVal = a.dte ?? Number.MAX_SAFE_INTEGER; bVal = b.dte ?? Number.MAX_SAFE_INTEGER;
       }
       if (typeof aVal === 'string' && typeof bVal === 'string') {
@@ -364,27 +372,28 @@ export default function WatchlistPage() {
       : <ChevronDown className="w-3 h-3" style={{ color: 'var(--accent)' }} />;
   }
 
-  const columns: { field: SortField; label: string; align: string; hideOnMobile?: boolean; hideOnTablet?: boolean }[] = [
+  const columns: { field: SortField; label: string; align: string }[] = [
     { field: 'ticker', label: 'Ticker', align: 'text-left' },
     { field: 'strike', label: 'Strike', align: 'text-right' },
     { field: 'expiry', label: 'Expiry', align: 'text-right' },
-    { field: 'status', label: 'Status', align: 'text-left' },
-    { field: 'price', label: 'Price', align: 'text-right', hideOnMobile: true },
-    { field: 'moneyness', label: '% OTM/ITM', align: 'text-right', hideOnMobile: true },
+    { field: 'last', label: 'Last', align: 'text-right' },
     { field: 'bid', label: 'Bid', align: 'text-right' },
-    { field: 'ask', label: 'Ask', align: 'text-right', hideOnMobile: true },
-    { field: 'last', label: 'Last', align: 'text-right', hideOnMobile: true },
-    { field: 'delta', label: 'Delta', align: 'text-right', hideOnMobile: true },
-    { field: 'iv', label: 'IV', align: 'text-right', hideOnMobile: true },
-    { field: 'nomYieldBid', label: 'Nom Yld Bid', align: 'text-right', hideOnMobile: true, hideOnTablet: true },
-    { field: 'annYieldBid', label: 'Ann Yld Bid', align: 'text-right' },
-    { field: 'annYieldAsk', label: 'Ann Yld Ask', align: 'text-right', hideOnMobile: true },
-    { field: 'added', label: 'Added', align: 'text-right', hideOnMobile: true, hideOnTablet: true },
+    { field: 'ask', label: 'Ask', align: 'text-right' },
+    { field: 'delta', label: 'Delta', align: 'text-right' },
+    { field: 'moneyness', label: 'Moneyness', align: 'text-right' },
+    { field: 'iv', label: 'IV', align: 'text-right' },
+    { field: 'nomYieldBid', label: 'NY Bid', align: 'text-right' },
+    { field: 'annYieldBid', label: 'AY Bid', align: 'text-right' },
+    { field: 'nomYieldAsk', label: 'NY Ask', align: 'text-right' },
+    { field: 'annYieldAsk', label: 'AY Ask', align: 'text-right' },
+    { field: 'nomYieldLast', label: 'NY Last', align: 'text-right' },
+    { field: 'annYieldLast', label: 'AY Last', align: 'text-right' },
+    { field: 'added', label: 'Added', align: 'text-right' },
   ];
 
   return (
     <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>
-      <div className="max-w-[1600px] mx-auto px-3 sm:px-6 lg:px-8 py-5 sm:py-6">
+      <div className="max-w-[1800px] mx-auto px-2 sm:px-4 lg:px-6 py-5 sm:py-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
           <div className="min-w-0">
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight" style={{ color: 'var(--text)' }}>Watchlist</h1>
@@ -521,15 +530,15 @@ export default function WatchlistPage() {
 
           <div className="hidden md:block rounded-xl overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
             <div className="overflow-x-auto max-w-full">
-              <table className="w-full text-xs">
+              <table className="min-w-max w-full text-[11px]">
                 <thead className="sticky top-0 z-10">
                   <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
-                    <th className="px-2 py-1.5 text-[10px] uppercase tracking-wider font-medium w-8" style={{ color: 'var(--text-muted)' }}></th>
+                    <th className="px-1.5 py-1 text-[9px] uppercase tracking-wider font-medium w-7" style={{ color: 'var(--text-muted)' }}></th>
                     {columns.map(col => (
                       <th
                         key={col.field}
                         onClick={() => handleSort(col.field)}
-                        className={`px-2 py-1.5 text-[10px] uppercase tracking-wider font-medium cursor-pointer transition-colors select-none whitespace-nowrap ${col.align} ${col.hideOnMobile ? 'hidden md:table-cell' : ''} ${col.hideOnTablet ? 'hidden lg:table-cell' : ''}`}
+                        className={`px-1.5 py-1 text-[9px] uppercase tracking-wider font-medium cursor-pointer transition-colors select-none whitespace-nowrap ${col.align}`}
                         style={{ color: 'var(--text-muted)' }}
                       >
                         <span className="inline-flex items-center gap-0.5">
@@ -538,7 +547,7 @@ export default function WatchlistPage() {
                         </span>
                       </th>
                     ))}
-                    <th className="px-2 py-1.5 text-[10px] uppercase tracking-wider font-medium text-left" style={{ color: 'var(--text-muted)' }}>Note</th>
+                    <th className="px-1.5 py-1 text-[9px] uppercase tracking-wider font-medium text-left min-w-[130px]" style={{ color: 'var(--text-muted)' }}>Note</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -548,49 +557,42 @@ export default function WatchlistPage() {
 
                     return (
                       <tr key={row.id} className="transition-colors" style={{ borderBottom: '1px solid var(--border)', ...bgStyle }}>
-                        <td className="px-2 py-1 text-center" style={mutedStyle}>
+                        <td className="px-1.5 py-0.5 text-center" style={mutedStyle}>
                           <button
                             onClick={() => handleRemove(row.id)}
-                            className="transition-opacity hover:opacity-70 min-h-[44px] flex items-center justify-center"
+                            className="transition-opacity hover:opacity-70 min-h-[34px] min-w-[32px] flex items-center justify-center"
                             title={confirmRemove === row.id ? 'Click again to remove' : 'Remove from watchlist'}
                           >
                             <Star className="w-3.5 h-3.5 fill-current" style={{ color: confirmRemove === row.id ? 'var(--red)' : 'var(--accent-light)' }} />
                           </button>
                         </td>
-                        <td className="px-2 py-1 text-left whitespace-nowrap" style={mutedStyle}>
+                        <td className="px-1.5 py-0.5 text-left whitespace-nowrap" style={mutedStyle}>
                           <button
                             onClick={() => navigate(`/options/${row.ticker}?expiry=${row.expiryTimestamp}`)}
-                            className="font-mono font-bold hover:opacity-80 transition-opacity min-h-[44px]"
+                            className="font-mono font-bold hover:opacity-80 transition-opacity min-h-[34px]"
                             style={{ color: 'var(--accent-light)' }}
                           >
                             {row.ticker}
                           </button>
                         </td>
-                        <td className="px-2 py-1 text-right font-mono" style={mutedStyle}>{formatMoney(row.strike)}</td>
-                        <td className="px-2 py-1 text-right font-mono whitespace-nowrap" style={mutedStyle}>
+                        <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={mutedStyle}>{formatMoney(row.strike)}</td>
+                        <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={mutedStyle}>
                           {row.expiryFormatted} {isFiniteNumber(row.dte) ? `(${row.dte} DTE)` : ''}
                         </td>
-                        <td className="px-2 py-1 text-left whitespace-nowrap" style={mutedStyle}>
-                          <span
-                            className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded"
-                            style={{ color: statusColor(row.status, row.expired), backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}
-                          >
-                            {(row.status === 'refresh_failed' || row.status === 'unavailable') && <AlertTriangle className="w-3 h-3" />}
-                            {row.statusLabel}
-                          </span>
-                        </td>
-                        <td className="px-2 py-1 text-right font-mono hidden md:table-cell" style={mutedStyle}>{formatMoney(row.currentPrice)}</td>
-                        <td className="px-2 py-1 text-right font-mono hidden md:table-cell" style={{ ...mutedStyle, color: row.moneynessColor }}>{row.moneynessLabel}</td>
-                        <td className="px-2 py-1 text-right font-mono" style={mutedStyle}>{formatMoney(row.bid)}</td>
-                        <td className="px-2 py-1 text-right font-mono hidden md:table-cell" style={mutedStyle}>{formatMoney(row.ask)}</td>
-                        <td className="px-2 py-1 text-right font-mono hidden md:table-cell" style={mutedStyle}>{formatMoney(row.last)}</td>
-                        <td className="px-2 py-1 text-right font-mono hidden md:table-cell" style={{ ...mutedStyle, color: deltaColor(row.delta) }}>{isFiniteNumber(row.delta) ? row.delta.toFixed(2) : '—'}</td>
-                        <td className="px-2 py-1 text-right font-mono hidden md:table-cell" style={{ ...mutedStyle, color: ivColor(row.iv) }}>{isFiniteNumber(row.iv) ? row.iv.toFixed(1) + '%' : '—'}</td>
-                        <td className="px-2 py-1 text-right font-mono hidden lg:table-cell" style={mutedStyle}>{formatPercentValue(row.nomYieldBid)}</td>
-                        <td className="px-2 py-1 text-right font-mono font-medium" style={{ ...mutedStyle, color: annYieldColor(row.annYieldBid) }}>{formatPercentValue(row.annYieldBid)}</td>
-                        <td className="px-2 py-1 text-right font-mono hidden md:table-cell" style={{ ...mutedStyle, color: annYieldColor(row.annYieldAsk) }}>{formatPercentValue(row.annYieldAsk)}</td>
-                        <td className="px-2 py-1 text-right text-[10px] hidden md:table-cell" style={{ ...mutedStyle, color: 'var(--text-dim)' }}>{formatDate(row.addedAt)}</td>
-                        <td className="px-2 py-1 text-left" style={mutedStyle}>
+                        <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={mutedStyle}>{formatMoney(row.last)}</td>
+                        <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={mutedStyle}>{formatMoney(row.bid)}</td>
+                        <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={mutedStyle}>{formatMoney(row.ask)}</td>
+                        <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={{ ...mutedStyle, color: deltaColor(row.delta) }}>{isFiniteNumber(row.delta) ? row.delta.toFixed(2) : '—'}</td>
+                        <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={{ ...mutedStyle, color: row.moneynessColor }}>{row.moneynessLabel}</td>
+                        <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={{ ...mutedStyle, color: ivColor(row.iv) }}>{isFiniteNumber(row.iv) ? row.iv.toFixed(1) + '%' : '—'}</td>
+                        <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={mutedStyle}>{formatPercentValue(row.nomYieldBid)}</td>
+                        <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap font-medium" style={{ ...mutedStyle, color: annYieldColor(row.annYieldBid) }}>{formatPercentValue(row.annYieldBid)}</td>
+                        <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={mutedStyle}>{formatPercentValue(row.nomYieldAsk)}</td>
+                        <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap font-medium" style={{ ...mutedStyle, color: annYieldColor(row.annYieldAsk) }}>{formatPercentValue(row.annYieldAsk)}</td>
+                        <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={mutedStyle}>{formatPercentValue(row.nomYieldLast)}</td>
+                        <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap font-medium" style={{ ...mutedStyle, color: annYieldColor(row.annYieldLast) }}>{formatPercentValue(row.annYieldLast)}</td>
+                        <td className="px-1.5 py-0.5 text-right text-[10px] whitespace-nowrap" style={{ ...mutedStyle, color: 'var(--text-dim)' }}>{formatDate(row.addedAt)}</td>
+                        <td className="px-1.5 py-0.5 text-left min-w-[130px]" style={mutedStyle}>
                           {editingNote === row.id ? (
                             <input
                               type="text"
