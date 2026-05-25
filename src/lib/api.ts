@@ -173,6 +173,7 @@ export interface SparklineData {
   price: number;
   change: number;
   changePercent: number;
+  previousClose: number | null;
   sparkline: number[];
   cachedAt?: number;
 }
@@ -193,6 +194,7 @@ export async function fetchSparkline(ticker: string): Promise<SparklineData> {
         price: data.price,
         change: data.change,
         changePercent: data.changePct,
+        previousClose: data.previousClose ?? null,
         sparkline: data.sparkline || [],
       };
     }
@@ -207,6 +209,7 @@ export interface ExtendedPriceData {
   oneMonth: number | null;
   threeMonth: number | null;
   fiftyTwoWeekHighPct: number | null;
+  previousClose: number | null;
   sparkline: number[];
 }
 
@@ -229,6 +232,7 @@ export async function fetchExtendedPrice(ticker: string): Promise<ExtendedPriceD
         oneMonth: data.oneMonth ?? null,
         threeMonth: data.threeMonth ?? null,
         fiftyTwoWeekHighPct: data.fiftyTwoWeekHighPct ?? null,
+        previousClose: data.previousClose ?? null,
         sparkline: data.sparkline || [],
       };
     }

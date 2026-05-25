@@ -33,7 +33,10 @@ function NavBar() {
           <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'var(--accent-bg)' }}>
             <ShieldCheck className="w-4 h-4" style={{ color: 'var(--accent)' }} />
           </div>
-          <span className="text-sm font-bold tracking-tight hidden sm:inline" style={{ color: 'var(--text)' }}>Put Premium</span>
+          <span className="hidden sm:flex flex-col leading-tight" style={{ color: 'var(--text)' }}>
+            <span className="text-sm font-bold tracking-tight">Put Scanner</span>
+            <span className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>Leveraged ETFs</span>
+          </span>
         </div>
         <div className="flex items-center gap-1 min-w-0 flex-1 sm:flex-none">
           <NavLink

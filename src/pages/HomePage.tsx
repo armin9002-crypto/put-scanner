@@ -7,7 +7,7 @@ import type { BatchPriceData } from '../lib/cache';
 import ETFCard from '../components/ETFCard';
 import ExpirationFilter, { buildExpirationOptions, formatExpirationDropdownLabel } from '../components/ExpirationFilter';
 import SparklineChart from '../components/SparklineChart';
-import { Search, ShieldCheck, Loader2, RefreshCw } from 'lucide-react';
+import { Search, Loader2, RefreshCw } from 'lucide-react';
 
 const HARDCODED_TICKERS = 'AGQ,BOIL,BRZU,BULZ,CURE,CWEB,DDM,DFEN,DIG,DPST,DUSL,EDC,ERX,EURL,FAS,FNGU,GUSH,HIBL,INDL,LABU,MIDU,NAIL,NUGT,QLD,ROM,SOXL,SSO,TECL,TNA,TQQQ,UCO,UDOW,UGL,UPRO,URTY,USD,UTSL,UWM,UYG,UYM,WEBL,YINN';
 
@@ -45,18 +45,70 @@ function setExpiryAvailabilityCache(data: ExpiryAvailabilityCache): void {
   } catch { /* ignore unavailable storage */ }
 }
 
-function vixColor(vix: number): string {
-  if (vix < 15) return 'var(--green)';
-  if (vix < 20) return 'var(--yellow)';
-  if (vix < 30) return 'var(--orange)';
-  return 'var(--red)';
+function marketChangeColor(ticker: string, changePercent: number): string {
+  if (ticker === 'VIX') return changePercent >= 0 ? 'var(--orange)' : 'var(--green)';
+  return changePercent >= 0 ? 'var(--green)' : 'var(--red)';
 }
 
-function vixLabel(vix: number): { text: string; color: string } {
-  if (vix < 15) return { text: 'Low', color: 'var(--green)' };
-  if (vix < 20) return { text: 'Moderate', color: 'var(--yellow)' };
-  if (vix < 30) return { text: 'Elevated', color: 'var(--orange)' };
-  return { text: 'High', color: 'var(--red)' };
+function chartReferenceClose(data: SparklineData): number | null {
+  if (data.previousClose != null && Number.isFinite(data.previousClose)) return data.previousClose;
+  // Yahoo can omit chartPreviousClose on thin intraday responses; first print is a graceful visual fallback.
+  return data.sparkline.length > 0 ? data.sparkline[0] : null;
+}
+
+function MarketChartCard({
+  ticker,
+  data,
+  loading,
+  onRefresh,
+}: {
+  ticker: 'QQQ' | 'SPY' | 'VIX';
+  data: SparklineData | null;
+  loading: boolean;
+  onRefresh: () => void;
+}) {
+  const changePct = data?.changePercent ?? 0;
+  const color = data ? marketChangeColor(ticker, changePct) : 'var(--yellow)';
+  const prefix = ticker === 'VIX' ? '' : '$';
+
+  return (
+    <div className="rounded-lg p-2 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="text-[10px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>{ticker}</span>
+          <span className="text-[9px] font-medium px-1 py-0.5 rounded" style={{ color: 'var(--text-dim)', backgroundColor: 'var(--surface-alt)' }}>1D</span>
+        </div>
+        <button onClick={onRefresh} disabled={loading} className="p-1 rounded transition-opacity hover:opacity-70 disabled:opacity-50" aria-label="Refresh market charts">
+          <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} style={{ color: 'var(--text-muted)' }} />
+        </button>
+      </div>
+      {loading && !data ? (
+        <div className="flex items-center justify-center h-[48px] sm:h-[52px]">
+          <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--text-muted)' }} />
+        </div>
+      ) : data && data.sparkline.length >= 2 ? (
+        <>
+          <SparklineChart
+            data={data.sparkline}
+            color={color}
+            width={150}
+            height={48}
+            referenceValue={chartReferenceClose(data)}
+          />
+          <div className="flex items-center justify-between gap-2 mt-1">
+            <span className="text-xs font-mono font-semibold tabular-nums truncate" style={{ color: 'var(--text)' }}>
+              {prefix}{data.price.toFixed(2)}
+            </span>
+            <span className="text-[10px] font-mono tabular-nums whitespace-nowrap" style={{ color }}>
+              {changePct >= 0 ? '+' : ''}{changePct.toFixed(2)}%
+            </span>
+          </div>
+        </>
+      ) : (
+        <div className="flex items-center justify-center h-[70px] text-xs" style={{ color: 'var(--text-dim)' }}>Market data unavailable</div>
+      )}
+    </div>
+  );
 }
 
 export default function HomePage() {
@@ -78,6 +130,7 @@ export default function HomePage() {
 
   // Market sparkline data (manual refresh only)
   const [qqqData, setQqqData] = useState<SparklineData | null>(null);
+  const [spyData, setSpyData] = useState<SparklineData | null>(null);
   const [vixData, setVixData] = useState<SparklineData | null>(null);
   const [marketLoading, setMarketLoading] = useState(true);
   const [lastMarketUpdate, setLastMarketUpdate] = useState<Date | null>(null);
@@ -191,11 +244,13 @@ export default function HomePage() {
   const loadMarketData = useCallback(async () => {
     setMarketLoading(true);
     try {
-      const [qqq, vix] = await Promise.allSettled([
+      const [qqq, spy, vix] = await Promise.allSettled([
         fetchSparkline('QQQ'),
+        fetchSparkline('SPY'),
         fetchSparkline('^VIX'),
       ]);
       if (qqq.status === 'fulfilled') setQqqData(qqq.value);
+      if (spy.status === 'fulfilled') setSpyData(spy.value);
       if (vix.status === 'fulfilled') setVixData(vix.value);
       setLastMarketUpdate(new Date());
     } catch { /* ignore */ }
@@ -239,27 +294,10 @@ export default function HomePage() {
     setExpFilter(value);
   }, []);
 
-  const qqqUp = qqqData ? qqqData.changePercent >= 0 : true;
-  const qqqLineColor = qqqUp ? 'var(--green)' : 'var(--red)';
-  const vixLineColor = vixData ? vixColor(vixData.price) : 'var(--yellow)';
-  const vixStatus = vixData ? vixLabel(vixData.price) : { text: '', color: '' };
-
   return (
     <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-5 sm:py-8">
-        <header className="mb-5 sm:mb-8">
-          <div className="flex items-center gap-3 mb-2 min-w-0">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'var(--accent-bg)' }}>
-              <ShieldCheck className="w-5 h-5" style={{ color: 'var(--accent)' }} />
-            </div>
-            <div className="min-w-0">
-              <h1 className="text-xl sm:text-2xl font-bold tracking-tight truncate" style={{ color: 'var(--text)' }}>Put Premium Scanner</h1>
-              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Leveraged ETF Options Screener</p>
-            </div>
-          </div>
-        </header>
-
-        <div className="relative mb-4">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-5">
+        <div className="relative mb-3">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
           <input
             type="text"
@@ -271,113 +309,64 @@ export default function HomePage() {
           />
         </div>
 
-        <div className="flex flex-col lg:flex-row lg:flex-wrap lg:items-start gap-4 mb-6">
+        <div className="flex flex-col xl:flex-row xl:items-start gap-3 mb-4">
           {/* Filters */}
-          <div className="grid grid-cols-1 sm:flex sm:flex-row sm:flex-wrap sm:items-center gap-3 w-full lg:w-auto min-w-0">
-            <span className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Leverage</span>
-            <div className="grid grid-cols-3 gap-1.5 sm:flex">
-              {LEVERAGE_OPTIONS.map(opt => (
-                <button
-                  key={opt}
-                  onClick={() => setLeverageFilter(opt)}
-                  className="px-3 py-2 sm:py-1 rounded-lg text-sm font-medium transition-all min-h-[44px] sm:min-h-0"
-                  style={{
-                    backgroundColor: leverageFilter === opt ? 'var(--accent)' : 'var(--surface)',
-                    color: leverageFilter === opt ? 'white' : 'var(--text-muted)',
-                    border: leverageFilter === opt ? 'none' : '1px solid var(--border)',
-                  }}
-                >
-                  {opt}
-                </button>
-              ))}
+          <div className="w-full xl:flex-1 rounded-xl p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+            <div className="grid grid-cols-1 md:grid-cols-[auto_minmax(220px,320px)] gap-3 md:items-end">
+              <div>
+                <span className="block text-xs font-medium uppercase tracking-wider mb-1.5" style={{ color: 'var(--text-muted)' }}>Leverage</span>
+                <div className="grid grid-cols-3 gap-1.5 sm:flex">
+                  {LEVERAGE_OPTIONS.map(opt => (
+                    <button
+                      key={opt}
+                      onClick={() => setLeverageFilter(opt)}
+                      className="px-3 py-2 sm:py-1 rounded-lg text-sm font-medium transition-all min-h-[44px] sm:min-h-0"
+                      style={{
+                        backgroundColor: leverageFilter === opt ? 'var(--accent)' : 'var(--surface-alt)',
+                        color: leverageFilter === opt ? 'white' : 'var(--text-muted)',
+                        border: leverageFilter === opt ? 'none' : '1px solid var(--border)',
+                      }}
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <ExpirationFilter
+                value={expFilter}
+                onChange={handleExpirationChange}
+                options={expDropdownOptions}
+                loadingDates={loadingDates}
+                datesLoaded={datesLoaded}
+              />
             </div>
 
-            <span className="text-xs font-medium uppercase tracking-wider sm:ml-2" style={{ color: 'var(--text-muted)' }}>Type</span>
-            <div className="grid grid-cols-2 min-[430px]:grid-cols-3 sm:flex gap-1.5 min-w-0">
-              {TYPE_OPTIONS.map(opt => (
-                <button
-                  key={opt}
-                  onClick={() => setTypeFilter(opt)}
-                  className="px-2.5 py-2 sm:px-3 sm:py-1 rounded-lg text-sm font-medium transition-all min-h-[44px] sm:min-h-0 truncate"
-                  style={{
-                    backgroundColor: typeFilter === opt ? 'var(--accent)' : 'var(--surface)',
-                    color: typeFilter === opt ? 'white' : 'var(--text-muted)',
-                    border: typeFilter === opt ? 'none' : '1px solid var(--border)',
-                  }}
-                >
-                  {opt}
-                </button>
-              ))}
+            <div className="mt-3">
+              <span className="block text-xs font-medium uppercase tracking-wider mb-1.5" style={{ color: 'var(--text-muted)' }}>Type</span>
+              <div className="grid grid-cols-2 min-[430px]:grid-cols-3 sm:flex gap-1.5 min-w-0">
+                {TYPE_OPTIONS.map(opt => (
+                  <button
+                    key={opt}
+                    onClick={() => setTypeFilter(opt)}
+                    className="px-2.5 py-2 sm:px-3 sm:py-1 rounded-lg text-sm font-medium transition-all min-h-[44px] sm:min-h-0 truncate"
+                    style={{
+                      backgroundColor: typeFilter === opt ? 'var(--accent)' : 'var(--surface-alt)',
+                      color: typeFilter === opt ? 'white' : 'var(--text-muted)',
+                      border: typeFilter === opt ? 'none' : '1px solid var(--border)',
+                    }}
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
             </div>
-
-            <ExpirationFilter
-              value={expFilter}
-              onChange={handleExpirationChange}
-              options={expDropdownOptions}
-              loadingDates={loadingDates}
-              datesLoaded={datesLoaded}
-            />
           </div>
 
-          {/* Market Charts Widget - hidden on mobile, visible on lg+ */}
-          <div className="hidden lg:flex items-start gap-4 lg:ml-auto">
-            {/* QQQ Chart */}
-            <div className="rounded-lg p-2" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>QQQ</span>
-                <button onClick={loadMarketData} disabled={marketLoading} className="p-0.5 rounded transition-opacity hover:opacity-70 disabled:opacity-50">
-                  <RefreshCw className={`w-3 h-3 ${marketLoading ? 'animate-spin' : ''}`} style={{ color: 'var(--text-muted)' }} />
-                </button>
-              </div>
-              {marketLoading && !qqqData ? (
-                <div className="flex items-center justify-center" style={{ width: 160, height: 60 }}>
-                  <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--text-muted)' }} />
-                </div>
-              ) : qqqData && qqqData.sparkline.length >= 2 ? (
-                <>
-                  <SparklineChart data={qqqData.sparkline} color={qqqLineColor} width={160} height={60} />
-                  <div className="flex items-center justify-between mt-1">
-                    <span className="text-xs font-mono font-semibold" style={{ color: 'var(--text)' }}>
-                      ${qqqData.price.toFixed(2)}
-                    </span>
-                    <span className="text-[10px] font-mono" style={{ color: qqqUp ? 'var(--green)' : 'var(--red)' }}>
-                      {qqqUp ? '+' : ''}{qqqData.changePercent.toFixed(2)}%
-                    </span>
-                  </div>
-                </>
-              ) : (
-                <div className="flex items-center justify-center text-xs" style={{ width: 160, height: 60, color: 'var(--text-dim)' }}>Market data unavailable</div>
-              )}
-            </div>
-
-            {/* VIX Chart */}
-            <div className="rounded-lg p-2" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>VIX</span>
-                <button onClick={loadMarketData} disabled={marketLoading} className="p-0.5 rounded transition-opacity hover:opacity-70 disabled:opacity-50">
-                  <RefreshCw className={`w-3 h-3 ${marketLoading ? 'animate-spin' : ''}`} style={{ color: 'var(--text-muted)' }} />
-                </button>
-              </div>
-              {marketLoading && !vixData ? (
-                <div className="flex items-center justify-center" style={{ width: 160, height: 60 }}>
-                  <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--text-muted)' }} />
-                </div>
-              ) : vixData && vixData.sparkline.length >= 2 ? (
-                <>
-                  <SparklineChart data={vixData.sparkline} color={vixLineColor} width={160} height={60} />
-                  <div className="flex items-center justify-between mt-1">
-                    <span className="text-xs font-mono font-semibold" style={{ color: 'var(--text)' }}>
-                      {vixData.price.toFixed(2)}
-                    </span>
-                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ color: vixStatus.color, backgroundColor: `${vixStatus.color}15` }}>
-                      {vixStatus.text}
-                    </span>
-                  </div>
-                </>
-              ) : (
-                <div className="flex items-center justify-center text-xs" style={{ width: 160, height: 60, color: 'var(--text-dim)' }}>Market data unavailable</div>
-              )}
-            </div>
+          <div className="grid grid-cols-1 min-[430px]:grid-cols-3 xl:w-[500px] gap-2">
+            <MarketChartCard ticker="QQQ" data={qqqData} loading={marketLoading} onRefresh={loadMarketData} />
+            <MarketChartCard ticker="SPY" data={spyData} loading={marketLoading} onRefresh={loadMarketData} />
+            <MarketChartCard ticker="VIX" data={vixData} loading={marketLoading} onRefresh={loadMarketData} />
           </div>
         </div>
 

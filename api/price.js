@@ -23,7 +23,7 @@ export default async function handler(req, res) {
     const change = price - prev;
     const changePct = (change / prev) * 100;
 
-    const response = { price, change, changePct };
+    const response = { price, change, changePct, previousClose: prev };
 
     // If intraday data requested, include sparkline
     if (interval === '1m' && range === '1d') {
@@ -77,8 +77,10 @@ export default async function handler(req, res) {
           headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }
         });
         const intradayData = await intradayRes.json();
-        const intradayCloses = intradayData.chart?.result?.[0]?.indicators?.quote?.[0]?.close || [];
+        const intradayResult = intradayData.chart?.result?.[0];
+        const intradayCloses = intradayResult?.indicators?.quote?.[0]?.close || [];
         response.sparkline = intradayCloses.filter(v => v != null);
+        response.previousClose = intradayResult?.meta?.chartPreviousClose ?? response.previousClose;
       } catch {
         response.sparkline = [];
       }
