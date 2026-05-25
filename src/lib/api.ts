@@ -2,6 +2,7 @@ import type { OptionsChainData, ExpirationDate, OptionContract } from './types';
 import { threeLayerCache, clearLsCache, BATCH_PRICE_KEY, BATCH_PRICE_MEM_TTL, BATCH_PRICE_LS_TTL, SPARKLINE_MEM_TTL, SPARKLINE_LS_TTL, OPTIONS_MEM_TTL, OPTIONS_LS_TTL, EXTENDED_PRICE_MEM_TTL, EXTENDED_PRICE_LS_TTL } from './cache';
 import type { BatchPriceData } from './cache';
 import { clearMemCache, isValidBatchPriceData } from './memoryCache';
+import { cachedRequest, makeCacheKey } from './dataCache';
 
 const API_BASE = '/api';
 
@@ -58,7 +59,7 @@ export function clearBatchPriceCache(): void {
   clearLsCache(BATCH_PRICE_KEY);
 }
 
-export async function fetchOptions(ticker: string, date?: number): Promise<OptionsChainData> {
+export async function fetchOptions(ticker: string, date?: number, options: { bypassCache?: boolean } = {}): Promise<OptionsChainData> {
   const cacheKey = `options_v2_${ticker}_${date ?? 'initial'}`;
   return threeLayerCache<OptionsChainData>(
     cacheKey,
@@ -122,7 +123,9 @@ export async function fetchOptions(ticker: string, date?: number): Promise<Optio
         });
 
       return { expirations, puts, currentPrice };
-    }
+    },
+    undefined,
+    { bypassCache: options.bypassCache }
   );
 }
 
@@ -246,15 +249,29 @@ export interface IVRankData {
 }
 
 export async function fetchIVRank(ticker: string): Promise<IVRankData> {
-  const res = await fetch(`${API_BASE}/ivrank?ticker=${encodeURIComponent(ticker)}`);
-  if (!res.ok) throw new Error(`Failed to fetch IV Rank for ${ticker}`);
-  const data = await res.json();
-  if (data.error) throw new Error(data.error);
-  return {
-    currentIV: data.currentIV ?? null,
-    ivRank: data.ivRank ?? null,
-    ivPercentile: data.ivPercentile ?? null,
-  };
+  const normalizedTicker = ticker.trim().toUpperCase();
+  return cachedRequest(
+    makeCacheKey(['ivrank', normalizedTicker]),
+    60 * 60 * 1000,
+    async () => {
+      const res = await fetch(`${API_BASE}/ivrank?ticker=${encodeURIComponent(normalizedTicker)}`);
+      if (!res.ok) throw new Error(`Failed to fetch IV Rank for ${normalizedTicker}`);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      return {
+        currentIV: data.currentIV ?? null,
+        ivRank: data.ivRank ?? null,
+        ivPercentile: data.ivPercentile ?? null,
+      };
+    },
+    {
+      validator: data => (
+        data != null &&
+        typeof data === 'object' &&
+        ('ivRank' in data || 'currentIV' in data || 'ivPercentile' in data)
+      ),
+    }
+  );
 }
 
 // Concurrency-limited fetch for screener (Opt 4)

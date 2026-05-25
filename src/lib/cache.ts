@@ -1,4 +1,5 @@
 import { getMemCache, setMemCache, clearMemCache } from './memoryCache';
+import { dedupeRequest } from './dataCache';
 
 const TEN_MIN = 10 * 60 * 1000;
 const FIFTEEN_MIN = 15 * 60 * 1000;
@@ -52,10 +53,16 @@ export function threeLayerCache<T>(
   memTtl: number,
   lsTtl: number,
   fetcher: () => Promise<T>,
-  validator?: (data: T) => boolean
+  validator?: (data: T) => boolean,
+  options: { bypassCache?: boolean } = {}
 ): Promise<T> {
+  if (options.bypassCache) {
+    clearMemCache(key);
+    clearLsCache(key);
+  }
+
   // Layer 1: memory cache
-  const memHit = getMemCache(key, memTtl);
+  const memHit = options.bypassCache ? null : getMemCache(key, memTtl);
   if (memHit !== null) {
     if (!validator || validator(memHit as T)) {
       return Promise.resolve(memHit as T);
@@ -65,7 +72,7 @@ export function threeLayerCache<T>(
   }
 
   // Layer 2: localStorage cache
-  const lsHit = getCached<T>(key, lsTtl);
+  const lsHit = options.bypassCache ? null : getCached<T>(key, lsTtl);
   if (lsHit !== null) {
     if (!validator || validator(lsHit)) {
       setMemCache(key, lsHit);
@@ -75,8 +82,8 @@ export function threeLayerCache<T>(
     clearLsCache(key);
   }
 
-  // Layer 3: fetch
-  return fetcher().then(data => {
+  // Layer 3: fetch with in-flight request deduping
+  return dedupeRequest(key, fetcher, options.bypassCache).then(data => {
     if (!validator || validator(data)) {
       setMemCache(key, data);
       setCache(key, data);

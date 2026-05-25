@@ -27,17 +27,12 @@ export default async function handler(req, res) {
       const url = `https://query1.finance.yahoo.com/v7/finance/spark?symbols=${encodeURIComponent(chunk.join(','))}&range=1d&interval=1d`;
       const yahooRes = await fetch(url, { headers, signal: controller.signal });
       const rawText = await yahooRes.text();
-      console.log('Yahoo prices chunk:', chunk.join(','));
-      console.log('Yahoo prices response status:', yahooRes.status);
-      console.log('Yahoo prices raw response:', rawText.substring(0, 500));
 
       const data = JSON.parse(rawText);
       if (data?.spark?.result?.length) {
         sparkResults.push(...data.spark.result);
       }
     }
-    console.log('Result count:', sparkResults.length);
-
     if (sparkResults.length === 0) {
       res.setHeader('Access-Control-Allow-Origin', '*');
       return res.status(500).json({ error: 'No results from Yahoo' });
@@ -78,8 +73,6 @@ export default async function handler(req, res) {
       const url = `https://query2.finance.yahoo.com/v7/finance/spark?symbols=${encodeURIComponent(chunk.join(','))}&range=3mo&interval=1d`;
       const yahooRes = await fetch(url, { headers, signal: controller.signal });
       const rawText = await yahooRes.text();
-      console.log('Yahoo historical prices chunk:', chunk.join(','));
-      console.log('Yahoo historical prices response status:', yahooRes.status);
 
       const data = JSON.parse(rawText);
       if (data?.spark?.result?.length) {
@@ -88,6 +81,7 @@ export default async function handler(req, res) {
     }
 
     res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=900');
     for (const item of historicalResults) {
       const symbol = item.symbol;
       const closes = item.response?.[0]?.indicators?.quote?.[0]?.close ?? [];
@@ -115,7 +109,6 @@ export default async function handler(req, res) {
     return res.status(200).json(prices);
 
   } catch(e) {
-    console.log('Error:', e.message);
     res.setHeader('Access-Control-Allow-Origin', '*');
     return res.status(500).json({ error: e.message });
   } finally {

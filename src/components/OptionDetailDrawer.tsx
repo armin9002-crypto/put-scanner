@@ -1,6 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { X } from 'lucide-react';
+import {
+  calculateBidAskSpread,
+  calculateBidAskSpreadPercent,
+  calculateBreakeven,
+  calculateDownsideCushion,
+  calculateNominalYield,
+  calculateAnnualizedYield,
+  calculatePositionMetrics,
+  calculatePremiumPerContract,
+  isFiniteNumber,
+} from '../lib/optionMetrics';
+import { formatCurrency, formatNumber, formatPercent } from '../lib/format';
 
 export interface OptionDetail {
   strike: number;
@@ -35,22 +47,8 @@ interface OptionDetailDrawerProps {
   onClose: () => void;
 }
 
-function isValidNumber(value: number | null | undefined): value is number {
-  return typeof value === 'number' && Number.isFinite(value);
-}
-
-function formatCurrency(value: number | null | undefined, decimals = 2): string {
-  if (!isValidNumber(value)) return '—';
-  return value.toLocaleString('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  });
-}
-
 function formatPlainNumber(value: number | null | undefined, decimals = 2): string {
-  if (!isValidNumber(value)) return '—';
+  if (!isFiniteNumber(value)) return '—';
   return value.toLocaleString('en-US', {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
@@ -58,29 +56,23 @@ function formatPlainNumber(value: number | null | undefined, decimals = 2): stri
 }
 
 function formatInteger(value: number | null | undefined): string {
-  if (!isValidNumber(value)) return '—';
-  return Math.round(value).toLocaleString('en-US');
-}
-
-function formatPercent(value: number | null | undefined, decimals = 2): string {
-  if (!isValidNumber(value)) return '—';
-  return `${(value * 100).toFixed(decimals)}%`;
+  return formatNumber(value, 0);
 }
 
 function getMidPrice(option: OptionDetail): number | null {
   const bid = option.bid;
   const ask = option.ask;
-  if (isValidNumber(bid) && isValidNumber(ask) && bid > 0 && ask > 0) {
+  if (isFiniteNumber(bid) && isFiniteNumber(ask) && bid > 0 && ask > 0) {
     return (bid + ask) / 2;
   }
   return null;
 }
 
 function getDefaultSoldPrice(option: OptionDetail): number | null {
-  if (isValidNumber(option.bid) && option.bid >= 0) return option.bid;
+  if (isFiniteNumber(option.bid) && option.bid >= 0) return option.bid;
   const mid = getMidPrice(option);
-  if (isValidNumber(mid)) return mid;
-  if (isValidNumber(option.last) && option.last > 0) return option.last;
+  if (isFiniteNumber(mid)) return mid;
+  if (isFiniteNumber(option.last) && option.last > 0) return option.last;
   return null;
 }
 
@@ -142,36 +134,32 @@ export default function OptionDetailDrawer({
   const bid = option.bid;
   const ask = option.ask;
   const mid = getMidPrice(option);
-  const spread = isValidNumber(bid) && isValidNumber(ask) ? ask - bid : null;
-  const spreadPct = isValidNumber(spread) && isValidNumber(mid) && mid > 0 ? spread / mid : null;
+  const spread = calculateBidAskSpread(bid, ask);
+  const spreadPct = calculateBidAskSpreadPercent(bid, ask);
 
   const parsedSoldPrice = soldPrice.trim() === '' ? null : Number(soldPrice);
-  const validSoldPrice = isValidNumber(parsedSoldPrice) && parsedSoldPrice >= 0 ? parsedSoldPrice : null;
+  const validSoldPrice = isFiniteNumber(parsedSoldPrice) && parsedSoldPrice >= 0 ? parsedSoldPrice : null;
   const optionPrice = validSoldPrice;
-  const premiumPerContract = isValidNumber(optionPrice) ? optionPrice * 100 : null;
-  const breakeven = isValidNumber(optionPrice) ? option.strike - optionPrice : null;
-  const downsideCushion = isValidNumber(underlyingPrice) && underlyingPrice > 0 && isValidNumber(breakeven)
-    ? (underlyingPrice - breakeven) / underlyingPrice
-    : null;
-  const simpleYield = isValidNumber(optionPrice) && option.strike > 0 ? optionPrice / option.strike : null;
-  const annualizedYield = isValidNumber(simpleYield) && isValidNumber(dte) && dte > 0 ? simpleYield * (365 / dte) : null;
-  const distanceToStrike = isValidNumber(underlyingPrice) && underlyingPrice > 0
+  const premiumPerContract = calculatePremiumPerContract(optionPrice);
+  const breakeven = calculateBreakeven(option.strike, optionPrice);
+  const downsideCushion = calculateDownsideCushion(underlyingPrice, breakeven);
+  const simpleYield = calculateNominalYield(optionPrice, option.strike);
+  const annualizedYield = calculateAnnualizedYield(optionPrice, option.strike, dte);
+  const distanceToStrike = isFiniteNumber(underlyingPrice) && underlyingPrice > 0
     ? (underlyingPrice - option.strike) / underlyingPrice
     : null;
 
   const validContracts = Number.isInteger(contracts) && contracts >= 1 ? contracts : null;
-  const totalPremium = isValidNumber(validSoldPrice) && isValidNumber(validContracts) ? validSoldPrice * 100 * validContracts : null;
-  const totalEquityAtRisk = isValidNumber(validContracts) ? option.strike * 100 * validContracts : null;
-  const calculatorBreakeven = isValidNumber(validSoldPrice) ? option.strike - validSoldPrice : null;
-  const maxLoss = isValidNumber(totalEquityAtRisk) && isValidNumber(totalPremium) ? totalEquityAtRisk - totalPremium : null;
-  const netCapitalAtRisk = maxLoss;
-  const returnOnRisk = isValidNumber(totalPremium) && isValidNumber(netCapitalAtRisk) && netCapitalAtRisk > 0
-    ? totalPremium / netCapitalAtRisk
-    : null;
-  const annualizedReturn = isValidNumber(returnOnRisk) && isValidNumber(dte) && dte > 0 ? returnOnRisk * (365 / dte) : null;
+  const positionMetrics = calculatePositionMetrics({
+    strike: option.strike,
+    soldPrice: validSoldPrice,
+    contracts: validContracts,
+    dte,
+    underlyingPrice,
+  });
 
   const setSoldPriceFromQuote = (value: number | null | undefined) => {
-    if (isValidNumber(value) && value >= 0) setSoldPrice(value.toFixed(2));
+    if (isFiniteNumber(value) && value >= 0) setSoldPrice(value.toFixed(2));
   };
 
   return (
@@ -192,7 +180,7 @@ export default function OptionDetailDrawer({
               {ticker} {formatCurrency(option.strike, option.strike % 1 === 0 ? 0 : 2)} Put
             </h2>
             <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-              Exp {expirationLabel || '—'} • {isValidNumber(dte) ? `${dte} DTE` : '— DTE'}
+              Exp {expirationLabel || '—'} • {isFiniteNumber(dte) ? `${dte} DTE` : '— DTE'}
             </p>
             <p className="text-xs mt-1" style={{ color: 'var(--text-dim)' }}>
               Underlying {formatCurrency(underlyingPrice)}
@@ -211,8 +199,8 @@ export default function OptionDetailDrawer({
         <div className="grid grid-cols-1 min-[390px]:grid-cols-2 gap-2 mb-3 min-w-0">
           <MetricCard label="Premium / Contract" value={formatCurrency(premiumPerContract)} color="var(--accent-light)" />
           <MetricCard label="Breakeven" value={formatCurrency(breakeven)} />
-          <MetricCard label="Downside Cushion" value={formatPercent(downsideCushion)} color={isValidNumber(downsideCushion) && downsideCushion >= 0 ? 'var(--green)' : 'var(--red)'} />
-          <MetricCard label="Annualized Yield" value={formatPercent(annualizedYield)} color={isValidNumber(annualizedYield) && annualizedYield >= 0.25 ? 'var(--green)' : 'var(--yellow)'} />
+          <MetricCard label="Downside Cushion" value={formatPercent(downsideCushion)} color={isFiniteNumber(downsideCushion) && downsideCushion >= 0 ? 'var(--green)' : 'var(--red)'} />
+          <MetricCard label="Annualized Yield" value={formatPercent(annualizedYield)} color={isFiniteNumber(annualizedYield) && annualizedYield >= 0.25 ? 'var(--green)' : 'var(--yellow)'} />
         </div>
 
         <div className="space-y-3">
@@ -257,7 +245,7 @@ export default function OptionDetailDrawer({
                 <button
                   key={label as string}
                   onClick={() => setSoldPriceFromQuote(value as number | null)}
-                  disabled={!isValidNumber(value as number | null)}
+                  disabled={!isFiniteNumber(value as number | null)}
                   className="px-3 py-2 sm:py-1.5 rounded-lg text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed min-h-[40px]"
                   style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)', border: '1px solid var(--accent-border)' }}
                 >
@@ -265,13 +253,13 @@ export default function OptionDetailDrawer({
                 </button>
               ))}
             </div>
-            <DetailRow label="Total Premium" value={formatCurrency(totalPremium)} color="var(--green)" />
-            <DetailRow label="Total Equity at Risk" value={formatCurrency(totalEquityAtRisk)} />
-            <DetailRow label="Maximum Loss" value={formatCurrency(maxLoss)} color="var(--red)" />
-            <DetailRow label="Breakeven Price" value={formatCurrency(calculatorBreakeven)} />
-            <DetailRow label="Net Capital at Risk" value={formatCurrency(netCapitalAtRisk)} />
-            <DetailRow label="Return on Risk" value={formatPercent(returnOnRisk)} color="var(--accent-light)" />
-            <DetailRow label="Annualized Return" value={formatPercent(annualizedReturn)} color="var(--green)" />
+            <DetailRow label="Total Premium" value={formatCurrency(positionMetrics.totalPremium)} color="var(--green)" />
+            <DetailRow label="Total Equity at Risk" value={formatCurrency(positionMetrics.equityAtRisk)} />
+            <DetailRow label="Maximum Loss" value={formatCurrency(positionMetrics.maximumLoss)} color="var(--red)" />
+            <DetailRow label="Breakeven Price" value={formatCurrency(positionMetrics.breakeven)} />
+            <DetailRow label="Net Capital at Risk" value={formatCurrency(positionMetrics.netCapitalAtRisk)} />
+            <DetailRow label="Return on Risk" value={formatPercent(positionMetrics.returnOnRisk)} color="var(--accent-light)" />
+            <DetailRow label="Annualized Return" value={formatPercent(positionMetrics.annualizedReturn)} color="var(--green)" />
           </Section>
 
           <Section title="Key Trade Metrics">
@@ -303,9 +291,9 @@ export default function OptionDetailDrawer({
             <DetailRow label="Gamma" value={formatPlainNumber(option.gamma, 4)} />
             <DetailRow label="Theta" value={formatPlainNumber(option.theta, 4)} />
             <DetailRow label="Vega" value={formatPlainNumber(option.vega, 4)} />
-            <DetailRow label="IV" value={isValidNumber(option.impliedVolatility) ? `${option.impliedVolatility.toFixed(1)}%` : '—'} />
+            <DetailRow label="IV" value={isFiniteNumber(option.impliedVolatility) ? `${option.impliedVolatility.toFixed(1)}%` : '—'} />
             <DetailRow label="Moneyness" value={option.otmItmLabel || '—'} color={option.otmItmColor || undefined} />
-            <DetailRow label="DTE" value={isValidNumber(dte) ? `${dte}` : '—'} />
+            <DetailRow label="DTE" value={isFiniteNumber(dte) ? `${dte}` : '—'} />
             <DetailRow label="Expiration" value={expirationLabel || '—'} />
             <DetailRow label="Underlying Price" value={formatCurrency(underlyingPrice)} />
             <DetailRow label="Distance to Strike" value={formatPercent(distanceToStrike)} />

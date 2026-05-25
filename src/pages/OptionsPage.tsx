@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import type { ExpirationDate, OptionsChainData, SortField, SortDirection } from '../lib/types';
 import { ETF_LIST } from '../lib/etfs';
@@ -6,13 +6,16 @@ import { fetchOptions, fetchExtendedPrice, calculatePutDelta, formatPrice, forma
 import type { ExtendedPriceData, IVRankData } from '../lib/api';
 import { addToWatchlist, removeFromWatchlist, isInWatchlist, makeWatchlistId } from '../lib/watchlist';
 import type { WatchlistItem } from '../lib/watchlist';
+import { calculateMoneyness, calculateYieldPercent } from '../lib/optionMetrics';
 import SparklineChart from '../components/SparklineChart';
-import OptionDetailDrawer from '../components/OptionDetailDrawer';
-import InteractivePriceChartModal from '../components/InteractivePriceChartModal';
+import ErrorBoundary from '../components/ErrorBoundary';
 import {
   ArrowLeft, RefreshCw, TrendingUp, TrendingDown, AlertCircle,
   ChevronUp, ChevronDown, ChevronsUpDown, Star, BarChart3
 } from 'lucide-react';
+
+const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
+const InteractivePriceChartModal = lazy(() => import('../components/InteractivePriceChartModal'));
 
 interface EnrichedPut {
   strike: number;
@@ -226,7 +229,7 @@ export default function OptionsPage() {
   // Ref guard to prevent duplicate fetches
   const fetchKeyRef = useRef<string>('');
 
-  const loadData = useCallback(async (expDate?: number) => {
+  const loadData = useCallback(async (expDate?: number, bypassCache = false) => {
     if (!ticker) return;
     const key = `${ticker}:${expDate ?? 'default'}`;
     if (fetchKeyRef.current === key && optionsData) return;
@@ -236,14 +239,14 @@ export default function OptionsPage() {
     setError(null);
     try {
       const [initialOpts, ext] = await Promise.all([
-        fetchOptions(ticker, expDate),
+        fetchOptions(ticker, expDate, { bypassCache }),
         fetchExtendedPrice(ticker),
       ]);
       const preferredExp = expDate
         ? { date: expDate, fromScanner: false }
         : resolvePreferredExpiration(initialOpts.expirations, expiryParam);
       const opts = !expDate && preferredExp.date && preferredExp.date !== initialOpts.expirations[0]?.date
-        ? await fetchOptions(ticker, preferredExp.date)
+        ? await fetchOptions(ticker, preferredExp.date, { bypassCache })
         : initialOpts;
       setOptionsData(opts);
       setExtendedPrice(ext);
@@ -261,7 +264,7 @@ export default function OptionsPage() {
     }
   }, [ticker, expiryParam]);
 
-  const loadExpiration = useCallback(async (expDate: number) => {
+  const loadExpiration = useCallback(async (expDate: number, bypassCache = false) => {
     if (!ticker) return;
     const key = `${ticker}:${expDate}`;
     if (fetchKeyRef.current === key) return;
@@ -274,7 +277,7 @@ export default function OptionsPage() {
     setError(null);
     try {
       // Only fetch options — preserve existing price state (Opt 5)
-      const opts = await fetchOptions(ticker, expDate);
+      const opts = await fetchOptions(ticker, expDate, { bypassCache });
       setOptionsData(opts);
       setLastUpdated(new Date());
     } catch (err: any) {
@@ -375,44 +378,28 @@ export default function OptionsPage() {
       if (delta > 0) delta = -delta;
       if (delta > -0.01 && delta <= 0) delta = -0.01;
 
-      const nomYieldBid = p.bid != null && p.bid !== 0 && p.strike > 0
-        ? (p.bid / p.strike) * 100 : null;
-      const annYieldBid = nomYieldBid != null ? nomYieldBid * (365 / dte) : null;
-      const nomYieldAsk = p.ask != null && p.ask !== 0 && p.strike > 0
-        ? (p.ask / p.strike) * 100 : null;
-      const annYieldAsk = nomYieldAsk != null ? nomYieldAsk * (365 / dte) : null;
-      const nomYieldLast = p.last != null && p.last !== 0 && p.strike > 0
-        ? (p.last / p.strike) * 100 : null;
-      const annYieldLast = nomYieldLast != null ? nomYieldLast * (365 / dte) : null;
+      const bidYield = calculateYieldPercent(p.bid, p.strike, dte);
+      const askYield = calculateYieldPercent(p.ask, p.strike, dte);
+      const lastYield = calculateYieldPercent(p.last, p.strike, dte);
 
       const volOI = (p.volume != null && p.volume > 0 && p.openInterest != null && p.openInterest > 0)
         ? p.volume / p.openInterest : null;
 
-      let otmItmPct: number | null = null;
-      let otmItmLabel = '';
-      let otmItmColor = '';
-      if (currentPrice > 0) {
-        const ratio = Math.abs(p.strike - currentPrice) / currentPrice;
-        if (ratio < 0.005) {
-          otmItmLabel = 'ATM';
-          otmItmColor = 'var(--yellow)';
-        } else if (p.strike < currentPrice) {
-          otmItmPct = ((currentPrice - p.strike) / currentPrice) * 100;
-          otmItmLabel = otmItmPct.toFixed(1) + '% OTM';
-          otmItmColor = 'var(--red)';
-        } else {
-          otmItmPct = ((p.strike - currentPrice) / currentPrice) * 100;
-          otmItmLabel = otmItmPct.toFixed(1) + '% ITM';
-          otmItmColor = 'var(--green)';
-        }
-      }
+      const moneyness = calculateMoneyness(currentPrice, p.strike);
 
       return {
         strike: p.strike, last: p.last, bid: p.bid, ask: p.ask, delta,
         gamma: p.gamma ?? null, theta: p.theta ?? null, vega: p.vega ?? null,
         impliedVolatility: p.impliedVolatility, volume: p.volume, openInterest: p.openInterest, volOI,
-        nomYieldBid, annYieldBid, nomYieldAsk, annYieldAsk, nomYieldLast, annYieldLast,
-        otmItmPct, otmItmLabel, otmItmColor,
+        nomYieldBid: bidYield.nominal,
+        annYieldBid: bidYield.annualized,
+        nomYieldAsk: askYield.nominal,
+        annYieldAsk: askYield.annualized,
+        nomYieldLast: lastYield.nominal,
+        annYieldLast: lastYield.annualized,
+        otmItmPct: moneyness.pct != null ? Math.abs(moneyness.pct) : null,
+        otmItmLabel: moneyness.label === '—' ? '' : moneyness.label,
+        otmItmColor: moneyness.color,
       };
     });
   }, [optionsData, selectedExp, currentPrice]);
@@ -520,8 +507,8 @@ export default function OptionsPage() {
 
   const handleRefresh = useCallback(() => {
     fetchKeyRef.current = '';
-    if (selectedExp) loadExpiration(selectedExp);
-    else loadData();
+    if (selectedExp) loadExpiration(selectedExp, true);
+    else loadData(undefined, true);
   }, [loadData, loadExpiration, selectedExp]);
 
   // Sparkline data
@@ -905,21 +892,33 @@ export default function OptionsPage() {
         </footer>
       </div>
 
-      <OptionDetailDrawer
-        option={selectedOption}
-        ticker={ticker ?? ''}
-        expirationLabel={selectedExpiration?.label ?? ''}
-        dte={selectedExpiration?.dte ?? null}
-        underlyingPrice={currentPrice > 0 ? currentPrice : null}
-        onClose={() => setSelectedOption(null)}
-      />
+      {selectedOption && (
+        <ErrorBoundary title="Option drawer unavailable" message="The option detail drawer could not render. Close it and try again.">
+          <Suspense fallback={null}>
+            <OptionDetailDrawer
+              option={selectedOption}
+              ticker={ticker ?? ''}
+              expirationLabel={selectedExpiration?.label ?? ''}
+              dte={selectedExpiration?.dte ?? null}
+              underlyingPrice={currentPrice > 0 ? currentPrice : null}
+              onClose={() => setSelectedOption(null)}
+            />
+          </Suspense>
+        </ErrorBoundary>
+      )}
 
-      <InteractivePriceChartModal
-        isOpen={showPriceChart}
-        ticker={ticker ?? ''}
-        displayTicker={ticker ?? ''}
-        onClose={() => setShowPriceChart(false)}
-      />
+      {showPriceChart && (
+        <ErrorBoundary title="Chart unavailable" message="The price chart could not render. Close it and try again.">
+          <Suspense fallback={null}>
+            <InteractivePriceChartModal
+              isOpen
+              ticker={ticker ?? ''}
+              displayTicker={ticker ?? ''}
+              onClose={() => setShowPriceChart(false)}
+            />
+          </Suspense>
+        </ErrorBoundary>
+      )}
     </div>
   );
 }

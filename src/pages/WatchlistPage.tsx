@@ -11,6 +11,8 @@ import {
 } from '../lib/watchlist';
 import { fetchOptions, fetchBatchPrices, calculatePutDelta } from '../lib/api';
 import type { OptionsChainData } from '../lib/types';
+import { calculateDte, calculateMoneyness, calculateYieldPercent, isFiniteNumber } from '../lib/optionMetrics';
+import { formatDate as formatDisplayDate, formatOptionPrice, formatPercentPoints } from '../lib/format';
 import { Star, RefreshCw, Loader2, ChevronUp, ChevronDown, AlertTriangle } from 'lucide-react';
 
 interface LiveRow extends WatchlistItem {
@@ -40,50 +42,16 @@ interface LiveRow extends WatchlistItem {
 type SortField = 'ticker' | 'strike' | 'expiry' | 'dte' | 'moneyness' | 'bid' | 'ask' | 'last' | 'delta' | 'iv' | 'nomYieldBid' | 'annYieldBid' | 'nomYieldAsk' | 'annYieldAsk' | 'nomYieldLast' | 'annYieldLast' | 'added';
 type SortDir = 'asc' | 'desc';
 
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value);
-}
-
 function formatMoney(value: number | null | undefined): string {
-  if (!isFiniteNumber(value)) return '—';
-  return value.toFixed(2);
+  return formatOptionPrice(value);
 }
 
 function formatPercentValue(value: number | null | undefined): string {
-  if (!isFiniteNumber(value)) return '—';
-  return `${value.toFixed(2)}%`;
+  return formatPercentPoints(value);
 }
 
 function formatDate(ts: number): string {
-  return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-
-function calcDte(expiry: string): number | null {
-  const parts = expiry.split('-').map(Number);
-  if (parts.length !== 3 || parts.some(part => !Number.isFinite(part))) return null;
-  const [year, month, day] = parts;
-  const now = new Date();
-  const todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  const expiryUTC = Date.UTC(year, month - 1, day);
-  return Math.round((expiryUTC - todayUTC) / (1000 * 60 * 60 * 24));
-}
-
-function computeMoneyness(currentPrice: number | null, strike: number): { pct: number | null; label: string; color: string } {
-  if (!isFiniteNumber(currentPrice) || currentPrice <= 0) {
-    return { pct: null, label: '—', color: 'var(--text-dim)' };
-  }
-  const pct = ((currentPrice - strike) / currentPrice) * 100;
-  const absPct = Math.abs(pct);
-  if (absPct < 0.5) return { pct, label: 'ATM', color: 'var(--yellow)' };
-  if (pct > 0) return { pct, label: `${absPct.toFixed(1)}% OTM`, color: 'var(--red)' };
-  return { pct, label: `${absPct.toFixed(1)}% ITM`, color: 'var(--green)' };
-}
-
-function calcYield(price: number | null | undefined, strike: number, dte: number | null): { nominal: number | null; annualized: number | null } {
-  if (!isFiniteNumber(price) || price <= 0 || strike <= 0) return { nominal: null, annualized: null };
-  const nominal = (price / strike) * 100;
-  const annualized = isFiniteNumber(dte) && dte > 0 ? nominal * (365 / dte) : null;
-  return { nominal, annualized };
+  return formatDisplayDate(ts);
 }
 
 function annYieldColor(yieldValue: number | null): string {
@@ -127,17 +95,17 @@ function statusColor(status: WatchlistStatus, expired: boolean): string {
 
 function buildRow(item: WatchlistItem): LiveRow {
   const snapshot: WatchlistSnapshot = item.snapshot ?? {};
-  const rawDte = calcDte(item.expiry);
+  const rawDte = calculateDte(item.expiry);
   const dte = isFiniteNumber(rawDte) ? Math.max(0, rawDte) : snapshot.dte ?? null;
   const expired = isFiniteNumber(rawDte) ? rawDte <= 0 : false;
   const currentPrice = snapshot.underlyingPrice ?? null;
   const bid = snapshot.bid ?? null;
   const ask = snapshot.ask ?? null;
   const last = snapshot.last ?? null;
-  const bidYield = calcYield(bid, item.strike, dte);
-  const askYield = calcYield(ask, item.strike, dte);
-  const lastYield = calcYield(last, item.strike, dte);
-  const moneyness = computeMoneyness(currentPrice, item.strike);
+  const bidYield = calculateYieldPercent(bid, item.strike, dte);
+  const askYield = calculateYieldPercent(ask, item.strike, dte);
+  const lastYield = calculateYieldPercent(last, item.strike, dte);
+  const moneyness = calculateMoneyness(currentPrice, item.strike);
   const status = expired ? 'expired' : item.status ?? 'stale';
 
   return {
@@ -167,7 +135,7 @@ function buildRow(item: WatchlistItem): LiveRow {
 }
 
 function mergeLiveItem(item: WatchlistItem, optData: OptionsChainData | null, currentPrice: number | null, failed: boolean): WatchlistItem {
-  const rawDte = calcDte(item.expiry);
+  const rawDte = calculateDte(item.expiry);
   const dte = isFiniteNumber(rawDte) ? Math.max(0, rawDte) : null;
   if (isFiniteNumber(rawDte) && rawDte <= 0) {
     return { ...item, status: 'expired', updatedAt: Date.now() };
@@ -204,9 +172,9 @@ function mergeLiveItem(item: WatchlistItem, optData: OptionsChainData | null, cu
   if (isFiniteNumber(delta) && delta > 0) delta = -delta;
   if (isFiniteNumber(delta) && delta > -0.01 && delta <= 0) delta = -0.01;
 
-  const bidYield = calcYield(put.bid, item.strike, dte);
-  const askYield = calcYield(put.ask, item.strike, dte);
-  const moneyness = computeMoneyness(underlyingPrice, item.strike);
+  const bidYield = calculateYieldPercent(put.bid, item.strike, dte);
+  const askYield = calculateYieldPercent(put.ask, item.strike, dte);
+  const moneyness = calculateMoneyness(underlyingPrice, item.strike);
 
   return {
     ...item,
@@ -267,7 +235,7 @@ export default function WatchlistPage() {
 
     const requestKeys = [...new Set(currentItems
       .filter(item => {
-        const rawDte = calcDte(item.expiry);
+        const rawDte = calculateDte(item.expiry);
         return !isFiniteNumber(rawDte) || rawDte > 0;
       })
       .map(item => `${item.ticker}|${item.expiryTimestamp}`))];
@@ -275,7 +243,7 @@ export default function WatchlistPage() {
     const optionResults = await Promise.allSettled(
       requestKeys.map(async key => {
         const [ticker, timestamp] = key.split('|');
-        return { key, data: await fetchOptions(ticker, Number(timestamp)) };
+        return { key, data: await fetchOptions(ticker, Number(timestamp), { bypassCache: true }) };
       })
     );
 

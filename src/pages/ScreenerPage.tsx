@@ -5,6 +5,7 @@ import type { ETFInfo, OptionsChainData } from '../lib/types';
 import { fetchOptions, fetchSparkline, fetchWithConcurrencyLimit, calculatePutDelta, formatPrice, formatNumber, fetchIVRank } from '../lib/api';
 import type { SparklineData } from '../lib/api';
 import { getExpirationsCache, setExpirationsCache } from '../lib/cache';
+import { calculateMoneyness, calculateYieldPercent } from '../lib/optionMetrics';
 import SparklineChart from '../components/SparklineChart';
 import ExpirationFilter, { buildExpirationOptions, formatExpirationDropdownLabel } from '../components/ExpirationFilter';
 import { Search, X, ChevronUp, ChevronDown, Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
@@ -245,15 +246,6 @@ function formatExpDate(ts: number, dte: number): string {
   const dd = String(d.getUTCDate()).padStart(2, '0');
   const yy = String(d.getUTCFullYear() % 100).padStart(2, '0');
   return `${mm}/${dd}/${yy} (${dte})`;
-}
-
-function computeMoneyness(currentPrice: number, strike: number): { pct: number; label: string; color: string } {
-  if (currentPrice <= 0) return { pct: 0, label: '—', color: 'var(--text-muted)' };
-  const pct = ((currentPrice - strike) / currentPrice) * 100;
-  const absPct = Math.abs(pct);
-  if (absPct < 0.5) return { pct, label: 'ATM', color: 'var(--yellow)' };
-  if (pct > 0) return { pct, label: `${absPct.toFixed(2)}% OTM`, color: 'var(--red)' };
-  return { pct, label: `${absPct.toFixed(2)}% ITM`, color: 'var(--green)' };
 }
 
 function vixColor(vix: number): string {
@@ -599,14 +591,14 @@ export default function ScreenerPage() {
           if (delta > 0) delta = -delta;
           if (delta > -0.01 && delta <= 0) delta = -0.01;
 
-          const { pct: moneynessPct, label: moneynessLabel, color: moneynessColor } = computeMoneyness(price, p.strike);
+          const moneyness = calculateMoneyness(price, p.strike);
+          const moneynessPct = moneyness.pct ?? 0;
+          const moneynessLabel = moneyness.label === '—' ? '—' : moneyness.label.replace(/(\d+\.\d)%/, match => Number.parseFloat(match).toFixed(2) + '%');
+          const moneynessColor = moneyness.color;
 
-          const nomYieldBid = p.bid != null && p.bid !== 0 && p.strike > 0 ? (p.bid / p.strike) * 100 : null;
-          const nomYieldAsk = p.ask != null && p.ask !== 0 && p.strike > 0 ? (p.ask / p.strike) * 100 : null;
-          const nomYieldLast = p.last != null && p.last !== 0 && p.strike > 0 ? (p.last / p.strike) * 100 : null;
-          const annYieldBid = nomYieldBid != null ? nomYieldBid * (365 / dte) : null;
-          const annYieldAsk = nomYieldAsk != null ? nomYieldAsk * (365 / dte) : null;
-          const annYieldLast = nomYieldLast != null ? nomYieldLast * (365 / dte) : null;
+          const bidYield = calculateYieldPercent(p.bid, p.strike, dte);
+          const askYield = calculateYieldPercent(p.ask, p.strike, dte);
+          const lastYield = calculateYieldPercent(p.last, p.strike, dte);
 
           const volOI = (p.volume != null && p.volume > 0 && p.openInterest != null && p.openInterest > 0)
             ? p.volume / p.openInterest : null;
@@ -617,8 +609,12 @@ export default function ScreenerPage() {
             strike: p.strike, moneynessPct, moneynessLabel, moneynessColor,
             delta, bid: p.bid, last: p.last, ask: p.ask,
             iv: p.impliedVolatility,
-            nomYieldBid, nomYieldAsk, nomYieldLast,
-            annYieldBid, annYieldAsk, annYieldLast,
+            nomYieldBid: bidYield.nominal,
+            nomYieldAsk: askYield.nominal,
+            nomYieldLast: lastYield.nominal,
+            annYieldBid: bidYield.annualized,
+            annYieldAsk: askYield.annualized,
+            annYieldLast: lastYield.annualized,
             volume: p.volume, openInterest: p.openInterest, volOI,
             ivRank: ivRankMap.get(ticker) ?? null,
           });

@@ -1,3 +1,5 @@
+import { cachedRequest, makeCacheKey } from './dataCache';
+
 export type ChartTimeframe = '1D' | '5D' | '30D' | '3M' | '6M' | '1Y' | '3Y' | '5Y' | 'All';
 
 export interface ChartPoint {
@@ -33,10 +35,8 @@ const CHART_TTLS: Record<ChartTimeframe, number> = {
   All: 24 * 60 * 60 * 1000,
 };
 
-const memoryCache = new Map<string, ChartHistoryResponse>();
-
 function cacheKey(ticker: string, timeframe: ChartTimeframe): string {
-  return `chart_history_cache:${ticker}:${timeframe}`;
+  return makeCacheKey(['chart_history_cache', ticker, timeframe]);
 }
 
 function isFresh(data: ChartHistoryResponse, timeframe: ChartTimeframe): boolean {
@@ -61,29 +61,6 @@ function isValidChartHistory(value: unknown, timeframe: ChartTimeframe): value i
   );
 }
 
-function readLocalCache(key: string, timeframe: ChartTimeframe): ChartHistoryResponse | null {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!isValidChartHistory(parsed, timeframe)) {
-      localStorage.removeItem(key);
-      return null;
-    }
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function writeLocalCache(key: string, data: ChartHistoryResponse): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(data));
-  } catch {
-    // Storage can be unavailable or full; memory cache still protects this session.
-  }
-}
-
 export async function getChartHistory(
   ticker: string,
   timeframe: ChartTimeframe,
@@ -92,31 +69,27 @@ export async function getChartHistory(
   const normalizedTicker = ticker.trim().toUpperCase();
   const key = cacheKey(normalizedTicker, timeframe);
 
-  if (!options.forceRefresh) {
-    const memoryHit = memoryCache.get(key);
-    if (memoryHit && isFresh(memoryHit, timeframe)) return memoryHit;
+  return cachedRequest(
+    key,
+    CHART_TTLS[timeframe],
+    async () => {
+      const response = await fetch(`/api/chart-history?ticker=${encodeURIComponent(normalizedTicker)}&timeframe=${encodeURIComponent(timeframe)}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch chart history');
+      }
 
-    const localHit = readLocalCache(key, timeframe);
-    if (localHit && isFresh(localHit, timeframe)) {
-      memoryCache.set(key, localHit);
-      return localHit;
+      const data = await response.json();
+      if (data.error) {
+        throw new Error(data.error);
+      }
+      if (!isValidChartHistory(data, timeframe)) {
+        throw new Error('Invalid chart history response');
+      }
+      return data;
+    },
+    {
+      bypassCache: options.forceRefresh,
+      validator: (data) => isValidChartHistory(data, timeframe) && isFresh(data, timeframe),
     }
-  }
-
-  const response = await fetch(`/api/chart-history?ticker=${encodeURIComponent(normalizedTicker)}&timeframe=${encodeURIComponent(timeframe)}`);
-  if (!response.ok) {
-    throw new Error('Failed to fetch chart history');
-  }
-
-  const data = await response.json();
-  if (data.error) {
-    throw new Error(data.error);
-  }
-  if (!isValidChartHistory(data, timeframe)) {
-    throw new Error('Invalid chart history response');
-  }
-
-  memoryCache.set(key, data);
-  writeLocalCache(key, data);
-  return data;
+  );
 }

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { lazy, Suspense, useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { clearBatchPriceCache, fetchBatchPrices, fetchOptions, fetchSparkline, fetchWithConcurrencyLimit } from '../lib/api';
 import type { SparklineData } from '../lib/api';
@@ -7,8 +7,10 @@ import type { BatchPriceData } from '../lib/cache';
 import ETFCard from '../components/ETFCard';
 import ExpirationFilter, { buildExpirationOptions, formatExpirationDropdownLabel } from '../components/ExpirationFilter';
 import SparklineChart from '../components/SparklineChart';
-import InteractivePriceChartModal from '../components/InteractivePriceChartModal';
+import ErrorBoundary from '../components/ErrorBoundary';
 import { Search, Loader2, RefreshCw } from 'lucide-react';
+
+const InteractivePriceChartModal = lazy(() => import('../components/InteractivePriceChartModal'));
 
 const HARDCODED_TICKERS = 'AGQ,BOIL,BRZU,BULZ,CURE,CWEB,DDM,DFEN,DIG,DPST,DUSL,EDC,ERX,EURL,FAS,FNGU,GUSH,HIBL,INDL,LABU,MIDU,NAIL,NUGT,QLD,ROM,SOXL,SSO,TECL,TNA,TQQQ,UCO,UDOW,UGL,UPRO,URTY,USD,UTSL,UWM,UYG,UYM,WEBL,YINN';
 
@@ -427,12 +429,18 @@ export default function HomePage() {
         </footer>
       </div>
 
-      <InteractivePriceChartModal
-        isOpen={chartModal != null}
-        ticker={chartModal?.ticker ?? ''}
-        displayTicker={chartModal?.displayTicker}
-        onClose={() => setChartModal(null)}
-      />
+      {chartModal && (
+        <ErrorBoundary title="Chart unavailable" message="The chart modal could not render. Close it and try again.">
+          <Suspense fallback={null}>
+            <InteractivePriceChartModal
+              isOpen
+              ticker={chartModal.ticker}
+              displayTicker={chartModal.displayTicker}
+              onClose={() => setChartModal(null)}
+            />
+          </Suspense>
+        </ErrorBoundary>
+      )}
     </div>
   );
 }

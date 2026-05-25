@@ -87,6 +87,9 @@ export default async function handler(req, res) {
     }
 
     res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', extended
+      ? 'public, s-maxage=300, stale-while-revalidate=900'
+      : 'public, s-maxage=120, stale-while-revalidate=300');
     return res.status(200).json(response);
   } catch(e) {
     return res.status(500).json({ error: e.message });

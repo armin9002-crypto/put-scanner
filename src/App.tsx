@@ -5,6 +5,7 @@ import HomePage from './pages/HomePage';
 import OptionsPage from './pages/OptionsPage';
 import ScreenerPage from './pages/ScreenerPage';
 import WatchlistPage from './pages/WatchlistPage';
+import ErrorBoundary from './components/ErrorBoundary';
 
 function ThemeToggle() {
   const { theme, cycleTheme } = useTheme();
@@ -100,12 +101,14 @@ function AppContent() {
   return (
     <BrowserRouter>
       <NavBar />
-      <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/screener" element={<ScreenerPage />} />
-        <Route path="/watchlist" element={<WatchlistPage />} />
-        <Route path="/options/:ticker" element={<OptionsPage />} />
-      </Routes>
+      <ErrorBoundary title="Page unavailable" message="This page could not render. Refresh and try again.">
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/screener" element={<ScreenerPage />} />
+          <Route path="/watchlist" element={<WatchlistPage />} />
+          <Route path="/options/:ticker" element={<OptionsPage />} />
+        </Routes>
+      </ErrorBoundary>
     </BrowserRouter>
   );
 }
