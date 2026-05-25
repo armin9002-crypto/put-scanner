@@ -7,6 +7,7 @@ import type { ExtendedPriceData, IVRankData } from '../lib/api';
 import { addToWatchlist, removeFromWatchlist, isInWatchlist, makeWatchlistId } from '../lib/watchlist';
 import type { WatchlistItem } from '../lib/watchlist';
 import SparklineChart from '../components/SparklineChart';
+import OptionDetailDrawer from '../components/OptionDetailDrawer';
 import {
   ArrowLeft, RefreshCw, TrendingUp, TrendingDown, AlertCircle,
   ChevronUp, ChevronDown, ChevronsUpDown, Star, BarChart3
@@ -18,6 +19,9 @@ interface EnrichedPut {
   bid: number | null;
   ask: number | null;
   delta: number;
+  gamma: number | null;
+  theta: number | null;
+  vega: number | null;
   impliedVolatility: number | null;
   volume: number | null;
   openInterest: number | null;
@@ -216,6 +220,7 @@ export default function OptionsPage() {
   const [ivRankData, setIvRankData] = useState<IVRankData | null>(null);
   const [watchlistIds, setWatchlistIds] = useState<Set<string>>(new Set());
   const [showScannerPreselectBadge, setShowScannerPreselectBadge] = useState(false);
+  const [selectedOption, setSelectedOption] = useState<EnrichedPut | null>(null);
 
   // Ref guard to prevent duplicate fetches
   const fetchKeyRef = useRef<string>('');
@@ -262,6 +267,7 @@ export default function OptionsPage() {
     fetchKeyRef.current = key;
 
     setShowScannerPreselectBadge(false);
+    setSelectedOption(null);
     setSelectedExp(expDate);
     setLoading(true);
     setError(null);
@@ -279,6 +285,7 @@ export default function OptionsPage() {
 
   useEffect(() => {
     fetchKeyRef.current = '';
+    setSelectedOption(null);
     loadData();
   }, [ticker, expiryParam, loadData]);
 
@@ -380,6 +387,7 @@ export default function OptionsPage() {
 
       return {
         strike: p.strike, last: p.last, bid: p.bid, ask: p.ask, delta,
+        gamma: p.gamma ?? null, theta: p.theta ?? null, vega: p.vega ?? null,
         impliedVolatility: p.impliedVolatility, volume: p.volume, openInterest: p.openInterest, volOI,
         nomYieldBid, annYieldBid, nomYieldAsk, annYieldAsk, nomYieldLast, annYieldLast,
         otmItmPct, otmItmLabel, otmItmColor,
@@ -486,6 +494,7 @@ export default function OptionsPage() {
   const hasEmptyOptions = !loading && !!optionsData && (
     optionsData.expirations.length === 0 || optionsData.puts.length === 0
   );
+  const selectedExpiration = optionsData?.expirations.find(exp => exp.date === selectedExp) ?? null;
 
   const handleRefresh = useCallback(() => {
     fetchKeyRef.current = '';
@@ -754,16 +763,26 @@ export default function OptionsPage() {
                       const expiryIso = expForId ? new Date(expForId.date * 1000).toISOString().split('T')[0] : '';
                       const wlId = makeWatchlistId(ticker ?? '', expiryIso, put.strike);
                       const isWatched = watchlistIds.has(wlId);
+                      const isSelected = selectedOption?.strike === put.strike;
+                      const rowBackground = isSelected ? 'var(--accent-bg)' : altBg;
 
                       rows.push(
                         <tr
                           key={put.strike}
-                          className="transition-colors"
-                          style={{ borderBottom: '1px solid var(--border)', backgroundColor: altBg }}
+                          onClick={() => setSelectedOption(put)}
+                          className="transition-colors cursor-pointer"
+                          style={{
+                            borderBottom: '1px solid var(--border)',
+                            backgroundColor: rowBackground,
+                            boxShadow: isSelected ? 'inset 3px 0 0 var(--accent)' : 'none',
+                          }}
                         >
                           <td className="px-2 py-1.5 text-center text-xs w-6">
                             <button
-                              onClick={() => toggleWatchlist(put)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                toggleWatchlist(put);
+                              }}
                               className="transition-opacity hover:opacity-70 min-h-[44px] flex items-center justify-center"
                               title={isWatched ? 'Remove from watchlist' : 'Add to watchlist'}
                             >
@@ -773,7 +792,7 @@ export default function OptionsPage() {
                               />
                             </button>
                           </td>
-                          <td className="sticky-stack left-0 z-[2] px-2 py-1.5 text-left text-xs whitespace-nowrap border-r w-24" style={{ borderColor: 'var(--border)', backgroundColor: bg }}>
+                          <td className="sticky-stack left-0 z-[2] px-2 py-1.5 text-left text-xs whitespace-nowrap border-r w-24" style={{ borderColor: 'var(--border)', backgroundColor: isSelected ? 'var(--accent-bg)' : bg }}>
                             <div className="flex items-center gap-1.5">
                               <span className="font-mono font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{formatPrice(put.strike)}</span>
                               {moneyness === 'itm' && (
@@ -850,6 +869,15 @@ export default function OptionsPage() {
           <p className="text-xs" style={{ color: 'var(--text-dim)' }}>Data delayed up to 15 minutes. Not financial advice.</p>
         </footer>
       </div>
+
+      <OptionDetailDrawer
+        option={selectedOption}
+        ticker={ticker ?? ''}
+        expirationLabel={selectedExpiration?.label ?? ''}
+        dte={selectedExpiration?.dte ?? null}
+        underlyingPrice={currentPrice > 0 ? currentPrice : null}
+        onClose={() => setSelectedOption(null)}
+      />
     </div>
   );
 }

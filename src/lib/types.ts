@@ -20,6 +20,9 @@ export interface OptionContract {
   bid: number | null;
   ask: number | null;
   delta: number | null;
+  gamma?: number | null;
+  theta?: number | null;
+  vega?: number | null;
   impliedVolatility: number | null;
   volume: number | null;
   openInterest: number | null;
