@@ -40,31 +40,46 @@ function isValidNumber(value: number | null | undefined): value is number {
 }
 
 function formatCurrency(value: number | null | undefined, decimals = 2): string {
-  if (!isValidNumber(value)) return '--';
-  return `$${value.toFixed(decimals)}`;
+  if (!isValidNumber(value)) return '—';
+  return value.toLocaleString('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
 }
 
 function formatPlainNumber(value: number | null | undefined, decimals = 2): string {
-  if (!isValidNumber(value)) return '--';
-  return value.toFixed(decimals);
+  if (!isValidNumber(value)) return '—';
+  return value.toLocaleString('en-US', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
 }
 
 function formatInteger(value: number | null | undefined): string {
-  if (!isValidNumber(value)) return '--';
+  if (!isValidNumber(value)) return '—';
   return Math.round(value).toLocaleString('en-US');
 }
 
 function formatPercent(value: number | null | undefined, decimals = 2): string {
-  if (!isValidNumber(value)) return '--';
+  if (!isValidNumber(value)) return '—';
   return `${(value * 100).toFixed(decimals)}%`;
 }
 
-function getOptionPrice(option: OptionDetail): number | null {
+function getMidPrice(option: OptionDetail): number | null {
   const bid = option.bid;
   const ask = option.ask;
   if (isValidNumber(bid) && isValidNumber(ask) && bid > 0 && ask > 0) {
     return (bid + ask) / 2;
   }
+  return null;
+}
+
+function getDefaultSoldPrice(option: OptionDetail): number | null {
+  if (isValidNumber(option.bid) && option.bid >= 0) return option.bid;
+  const mid = getMidPrice(option);
+  if (isValidNumber(mid)) return mid;
   if (isValidNumber(option.last) && option.last > 0) return option.last;
   return null;
 }
@@ -78,9 +93,9 @@ function MetricCard({ label, value, color = 'var(--text)' }: { label: string; va
   );
 }
 
-function DetailRow({ label, value, color }: { label: string; value: string; color?: string }) {
+function DetailRow({ label, value, color, compact = false }: { label: string; value: string; color?: string; compact?: boolean }) {
   return (
-    <div className="flex items-center justify-between gap-3 py-1.5 border-b last:border-b-0" style={{ borderColor: 'var(--border)' }}>
+    <div className={`flex items-center justify-between gap-3 border-b last:border-b-0 ${compact ? 'py-1' : 'py-1.5'}`} style={{ borderColor: 'var(--border)' }}>
       <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{label}</span>
       <span className="text-xs font-mono tabular-nums text-right" style={{ color: color ?? 'var(--text)' }}>{value}</span>
     </div>
@@ -104,7 +119,7 @@ export default function OptionDetailDrawer({
   underlyingPrice,
   onClose,
 }: OptionDetailDrawerProps) {
-  const defaultPrice = useMemo(() => option ? getOptionPrice(option) : null, [option]);
+  const defaultPrice = useMemo(() => option ? getDefaultSoldPrice(option) : null, [option]);
   const [contracts, setContracts] = useState(1);
   const [soldPrice, setSoldPrice] = useState('');
 
@@ -124,12 +139,15 @@ export default function OptionDetailDrawer({
 
   if (!option) return null;
 
-  const optionPrice = defaultPrice;
   const bid = option.bid;
   const ask = option.ask;
-  const mid = isValidNumber(bid) && isValidNumber(ask) && bid > 0 && ask > 0 ? (bid + ask) / 2 : null;
+  const mid = getMidPrice(option);
   const spread = isValidNumber(bid) && isValidNumber(ask) ? ask - bid : null;
   const spreadPct = isValidNumber(spread) && isValidNumber(mid) && mid > 0 ? spread / mid : null;
+
+  const parsedSoldPrice = soldPrice.trim() === '' ? null : Number(soldPrice);
+  const validSoldPrice = isValidNumber(parsedSoldPrice) && parsedSoldPrice >= 0 ? parsedSoldPrice : null;
+  const optionPrice = validSoldPrice;
   const premiumPerContract = isValidNumber(optionPrice) ? optionPrice * 100 : null;
   const breakeven = isValidNumber(optionPrice) ? option.strike - optionPrice : null;
   const downsideCushion = isValidNumber(underlyingPrice) && underlyingPrice > 0 && isValidNumber(breakeven)
@@ -141,8 +159,6 @@ export default function OptionDetailDrawer({
     ? (underlyingPrice - option.strike) / underlyingPrice
     : null;
 
-  const parsedSoldPrice = soldPrice.trim() === '' ? null : Number(soldPrice);
-  const validSoldPrice = isValidNumber(parsedSoldPrice) && parsedSoldPrice >= 0 ? parsedSoldPrice : null;
   const validContracts = Number.isInteger(contracts) && contracts >= 1 ? contracts : null;
   const totalPremium = isValidNumber(validSoldPrice) && isValidNumber(validContracts) ? validSoldPrice * 100 * validContracts : null;
   const totalEquityAtRisk = isValidNumber(validContracts) ? option.strike * 100 * validContracts : null;
@@ -176,7 +192,7 @@ export default function OptionDetailDrawer({
               {ticker} {formatCurrency(option.strike, option.strike % 1 === 0 ? 0 : 2)} Put
             </h2>
             <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-              Exp {expirationLabel || '--'} • {isValidNumber(dte) ? `${dte} DTE` : '-- DTE'}
+              Exp {expirationLabel || '—'} • {isValidNumber(dte) ? `${dte} DTE` : '— DTE'}
             </p>
             <p className="text-xs mt-1" style={{ color: 'var(--text-dim)' }}>
               Underlying {formatCurrency(underlyingPrice)}
@@ -220,7 +236,10 @@ export default function OptionDetailDrawer({
                   min={0}
                   step="0.01"
                   value={soldPrice}
-                  onChange={event => setSoldPrice(event.target.value)}
+                  onChange={event => {
+                    const next = event.target.value;
+                    if (next === '' || Number(next) >= 0) setSoldPrice(next);
+                  }}
                   className="w-full rounded-lg px-3 py-2 text-sm font-mono outline-none"
                   style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
                 />
@@ -253,14 +272,14 @@ export default function OptionDetailDrawer({
           </Section>
 
           <Section title="Key Trade Metrics">
-            <DetailRow label="Option Price" value={formatCurrency(optionPrice)} />
-            <DetailRow label="Premium per Contract" value={formatCurrency(premiumPerContract)} />
-            <DetailRow label="Breakeven Share Price" value={formatCurrency(breakeven)} />
-            <DetailRow label="Downside Cushion" value={formatPercent(downsideCushion)} />
-            <DetailRow label="Simple Yield" value={formatPercent(simpleYield)} />
-            <DetailRow label="Annualized Yield" value={formatPercent(annualizedYield)} />
-            <DetailRow label="Bid/Ask Spread" value={formatCurrency(spread)} />
-            <DetailRow label="Bid/Ask Spread %" value={formatPercent(spreadPct)} />
+            <DetailRow compact label="Option Price" value={formatCurrency(optionPrice)} />
+            <DetailRow compact label="Premium per Contract" value={formatCurrency(premiumPerContract)} />
+            <DetailRow compact label="Breakeven Share Price" value={formatCurrency(breakeven)} />
+            <DetailRow compact label="Downside Cushion" value={formatPercent(downsideCushion)} />
+            <DetailRow compact label="Simple Yield" value={formatPercent(simpleYield)} />
+            <DetailRow compact label="Annualized Yield" value={formatPercent(annualizedYield)} />
+            <DetailRow compact label="Bid/Ask Spread" value={formatCurrency(spread)} />
+            <DetailRow compact label="Bid/Ask Spread %" value={formatPercent(spreadPct)} />
           </Section>
 
           <Section title="Liquidity">
@@ -281,10 +300,10 @@ export default function OptionDetailDrawer({
             <DetailRow label="Gamma" value={formatPlainNumber(option.gamma, 4)} />
             <DetailRow label="Theta" value={formatPlainNumber(option.theta, 4)} />
             <DetailRow label="Vega" value={formatPlainNumber(option.vega, 4)} />
-            <DetailRow label="IV" value={isValidNumber(option.impliedVolatility) ? `${option.impliedVolatility.toFixed(1)}%` : '--'} />
-            <DetailRow label="Moneyness" value={option.otmItmLabel || '--'} color={option.otmItmColor || undefined} />
-            <DetailRow label="DTE" value={isValidNumber(dte) ? `${dte}` : '--'} />
-            <DetailRow label="Expiration" value={expirationLabel || '--'} />
+            <DetailRow label="IV" value={isValidNumber(option.impliedVolatility) ? `${option.impliedVolatility.toFixed(1)}%` : '—'} />
+            <DetailRow label="Moneyness" value={option.otmItmLabel || '—'} color={option.otmItmColor || undefined} />
+            <DetailRow label="DTE" value={isValidNumber(dte) ? `${dte}` : '—'} />
+            <DetailRow label="Expiration" value={expirationLabel || '—'} />
             <DetailRow label="Underlying Price" value={formatCurrency(underlyingPrice)} />
             <DetailRow label="Distance to Strike" value={formatPercent(distanceToStrike)} />
           </Section>
