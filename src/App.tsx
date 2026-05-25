@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
-import { ShieldCheck, ScanLine, BarChart3, Moon, Sun, BookOpen, Star } from 'lucide-react';
+import { ShieldCheck, ScanLine, BarChart3, Moon, Sun, BookOpen, Star, Square } from 'lucide-react';
 import { ThemeProvider, useTheme } from './lib/theme';
 import HomePage from './pages/HomePage';
 import OptionsPage from './pages/OptionsPage';
@@ -9,7 +9,13 @@ import WatchlistPage from './pages/WatchlistPage';
 function ThemeToggle() {
   const { theme, cycleTheme } = useTheme();
 
-  const icon = theme === 'dark' ? <Moon className="w-4 h-4" /> : theme === 'light' ? <Sun className="w-4 h-4" /> : <BookOpen className="w-4 h-4" />;
+  const icon = theme === 'dark'
+    ? <Moon className="w-4 h-4" />
+    : theme === 'grey'
+      ? <Square className="w-4 h-4" />
+      : theme === 'light'
+        ? <Sun className="w-4 h-4" />
+        : <BookOpen className="w-4 h-4" />;
   const label = theme.charAt(0).toUpperCase() + theme.slice(1);
 
   return (

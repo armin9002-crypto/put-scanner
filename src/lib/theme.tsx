@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 
-export type Theme = 'dark' | 'light' | 'sepia';
+export type Theme = 'dark' | 'grey' | 'light' | 'sepia';
 
 interface ThemeContextValue {
   theme: Theme;
@@ -18,7 +18,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => {
     try {
       const saved = localStorage.getItem('theme');
-      if (saved === 'light' || saved === 'sepia' || saved === 'dark') return saved;
+      if (saved === 'light' || saved === 'sepia' || saved === 'dark' || saved === 'grey') return saved;
     } catch {}
     return 'dark';
   });
@@ -30,7 +30,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const cycleTheme = () => {
     setTheme(prev => {
-      if (prev === 'dark') return 'light';
+      if (prev === 'dark') return 'grey';
+      if (prev === 'grey') return 'light';
       if (prev === 'light') return 'sepia';
       return 'dark';
     });
