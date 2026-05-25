@@ -305,7 +305,10 @@ export default function OptionsPage() {
     setWatchlistIds(ids);
   }, [ticker, selectedExp, optionsData]);
 
-  const toggleWatchlist = useCallback((put: { strike: number }) => {
+  const currentPrice = extendedPrice?.price ?? optionsData?.currentPrice ?? 0;
+  const changePositive = extendedPrice ? extendedPrice.changePercent >= 0 : true;
+
+  const toggleWatchlist = useCallback((put: EnrichedPut) => {
     if (!ticker || !selectedExp) return;
     const exp = optionsData?.expirations.find(e => e.date === selectedExp);
     if (!exp) return;
@@ -321,20 +324,38 @@ export default function OptionsPage() {
         id,
         ticker,
         expiry,
+        expiryTimestamp: exp.date,
         expiryFormatted: exp.label,
         strike: put.strike,
+        optionType: 'put',
         addedAt: Date.now(),
+        savedAt: Date.now(),
+        updatedAt: Date.now(),
         note: '',
+        status: 'saved',
+        snapshot: {
+          underlyingPrice: currentPrice > 0 ? currentPrice : null,
+          bid: put.bid,
+          ask: put.ask,
+          last: put.last,
+          delta: put.delta,
+          iv: put.impliedVolatility,
+          dte: exp.dte,
+          volume: put.volume,
+          openInterest: put.openInterest,
+          nominalYieldBid: put.nomYieldBid,
+          annualizedYieldBid: put.annYieldBid,
+          annualizedYieldAsk: put.annYieldAsk,
+          moneynessPct: put.otmItmPct,
+          moneynessLabel: put.otmItmLabel,
+        },
       };
       addToWatchlist(item);
       setWatchlistIds(prev => new Set(prev).add(id));
     }
-  }, [ticker, selectedExp, optionsData]);
+  }, [ticker, selectedExp, optionsData, currentPrice]);
 
   // Extract price from options response (Opt 5) — prefer extended price, fall back to options data
-  const currentPrice = extendedPrice?.price ?? optionsData?.currentPrice ?? 0;
-  const changePositive = extendedPrice ? extendedPrice.changePercent >= 0 : true;
-
   const enrichedPuts = useMemo((): EnrichedPut[] => {
     if (!optionsData?.puts) return [];
     const exp = optionsData.expirations.find(e => e.date === selectedExp);
