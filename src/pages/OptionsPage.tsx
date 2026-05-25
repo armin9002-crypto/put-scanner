@@ -168,7 +168,6 @@ function ivRankColor(rank: number): string {
 
 const PRICE_HEADER_TOP = 56;
 const EXPIRY_ROW_TOP = 144;
-const TABLE_HEADER_TOP = 200;
 
 function parseExpiryParam(expiryParam: string | null): number | null {
   if (!expiryParam) return null;
@@ -724,23 +723,22 @@ export default function OptionsPage() {
           <OptionsEmptyState type="empty" onRefresh={handleRefresh} loading={loading} />
         ) : (
           <div className="rounded-xl max-w-full overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-            <div className="overflow-x-auto max-w-full xl:overflow-x-visible">
+            <div className="max-h-[calc(100vh-230px)] min-h-[260px] max-w-full overflow-auto overscroll-contain sm:max-h-[calc(100vh-250px)]">
               <table className="min-w-[520px] md:min-w-0 w-full table-fixed text-xs">
                 <thead
-                  className="bg-[#12121a] border-b-2 border-[#1e1e2e]"
+                  className="bg-[#12121a]"
                   style={{
                     backgroundColor: 'var(--surface)',
-                    borderBottom: '2px solid var(--border)',
                   }}
                 >
                   <tr style={{ backgroundColor: 'var(--surface)' }}>
                     <th
-                      className="sticky-stack top-[200px] z-10 px-1.5 sm:px-2 py-1.5 w-6 text-[10px] sm:text-[11px] bg-[#12121a]"
+                      className="sticky-stack top-0 z-30 px-1.5 sm:px-2 py-1.5 w-6 text-[10px] sm:text-[11px] bg-[#12121a]"
                       style={{
-                        top: TABLE_HEADER_TOP,
-                        zIndex: 10,
                         color: 'var(--text-muted)',
                         backgroundColor: 'var(--surface)',
+                        borderBottom: '2px solid var(--border)',
+                        boxShadow: '0 1px 0 var(--border), 0 6px 12px rgba(0,0,0,0.18)',
                       }}
                     ></th>
                     {columns.map(col => (
@@ -748,15 +746,15 @@ export default function OptionsPage() {
                         key={col.field}
                         onClick={() => handleSort(col.field)}
                         title={col.fullLabel}
-                        className={`sticky-stack top-[200px] px-1.5 sm:px-2 py-1.5 text-[10px] sm:text-[11px] uppercase tracking-wider font-medium cursor-pointer transition-colors select-none whitespace-nowrap bg-[#12121a] ${col.align} ${col.widthClass} ${
-                          col.field === 'strike' ? 'left-0 z-20 border-r' : 'z-10'
+                        className={`sticky-stack top-0 px-1.5 sm:px-2 py-1.5 text-[10px] sm:text-[11px] uppercase tracking-wider font-medium cursor-pointer transition-colors select-none whitespace-nowrap bg-[#12121a] ${col.align} ${col.widthClass} ${
+                          col.field === 'strike' ? 'left-0 z-40 border-r' : 'z-30'
                         } ${col.hideOnMobile ? 'hidden md:table-cell' : ''} ${col.hideOnTablet ? 'hidden lg:table-cell' : ''}`}
                         style={{
-                          top: TABLE_HEADER_TOP,
-                          zIndex: col.field === 'strike' ? 20 : 10,
                           color: 'var(--text-muted)',
                           backgroundColor: 'var(--surface)',
                           borderColor: 'var(--border)',
+                          borderBottom: '2px solid var(--border)',
+                          boxShadow: '0 1px 0 var(--border), 0 6px 12px rgba(0,0,0,0.18)',
                         }}
                       >
                         <span className="inline-flex items-center gap-1">
