@@ -222,21 +222,21 @@ function matchYield(y: number | null, filter: string): boolean {
 
 function matchOI(oi: number | null, filter: string): boolean {
   if (filter === 'all') return true;
-  if (oi == null) return false;
+  if (oi == null || !Number.isFinite(oi)) return false;
   const threshold = parseFloat(filter.replace('>', ''));
-  return oi > threshold;
+  return Number.isFinite(threshold) ? oi > threshold : true;
 }
 
 function matchVol(vol: number | null, filter: string): boolean {
   if (filter === 'all') return true;
-  if (vol == null) return false;
+  if (vol == null || !Number.isFinite(vol)) return false;
   const threshold = parseFloat(filter.replace('>', ''));
-  return vol > threshold;
+  return Number.isFinite(threshold) ? vol > threshold : true;
 }
 
 function matchIvRank(ivRank: number | null, filter: string): boolean {
   if (filter === 'all') return true;
-  if (ivRank == null) return false;
+  if (ivRank == null || !Number.isFinite(ivRank)) return false;
   switch (filter) {
     case 'below_20': return ivRank < 20;
     case 'below_40': return ivRank < 40;
@@ -278,6 +278,10 @@ function getExpsToFetchForFilter(allExps: { date: number; dte: number }[], expFi
 function selectedEtfKey(etfs: ETFInfo[]): string {
   if (etfs.length === 0 || etfs.length === ETF_LIST.length) return '__ALL__';
   return etfs.map(etf => etf.ticker).sort().join('|');
+}
+
+function optionLabel(options: { value: string; label: string }[], value: string): string {
+  return options.find(option => option.value === value)?.label ?? value;
 }
 
 function deltaColor(d: number): string {
@@ -505,7 +509,7 @@ export default function ScreenerPage() {
   };
 
   // Snapshot the visible criteria so Load always uses the current controls.
-  const currentCriteria = useMemo<ScreenerCriteria>(() => ({
+  const getCurrentCriteria = useCallback((): ScreenerCriteria => ({
     selectedETFs,
     expFilter,
     deltaFilter,
@@ -515,6 +519,24 @@ export default function ScreenerPage() {
     volFilter,
     ivRankFilter,
   }), [selectedETFs, expFilter, deltaFilter, moneynessFilter, yieldFilter, oiFilter, volFilter, ivRankFilter]);
+
+  const currentCriteria = useMemo(() => getCurrentCriteria(), [getCurrentCriteria]);
+
+  const criteriaSummary = useMemo(() => {
+    const selectedTickers = currentCriteria.selectedETFs.length === 0
+      ? 'All ETFs'
+      : currentCriteria.selectedETFs.map(etf => etf.ticker).join(', ');
+    return [
+      ['ETFs', selectedTickers],
+      ['Expiration', optionLabel(expDropdownOptions, currentCriteria.expFilter)],
+      ['Delta', optionLabel(DELTA_OPTIONS, currentCriteria.deltaFilter)],
+      ['Moneyness', optionLabel(MONEYNESS_OPTIONS, currentCriteria.moneynessFilter)],
+      ['Ann. Yield Bid', optionLabel(YIELD_OPTIONS, currentCriteria.yieldFilter)],
+      ['Min OI', optionLabel(OI_OPTIONS, currentCriteria.oiFilter)],
+      ['Min Volume', optionLabel(VOL_OPTIONS, currentCriteria.volFilter)],
+      ['IV Rank', optionLabel(IVRANK_OPTIONS, currentCriteria.ivRankFilter)],
+    ];
+  }, [currentCriteria, expDropdownOptions]);
 
   const hasStructuralCriteriaChanged = loaded && lastLoadedCriteria != null && (
     expFilter !== lastLoadedCriteria.expFilter ||
@@ -696,12 +718,13 @@ export default function ScreenerPage() {
   }, []);
 
   const handleLoad = useCallback(async () => {
-    if (currentCriteria.selectedETFs.length === 0) {
+    const criteria = getCurrentCriteria();
+    if (criteria.selectedETFs.length === 0) {
       setShowConfirm(true);
       return;
     }
-    await executeLoad(currentCriteria);
-  }, [currentCriteria, executeLoad]);
+    await executeLoad(criteria);
+  }, [executeLoad, getCurrentCriteria]);
 
   // Sorted rows
   const sortedRows = useMemo(() => {
@@ -1080,8 +1103,24 @@ export default function ScreenerPage() {
                 )}
                 {loaded && sortedRows.length === 0 && (
                   <tr>
-                    <td colSpan={columns.length} className="py-16 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
-                      No options match your current filters
+                    <td colSpan={columns.length} className="py-12 px-4 text-center" style={{ color: 'var(--text-muted)' }}>
+                      <div className="text-sm font-medium mb-2" style={{ color: 'var(--text)' }}>No options match the current filters.</div>
+                      <div className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
+                        Loaded {rawRowsRef.current.length.toLocaleString('en-US')} contracts before filters. Try relaxing Delta, Moneyness, or Ann. Yield Bid.
+                      </div>
+                      <div className="mx-auto grid max-w-2xl grid-cols-1 sm:grid-cols-2 gap-1.5 text-left">
+                        {criteriaSummary.map(([label, value]) => (
+                          <div key={label} className="rounded-md px-2 py-1.5" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
+                            <span className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>{label}: </span>
+                            <span className="text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>{value}</span>
+                          </div>
+                        ))}
+                      </div>
+                      {hasStructuralCriteriaChanged && (
+                        <div className="mt-3 text-xs" style={{ color: 'var(--yellow)' }}>
+                          Inputs changed since the last scan. Click Load to refresh results for the current ETF/expiration selection.
+                        </div>
+                      )}
                     </td>
                   </tr>
                 )}
