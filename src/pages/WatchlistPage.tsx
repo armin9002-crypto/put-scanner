@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   getWatchlist,
@@ -13,7 +13,11 @@ import { fetchOptions, fetchBatchPrices, calculatePutDelta } from '../lib/api';
 import type { OptionsChainData } from '../lib/types';
 import { calculateDte, calculateMoneyness, calculateYieldPercent, isFiniteNumber } from '../lib/optionMetrics';
 import { formatDate as formatDisplayDate, formatOptionPrice, formatPercentPoints } from '../lib/format';
+import ErrorBoundary from '../components/ErrorBoundary';
+import type { OptionDetail } from '../components/OptionDetailDrawer';
 import { Star, RefreshCw, Loader2, ChevronUp, ChevronDown, AlertTriangle } from 'lucide-react';
+
+const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 
 interface LiveRow extends WatchlistItem {
   dte: number | null;
@@ -25,6 +29,7 @@ interface LiveRow extends WatchlistItem {
   bid: number | null;
   ask: number | null;
   last: number | null;
+  lastTradeDate: number | null;
   delta: number | null;
   iv: number | null;
   volume: number | null;
@@ -41,6 +46,14 @@ interface LiveRow extends WatchlistItem {
 
 type SortField = 'ticker' | 'strike' | 'expiry' | 'dte' | 'moneyness' | 'bid' | 'ask' | 'last' | 'delta' | 'iv' | 'nomYieldBid' | 'annYieldBid' | 'nomYieldAsk' | 'annYieldAsk' | 'nomYieldLast' | 'annYieldLast' | 'added';
 type SortDir = 'asc' | 'desc';
+
+interface DrawerSelection {
+  option: OptionDetail;
+  ticker: string;
+  expirationLabel: string;
+  dte: number | null;
+  underlyingPrice: number | null;
+}
 
 function formatMoney(value: number | null | undefined): string {
   return formatOptionPrice(value);
@@ -119,6 +132,7 @@ function buildRow(item: WatchlistItem): LiveRow {
     bid,
     ask,
     last,
+    lastTradeDate: snapshot.lastTradeDate ?? null,
     delta: snapshot.delta ?? null,
     iv: snapshot.iv ?? null,
     volume: snapshot.volume ?? null,
@@ -131,6 +145,30 @@ function buildRow(item: WatchlistItem): LiveRow {
     annYieldLast: lastYield.annualized,
     status,
     statusLabel: statusLabel(status, expired),
+  };
+}
+
+function optionDetailFromWatchlistRow(row: LiveRow): OptionDetail {
+  return {
+    strike: row.strike,
+    last: row.last,
+    lastTradeDate: row.lastTradeDate,
+    bid: row.bid,
+    ask: row.ask,
+    delta: row.delta,
+    impliedVolatility: row.iv,
+    volume: row.volume,
+    openInterest: row.openInterest,
+    volOI: null,
+    nomYieldBid: row.nomYieldBid,
+    annYieldBid: row.annYieldBid,
+    nomYieldAsk: row.nomYieldAsk,
+    annYieldAsk: row.annYieldAsk,
+    nomYieldLast: row.nomYieldLast,
+    annYieldLast: row.annYieldLast,
+    otmItmPct: row.moneynessPct,
+    otmItmLabel: row.moneynessLabel,
+    otmItmColor: row.moneynessColor,
   };
 }
 
@@ -209,6 +247,7 @@ export default function WatchlistPage() {
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [editingNote, setEditingNote] = useState<string | null>(null);
   const [noteText, setNoteText] = useState('');
+  const [selectedOption, setSelectedOption] = useState<DrawerSelection | null>(null);
   const initialLoadDone = useRef(false);
 
   useEffect(() => {
@@ -414,7 +453,10 @@ export default function WatchlistPage() {
                           {row.statusLabel}
                         </span>
                         <button
-                          onClick={() => handleRemove(row.id)}
+                          onClick={event => {
+                            event.stopPropagation();
+                            handleRemove(row.id);
+                          }}
                           aria-label={`Remove ${row.ticker} ${row.expiryFormatted} ${formatMoney(row.strike)} put from watchlist`}
                           className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-opacity hover:opacity-75 active:scale-95"
                           title="Remove from watchlist"
@@ -428,7 +470,22 @@ export default function WatchlistPage() {
                     <div className="grid grid-cols-2 gap-x-3 gap-y-2 mt-3 text-xs">
                       <div>
                         <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Strike</div>
-                        <div className="font-mono" style={{ color: 'var(--text)' }}>{formatMoney(row.strike)}</div>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedOption({
+                            option: optionDetailFromWatchlistRow(row),
+                            ticker: row.ticker,
+                            expirationLabel: row.expiryFormatted,
+                            dte: row.dte,
+                            underlyingPrice: row.currentPrice,
+                          })}
+                          className="font-mono underline-offset-2 hover:underline transition-opacity hover:opacity-85"
+                          style={{ color: 'var(--text)' }}
+                          title="Open option details"
+                          aria-label={`Open option details for ${row.ticker} ${formatMoney(row.strike)} put`}
+                        >
+                          {formatMoney(row.strike)}
+                        </button>
                       </div>
                       <div className="text-right">
                         <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Price</div>
@@ -522,7 +579,10 @@ export default function WatchlistPage() {
                       <tr key={row.id} className="transition-colors" style={{ borderBottom: '1px solid var(--border)', ...bgStyle }}>
                         <td className="px-1.5 py-0.5 text-center" style={mutedStyle}>
                           <button
-                            onClick={() => handleRemove(row.id)}
+                            onClick={event => {
+                              event.stopPropagation();
+                              handleRemove(row.id);
+                            }}
                             aria-label={`Remove ${row.ticker} ${row.expiryFormatted} ${formatMoney(row.strike)} put from watchlist`}
                             className="transition-all hover:opacity-75 active:scale-95 min-h-[34px] min-w-[32px] flex items-center justify-center rounded"
                             title="Remove from watchlist"
@@ -539,7 +599,23 @@ export default function WatchlistPage() {
                             {row.ticker}
                           </button>
                         </td>
-                        <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={mutedStyle}>{formatMoney(row.strike)}</td>
+                        <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={mutedStyle}>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedOption({
+                              option: optionDetailFromWatchlistRow(row),
+                              ticker: row.ticker,
+                              expirationLabel: row.expiryFormatted,
+                              dte: row.dte,
+                              underlyingPrice: row.currentPrice,
+                            })}
+                            className="underline-offset-2 hover:underline transition-opacity hover:opacity-85"
+                            title="Open option details"
+                            aria-label={`Open option details for ${row.ticker} ${formatMoney(row.strike)} put`}
+                          >
+                            {formatMoney(row.strike)}
+                          </button>
+                        </td>
                         <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={mutedStyle}>
                           {row.expiryFormatted} {isFiniteNumber(row.dte) ? `(${row.dte} DTE)` : ''}
                         </td>
@@ -602,6 +678,20 @@ export default function WatchlistPage() {
           <p className="text-xs" style={{ color: 'var(--text-dim)' }}>Data delayed up to 15 minutes. Not financial advice.</p>
         </footer>
       </div>
+      {selectedOption && (
+        <ErrorBoundary title="Option drawer unavailable" message="The option detail drawer could not render. Close it and try again.">
+          <Suspense fallback={null}>
+            <OptionDetailDrawer
+              option={selectedOption.option}
+              ticker={selectedOption.ticker}
+              expirationLabel={selectedOption.expirationLabel}
+              dte={selectedOption.dte}
+              underlyingPrice={selectedOption.underlyingPrice}
+              onClose={() => setSelectedOption(null)}
+            />
+          </Suspense>
+        </ErrorBoundary>
+      )}
     </div>
   );
 }

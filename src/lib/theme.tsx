@@ -2,7 +2,10 @@ import { createContext, useContext, useState, useEffect, type ReactNode } from '
 
 export type Theme = 'dark' | 'dark-blue' | 'light' | 'sepia';
 
+const THEME_STORAGE_KEY = 'put_scanner_theme';
+const LEGACY_THEME_STORAGE_KEY = 'theme';
 const THEME_MIGRATION_VERSION = '2';
+const THEME_MIGRATION_KEY = 'theme_migration_version';
 
 interface ThemeContextValue {
   theme: Theme;
@@ -16,15 +19,22 @@ const ThemeContext = createContext<ThemeContextValue>({
   cycleTheme: () => {},
 });
 
+function normalizeSavedTheme(value: string | null, migrated: boolean): Theme | null {
+  if (value === 'grey') return 'dark';
+  if (value === 'darkBlue' || value === 'dark-blue') return 'dark-blue';
+  if (value === 'dark') return migrated ? 'dark' : 'dark-blue';
+  if (value === 'light' || value === 'sepia') return value;
+  return null;
+}
+
 function readInitialTheme(): Theme {
   try {
-    const saved = localStorage.getItem('theme');
-    const migrated = localStorage.getItem('theme_migration_version') === THEME_MIGRATION_VERSION;
+    const migrated = localStorage.getItem(THEME_MIGRATION_KEY) === THEME_MIGRATION_VERSION;
+    const saved = normalizeSavedTheme(localStorage.getItem(THEME_STORAGE_KEY), true);
+    if (saved) return saved;
 
-    if (saved === 'grey') return 'dark';
-    if (saved === 'dark-blue') return 'dark-blue';
-    if (saved === 'dark') return migrated ? 'dark' : 'dark-blue';
-    if (saved === 'light' || saved === 'sepia') return saved;
+    const legacy = normalizeSavedTheme(localStorage.getItem(LEGACY_THEME_STORAGE_KEY), migrated);
+    if (legacy) return legacy;
   } catch {
     // Fall through to the new neutral dark default.
   }
@@ -38,8 +48,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const cssTheme = theme === 'dark-blue' ? 'dark-blue' : theme;
     document.documentElement.setAttribute('data-theme', cssTheme);
     try {
-      localStorage.setItem('theme', theme);
-      localStorage.setItem('theme_migration_version', THEME_MIGRATION_VERSION);
+      localStorage.setItem(THEME_STORAGE_KEY, theme);
+      localStorage.setItem(LEGACY_THEME_STORAGE_KEY, theme);
+      localStorage.setItem(THEME_MIGRATION_KEY, THEME_MIGRATION_VERSION);
     } catch {
       // Ignore unavailable storage.
     }

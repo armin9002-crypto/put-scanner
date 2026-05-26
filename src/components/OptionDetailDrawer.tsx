@@ -16,7 +16,7 @@ export interface OptionDetail {
   lastTradeDate: number | null;
   bid: number | null;
   ask: number | null;
-  delta: number;
+  delta: number | null;
   gamma?: number | null;
   theta?: number | null;
   vega?: number | null;

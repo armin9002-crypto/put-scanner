@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { lazy, Suspense, useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ETF_LIST } from '../lib/etfs';
 import type { ETFInfo, OptionsChainData } from '../lib/types';
@@ -8,7 +8,11 @@ import { getExpirationsCache, setExpirationsCache } from '../lib/cache';
 import { calculateMoneyness, calculateYieldPercent } from '../lib/optionMetrics';
 import SparklineChart from '../components/SparklineChart';
 import ExpirationFilter, { buildExpirationOptions, formatExpirationDropdownLabel } from '../components/ExpirationFilter';
+import ErrorBoundary from '../components/ErrorBoundary';
+import type { OptionDetail } from '../components/OptionDetailDrawer';
 import { Search, X, ChevronUp, ChevronDown, Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
+
+const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 
 // --- Types ---
 
@@ -25,6 +29,7 @@ interface ScreenerRow {
   delta: number;
   bid: number | null;
   last: number | null;
+  lastTradeDate: number | null;
   ask: number | null;
   iv: number | null;
   nomYieldBid: number | null;
@@ -51,6 +56,14 @@ interface ScreenerCriteria {
   oiFilter: string;
   volFilter: string;
   ivRankFilter: string;
+}
+
+interface DrawerSelection {
+  option: OptionDetail;
+  ticker: string;
+  expirationLabel: string;
+  dte: number | null;
+  underlyingPrice: number | null;
 }
 
 const PREFETCH_ETFS = ['TQQQ', 'LABU', 'SSO', 'SOXL', 'UPRO', 'TNA', 'FAS'];
@@ -263,6 +276,30 @@ function applyScreenerFilters(rows: ScreenerRow[], criteria: Pick<ScreenerCriter
   });
 }
 
+function optionDetailFromScreenerRow(row: ScreenerRow): OptionDetail {
+  return {
+    strike: row.strike,
+    last: row.last,
+    lastTradeDate: row.lastTradeDate,
+    bid: row.bid,
+    ask: row.ask,
+    delta: row.delta,
+    impliedVolatility: row.iv,
+    volume: row.volume,
+    openInterest: row.openInterest,
+    volOI: row.volOI,
+    nomYieldBid: row.nomYieldBid,
+    annYieldBid: row.annYieldBid,
+    nomYieldAsk: row.nomYieldAsk,
+    annYieldAsk: row.annYieldAsk,
+    nomYieldLast: row.nomYieldLast,
+    annYieldLast: row.annYieldLast,
+    otmItmPct: row.moneynessPct,
+    otmItmLabel: row.moneynessLabel,
+    otmItmColor: row.moneynessColor,
+  };
+}
+
 function getExpsToFetchForFilter(allExps: { date: number; dte: number }[], expFilter: string): { date: number; dte: number }[] {
   if (expFilter === 'all') return allExps.slice(0, 2);
   if (expFilter === 'lte_30dte') {
@@ -366,6 +403,7 @@ export default function ScreenerPage() {
   const [lastLoadedCriteria, setLastLoadedCriteria] = useState<ScreenerCriteria | null>(null);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [slowWarning, setSlowWarning] = useState(false);
+  const [selectedOption, setSelectedOption] = useState<DrawerSelection | null>(null);
 
   // Confirmation dialog
   const [showConfirm, setShowConfirm] = useState(false);
@@ -691,7 +729,7 @@ export default function ScreenerPage() {
             ticker, currentPrice: price,
             expDate: exp.date, expLabel: formatExpDate(exp.date, dte), dte,
             strike: p.strike, moneynessPct, moneynessLabel, moneynessColor,
-            delta, bid: p.bid, last: p.last, ask: p.ask,
+            delta, bid: p.bid, last: p.last, lastTradeDate: p.lastTradeDate, ask: p.ask,
             iv: p.impliedVolatility,
             nomYieldBid: bidYield.nominal,
             nomYieldAsk: askYield.nominal,
@@ -1140,8 +1178,23 @@ export default function ScreenerPage() {
                       </td>
                       <td className="px-2 py-1 text-right font-mono hidden md:table-cell" style={{ color: 'var(--text)' }}>{formatPrice(row.currentPrice)}</td>
                       <td className="px-2 py-1 text-right font-mono whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{row.expLabel}</td>
-                      <td className="px-2 py-1 text-right font-mono font-semibold" style={{ color: row.moneynessPct > 0 ? 'var(--red)' : row.moneynessPct < 0 ? 'var(--green)' : 'var(--text)' }}>
-                        {formatPrice(row.strike)}
+                      <td className="px-2 py-1 text-right font-mono font-semibold">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedOption({
+                            option: optionDetailFromScreenerRow(row),
+                            ticker: row.ticker,
+                            expirationLabel: row.expLabel,
+                            dte: row.dte,
+                            underlyingPrice: row.currentPrice > 0 ? row.currentPrice : null,
+                          })}
+                          className="underline-offset-2 hover:underline transition-opacity hover:opacity-85"
+                          style={{ color: row.moneynessPct > 0 ? 'var(--red)' : row.moneynessPct < 0 ? 'var(--green)' : 'var(--text)' }}
+                          title="Open option details"
+                          aria-label={`Open option details for ${row.ticker} ${formatPrice(row.strike)} put`}
+                        >
+                          {formatPrice(row.strike)}
+                        </button>
                       </td>
                       <td className="px-2 py-1 text-right font-mono hidden md:table-cell" style={{ color: row.moneynessColor }}>
                         {row.moneynessLabel}
@@ -1195,6 +1248,20 @@ export default function ScreenerPage() {
           <p className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Data delayed up to 15 minutes. Not financial advice.</p>
         </footer>
       </div>
+      {selectedOption && (
+        <ErrorBoundary title="Option drawer unavailable" message="The option detail drawer could not render. Close it and try again.">
+          <Suspense fallback={null}>
+            <OptionDetailDrawer
+              option={selectedOption.option}
+              ticker={selectedOption.ticker}
+              expirationLabel={selectedOption.expirationLabel}
+              dte={selectedOption.dte}
+              underlyingPrice={selectedOption.underlyingPrice}
+              onClose={() => setSelectedOption(null)}
+            />
+          </Suspense>
+        </ErrorBoundary>
+      )}
     </div>
   );
 }
