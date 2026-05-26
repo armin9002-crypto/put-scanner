@@ -42,6 +42,19 @@ interface ScreenerRow {
 type ScreenerSortField = 'ticker' | 'price' | 'expDate' | 'strike' | 'moneyness' | 'delta' | 'bid' | 'last' | 'ask' | 'iv' | 'nomYieldBid' | 'nomYieldAsk' | 'nomYieldLast' | 'annYieldBid' | 'annYieldAsk' | 'annYieldLast' | 'volume' | 'openInterest' | 'volOI' | 'ivRank';
 type SortDir = 'asc' | 'desc';
 
+interface ScreenerCriteria {
+  selectedETFs: ETFInfo[];
+  expFilter: string;
+  deltaFilter: string;
+  moneynessFilter: string;
+  yieldFilter: string;
+  oiFilter: string;
+  volFilter: string;
+  ivRankFilter: string;
+}
+
+const PREFETCH_ETFS = ['TQQQ', 'LABU', 'SSO', 'SOXL', 'UPRO', 'TNA', 'FAS'];
+
 // --- Filter options ---
 
 const DELTA_OPTIONS = [
@@ -149,7 +162,7 @@ function matchDeltaAbs(delta: number, filter: string): boolean {
     case 'below_0.25': return abs < 0.25;
     case 'below_0.30': return abs < 0.30;
     case 'below_0.40': return abs < 0.40;
-    case 'delta_0.05_to_0.10': return abs >= 0.05 && abs <= 0.10;
+    case 'delta_0.05_to_0.10': return abs >= 0.05 && abs < 0.10;
     case '0.05_to_0.15': return abs >= 0.05 && abs <= 0.15;
     case '0.10_to_0.20': return abs >= 0.10 && abs <= 0.20;
     case '0.15_to_0.25': return abs >= 0.15 && abs <= 0.25;
@@ -238,6 +251,35 @@ function matchIvRank(ivRank: number | null, filter: string): boolean {
   }
 }
 
+function applyScreenerFilters(rows: ScreenerRow[], criteria: Pick<ScreenerCriteria, 'deltaFilter' | 'moneynessFilter' | 'yieldFilter' | 'oiFilter' | 'volFilter' | 'ivRankFilter'>): ScreenerRow[] {
+  return rows.filter(row => {
+    if (!matchDeltaAbs(row.delta, criteria.deltaFilter)) return false;
+    if (!matchMoneyness(row.moneynessPct, criteria.moneynessFilter)) return false;
+    if (!matchYield(row.annYieldBid, criteria.yieldFilter)) return false;
+    if (!matchOI(row.openInterest, criteria.oiFilter)) return false;
+    if (!matchVol(row.volume, criteria.volFilter)) return false;
+    if (!matchIvRank(row.ivRank, criteria.ivRankFilter)) return false;
+    return true;
+  });
+}
+
+function getExpsToFetchForFilter(allExps: { date: number; dte: number }[], expFilter: string): { date: number; dte: number }[] {
+  if (expFilter === 'all') return allExps.slice(0, 2);
+  if (expFilter === 'lte_30dte') {
+    return allExps.filter(e => e.dte <= 30).slice(0, 2);
+  }
+  if (expFilter.startsWith('date_')) {
+    const targetDate = Number.parseInt(expFilter.replace('date_', ''), 10);
+    return allExps.filter(e => e.date === targetDate);
+  }
+  return allExps.slice(0, 2);
+}
+
+function selectedEtfKey(etfs: ETFInfo[]): string {
+  if (etfs.length === 0 || etfs.length === ETF_LIST.length) return '__ALL__';
+  return etfs.map(etf => etf.ticker).sort().join('|');
+}
+
 function deltaColor(d: number): string {
   const abs = Math.abs(d);
   if (abs >= 0.7) return '#dc2626';
@@ -317,7 +359,7 @@ export default function ScreenerPage() {
   const [rows, setRows] = useState<ScreenerRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [loadedExpFilter, setLoadedExpFilter] = useState<string | null>(null);
+  const [lastLoadedCriteria, setLastLoadedCriteria] = useState<ScreenerCriteria | null>(null);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [slowWarning, setSlowWarning] = useState(false);
 
@@ -351,9 +393,6 @@ export default function ScreenerPage() {
 
   const vixLineColor = vixData ? vixColor(vixData.price) : 'var(--yellow)';
   const vixStatus = vixData ? vixLabel(vixData.price) : { text: '', color: '' };
-
-  // Auto-fetch available expiration dates on mount (with memory + localStorage cache)
-  const PREFETCH_ETFS = ['TQQQ', 'LABU', 'SSO', 'SOXL', 'UPRO', 'TNA', 'FAS'];
 
   useEffect(() => {
     const cached = getExpirationsCache();
@@ -465,46 +504,31 @@ export default function ScreenerPage() {
     setIvRankFilter('all');
   };
 
-  // Determine which expirations to include based on filter
-  // Hard limit: max 2 expiry dates (Opt 3)
-  const getExpsToFetch = useCallback((allExps: { date: number; dte: number }[]) => {
-    if (expFilter === 'all') return allExps.slice(0, 2); // hard limit
-    if (expFilter === 'lte_30dte') {
-      const shortDated = allExps.filter(e => e.dte <= 30);
-      return shortDated.slice(0, 2); // max 2 short-dated
-    }
-    if (expFilter.startsWith('date_')) {
-      const targetDate = parseInt(expFilter.replace('date_', ''));
-      return allExps.filter(e => e.date === targetDate);
-    }
-    return allExps.slice(0, 2);
-  }, [expFilter]);
+  // Snapshot the visible criteria so Load always uses the current controls.
+  const currentCriteria = useMemo<ScreenerCriteria>(() => ({
+    selectedETFs,
+    expFilter,
+    deltaFilter,
+    moneynessFilter,
+    yieldFilter,
+    oiFilter,
+    volFilter,
+    ivRankFilter,
+  }), [selectedETFs, expFilter, deltaFilter, moneynessFilter, yieldFilter, oiFilter, volFilter, ivRankFilter]);
+
+  const hasStructuralCriteriaChanged = loaded && lastLoadedCriteria != null && (
+    expFilter !== lastLoadedCriteria.expFilter ||
+    selectedEtfKey(selectedETFs) !== selectedEtfKey(lastLoadedCriteria.selectedETFs)
+  );
 
   // Client-side re-filtering — when filters change but data is already loaded
   useEffect(() => {
     if (!loaded || rawRowsRef.current.length === 0) return;
-    const filtered = rawRowsRef.current.filter(row => {
-      if (!matchDeltaAbs(row.delta, deltaFilter)) return false;
-      if (!matchMoneyness(row.moneynessPct, moneynessFilter)) return false;
-      if (!matchYield(row.annYieldBid, yieldFilter)) return false;
-      if (!matchOI(row.openInterest, oiFilter)) return false;
-      if (!matchVol(row.volume, volFilter)) return false;
-      if (!matchIvRank(row.ivRank, ivRankFilter)) return false;
-      return true;
-    });
-    setRows(filtered);
-  }, [deltaFilter, moneynessFilter, yieldFilter, oiFilter, volFilter, ivRankFilter, loaded]);
+    setRows(applyScreenerFilters(rawRowsRef.current, currentCriteria));
+  }, [currentCriteria, loaded]);
 
   // Load data
-  const handleLoad = useCallback(async () => {
-    if (selectedETFs.length === 0) {
-      setShowConfirm(true);
-      return;
-    }
-    await executeLoad(selectedETFs);
-  }, [selectedETFs]);
-
-  const executeLoad = useCallback(async (etfsToScan: ETFInfo[]) => {
+  const executeLoad = useCallback(async (criteria: ScreenerCriteria) => {
     setShowConfirm(false);
     setLoading(true);
     setSlowWarning(false);
@@ -512,31 +536,35 @@ export default function ScreenerPage() {
 
     // Phase 1: Fetch initial data for each ETF with concurrency limit (Opt 4)
     const initialResults = new Map<string, OptionsChainData>();
-    const tasks1 = etfsToScan.map(etf => async () => {
+    const tasks1 = criteria.selectedETFs.map(etf => async () => {
       try {
         const cacheKey = `${etf.ticker}:initial`;
-        if (cacheRef.current.has(cacheKey)) {
-          initialResults.set(etf.ticker, cacheRef.current.get(cacheKey)!);
+        const cached = cacheRef.current.get(cacheKey);
+        if (cached) {
+          initialResults.set(etf.ticker, cached);
           return;
         }
         const data = await fetchOptions(etf.ticker);
         cacheRef.current.set(cacheKey, data);
         initialResults.set(etf.ticker, data);
       } catch { /* skip */ }
-      setProgress(prev => ({ ...prev, current: prev.current + 1 }));
+      finally {
+        setProgress(prev => ({ ...prev, current: prev.current + 1 }));
+      }
     });
 
-    setProgress({ current: 0, total: etfsToScan.length });
+    setProgress({ current: 0, total: criteria.selectedETFs.length });
     const startTime = Date.now();
     const slowCheck = setInterval(() => {
       if (Date.now() - startTime > 30000) setSlowWarning(true);
     }, 1000);
 
+    try {
     await fetchWithConcurrencyLimit(tasks1, 5);
 
     // Phase 1.5: Fetch IV Rank for each ETF (non-blocking, best-effort)
     const ivRankMap = new Map<string, number | null>();
-    const ivRankTasks = etfsToScan.map(etf => async () => {
+    const ivRankTasks = criteria.selectedETFs.map(etf => async () => {
       try {
         const data = await fetchIVRank(etf.ticker);
         ivRankMap.set(etf.ticker, data.ivRank);
@@ -561,7 +589,7 @@ export default function ScreenerPage() {
     setExpirationsCache(sortedExps);
 
     // Phase 2: Determine which expirations to fetch based on filter (max 2)
-    const expsToFetch = getExpsToFetch(sortedExps);
+    const expsToFetch = getExpsToFetchForFilter(sortedExps, criteria.expFilter);
 
     const fetchTasks: (() => Promise<void>)[] = [];
     let totalFetches = initialResults.size;
@@ -574,11 +602,14 @@ export default function ScreenerPage() {
         fetchTasks.push(async () => {
           try {
             const cacheKey = `${ticker}:${exp.date}`;
-            if (cacheRef.current.has(cacheKey)) return;
-            const data = await fetchOptions(ticker, exp.date);
-            cacheRef.current.set(cacheKey, data);
+            if (!cacheRef.current.has(cacheKey)) {
+              const data = await fetchOptions(ticker, exp.date);
+              cacheRef.current.set(cacheKey, data);
+            }
           } catch { /* skip */ }
-          setProgress(prev => ({ ...prev, current: prev.current + 1 }));
+          finally {
+            setProgress(prev => ({ ...prev, current: prev.current + 1 }));
+          }
         });
       }
       totalFetches += additionalExps.length;
@@ -655,21 +686,22 @@ export default function ScreenerPage() {
 
     rawRowsRef.current = allRows;
 
-    const filtered = allRows.filter(row => {
-      if (!matchDeltaAbs(row.delta, deltaFilter)) return false;
-      if (!matchMoneyness(row.moneynessPct, moneynessFilter)) return false;
-      if (!matchYield(row.annYieldBid, yieldFilter)) return false;
-      if (!matchOI(row.openInterest, oiFilter)) return false;
-      if (!matchVol(row.volume, volFilter)) return false;
-      if (!matchIvRank(row.ivRank, ivRankFilter)) return false;
-      return true;
-    });
-
-    setRows(filtered);
-    setLoading(false);
+    setRows(applyScreenerFilters(allRows, criteria));
     setLoaded(true);
-    setLoadedExpFilter(expFilter);
-  }, [expFilter, deltaFilter, moneynessFilter, yieldFilter, oiFilter, volFilter, ivRankFilter, getExpsToFetch]);
+    setLastLoadedCriteria(criteria);
+    } finally {
+      clearInterval(slowCheck);
+      setLoading(false);
+    }
+  }, []);
+
+  const handleLoad = useCallback(async () => {
+    if (currentCriteria.selectedETFs.length === 0) {
+      setShowConfirm(true);
+      return;
+    }
+    await executeLoad(currentCriteria);
+  }, [currentCriteria, executeLoad]);
 
   // Sorted rows
   const sortedRows = useMemo(() => {
@@ -977,7 +1009,7 @@ export default function ScreenerPage() {
                   Cancel
                 </button>
                 <button
-                  onClick={() => executeLoad(ETF_LIST)}
+                  onClick={() => executeLoad({ ...currentCriteria, selectedETFs: ETF_LIST })}
                   className="px-4 py-1.5 text-white text-xs font-medium rounded-lg"
                   style={{ backgroundColor: 'var(--accent)' }}
                 >
@@ -994,9 +1026,9 @@ export default function ScreenerPage() {
             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
               {loaded ? `Showing ${sortedRows.length} results` : ''}
             </span>
-            {loaded && loadedExpFilter !== expFilter && (
+            {hasStructuralCriteriaChanged && (
               <div className="text-[10px] mt-0.5" style={{ color: 'var(--yellow)' }}>
-                Expiration changed. Click Load to rescan with the selected expiration.
+                Inputs changed - click Load to refresh results.
               </div>
             )}
           </div>
