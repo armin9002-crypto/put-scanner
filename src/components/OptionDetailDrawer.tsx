@@ -12,11 +12,12 @@ import {
   calculatePremiumPerContract,
   isFiniteNumber,
 } from '../lib/optionMetrics';
-import { formatCurrency, formatNumber, formatPercent } from '../lib/format';
+import { formatCurrency, formatDateTime, formatNumber, formatPercent, formatRelativeAge, normalizeTimestampMs } from '../lib/format';
 
 export interface OptionDetail {
   strike: number;
   last: number | null;
+  lastTradeDate: number | null;
   bid: number | null;
   ask: number | null;
   delta: number;
@@ -74,6 +75,20 @@ function getDefaultSoldPrice(option: OptionDetail): number | null {
   if (isFiniteNumber(mid)) return mid;
   if (isFiniteNumber(option.last) && option.last > 0) return option.last;
   return null;
+}
+
+function getLastTradeAgeStatus(value: number | null | undefined): { label: string; color: string } | null {
+  const timestamp = normalizeTimestampMs(value);
+  if (timestamp == null) return null;
+  const ageMs = Math.max(0, Date.now() - timestamp);
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+
+  if (ageMs <= 15 * minute) return { label: 'Fresh', color: 'var(--green)' };
+  if (ageMs > day) return { label: 'Very stale', color: 'var(--red)' };
+  if (ageMs > hour) return { label: 'Stale', color: 'var(--yellow)' };
+  return { label: 'Recent', color: 'var(--text-muted)' };
 }
 
 function MetricCard({ label, value, color = 'var(--text)' }: { label: string; value: string; color?: string }) {
@@ -136,6 +151,9 @@ export default function OptionDetailDrawer({
   const mid = getMidPrice(option);
   const spread = calculateBidAskSpread(bid, ask);
   const spreadPct = calculateBidAskSpreadPercent(bid, ask);
+  const lastTradeStatus = getLastTradeAgeStatus(option.lastTradeDate);
+  const lastTradeAge = formatRelativeAge(option.lastTradeDate);
+  const lastTradeAgeLabel = lastTradeStatus ? `${lastTradeAge} - ${lastTradeStatus.label}` : lastTradeAge;
 
   const parsedSoldPrice = soldPrice.trim() === '' ? null : Number(soldPrice);
   const validSoldPrice = isFiniteNumber(parsedSoldPrice) && parsedSoldPrice >= 0 ? parsedSoldPrice : null;
@@ -278,6 +296,8 @@ export default function OptionDetailDrawer({
             <DetailRow label="Ask" value={formatCurrency(ask)} />
             <DetailRow label="Mid" value={formatCurrency(mid)} />
             <DetailRow label="Last" value={formatCurrency(option.last)} />
+            <DetailRow label="Last Trade" value={formatDateTime(option.lastTradeDate)} />
+            <DetailRow label="Age" value={lastTradeAgeLabel} color={lastTradeStatus?.color} />
             <DetailRow label="Volume" value={formatInteger(option.volume)} />
             <DetailRow label="Open Interest" value={formatInteger(option.openInterest)} />
             <DetailRow label="Vol / OI" value={formatPlainNumber(option.volOI)} />

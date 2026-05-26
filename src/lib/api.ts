@@ -110,6 +110,7 @@ export async function fetchOptions(ticker: string, date?: number, options: { byp
           return {
             strike: p.strike,
             last: p.lastPrice ?? null,
+            lastTradeDate: p.lastTradeDate ?? null,
             bid: p.bid ?? null,
             ask: p.ask ?? null,
             delta,

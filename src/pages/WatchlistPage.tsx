@@ -185,6 +185,7 @@ function mergeLiveItem(item: WatchlistItem, optData: OptionsChainData | null, cu
       bid: put.bid,
       ask: put.ask,
       last: put.last,
+      lastTradeDate: put.lastTradeDate,
       delta,
       iv,
       dte,

@@ -6,6 +6,7 @@ export interface WatchlistSnapshot {
   bid?: number | null;
   ask?: number | null;
   last?: number | null;
+  lastTradeDate?: number | null;
   delta?: number | null;
   iv?: number | null;
   dte?: number | null;
@@ -134,6 +135,7 @@ function normalizeSnapshot(value: unknown): WatchlistSnapshot | undefined {
     'bid',
     'ask',
     'last',
+    'lastTradeDate',
     'delta',
     'iv',
     'dte',

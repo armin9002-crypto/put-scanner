@@ -17,6 +17,7 @@ export interface PriceData {
 export interface OptionContract {
   strike: number;
   last: number | null;
+  lastTradeDate: number | null;
   bid: number | null;
   ask: number | null;
   delta: number | null;

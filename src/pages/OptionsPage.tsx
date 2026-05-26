@@ -20,6 +20,7 @@ const InteractivePriceChartModal = lazy(() => import('../components/InteractiveP
 interface EnrichedPut {
   strike: number;
   last: number | null;
+  lastTradeDate: number | null;
   bid: number | null;
   ask: number | null;
   delta: number;
@@ -342,6 +343,7 @@ export default function OptionsPage() {
           bid: put.bid,
           ask: put.ask,
           last: put.last,
+          lastTradeDate: put.lastTradeDate,
           delta: put.delta,
           iv: put.impliedVolatility,
           dte: exp.dte,
@@ -388,7 +390,7 @@ export default function OptionsPage() {
       const moneyness = calculateMoneyness(currentPrice, p.strike);
 
       return {
-        strike: p.strike, last: p.last, bid: p.bid, ask: p.ask, delta,
+        strike: p.strike, last: p.last, lastTradeDate: p.lastTradeDate, bid: p.bid, ask: p.ask, delta,
         gamma: p.gamma ?? null, theta: p.theta ?? null, vega: p.vega ?? null,
         impliedVolatility: p.impliedVolatility, volume: p.volume, openInterest: p.openInterest, volOI,
         nomYieldBid: bidYield.nominal,

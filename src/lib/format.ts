@@ -52,6 +52,48 @@ export function formatDate(value: number | string | Date | null | undefined): st
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+export function normalizeTimestampMs(value: number | null | undefined): number | null {
+  if (!isFiniteNumber(value) || value <= 0) return null;
+  const timestamp = value < 100_000_000_000 ? value * 1000 : value;
+  return Number.isNaN(new Date(timestamp).getTime()) ? null : timestamp;
+}
+
+export function formatDateTime(value: number | null | undefined): string {
+  const timestamp = normalizeTimestampMs(value);
+  if (timestamp == null) return EMPTY_VALUE;
+  return new Date(timestamp).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+export function formatRelativeAge(value: number | null | undefined, now = Date.now()): string {
+  const timestamp = normalizeTimestampMs(value);
+  if (timestamp == null) return EMPTY_VALUE;
+
+  const diffMs = Math.max(0, now - timestamp);
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+
+  if (diffMs < minute) return 'Just now';
+  if (diffMs < hour) return `${Math.floor(diffMs / minute)}m ago`;
+  if (diffMs < day) {
+    const hours = Math.floor(diffMs / hour);
+    const minutes = Math.floor((diffMs % hour) / minute);
+    return minutes > 0 ? `${hours}h ${minutes}m ago` : `${hours}h ago`;
+  }
+  if (diffMs < 7 * day) return `${Math.floor(diffMs / day)}d ago`;
+  return new Date(timestamp).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
 export function formatDte(value: number | null | undefined): string {
   return isFiniteNumber(value) ? `${value} DTE` : `${EMPTY_VALUE} DTE`;
 }
