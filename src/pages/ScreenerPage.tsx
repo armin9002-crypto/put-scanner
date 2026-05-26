@@ -53,6 +53,7 @@ const DELTA_OPTIONS = [
   { value: 'below_0.25', label: 'Below 0.25' },
   { value: 'below_0.30', label: 'Below 0.30' },
   { value: 'below_0.40', label: 'Below 0.40' },
+  { value: 'delta_0.05_to_0.10', label: '0.05 to 0.10' },
   { value: '0.05_to_0.15', label: '0.05 to 0.15' },
   { value: '0.10_to_0.20', label: '0.10 to 0.20' },
   { value: '0.15_to_0.25', label: '0.15 to 0.25' },
@@ -71,9 +72,15 @@ const MONEYNESS_OPTIONS = [
   { value: '20+_otm', label: '20%+ OTM' },
   { value: '25+_otm', label: '25%+ OTM' },
   { value: '30+_otm', label: '30%+ OTM' },
+  { value: '40+_otm', label: '40%+ OTM' },
+  { value: '50+_otm', label: '50%+ OTM' },
+  { value: '60+_otm', label: '60%+ OTM' },
   { value: '0-10_otm', label: '0-10% OTM' },
   { value: '10-20_otm', label: '10-20% OTM' },
   { value: '20-30_otm', label: '20-30% OTM' },
+  { value: '30-40_otm', label: '30-40% OTM' },
+  { value: '40-50_otm', label: '40-50% OTM' },
+  { value: '50-60_otm', label: '50-60% OTM' },
   { value: 'any_itm', label: 'Any ITM' },
   { value: '0-10_itm', label: '0-10% ITM' },
   { value: '10+_itm', label: '10%+ ITM' },
@@ -82,8 +89,13 @@ const MONEYNESS_OPTIONS = [
 const YIELD_OPTIONS = [
   { value: 'all', label: 'All' },
   { value: '>5', label: '>5%' },
+  { value: '5_to_10', label: '5-10%' },
+  { value: '5_to_15', label: '5-15%' },
   { value: '>10', label: '>10%' },
+  { value: '10_to_15', label: '10-15%' },
+  { value: '10_to_20', label: '10-20%' },
   { value: '>15', label: '>15%' },
+  { value: '15_to_20', label: '15-20%' },
   { value: '>20', label: '>20%' },
   { value: '>30', label: '>30%' },
   { value: '>50', label: '>50%' },
@@ -127,6 +139,7 @@ const IVRANK_OPTIONS = [
 
 function matchDeltaAbs(delta: number, filter: string): boolean {
   if (filter === 'all') return true;
+  if (!Number.isFinite(delta)) return false;
   const abs = Math.abs(delta);
   switch (filter) {
     case 'below_0.05': return abs < 0.05;
@@ -136,6 +149,7 @@ function matchDeltaAbs(delta: number, filter: string): boolean {
     case 'below_0.25': return abs < 0.25;
     case 'below_0.30': return abs < 0.30;
     case 'below_0.40': return abs < 0.40;
+    case 'delta_0.05_to_0.10': return abs >= 0.05 && abs <= 0.10;
     case '0.05_to_0.15': return abs >= 0.05 && abs <= 0.15;
     case '0.10_to_0.20': return abs >= 0.10 && abs <= 0.20;
     case '0.15_to_0.25': return abs >= 0.15 && abs <= 0.25;
@@ -148,6 +162,7 @@ function matchDeltaAbs(delta: number, filter: string): boolean {
 
 function matchMoneyness(moneynessPct: number, filter: string): boolean {
   if (filter === 'all') return true;
+  if (!Number.isFinite(moneynessPct)) return false;
   const isOTM = moneynessPct > 0;
   const isITM = moneynessPct < 0;
   const absM = Math.abs(moneynessPct);
@@ -160,9 +175,15 @@ function matchMoneyness(moneynessPct: number, filter: string): boolean {
     case '20+_otm': return isOTM && absM >= 20;
     case '25+_otm': return isOTM && absM >= 25;
     case '30+_otm': return isOTM && absM >= 30;
+    case '40+_otm': return isOTM && absM >= 40;
+    case '50+_otm': return isOTM && absM >= 50;
+    case '60+_otm': return isOTM && absM >= 60;
     case '0-10_otm': return isOTM && absM >= 0 && absM <= 10;
     case '10-20_otm': return isOTM && absM >= 10 && absM <= 20;
     case '20-30_otm': return isOTM && absM >= 20 && absM <= 30;
+    case '30-40_otm': return isOTM && absM >= 30 && absM < 40;
+    case '40-50_otm': return isOTM && absM >= 40 && absM < 50;
+    case '50-60_otm': return isOTM && absM >= 50 && absM < 60;
     case 'any_itm': return isITM;
     case '0-10_itm': return isITM && absM >= 0 && absM <= 10;
     case '10+_itm': return isITM && absM >= 10;
@@ -172,9 +193,18 @@ function matchMoneyness(moneynessPct: number, filter: string): boolean {
 
 function matchYield(y: number | null, filter: string): boolean {
   if (filter === 'all') return true;
-  if (y == null) return false;
-  const threshold = parseFloat(filter.replace('>', ''));
-  return y > threshold;
+  if (y == null || !Number.isFinite(y)) return false;
+  switch (filter) {
+    case '5_to_10': return y >= 5 && y < 10;
+    case '5_to_15': return y >= 5 && y < 15;
+    case '10_to_15': return y >= 10 && y < 15;
+    case '10_to_20': return y >= 10 && y < 20;
+    case '15_to_20': return y >= 15 && y < 20;
+    default: {
+      const threshold = parseFloat(filter.replace('>', ''));
+      return Number.isFinite(threshold) ? y > threshold : true;
+    }
+  }
 }
 
 function matchOI(oi: number | null, filter: string): boolean {
@@ -287,6 +317,7 @@ export default function ScreenerPage() {
   const [rows, setRows] = useState<ScreenerRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [loadedExpFilter, setLoadedExpFilter] = useState<string | null>(null);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [slowWarning, setSlowWarning] = useState(false);
 
@@ -637,6 +668,7 @@ export default function ScreenerPage() {
     setRows(filtered);
     setLoading(false);
     setLoaded(true);
+    setLoadedExpFilter(expFilter);
   }, [expFilter, deltaFilter, moneynessFilter, yieldFilter, oiFilter, volFilter, ivRankFilter, getExpsToFetch]);
 
   // Sorted rows
@@ -810,7 +842,7 @@ export default function ScreenerPage() {
 
             {/* Ann Yield */}
             <div className="w-full sm:w-auto min-w-0">
-              <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Ann. Yield</label>
+              <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Ann. Yield Bid</label>
               <select value={yieldFilter} onChange={e => setYieldFilter(e.target.value)}
                 className="w-full sm:w-auto rounded-lg px-3 py-2 sm:py-1.5 text-base sm:text-xs outline-none cursor-pointer min-h-[44px] sm:min-h-0"
                 style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
@@ -958,9 +990,16 @@ export default function ScreenerPage() {
 
         {/* Results header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2 px-1">
-          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            {loaded ? `Showing ${sortedRows.length} results` : ''}
-          </span>
+          <div className="min-w-0">
+            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              {loaded ? `Showing ${sortedRows.length} results` : ''}
+            </span>
+            {loaded && loadedExpFilter !== expFilter && (
+              <div className="text-[10px] mt-0.5" style={{ color: 'var(--yellow)' }}>
+                Expiration changed. Click Load to rescan with the selected expiration.
+              </div>
+            )}
+          </div>
           <label className="flex items-center gap-1.5 text-xs cursor-pointer min-h-[40px]" style={{ color: 'var(--text-muted)' }}>
             <input
               type="checkbox"
