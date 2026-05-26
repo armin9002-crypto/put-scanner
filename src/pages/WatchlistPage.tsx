@@ -209,7 +209,6 @@ export default function WatchlistPage() {
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [editingNote, setEditingNote] = useState<string | null>(null);
   const [noteText, setNoteText] = useState('');
-  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const initialLoadDone = useRef(false);
 
   useEffect(() => {
@@ -276,15 +275,9 @@ export default function WatchlistPage() {
   }, [items.length, handleRefresh]);
 
   const handleRemove = useCallback((id: string) => {
-    if (confirmRemove === id) {
-      const updated = removeFromWatchlist(id);
-      setItems(updated);
-      setConfirmRemove(null);
-    } else {
-      setConfirmRemove(id);
-      setTimeout(() => setConfirmRemove(prev => prev === id ? null : prev), 3000);
-    }
-  }, [confirmRemove]);
+    const updated = removeFromWatchlist(id);
+    setItems(updated);
+  }, []);
 
   const handleNoteSave = useCallback((id: string) => {
     const updated = updateWatchlistNote(id, noteText);
@@ -388,7 +381,7 @@ export default function WatchlistPage() {
         {items.length === 0 ? (
           <div className="text-center py-20">
             <Star className="w-8 h-8 mx-auto mb-3 opacity-30" style={{ color: 'var(--text-muted)' }} />
-            <p className="text-sm mb-1" style={{ color: 'var(--text-muted)' }}>No saved puts yet.</p>
+            <p className="text-sm mb-1" style={{ color: 'var(--text-muted)' }}>No saved puts yet. Star an option to add it to your Watchlist.</p>
             <p className="text-xs" style={{ color: 'var(--text-dim)' }}>Open an options chain and click the star on any strike to save it here.</p>
           </div>
         ) : (
@@ -422,11 +415,12 @@ export default function WatchlistPage() {
                         </span>
                         <button
                           onClick={() => handleRemove(row.id)}
-                          className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg"
-                          title={confirmRemove === row.id ? 'Click again to remove' : 'Remove from watchlist'}
+                          aria-label={`Remove ${row.ticker} ${row.expiryFormatted} ${formatMoney(row.strike)} put from watchlist`}
+                          className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-opacity hover:opacity-75 active:scale-95"
+                          title="Remove from watchlist"
                           style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}
                         >
-                          <Star className="w-4 h-4 fill-current" style={{ color: confirmRemove === row.id ? 'var(--red)' : 'var(--accent-light)' }} />
+                          <Star className="w-4 h-4 fill-current" style={{ color: 'var(--accent-light)' }} />
                         </button>
                       </div>
                     </div>
@@ -529,10 +523,11 @@ export default function WatchlistPage() {
                         <td className="px-1.5 py-0.5 text-center" style={mutedStyle}>
                           <button
                             onClick={() => handleRemove(row.id)}
-                            className="transition-opacity hover:opacity-70 min-h-[34px] min-w-[32px] flex items-center justify-center"
-                            title={confirmRemove === row.id ? 'Click again to remove' : 'Remove from watchlist'}
+                            aria-label={`Remove ${row.ticker} ${row.expiryFormatted} ${formatMoney(row.strike)} put from watchlist`}
+                            className="transition-all hover:opacity-75 active:scale-95 min-h-[34px] min-w-[32px] flex items-center justify-center rounded"
+                            title="Remove from watchlist"
                           >
-                            <Star className="w-3.5 h-3.5 fill-current" style={{ color: confirmRemove === row.id ? 'var(--red)' : 'var(--accent-light)' }} />
+                            <Star className="w-3.5 h-3.5 fill-current" style={{ color: 'var(--accent-light)' }} />
                           </button>
                         </td>
                         <td className="px-1.5 py-0.5 text-left whitespace-nowrap" style={mutedStyle}>
