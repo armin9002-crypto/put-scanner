@@ -17,6 +17,13 @@ const TIMEFRAME_CONFIG = {
     maxPoints: 800,
     cacheControl: 'public, s-maxage=1800, stale-while-revalidate=3600',
   },
+  YTD: {
+    range: '1y',
+    interval: '1d',
+    maxPoints: 800,
+    filterYtd: true,
+    cacheControl: 'public, s-maxage=14400, stale-while-revalidate=21600',
+  },
   '3M': {
     range: '3mo',
     interval: '1d',
@@ -73,7 +80,9 @@ function downsample(points, maxPoints) {
 }
 
 function displayTickerFor(ticker) {
-  return ticker === '^VIX' ? 'VIX' : ticker;
+  if (ticker === '^VIX') return 'VIX';
+  if (ticker === '^VXN') return 'VXN';
+  return ticker;
 }
 
 export default async function handler(req, res) {
@@ -109,10 +118,12 @@ export default async function handler(req, res) {
 
     const timestamps = result.timestamp || [];
     const closes = result.indicators?.quote?.[0]?.close || [];
+    const startOfYear = Math.floor(Date.UTC(new Date().getUTCFullYear(), 0, 1) / 1000);
     const rawPoints = timestamps
       .map((timestamp, index) => {
         const price = closes[index];
         if (!Number.isFinite(timestamp) || !Number.isFinite(price)) return null;
+        if (config.filterYtd && timestamp < startOfYear) return null;
         return {
           timestamp,
           date: new Date(timestamp * 1000).toISOString(),
@@ -145,6 +156,7 @@ export default async function handler(req, res) {
       metadata: {
         range: config.range,
         interval: config.interval,
+        filter: config.filterYtd ? 'year-to-date' : undefined,
         sourcePoints: rawPoints.length,
       },
     });

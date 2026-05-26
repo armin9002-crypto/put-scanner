@@ -2,11 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, RefreshCw, X } from 'lucide-react';
 import { getChartHistory } from '../lib/chartHistory';
 import type { ChartHistoryResponse, ChartPoint, ChartTimeframe } from '../lib/chartHistory';
+import { formatChartYAxisTick, getNiceYAxisScale } from '../lib/chartScale';
+import { getInstrumentName, isVolatilityInstrument, normalizeDisplayTicker } from '../lib/instrumentNames';
 
-const TIMEFRAMES: ChartTimeframe[] = ['1D', '5D', '30D', '3M', '6M', '1Y', '3Y', '5Y', 'All'];
+const TIMEFRAMES: ChartTimeframe[] = ['1D', '5D', '30D', 'YTD', '3M', '6M', '1Y', '3Y', '5Y', 'All'];
 const CHART_WIDTH = 900;
 const CHART_HEIGHT = 360;
-const PAD_X = 28;
+const PAD_LEFT = 66;
+const PAD_RIGHT = 24;
 const PAD_Y = 22;
 
 interface InteractivePriceChartModalProps {
@@ -30,10 +33,21 @@ function formatCurrency(value: number | null | undefined, decimals = 2): string 
   return `$${value.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`;
 }
 
-function formatSignedCurrency(value: number | null | undefined): string {
+function formatValue(value: number | null | undefined, isVolatility: boolean): string {
+  if (!isFiniteNumber(value)) return '--';
+  if (isVolatility) {
+    return value.toLocaleString('en-US', {
+      minimumFractionDigits: value % 1 === 0 ? 0 : 2,
+      maximumFractionDigits: 2,
+    });
+  }
+  return formatCurrency(value);
+}
+
+function formatSignedValue(value: number | null | undefined, isVolatility: boolean): string {
   if (!isFiniteNumber(value)) return '--';
   const sign = value >= 0 ? '+' : '-';
-  return `${sign}${formatCurrency(Math.abs(value))}`;
+  return `${sign}${formatValue(Math.abs(value), isVolatility)}`;
 }
 
 function formatPercent(value: number | null | undefined): string {
@@ -84,7 +98,9 @@ export default function InteractivePriceChartModal({
 
   const requestedTicker = ticker.trim().toUpperCase();
   const activeData = data && data.timeframe === timeframe && data.ticker.toUpperCase() === requestedTicker ? data : null;
-  const titleTicker = displayTicker || activeData?.displayTicker || requestedTicker;
+  const titleTicker = normalizeDisplayTicker(displayTicker || activeData?.displayTicker || requestedTicker);
+  const instrumentName = getInstrumentName(requestedTicker, titleTicker);
+  const isVolatility = isVolatilityInstrument(requestedTicker, titleTicker);
 
   const loadChart = useCallback(async (forceRefresh = false) => {
     if (!requestedTicker) return;
@@ -138,33 +154,37 @@ export default function InteractivePriceChartModal({
 
   const chart = useMemo(() => {
     if (points.length < 2) {
-      return { scaledPoints: [] as ScaledPoint[], linePath: '', referenceY: null as number | null };
+      return { scaledPoints: [] as ScaledPoint[], linePath: '', referenceY: null as number | null, yTicks: [] as number[] };
     }
 
     const reference = isFiniteNumber(activeData?.previousClose) ? activeData?.previousClose ?? null : points[0]?.price ?? null;
     const prices = points.map(point => point.price);
     if (isFiniteNumber(reference)) prices.push(reference);
-    const min = Math.min(...prices);
-    const max = Math.max(...prices);
+    const scale = getNiceYAxisScale(prices, 5);
+    const min = scale?.min ?? Math.min(...prices);
+    const max = scale?.max ?? Math.max(...prices);
     const range = max - min || 1;
-    const plotWidth = CHART_WIDTH - PAD_X * 2;
+    const plotWidth = CHART_WIDTH - PAD_LEFT - PAD_RIGHT;
     const plotHeight = CHART_HEIGHT - PAD_Y * 2;
     const scaledPoints = points.map((point, index) => ({
       ...point,
-      x: PAD_X + (index / (points.length - 1)) * plotWidth,
+      x: PAD_LEFT + (index / (points.length - 1)) * plotWidth,
       y: PAD_Y + plotHeight - ((point.price - min) / range) * plotHeight,
     }));
     const referenceY = isFiniteNumber(reference)
       ? PAD_Y + plotHeight - ((reference - min) / range) * plotHeight
       : null;
 
-    return { scaledPoints, linePath: buildPath(scaledPoints), referenceY };
+    return { scaledPoints, linePath: buildPath(scaledPoints), referenceY, yTicks: scale?.ticks ?? [] };
   }, [activeData?.previousClose, points]);
 
   const updateHoveredPoint = useCallback((event: React.PointerEvent<SVGSVGElement>) => {
     if (points.length === 0 || !svgRef.current) return;
     const rect = svgRef.current.getBoundingClientRect();
-    const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
+    const x = event.clientX - rect.left;
+    const plotLeft = (PAD_LEFT / CHART_WIDTH) * rect.width;
+    const plotRight = rect.width - (PAD_RIGHT / CHART_WIDTH) * rect.width;
+    const ratio = Math.min(1, Math.max(0, (x - plotLeft) / Math.max(1, plotRight - plotLeft)));
     const index = Math.round(ratio * (points.length - 1));
     setHoveredIndex(index);
   }, [points.length]);
@@ -196,16 +216,21 @@ export default function InteractivePriceChartModal({
               <h2 className="text-lg sm:text-xl font-semibold font-mono" style={{ color: 'var(--text)' }}>
                 {titleTicker}
               </h2>
+              {instrumentName && (
+                <span className="min-w-0 truncate text-sm" style={{ color: 'var(--text-muted)' }}>
+                  {instrumentName}
+                </span>
+              )}
               <span className="rounded-md px-2 py-1 text-[10px] font-medium uppercase tracking-wider" style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)', border: '1px solid var(--accent-border)' }}>
                 {timeframe}
               </span>
             </div>
             <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <span className="text-2xl sm:text-3xl font-bold font-mono tabular-nums" style={{ color: 'var(--text)' }}>
-                {formatCurrency(latestPrice)}
+                {formatValue(latestPrice, isVolatility)}
               </span>
               <span className="text-sm font-mono tabular-nums" style={{ color: lineColor }}>
-                {formatSignedCurrency(periodChange.change)} / {formatPercent(periodChange.percent)}
+                {formatSignedValue(periodChange.change, isVolatility)} / {formatPercent(periodChange.percent)}
               </span>
               {activeData?.fetchedAt && (
                 <span className="text-xs" style={{ color: 'var(--text-dim)' }}>
@@ -289,13 +314,13 @@ export default function InteractivePriceChartModal({
                 <div className="mb-3 grid grid-cols-1 gap-2 md:grid-cols-3">
                   <div className="rounded-lg p-3" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
                     <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Hover Point</div>
-                    <div className="mt-1 font-mono text-sm tabular-nums" style={{ color: 'var(--text)' }}>{formatCurrency(activePoint?.price)}</div>
+                    <div className="mt-1 font-mono text-sm tabular-nums" style={{ color: 'var(--text)' }}>{formatValue(activePoint?.price, isVolatility)}</div>
                     <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDateTime(activePoint, timeframe)}</div>
                   </div>
                   <div className="rounded-lg p-3" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
                     <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Point Return</div>
                     <div className="mt-1 font-mono text-sm tabular-nums" style={{ color: chartColor(activeChange.percent) }}>
-                      {formatSignedCurrency(activeChange.change)} / {formatPercent(activeChange.percent)}
+                      {formatSignedValue(activeChange.change, isVolatility)} / {formatPercent(activeChange.percent)}
                     </div>
                     <div className="text-xs" style={{ color: 'var(--text-muted)' }}>From baseline</div>
                   </div>
@@ -304,7 +329,7 @@ export default function InteractivePriceChartModal({
                     {selectedPoint && rangeEndPoint && rangeChange ? (
                       <>
                         <div className="mt-1 font-mono text-sm tabular-nums" style={{ color: chartColor(rangeChange.percent) }}>
-                          {formatSignedCurrency(rangeChange.change)} / {formatPercent(rangeChange.percent)}
+                          {formatSignedValue(rangeChange.change, isVolatility)} / {formatPercent(rangeChange.percent)}
                         </div>
                         <div className="truncate text-xs" style={{ color: 'var(--text-muted)' }}>
                           {formatDateTime(selectedPoint, timeframe)} to {formatDateTime(rangeEndPoint, timeframe)}
@@ -330,12 +355,52 @@ export default function InteractivePriceChartModal({
                   aria-label={`${titleTicker} ${timeframe} price chart`}
                 >
                   <rect x="0" y="0" width={CHART_WIDTH} height={CHART_HEIGHT} rx="12" fill="transparent" />
+                  {chart.yTicks.map(tick => {
+                    const plotHeight = CHART_HEIGHT - PAD_Y * 2;
+                    const prices = points.map(point => point.price);
+                    const reference = isFiniteNumber(activeData?.previousClose) ? activeData?.previousClose ?? null : points[0]?.price ?? null;
+                    if (isFiniteNumber(reference)) prices.push(reference);
+                    const scale = getNiceYAxisScale(prices, 5);
+                    if (!scale || scale.max === scale.min) return null;
+                    const y = PAD_Y + plotHeight - ((tick - scale.min) / (scale.max - scale.min)) * plotHeight;
+                    return (
+                      <g key={tick}>
+                        <line
+                          x1={PAD_LEFT}
+                          y1={y}
+                          x2={CHART_WIDTH - PAD_RIGHT}
+                          y2={y}
+                          stroke="currentColor"
+                          strokeOpacity="0.08"
+                          className="text-slate-400"
+                        />
+                        <text
+                          x={PAD_LEFT - 10}
+                          y={y + 4}
+                          textAnchor="end"
+                          className="fill-current text-[10px]"
+                          style={{ color: 'var(--text-dim)' }}
+                        >
+                          {formatChartYAxisTick(tick, isVolatility ? 'volatility' : 'price')}
+                        </text>
+                      </g>
+                    );
+                  })}
+                  <line
+                    x1={PAD_LEFT}
+                    y1={PAD_Y}
+                    x2={PAD_LEFT}
+                    y2={CHART_HEIGHT - PAD_Y}
+                    stroke="currentColor"
+                    strokeOpacity="0.18"
+                    className="text-slate-400"
+                  />
                   {chart.referenceY != null && (
                     <>
                       <line
-                        x1={PAD_X}
+                        x1={PAD_LEFT}
                         y1={chart.referenceY}
-                        x2={CHART_WIDTH - PAD_X}
+                        x2={CHART_WIDTH - PAD_RIGHT}
                         y2={chart.referenceY}
                         stroke="currentColor"
                         strokeOpacity="0.22"
@@ -343,7 +408,7 @@ export default function InteractivePriceChartModal({
                         className="text-slate-400"
                       />
                       <text
-                        x={CHART_WIDTH - PAD_X}
+                        x={CHART_WIDTH - PAD_RIGHT}
                         y={Math.max(12, chart.referenceY - 6)}
                         textAnchor="end"
                         className="fill-current text-[10px]"
@@ -387,7 +452,7 @@ export default function InteractivePriceChartModal({
                 {selectedPoint && (
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs" style={{ color: 'var(--text-muted)' }}>
                     <span>
-                      Range start: <span className="font-mono" style={{ color: 'var(--text)' }}>{formatCurrency(selectedPoint.price)}</span> at {formatDateTime(selectedPoint, timeframe)}
+                      Range start: <span className="font-mono" style={{ color: 'var(--text)' }}>{formatValue(selectedPoint.price, isVolatility)}</span> at {formatDateTime(selectedPoint, timeframe)}
                     </span>
                     <button
                       type="button"
