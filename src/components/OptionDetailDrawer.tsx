@@ -5,14 +5,10 @@ import {
   calculateBidAskSpread,
   calculateBidAskSpreadPercent,
   calculateBreakeven,
-  calculateDownsideCushion,
-  calculateNominalYield,
-  calculateAnnualizedYield,
   calculatePositionMetrics,
-  calculatePremiumPerContract,
   isFiniteNumber,
 } from '../lib/optionMetrics';
-import { formatCurrency, formatDateTime, formatNumber, formatPercent, formatRelativeAge, normalizeTimestampMs } from '../lib/format';
+import { formatCurrency, formatNumber, formatPercent, normalizeTimestampMs } from '../lib/format';
 
 export interface OptionDetail {
   strike: number;
@@ -77,18 +73,39 @@ function getDefaultSoldPrice(option: OptionDetail): number | null {
   return null;
 }
 
-function getLastTradeAgeStatus(value: number | null | undefined): { label: string; color: string } | null {
-  const timestamp = normalizeTimestampMs(value);
-  if (timestamp == null) return null;
-  const ageMs = Math.max(0, Date.now() - timestamp);
-  const minute = 60 * 1000;
-  const hour = 60 * minute;
-  const day = 24 * hour;
+function calendarDayDiff(timestamp: number, now = Date.now()): number {
+  const tradeDate = new Date(timestamp);
+  const currentDate = new Date(now);
+  const tradeMidnight = new Date(tradeDate.getFullYear(), tradeDate.getMonth(), tradeDate.getDate()).getTime();
+  const currentMidnight = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate()).getTime();
+  return Math.max(0, Math.floor((currentMidnight - tradeMidnight) / (24 * 60 * 60 * 1000)));
+}
 
-  if (ageMs <= 15 * minute) return { label: 'Fresh', color: 'var(--green)' };
-  if (ageMs > day) return { label: 'Very stale', color: 'var(--red)' };
-  if (ageMs > hour) return { label: 'Stale', color: 'var(--yellow)' };
-  return { label: 'Recent', color: 'var(--text-muted)' };
+function formatTradeTime(timestamp: number): string {
+  return new Date(timestamp).toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function getLastTradeInfo(value: number | null | undefined): { trade: string; age: string; color?: string } {
+  const timestamp = normalizeTimestampMs(value);
+  if (timestamp == null) return { trade: 'â€”', age: 'â€”' };
+
+  const dayDiff = calendarDayDiff(timestamp);
+  if (dayDiff === 0) {
+    return { trade: `Today ${formatTradeTime(timestamp)}`, age: 'Today', color: 'var(--green)' };
+  }
+  if (dayDiff === 1) {
+    return { trade: `Yesterday ${formatTradeTime(timestamp)}`, age: 'Yesterday', color: 'var(--text-muted)' };
+  }
+  if (dayDiff <= 2) {
+    return { trade: `${dayDiff}d ago`, age: `${dayDiff}d ago`, color: 'var(--text-muted)' };
+  }
+  if (dayDiff <= 7) {
+    return { trade: `${dayDiff}d ago`, age: `${dayDiff}d ago - Stale`, color: 'var(--yellow)' };
+  }
+  return { trade: `${dayDiff}d ago`, age: `${dayDiff}d ago - Very Stale`, color: 'var(--red)' };
 }
 
 function MetricCard({ label, value, color = 'var(--text)' }: { label: string; value: string; color?: string }) {
@@ -127,11 +144,11 @@ export default function OptionDetailDrawer({
   onClose,
 }: OptionDetailDrawerProps) {
   const defaultPrice = useMemo(() => option ? getDefaultSoldPrice(option) : null, [option]);
-  const [contracts, setContracts] = useState(1);
+  const [contracts, setContracts] = useState('1');
   const [soldPrice, setSoldPrice] = useState('');
 
   useEffect(() => {
-    setContracts(1);
+    setContracts('1');
     setSoldPrice(defaultPrice != null ? defaultPrice.toFixed(2) : '');
   }, [defaultPrice, option?.strike]);
 
@@ -151,30 +168,25 @@ export default function OptionDetailDrawer({
   const mid = getMidPrice(option);
   const spread = calculateBidAskSpread(bid, ask);
   const spreadPct = calculateBidAskSpreadPercent(bid, ask);
-  const lastTradeStatus = getLastTradeAgeStatus(option.lastTradeDate);
-  const lastTradeAge = formatRelativeAge(option.lastTradeDate);
-  const lastTradeAgeLabel = lastTradeStatus ? `${lastTradeAge} - ${lastTradeStatus.label}` : lastTradeAge;
+  const lastTradeInfo = getLastTradeInfo(option.lastTradeDate);
 
   const parsedSoldPrice = soldPrice.trim() === '' ? null : Number(soldPrice);
   const validSoldPrice = isFiniteNumber(parsedSoldPrice) && parsedSoldPrice >= 0 ? parsedSoldPrice : null;
-  const optionPrice = validSoldPrice;
-  const premiumPerContract = calculatePremiumPerContract(optionPrice);
-  const breakeven = calculateBreakeven(option.strike, optionPrice);
-  const downsideCushion = calculateDownsideCushion(underlyingPrice, breakeven);
-  const simpleYield = calculateNominalYield(optionPrice, option.strike);
-  const annualizedYield = calculateAnnualizedYield(optionPrice, option.strike, dte);
+  const activeSoldPrice = validSoldPrice;
   const distanceToStrike = isFiniteNumber(underlyingPrice) && underlyingPrice > 0
     ? (underlyingPrice - option.strike) / underlyingPrice
     : null;
 
-  const validContracts = Number.isInteger(contracts) && contracts >= 1 ? contracts : null;
+  const parsedContracts = contracts.trim() === '' ? null : Number(contracts);
+  const validContracts = Number.isInteger(parsedContracts) && isFiniteNumber(parsedContracts) && parsedContracts >= 1 ? parsedContracts : null;
   const positionMetrics = calculatePositionMetrics({
     strike: option.strike,
-    soldPrice: validSoldPrice,
+    soldPrice: activeSoldPrice,
     contracts: validContracts,
     dte,
     underlyingPrice,
   });
+  const topBreakeven = calculateBreakeven(option.strike, activeSoldPrice);
 
   const setSoldPriceFromQuote = (value: number | null | undefined) => {
     if (isFiniteNumber(value) && value >= 0) setSoldPrice(value.toFixed(2));
@@ -215,10 +227,10 @@ export default function OptionDetailDrawer({
         </div>
 
         <div className="grid grid-cols-1 min-[390px]:grid-cols-2 gap-2 mb-3 min-w-0">
-          <MetricCard label="Premium / Contract" value={formatCurrency(premiumPerContract)} color="var(--accent-light)" />
-          <MetricCard label="Breakeven" value={formatCurrency(breakeven)} />
-          <MetricCard label="Downside Cushion" value={formatPercent(downsideCushion)} color={isFiniteNumber(downsideCushion) && downsideCushion >= 0 ? 'var(--green)' : 'var(--red)'} />
-          <MetricCard label="Annualized Yield" value={formatPercent(annualizedYield)} color={isFiniteNumber(annualizedYield) && annualizedYield >= 0.25 ? 'var(--green)' : 'var(--yellow)'} />
+          <MetricCard label="Option Price" value={formatCurrency(activeSoldPrice)} color="var(--accent-light)" />
+          <MetricCard label="Breakeven" value={formatCurrency(topBreakeven)} />
+          <MetricCard label="Downside Cushion" value={formatPercent(positionMetrics.downsideCushion)} color={isFiniteNumber(positionMetrics.downsideCushion) && positionMetrics.downsideCushion >= 0 ? 'var(--green)' : 'var(--red)'} />
+          <MetricCard label="Ann. Return" value={formatPercent(positionMetrics.annualizedReturn)} color={isFiniteNumber(positionMetrics.annualizedReturn) && positionMetrics.annualizedReturn >= 0.25 ? 'var(--green)' : 'var(--yellow)'} />
         </div>
 
         <div className="space-y-3">
@@ -227,12 +239,19 @@ export default function OptionDetailDrawer({
               <label className="block">
                 <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Contracts</span>
                 <input
-                  type="number"
+                  type="text"
                   min={1}
                   step={1}
                   inputMode="numeric"
                   value={contracts}
-                  onChange={event => setContracts(Math.max(1, Math.floor(Number(event.target.value) || 1)))}
+                  onChange={event => {
+                    const next = event.target.value;
+                    if (/^\d*$/.test(next)) setContracts(next);
+                  }}
+                  onBlur={() => {
+                    const value = Number(contracts);
+                    setContracts(Number.isInteger(value) && value >= 1 ? String(value) : '1');
+                  }}
                   className="w-full rounded-lg px-3 py-2 text-base sm:text-sm font-mono outline-none min-h-[44px]"
                   style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
                 />
@@ -272,50 +291,34 @@ export default function OptionDetailDrawer({
               ))}
             </div>
             <DetailRow label="Total Premium" value={formatCurrency(positionMetrics.totalPremium)} color="var(--green)" />
-            <DetailRow label="Total Equity at Risk" value={formatCurrency(positionMetrics.equityAtRisk)} />
-            <DetailRow label="Maximum Loss" value={formatCurrency(positionMetrics.maximumLoss)} color="var(--red)" />
-            <DetailRow label="Breakeven Price" value={formatCurrency(positionMetrics.breakeven)} />
+            <DetailRow label="Equity at Risk" value={formatCurrency(positionMetrics.equityAtRisk)} />
+            <DetailRow label="Max Loss" value={formatCurrency(positionMetrics.maximumLoss)} color="var(--red)" />
             <DetailRow label="Net Capital at Risk" value={formatCurrency(positionMetrics.netCapitalAtRisk)} />
+            <DetailRow label="Breakeven" value={formatCurrency(positionMetrics.breakeven)} />
             <DetailRow label="Return on Risk" value={formatPercent(positionMetrics.returnOnRisk)} color="var(--accent-light)" />
             <DetailRow label="Annualized Return" value={formatPercent(positionMetrics.annualizedReturn)} color="var(--green)" />
           </Section>
 
-          <Section title="Key Trade Metrics">
-            <DetailRow compact label="Option Price" value={formatCurrency(optionPrice)} />
-            <DetailRow compact label="Premium per Contract" value={formatCurrency(premiumPerContract)} />
-            <DetailRow compact label="Breakeven Share Price" value={formatCurrency(breakeven)} />
-            <DetailRow compact label="Downside Cushion" value={formatPercent(downsideCushion)} />
-            <DetailRow compact label="Simple Yield" value={formatPercent(simpleYield)} />
-            <DetailRow compact label="Annualized Yield" value={formatPercent(annualizedYield)} />
-            <DetailRow compact label="Bid/Ask Spread" value={formatCurrency(spread)} />
-            <DetailRow compact label="Bid/Ask Spread %" value={formatPercent(spreadPct)} />
-          </Section>
-
-          <Section title="Liquidity">
+          <Section title="Market Quote">
             <DetailRow label="Bid" value={formatCurrency(bid)} />
             <DetailRow label="Ask" value={formatCurrency(ask)} />
             <DetailRow label="Mid" value={formatCurrency(mid)} />
             <DetailRow label="Last" value={formatCurrency(option.last)} />
-            <DetailRow label="Last Trade" value={formatDateTime(option.lastTradeDate)} />
-            <DetailRow label="Age" value={lastTradeAgeLabel} color={lastTradeStatus?.color} />
+            <DetailRow label="Last Trade" value={lastTradeInfo.trade} />
+            <DetailRow label="Last Trade Age" value={lastTradeInfo.age} color={lastTradeInfo.color} />
+            <DetailRow label="Bid/Ask Spread" value={formatCurrency(spread)} />
+            <DetailRow label="Bid/Ask Spread %" value={formatPercent(spreadPct)} />
             <DetailRow label="Volume" value={formatInteger(option.volume)} />
             <DetailRow label="Open Interest" value={formatInteger(option.openInterest)} />
-            <DetailRow label="Vol / OI" value={formatPlainNumber(option.volOI)} />
-            <DetailRow label="Spread" value={formatCurrency(spread)} />
-            <DetailRow label="Spread %" value={formatPercent(spreadPct)} />
           </Section>
 
-          <Section title="Greeks / Market Data">
+          <Section title="Risk / Option Metrics">
             <DetailRow label="Strike" value={formatCurrency(option.strike)} />
             <DetailRow label="Delta" value={formatPlainNumber(option.delta, 3)} />
-            <DetailRow label="Gamma" value={formatPlainNumber(option.gamma, 4)} />
-            <DetailRow label="Theta" value={formatPlainNumber(option.theta, 4)} />
-            <DetailRow label="Vega" value={formatPlainNumber(option.vega, 4)} />
             <DetailRow label="IV" value={isFiniteNumber(option.impliedVolatility) ? `${option.impliedVolatility.toFixed(1)}%` : '—'} />
             <DetailRow label="Moneyness" value={option.otmItmLabel || '—'} color={option.otmItmColor || undefined} />
             <DetailRow label="DTE" value={isFiniteNumber(dte) ? `${dte}` : '—'} />
             <DetailRow label="Expiration" value={expirationLabel || '—'} />
-            <DetailRow label="Underlying Price" value={formatCurrency(underlyingPrice)} />
             <DetailRow label="Distance to Strike" value={formatPercent(distanceToStrike)} />
           </Section>
         </div>
