@@ -49,7 +49,7 @@ function setExpiryAvailabilityCache(data: ExpiryAvailabilityCache): void {
 }
 
 function marketChangeColor(ticker: string, changePercent: number): string {
-  if (ticker === 'VIX') return changePercent >= 0 ? 'var(--orange)' : 'var(--green)';
+  if (ticker === 'VIX' || ticker === 'VXN') return changePercent >= 0 ? 'var(--orange)' : 'var(--green)';
   return changePercent >= 0 ? 'var(--green)' : 'var(--red)';
 }
 
@@ -67,7 +67,7 @@ function MarketChartCard({
   onRefresh,
   onOpenChart,
 }: {
-  ticker: 'QQQ' | 'SPY' | 'VIX';
+  ticker: 'QQQ' | 'SPY' | 'VIX' | 'VXN';
   chartTicker: string;
   data: SparklineData | null;
   loading: boolean;
@@ -76,7 +76,7 @@ function MarketChartCard({
 }) {
   const changePct = data?.changePercent ?? 0;
   const color = data ? marketChangeColor(ticker, changePct) : 'var(--yellow)';
-  const prefix = ticker === 'VIX' ? '' : '$';
+  const prefix = ticker === 'VIX' || ticker === 'VXN' ? '' : '$';
 
   return (
     <div
@@ -160,6 +160,7 @@ export default function HomePage() {
   const [qqqData, setQqqData] = useState<SparklineData | null>(null);
   const [spyData, setSpyData] = useState<SparklineData | null>(null);
   const [vixData, setVixData] = useState<SparklineData | null>(null);
+  const [vxnData, setVxnData] = useState<SparklineData | null>(null);
   const [marketLoading, setMarketLoading] = useState(true);
   const [lastMarketUpdate, setLastMarketUpdate] = useState<Date | null>(null);
   const [chartModal, setChartModal] = useState<{ ticker: string; displayTicker: string } | null>(null);
@@ -273,14 +274,16 @@ export default function HomePage() {
   const loadMarketData = useCallback(async () => {
     setMarketLoading(true);
     try {
-      const [qqq, spy, vix] = await Promise.allSettled([
+      const [qqq, spy, vix, vxn] = await Promise.allSettled([
         fetchSparkline('QQQ'),
         fetchSparkline('SPY'),
         fetchSparkline('^VIX'),
+        fetchSparkline('^VXN'),
       ]);
       if (qqq.status === 'fulfilled') setQqqData(qqq.value);
       if (spy.status === 'fulfilled') setSpyData(spy.value);
       if (vix.status === 'fulfilled') setVixData(vix.value);
+      if (vxn.status === 'fulfilled') setVxnData(vxn.value);
       setLastMarketUpdate(new Date());
     } catch { /* ignore */ }
     setMarketLoading(false);
@@ -338,10 +341,10 @@ export default function HomePage() {
           />
         </div>
 
-        <div className="flex flex-col lg:flex-row lg:items-start gap-3 mb-4">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(360px,500px)_minmax(0,1fr)] xl:grid-cols-[minmax(420px,520px)_minmax(0,1fr)] lg:items-start gap-3 mb-4">
           {/* Filters */}
-          <div className="w-full lg:flex-1 rounded-xl p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-            <div className="grid grid-cols-1 md:grid-cols-[auto_minmax(220px,320px)] gap-3 md:items-end">
+          <div className="w-full rounded-xl p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+            <div className="grid grid-cols-1 sm:grid-cols-[auto_minmax(200px,1fr)] gap-3 sm:items-end">
               <div>
                 <span className="block text-xs font-medium uppercase tracking-wider mb-1.5" style={{ color: 'var(--text-muted)' }}>Leverage</span>
                 <div className="grid grid-cols-3 gap-1.5 sm:flex">
@@ -392,10 +395,11 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 min-[430px]:grid-cols-3 lg:w-[420px] xl:w-[500px] gap-2">
+          <div className="grid grid-cols-1 min-[390px]:grid-cols-2 xl:grid-cols-4 gap-2 min-w-0">
             <MarketChartCard ticker="QQQ" chartTicker="QQQ" data={qqqData} loading={marketLoading} onRefresh={loadMarketData} onOpenChart={(chartTicker, displayTicker) => setChartModal({ ticker: chartTicker, displayTicker })} />
             <MarketChartCard ticker="SPY" chartTicker="SPY" data={spyData} loading={marketLoading} onRefresh={loadMarketData} onOpenChart={(chartTicker, displayTicker) => setChartModal({ ticker: chartTicker, displayTicker })} />
             <MarketChartCard ticker="VIX" chartTicker="^VIX" data={vixData} loading={marketLoading} onRefresh={loadMarketData} onOpenChart={(chartTicker, displayTicker) => setChartModal({ ticker: chartTicker, displayTicker })} />
+            <MarketChartCard ticker="VXN" chartTicker="^VXN" data={vxnData} loading={marketLoading} onRefresh={loadMarketData} onOpenChart={(chartTicker, displayTicker) => setChartModal({ ticker: chartTicker, displayTicker })} />
           </div>
         </div>
 
