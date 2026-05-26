@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, RefreshCw, X } from 'lucide-react';
 import { getChartHistory } from '../lib/chartHistory';
 import type { ChartHistoryResponse, ChartPoint, ChartTimeframe } from '../lib/chartHistory';
+import { calculateAnnualizedReturn, calculateSimpleReturn } from '../lib/chartReturns';
 import { formatChartYAxisTick, getNiceYAxisScale } from '../lib/chartScale';
 import { getOrderedChartTimeframes } from '../lib/chartTimeframes';
 import { getInstrumentName, isVolatilityInstrument, normalizeDisplayTicker } from '../lib/instrumentNames';
@@ -65,11 +66,7 @@ function formatDateTime(point: ChartPoint | null | undefined, timeframe: ChartTi
 }
 
 function changeFrom(start: number | null | undefined, end: number | null | undefined) {
-  if (!isFiniteNumber(start) || !isFiniteNumber(end) || start === 0) {
-    return { change: null, percent: null };
-  }
-  const change = end - start;
-  return { change, percent: (change / start) * 100 };
+  return calculateSimpleReturn(start, end);
 }
 
 function chartColor(changePercent: number | null): string {
@@ -148,10 +145,20 @@ export default function InteractivePriceChartModal({
   const lineColor = chartColor(periodChange.percent);
   const activeIndex = hoveredIndex ?? points.length - 1;
   const activePoint = activeIndex != null ? points[activeIndex] : latestPoint;
-  const activeChange = changeFrom(timeframe === '1D' ? baseline : points[0]?.price, activePoint?.price);
+  const activeBaselinePoint = points[0] ?? null;
+  const activeChange = changeFrom(timeframe === '1D' ? baseline : activeBaselinePoint?.price, activePoint?.price);
+  const activeAnnualizedReturn = calculateAnnualizedReturn(
+    timeframe === '1D' ? baseline : activeBaselinePoint?.price,
+    activePoint?.price,
+    activeBaselinePoint?.timestamp,
+    activePoint?.timestamp
+  );
   const selectedPoint = selectedIndex != null ? points[selectedIndex] : null;
   const rangeEndPoint = selectedPoint && hoveredIndex != null ? points[hoveredIndex] : null;
   const rangeChange = selectedPoint && rangeEndPoint ? changeFrom(selectedPoint.price, rangeEndPoint.price) : null;
+  const rangeAnnualizedReturn = selectedPoint && rangeEndPoint
+    ? calculateAnnualizedReturn(selectedPoint.price, rangeEndPoint.price, selectedPoint.timestamp, rangeEndPoint.timestamp)
+    : null;
 
   const chart = useMemo(() => {
     if (points.length < 2) {
@@ -323,6 +330,11 @@ export default function InteractivePriceChartModal({
                     <div className="mt-1 font-mono text-sm tabular-nums" style={{ color: chartColor(activeChange.percent) }}>
                       {formatSignedValue(activeChange.change, isVolatility)} / {formatPercent(activeChange.percent)}
                     </div>
+                    {isFiniteNumber(activeAnnualizedReturn) && (
+                      <div className="text-xs font-mono tabular-nums" style={{ color: chartColor(activeAnnualizedReturn) }}>
+                        Ann. Return: {formatPercent(activeAnnualizedReturn)}
+                      </div>
+                    )}
                     <div className="text-xs" style={{ color: 'var(--text-muted)' }}>From baseline</div>
                   </div>
                   <div className="rounded-lg p-3" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
@@ -332,6 +344,11 @@ export default function InteractivePriceChartModal({
                         <div className="mt-1 font-mono text-sm tabular-nums" style={{ color: chartColor(rangeChange.percent) }}>
                           {formatSignedValue(rangeChange.change, isVolatility)} / {formatPercent(rangeChange.percent)}
                         </div>
+                        {isFiniteNumber(rangeAnnualizedReturn) && (
+                          <div className="text-xs font-mono tabular-nums" style={{ color: chartColor(rangeAnnualizedReturn) }}>
+                            Ann. Return: {formatPercent(rangeAnnualizedReturn)}
+                          </div>
+                        )}
                         <div className="truncate text-xs" style={{ color: 'var(--text-muted)' }}>
                           {formatDateTime(selectedPoint, timeframe)} to {formatDateTime(rangeEndPoint, timeframe)}
                         </div>
