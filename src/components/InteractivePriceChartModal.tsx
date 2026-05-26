@@ -3,9 +3,9 @@ import { Loader2, RefreshCw, X } from 'lucide-react';
 import { getChartHistory } from '../lib/chartHistory';
 import type { ChartHistoryResponse, ChartPoint, ChartTimeframe } from '../lib/chartHistory';
 import { formatChartYAxisTick, getNiceYAxisScale } from '../lib/chartScale';
+import { getOrderedChartTimeframes } from '../lib/chartTimeframes';
 import { getInstrumentName, isVolatilityInstrument, normalizeDisplayTicker } from '../lib/instrumentNames';
 
-const TIMEFRAMES: ChartTimeframe[] = ['1D', '5D', '30D', 'YTD', '3M', '6M', '1Y', '3Y', '5Y', 'All'];
 const CHART_WIDTH = 900;
 const CHART_HEIGHT = 360;
 const PAD_LEFT = 66;
@@ -95,6 +95,7 @@ export default function InteractivePriceChartModal({
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const timeframes = useMemo(() => getOrderedChartTimeframes(), []);
 
   const requestedTicker = ticker.trim().toUpperCase();
   const activeData = data && data.timeframe === timeframe && data.ticker.toUpperCase() === requestedTicker ? data : null;
@@ -265,7 +266,7 @@ export default function InteractivePriceChartModal({
 
         <div className="overflow-y-auto p-3 sm:p-5">
           <div className="mb-4 flex gap-2 overflow-x-auto pb-1 sm:flex-wrap">
-            {TIMEFRAMES.map(option => (
+            {timeframes.map(option => (
               <button
                 type="button"
                 key={option}
