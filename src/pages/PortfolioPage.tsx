@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Briefcase, Edit2, Loader2, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { AlertTriangle, Briefcase, Edit2, FileImage, Loader2, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { calculatePutDelta, fetchBatchPrices, fetchOptions } from '../lib/api';
 import { formatCurrency, formatDate, formatOptionPrice, formatPercent } from '../lib/format';
 import { calculateDte, calculateMoneyness, calculateYieldPercent, isFiniteNumber } from '../lib/optionMetrics';
@@ -30,6 +30,7 @@ import {
 } from '../lib/portfolioMetrics';
 import type { OptionDetail } from '../components/OptionDetailDrawer';
 import ErrorBoundary from '../components/ErrorBoundary';
+import PortfolioScreenshotImportModal from '../components/PortfolioScreenshotImportModal';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 const DASH = '\u2014';
@@ -322,6 +323,7 @@ export default function PortfolioPage() {
   const [trades, setTrades] = useState<PortfolioTrade[]>([]);
   const [editingTrade, setEditingTrade] = useState<PortfolioTrade | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshWarning, setRefreshWarning] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
@@ -571,6 +573,9 @@ export default function PortfolioPage() {
             <button onClick={() => setShowAddModal(true)} className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium text-white min-h-[44px] sm:min-h-0" style={{ backgroundColor: 'var(--accent)' }}>
               <Plus className="w-3.5 h-3.5" /> Add Trade
             </button>
+            <button onClick={() => setShowImportModal(true)} className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium min-h-[44px] sm:min-h-0" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
+              <FileImage className="w-3.5 h-3.5" /> Import Screenshot
+            </button>
             <button onClick={handleRefreshOpenTrades} disabled={refreshing || openTrades.length === 0} className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px] sm:min-h-0" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
               {refreshing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
               Refresh Open Trades
@@ -592,9 +597,14 @@ export default function PortfolioPage() {
             <Briefcase className="w-9 h-9 mx-auto mb-3 opacity-30" style={{ color: 'var(--text-muted)' }} />
             <p className="text-sm mb-1" style={{ color: 'var(--text-muted)' }}>No sold puts added yet.</p>
             <p className="text-xs mb-4" style={{ color: 'var(--text-dim)' }}>Add a trade manually or add one from an option detail drawer.</p>
-            <button onClick={() => setShowAddModal(true)} className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium text-white min-h-[44px]" style={{ backgroundColor: 'var(--accent)' }}>
-              <Plus className="w-3.5 h-3.5" /> Add Trade
-            </button>
+            <div className="flex flex-col sm:flex-row justify-center gap-2">
+              <button onClick={() => setShowAddModal(true)} className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium text-white min-h-[44px]" style={{ backgroundColor: 'var(--accent)' }}>
+                <Plus className="w-3.5 h-3.5" /> Add Trade
+              </button>
+              <button onClick={() => setShowImportModal(true)} className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium min-h-[44px]" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
+                <FileImage className="w-3.5 h-3.5" /> Import Screenshot
+              </button>
+            </div>
           </div>
         ) : (
           <>
@@ -635,7 +645,12 @@ export default function PortfolioPage() {
                     <Metric label="Equity Risk" value={formatCurrency(calculateEquityAtRisk(trade), 0)} />
                     <Metric label="Current Mark" value={formatOptionPrice(getPreferredMark(trade))} />
                     <Metric label="Unrealized P/L" value={formatCurrency(calculateUnrealizedPnl(trade, 'ask') ?? calculateUnrealizedPnl(trade, 'mid'), 0)} color={pnlColor(calculateUnrealizedPnl(trade, 'ask') ?? calculateUnrealizedPnl(trade, 'mid'))} />
+                    <Metric label="Imported Value" value={formatCurrency(trade.importedSnapshot?.currentValue, 0)} />
+                    <Metric label="Imported G/L" value={formatCurrency(trade.importedSnapshot?.totalGainLossDollar, 0)} color={pnlColor(trade.importedSnapshot?.totalGainLossDollar)} />
                   </div>
+                  {trade.importedSnapshot && (
+                    <p className="text-[11px] mt-2" style={{ color: 'var(--yellow)' }}>Entry date missing - using import date. Edit if needed.</p>
+                  )}
                   {trade.notes && <p className="text-xs mt-3" style={{ color: 'var(--text-secondary)' }}>{trade.notes}</p>}
                   <div className="flex flex-wrap gap-2 mt-3">
                     <button onClick={() => setEditingTrade(trade)} className="px-3 py-2 rounded-lg text-xs min-h-[40px]" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Edit</button>
@@ -659,6 +674,8 @@ export default function PortfolioPage() {
                       <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Bid</th>
                       <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Ask</th>
                       <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Mark</th>
+                      <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Imported Value</th>
+                      <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Imported G/L</th>
                       {sortButton('premium', 'Premium')}
                       {sortButton('risk', 'Risk')}
                       <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Breakeven</th>
@@ -689,6 +706,8 @@ export default function PortfolioPage() {
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatOptionPrice(trade.latestMarketData?.optionBid)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatOptionPrice(trade.latestMarketData?.optionAsk)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatOptionPrice(getPreferredMark(trade))}</td>
+                          <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(trade.importedSnapshot?.currentValue, 0)}</td>
+                          <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(trade.importedSnapshot?.totalGainLossDollar) }}>{formatCurrency(trade.importedSnapshot?.totalGainLossDollar, 0)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(calculatePremiumCollected(trade), 0)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(calculateEquityAtRisk(trade), 0)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(calculateBreakeven(trade))}</td>
@@ -701,7 +720,9 @@ export default function PortfolioPage() {
                           <td className="px-2 py-1 text-right whitespace-nowrap">
                             <StatusSelect value={trade.status} onChange={status => updateStatus(trade, status)} compact />
                           </td>
-                          <td className="px-2 py-1 text-left max-w-[220px] truncate" style={{ color: trade.notes ? 'var(--text-secondary)' : 'var(--text-dim)' }}>{trade.notes || DASH}</td>
+                          <td className="px-2 py-1 text-left max-w-[220px] truncate" style={{ color: trade.notes ? 'var(--text-secondary)' : 'var(--text-dim)' }}>
+                            {trade.importedSnapshot ? 'Entry date missing - import date used. ' : ''}{trade.notes || DASH}
+                          </td>
                           <td className="px-2 py-1 whitespace-nowrap">
                             <div className="flex items-center gap-1">
                               <button onClick={() => setEditingTrade(trade)} className="p-1.5 rounded" title="Edit" style={{ color: 'var(--text-muted)' }}><Edit2 className="w-3.5 h-3.5" /></button>
@@ -752,6 +773,17 @@ export default function PortfolioPage() {
             />
           </Suspense>
         </ErrorBoundary>
+      )}
+
+      {showImportModal && (
+        <PortfolioScreenshotImportModal
+          trades={trades}
+          onClose={() => setShowImportModal(false)}
+          onApply={nextTrades => {
+            persistTrades(nextTrades);
+            setShowImportModal(false);
+          }}
+        />
       )}
     </div>
   );

@@ -1,5 +1,5 @@
 export type PortfolioTradeStatus = 'open' | 'closed' | 'expired' | 'assigned';
-export type PortfolioAvailabilityStatus = 'live' | 'expired' | 'unavailable' | 'refresh_failed' | 'stale';
+export type PortfolioAvailabilityStatus = 'live' | 'expired' | 'unavailable' | 'refresh_failed' | 'stale' | 'imported_snapshot';
 
 export interface PortfolioTradeSnapshot {
   underlyingPrice?: number | null;
@@ -26,6 +26,20 @@ export interface PortfolioMarketData {
   availabilityStatus?: PortfolioAvailabilityStatus;
 }
 
+export interface PortfolioImportedSnapshot {
+  source: 'brokerage_screenshot';
+  importedAt: string;
+  lastPrice?: number | null;
+  todayGainLossDollar?: number | null;
+  todayGainLossPercent?: number | null;
+  totalGainLossDollar?: number | null;
+  totalGainLossPercent?: number | null;
+  currentValue?: number | null;
+  percentOfAccount?: number | null;
+  averageCostBasis?: number | null;
+  costBasisTotal?: number | null;
+}
+
 export interface PortfolioTrade {
   id: string;
   ticker: string;
@@ -43,6 +57,7 @@ export interface PortfolioTrade {
   updatedAt: string;
   entrySnapshot?: PortfolioTradeSnapshot;
   latestMarketData?: PortfolioMarketData;
+  importedSnapshot?: PortfolioImportedSnapshot;
 }
 
 export type PortfolioTradeInput = Omit<PortfolioTrade, 'id' | 'createdAt' | 'updatedAt'> & {
@@ -54,7 +69,7 @@ export type PortfolioTradeInput = Omit<PortfolioTrade, 'id' | 'createdAt' | 'upd
 export const PORTFOLIO_STORAGE_KEY = 'put_scanner_portfolio_trades';
 
 const VALID_STATUSES: PortfolioTradeStatus[] = ['open', 'closed', 'expired', 'assigned'];
-const VALID_AVAILABILITY: PortfolioAvailabilityStatus[] = ['live', 'expired', 'unavailable', 'refresh_failed', 'stale'];
+const VALID_AVAILABILITY: PortfolioAvailabilityStatus[] = ['live', 'expired', 'unavailable', 'refresh_failed', 'stale', 'imported_snapshot'];
 
 function getStorage(): Storage | null {
   try {
@@ -153,6 +168,29 @@ function normalizeMarketData(value: unknown): PortfolioMarketData | undefined {
   return Object.keys(marketData).length > 0 ? marketData : undefined;
 }
 
+function normalizeImportedSnapshot(value: unknown): PortfolioImportedSnapshot | undefined {
+  if (!isRecord(value) || value.source !== 'brokerage_screenshot') return undefined;
+  const importedAt = typeof value.importedAt === 'string' && !Number.isNaN(new Date(value.importedAt).getTime())
+    ? new Date(value.importedAt).toISOString()
+    : new Date().toISOString();
+  const snapshot: PortfolioImportedSnapshot = { source: 'brokerage_screenshot', importedAt };
+  ([
+    'lastPrice',
+    'todayGainLossDollar',
+    'todayGainLossPercent',
+    'totalGainLossDollar',
+    'totalGainLossPercent',
+    'currentValue',
+    'percentOfAccount',
+    'averageCostBasis',
+    'costBasisTotal',
+  ] as const).forEach(field => {
+    const normalized = normalizeOptionalNumber(value[field]);
+    if (normalized !== undefined) snapshot[field] = normalized;
+  });
+  return snapshot;
+}
+
 export function makePortfolioTradeId(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
   return `portfolio_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
@@ -200,6 +238,7 @@ export function normalizePortfolioTrade(raw: unknown): PortfolioTrade | null {
     updatedAt,
     entrySnapshot: normalizeSnapshot(raw.entrySnapshot),
     latestMarketData: normalizeMarketData(raw.latestMarketData),
+    importedSnapshot: normalizeImportedSnapshot(raw.importedSnapshot),
   };
 }
 
