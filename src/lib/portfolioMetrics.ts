@@ -8,9 +8,14 @@ export interface PortfolioSummaryMetrics {
   totalPremiumCollected: number;
   totalEquityAtRisk: number;
   totalNetCapitalAtRisk: number;
+  totalCurrentValue: number | null;
+  totalCostBasis: number | null;
   totalUnrealizedPnlAsk: number | null;
   totalUnrealizedPnlMid: number | null;
+  totalUnrealizedPnlPreferred: number | null;
+  weightedAverageSoldPrice: number | null;
   weightedAverageOriginalAnnualizedYield: number | null;
+  weightedAverageRemainingAnnualizedYield: number | null;
   weightedAverageRemainingDte: number | null;
   totalOpenTrades: number;
   totalClosedTrades: number;
@@ -104,6 +109,41 @@ export function calculateUnrealizedPnl(trade: PortfolioTrade, basis: MarkBasis):
   return (soldPrice - mark) * 100 * contracts;
 }
 
+export function calculateImportedCurrentValue(trade: PortfolioTrade): number | null {
+  const value = trade.importedSnapshot?.currentValue;
+  return isFiniteNumber(value) ? value : null;
+}
+
+export function calculateCurrentPositionValue(trade: PortfolioTrade, basis: MarkBasis): number | null {
+  if (!isOpenTrade(trade)) return null;
+  const mark = calculateCurrentOptionMark(trade, basis);
+  const contracts = validContracts(trade);
+  return mark != null && contracts != null ? -mark * 100 * contracts : null;
+}
+
+export function calculatePreferredCurrentPositionValue(trade: PortfolioTrade): number | null {
+  return calculateCurrentPositionValue(trade, 'ask')
+    ?? calculateImportedCurrentValue(trade)
+    ?? calculateCurrentPositionValue(trade, 'mid');
+}
+
+export function calculatePreferredUnrealizedPnl(trade: PortfolioTrade): number | null {
+  if (!isOpenTrade(trade)) return null;
+  const askPnl = calculateUnrealizedPnl(trade, 'ask');
+  if (askPnl != null) return askPnl;
+  const premium = calculatePremiumCollected(trade);
+  const importedValue = calculateImportedCurrentValue(trade);
+  if (premium != null && importedValue != null) return premium + importedValue;
+  return calculateUnrealizedPnl(trade, 'mid');
+}
+
+export function getPreferredMtmSource(trade: PortfolioTrade): 'ask' | 'imported_snapshot' | 'mid' | null {
+  if (calculateCurrentPositionValue(trade, 'ask') != null) return 'ask';
+  if (calculateImportedCurrentValue(trade) != null) return 'imported_snapshot';
+  if (calculateCurrentPositionValue(trade, 'mid') != null) return 'mid';
+  return null;
+}
+
 export function calculateRemainingAnnualizedYieldToExpiry(trade: PortfolioTrade, basis: MarkBasis): number | null {
   if (!isOpenTrade(trade)) return null;
   const mark = calculateCurrentOptionMark(trade, basis);
@@ -145,8 +185,11 @@ export function calculatePortfolioSummary(trades: PortfolioTrade[]): PortfolioSu
   const totalPremiumCollected = sum(openTrades.map(calculatePremiumCollected));
   const totalEquityAtRisk = sum(openTrades.map(calculateEquityAtRisk));
   const totalNetCapitalAtRisk = sum(openTrades.map(calculateNetCapitalAtRisk));
+  const totalCurrentValue = nullableSum(openTrades.map(calculatePreferredCurrentPositionValue));
+  const totalCostBasis = nullableSum(openTrades.map(trade => trade.importedSnapshot?.costBasisTotal ?? calculatePremiumCollected(trade)));
   const totalUnrealizedPnlAsk = nullableSum(openTrades.map(trade => calculateUnrealizedPnl(trade, 'ask')));
   const totalUnrealizedPnlMid = nullableSum(openTrades.map(trade => calculateUnrealizedPnl(trade, 'mid')));
+  const totalUnrealizedPnlPreferred = nullableSum(openTrades.map(calculatePreferredUnrealizedPnl));
   const realizedPnl = nullableSum(trades.map(calculateRealizedPnl));
 
   return {
@@ -154,11 +197,26 @@ export function calculatePortfolioSummary(trades: PortfolioTrade[]): PortfolioSu
     totalPremiumCollected,
     totalEquityAtRisk,
     totalNetCapitalAtRisk,
+    totalCurrentValue,
+    totalCostBasis,
     totalUnrealizedPnlAsk,
     totalUnrealizedPnlMid,
+    totalUnrealizedPnlPreferred,
+    weightedAverageSoldPrice: weightedAverage(
+      openTrades.map(trade => ({
+        value: positive(trade.soldPrice, true),
+        weight: validContracts(trade),
+      }))
+    ),
     weightedAverageOriginalAnnualizedYield: weightedAverage(
       openTrades.map(trade => ({
         value: calculateOriginalAnnualizedYield(trade),
+        weight: calculateNetCapitalAtRisk(trade),
+      }))
+    ),
+    weightedAverageRemainingAnnualizedYield: weightedAverage(
+      openTrades.map(trade => ({
+        value: calculateRemainingAnnualizedYieldToExpiry(trade, 'ask') ?? calculateRemainingAnnualizedYieldToExpiry(trade, 'mid'),
         weight: calculateNetCapitalAtRisk(trade),
       }))
     ),

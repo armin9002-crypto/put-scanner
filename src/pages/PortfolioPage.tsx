@@ -19,6 +19,8 @@ import {
   calculateDistanceToBreakeven,
   calculateDistanceToStrike,
   calculateEquityAtRisk,
+  calculatePreferredCurrentPositionValue,
+  calculatePreferredUnrealizedPnl,
   calculateNetCapitalAtRisk,
   calculateOriginalAnnualizedYield,
   calculateOriginalDte,
@@ -26,7 +28,9 @@ import {
   calculatePremiumCollected,
   calculateRemainingAnnualizedYieldToExpiry,
   calculateRemainingDte,
+  calculateRealizedPnl,
   calculateUnrealizedPnl,
+  getPreferredMtmSource,
 } from '../lib/portfolioMetrics';
 import type { OptionDetail } from '../components/OptionDetailDrawer';
 import ErrorBoundary from '../components/ErrorBoundary';
@@ -101,7 +105,32 @@ function getPreferredMark(trade: PortfolioTrade): number | null {
   return calculateCurrentOptionMark(trade, 'ask') ?? calculateCurrentOptionMark(trade, 'mid') ?? calculateCurrentOptionMark(trade, 'last');
 }
 
-function BarList({ title, items, emptyLabel = 'No open trade exposure.' }: { title: string; items: Array<{ label: string; value: number; sublabel?: string }>; emptyLabel?: string }) {
+function mtmSourceLabel(trade: PortfolioTrade): string {
+  const source = getPreferredMtmSource(trade);
+  if (source === 'ask') return 'Ask close';
+  if (source === 'imported_snapshot') return 'Imported snapshot';
+  if (source === 'mid') return 'Mid close';
+  return DASH;
+}
+
+function weightedAverageValue(items: Array<{ value: number | null | undefined; weight: number | null | undefined }>): number | null {
+  const totals = items.reduce((acc, item) => {
+    if (!isFiniteNumber(item.value) || !isFiniteNumber(item.weight) || item.weight <= 0) return acc;
+    return { weighted: acc.weighted + item.value * item.weight, weight: acc.weight + item.weight };
+  }, { weighted: 0, weight: 0 });
+  return totals.weight > 0 ? totals.weighted / totals.weight : null;
+}
+
+function sumValues(values: Array<number | null | undefined>): number {
+  return values.reduce<number>((total, value) => total + (isFiniteNumber(value) ? value : 0), 0);
+}
+
+function nullableSumValues(values: Array<number | null | undefined>): number | null {
+  const valid = values.filter(isFiniteNumber);
+  return valid.length > 0 ? sumValues(valid) : null;
+}
+
+function BarList({ title, items, emptyLabel = 'No open trade exposure.' }: { title: string; items: Array<{ label: string; value: number; sublabel?: string; detail?: string }>; emptyLabel?: string }) {
   const max = Math.max(...items.map(item => item.value), 0);
   return (
     <section className="rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
@@ -121,7 +150,7 @@ function BarList({ title, items, emptyLabel = 'No open trade exposure.' }: { tit
                 <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--surface-alt)' }}>
                   <div className="h-full rounded-full" style={{ width: `${width}%`, backgroundColor: 'var(--accent)' }} />
                 </div>
-                {item.sublabel && <div className="text-[10px] mt-1" style={{ color: 'var(--text-dim)' }}>{item.sublabel}</div>}
+                {(item.sublabel || item.detail) && <div className="text-[10px] mt-1 truncate" title={item.detail ?? item.sublabel} style={{ color: 'var(--text-dim)' }}>{item.sublabel ?? item.detail}</div>}
               </div>
             );
           })}
@@ -137,6 +166,30 @@ function SummaryCard({ label, value, color }: { label: string; value: string; co
       <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-dim)' }}>{label}</div>
       <div className="text-base sm:text-lg font-mono font-semibold tabular-nums break-words" style={{ color: color ?? 'var(--text)' }}>{value}</div>
     </div>
+  );
+}
+
+function CompactMetricCard({ label, value, sublabel, color }: { label: string; value: string; sublabel?: string; color?: string }) {
+  return (
+    <div className="rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <div className="text-[10px] uppercase tracking-wider mb-1 truncate" style={{ color: 'var(--text-dim)' }}>{label}</div>
+      <div className="text-sm font-mono font-semibold tabular-nums truncate" style={{ color: color ?? 'var(--text)' }}>{value}</div>
+      {sublabel && <div className="text-[10px] mt-1 truncate" title={sublabel} style={{ color: 'var(--text-muted)' }}>{sublabel}</div>}
+    </div>
+  );
+}
+
+function InsightsPanel({ insights }: { insights: Array<{ label: string; value: string; sublabel?: string; color?: string }> }) {
+  if (insights.length === 0) return null;
+  return (
+    <section className="rounded-lg p-3 mb-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <h2 className="text-xs uppercase tracking-wider font-semibold mb-3" style={{ color: 'var(--text-muted)' }}>Portfolio Insights</h2>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-2">
+        {insights.map(item => (
+          <CompactMetricCard key={item.label} label={item.label} value={item.value} sublabel={item.sublabel} color={item.color} />
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -342,6 +395,7 @@ export default function PortfolioPage() {
   const openTrades = useMemo(() => trades.filter(trade => trade.status === 'open'), [trades]);
 
   const visualData = useMemo(() => buildVisualData(openTrades), [openTrades]);
+  const scheduleTotals = useMemo(() => buildScheduleTotals(trades), [trades]);
 
   const sortedTrades = useMemo(() => {
     const next = [...trades];
@@ -608,18 +662,30 @@ export default function PortfolioPage() {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-2 mb-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-9 gap-2 mb-4">
               <SummaryCard label="Open Trades" value={String(summary.totalOpenTrades)} />
+              <SummaryCard label="Open Contracts" value={String(summary.totalOpenContracts)} />
               <SummaryCard label="Premium Collected" value={formatCurrency(summary.totalPremiumCollected, 0)} color="var(--green)" />
               <SummaryCard label="Equity at Risk" value={formatCurrency(summary.totalEquityAtRisk, 0)} />
               <SummaryCard label="Net Capital at Risk" value={formatCurrency(summary.totalNetCapitalAtRisk, 0)} />
-              <SummaryCard label="Current MTM P/L" value={formatCurrency(summary.totalUnrealizedPnlAsk ?? summary.totalUnrealizedPnlMid, 0)} color={pnlColor(summary.totalUnrealizedPnlAsk ?? summary.totalUnrealizedPnlMid)} />
-              <SummaryCard label="Weighted Avg Ann. Yield" value={formatPctValue(summary.weightedAverageOriginalAnnualizedYield)} color="var(--accent-light)" />
+              <SummaryCard label="Current MTM P/L" value={formatCurrency(summary.totalUnrealizedPnlPreferred, 0)} color={pnlColor(summary.totalUnrealizedPnlPreferred)} />
+              <SummaryCard label="Weighted Avg Orig. AY" value={formatPctValue(summary.weightedAverageOriginalAnnualizedYield)} color="var(--accent-light)" />
+              <SummaryCard label="Weighted Avg Rem. AY" value={formatPctValue(summary.weightedAverageRemainingAnnualizedYield)} color="var(--accent-light)" />
               <SummaryCard label="Weighted Avg DTE" value={isFiniteNumber(summary.weightedAverageRemainingDte) ? `${Math.round(summary.weightedAverageRemainingDte)} DTE` : DASH} />
             </div>
 
             {openTrades.length === 0 && (
               <div className="rounded-lg px-3 py-2 mb-4 text-sm" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>No open trades.</div>
+            )}
+
+            <InsightsPanel insights={visualData.insights} />
+
+            {visualData.concentrationCards.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-2 mb-4">
+                {visualData.concentrationCards.map(item => (
+                  <CompactMetricCard key={item.label} label={item.label} value={item.value} sublabel={item.sublabel} color={item.color} />
+                ))}
+              </div>
             )}
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-4">
@@ -643,10 +709,10 @@ export default function PortfolioPage() {
                   <div className="grid grid-cols-2 gap-2 mt-3 text-xs">
                     <Metric label="Premium" value={formatCurrency(calculatePremiumCollected(trade), 0)} color="var(--green)" />
                     <Metric label="Equity Risk" value={formatCurrency(calculateEquityAtRisk(trade), 0)} />
-                    <Metric label="Current Mark" value={formatOptionPrice(getPreferredMark(trade))} />
-                    <Metric label="Unrealized P/L" value={formatCurrency(calculateUnrealizedPnl(trade, 'ask') ?? calculateUnrealizedPnl(trade, 'mid'), 0)} color={pnlColor(calculateUnrealizedPnl(trade, 'ask') ?? calculateUnrealizedPnl(trade, 'mid'))} />
-                    <Metric label="Imported Value" value={formatCurrency(trade.importedSnapshot?.currentValue, 0)} />
-                    <Metric label="Imported G/L" value={formatCurrency(trade.importedSnapshot?.totalGainLossDollar, 0)} color={pnlColor(trade.importedSnapshot?.totalGainLossDollar)} />
+                    <Metric label="MTM Basis" value={mtmSourceLabel(trade)} />
+                    <Metric label="Current Value" value={formatCurrency(calculatePreferredCurrentPositionValue(trade), 0)} />
+                    <Metric label="Unrealized P/L" value={formatCurrency(calculatePreferredUnrealizedPnl(trade), 0)} color={pnlColor(calculatePreferredUnrealizedPnl(trade))} />
+                    <Metric label="Cost Basis" value={formatCurrency(trade.importedSnapshot?.costBasisTotal ?? calculatePremiumCollected(trade), 0)} />
                   </div>
                   {trade.importedSnapshot && (
                     <p className="text-[11px] mt-2" style={{ color: 'var(--yellow)' }}>Entry date missing - using import date. Edit if needed.</p>
@@ -674,15 +740,19 @@ export default function PortfolioPage() {
                       <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Bid</th>
                       <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Ask</th>
                       <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Mark</th>
-                      <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Imported Value</th>
-                      <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Imported G/L</th>
+                      <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>MTM Basis</th>
+                      <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Current Value</th>
+                      <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Total G/L</th>
+                      <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Cost Basis</th>
                       {sortButton('premium', 'Premium')}
                       {sortButton('risk', 'Risk')}
+                      <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Net Risk</th>
                       <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Breakeven</th>
                       <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Underlying</th>
                       <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Dist Strike</th>
                       <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Dist BE</th>
                       {sortButton('pnl', 'Unreal P/L')}
+                      <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Realized P/L</th>
                       <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Orig AY</th>
                       <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Remain AY</th>
                       {sortButton('status', 'Status')}
@@ -692,7 +762,7 @@ export default function PortfolioPage() {
                   </thead>
                   <tbody>
                     {sortedTrades.map((trade, index) => {
-                      const pnl = calculateUnrealizedPnl(trade, 'ask') ?? calculateUnrealizedPnl(trade, 'mid');
+                      const pnl = calculatePreferredUnrealizedPnl(trade);
                       return (
                         <tr key={trade.id} style={{ borderBottom: '1px solid var(--border)', backgroundColor: index % 2 ? 'var(--row-alt)' : 'transparent' }}>
                           <td className="px-2 py-1 text-left font-mono font-bold whitespace-nowrap" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</td>
@@ -706,15 +776,19 @@ export default function PortfolioPage() {
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatOptionPrice(trade.latestMarketData?.optionBid)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatOptionPrice(trade.latestMarketData?.optionAsk)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatOptionPrice(getPreferredMark(trade))}</td>
-                          <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(trade.importedSnapshot?.currentValue, 0)}</td>
+                          <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap" title={mtmSourceLabel(trade)}>{mtmSourceLabel(trade)}</td>
+                          <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(calculatePreferredCurrentPositionValue(trade), 0)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(trade.importedSnapshot?.totalGainLossDollar) }}>{formatCurrency(trade.importedSnapshot?.totalGainLossDollar, 0)}</td>
+                          <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(trade.importedSnapshot?.costBasisTotal ?? calculatePremiumCollected(trade), 0)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(calculatePremiumCollected(trade), 0)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(calculateEquityAtRisk(trade), 0)}</td>
+                          <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(calculateNetCapitalAtRisk(trade), 0)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(calculateBreakeven(trade))}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(trade.latestMarketData?.underlyingPrice ?? trade.entrySnapshot?.underlyingPrice)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: percentColor(calculateDistanceToStrike(trade)) }}>{formatPctValue(calculateDistanceToStrike(trade))}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: percentColor(calculateDistanceToBreakeven(trade)) }}>{formatPctValue(calculateDistanceToBreakeven(trade))}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(pnl) }}>{formatCurrency(pnl, 0)}</td>
+                          <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(calculateRealizedPnl(trade)) }}>{formatCurrency(calculateRealizedPnl(trade), 0)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatPctValue(calculateOriginalAnnualizedYield(trade))}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatPctValue(calculateRemainingAnnualizedYieldToExpiry(trade, 'ask') ?? calculateRemainingAnnualizedYieldToExpiry(trade, 'mid'))}</td>
                           <td className="px-2 py-1 text-right whitespace-nowrap">
@@ -732,13 +806,42 @@ export default function PortfolioPage() {
                         </tr>
                       );
                     })}
+                    <tr style={{ backgroundColor: 'var(--surface-alt)', borderTop: '2px solid var(--accent-border)', color: 'var(--text)' }}>
+                      <td className="px-2 py-2 text-left font-bold uppercase tracking-wider whitespace-nowrap">Totals</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums">{DASH}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums">{isFiniteNumber(scheduleTotals.dte) ? `${Math.round(scheduleTotals.dte)} DTE` : DASH}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums">{DASH}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold" title={`${scheduleTotals.openContracts} open contracts`}>{scheduleTotals.contracts}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold">{formatOptionPrice(scheduleTotals.averageSoldPrice)}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums">{DASH}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums">{DASH}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums">{DASH}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums whitespace-nowrap">Ask / Snapshot</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold">{formatCurrency(scheduleTotals.currentValue, 0)}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums">{DASH}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold">{formatCurrency(scheduleTotals.costBasis, 0)}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold" style={{ color: 'var(--green)' }}>{formatCurrency(scheduleTotals.premium, 0)}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold">{formatCurrency(scheduleTotals.equityRisk, 0)}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold">{formatCurrency(scheduleTotals.netRisk, 0)}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums">{DASH}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums">{DASH}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums">{DASH}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums">{DASH}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold" style={{ color: pnlColor(scheduleTotals.unrealizedPnl) }}>{formatCurrency(scheduleTotals.unrealizedPnl, 0)}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold" style={{ color: pnlColor(scheduleTotals.realizedPnl) }}>{formatCurrency(scheduleTotals.realizedPnl, 0)}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold">{formatPctValue(scheduleTotals.originalAnnualizedYield)}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold">{formatPctValue(scheduleTotals.remainingAnnualizedYield)}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums">{DASH}</td>
+                      <td className="px-2 py-2 text-left text-[10px]" style={{ color: 'var(--text-dim)' }}>Open risk totals use open positions.</td>
+                      <td className="px-2 py-2 text-left">{DASH}</td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
             </div>
 
             <div className="mt-3 text-[10px]" style={{ color: 'var(--text-dim)' }}>
-              Realized P/L: {formatCurrency(summary.realizedPnl, 0)} · Closed trades: {summary.totalClosedTrades} · Current mark defaults to ask, then mid when ask is unavailable.
+              Realized P/L: {formatCurrency(summary.realizedPnl, 0)} · Closed trades: {summary.totalClosedTrades} · Current MTM defaults to ask, then imported snapshot current value, then mid when unavailable.
             </div>
           </>
         )}
@@ -814,6 +917,50 @@ function StatusSelect({ value, onChange, compact = false }: { value: PortfolioTr
   );
 }
 
+function buildScheduleTotals(trades: PortfolioTrade[]) {
+  const open = trades.filter(trade => trade.status === 'open');
+  const allPremium = sumValues(trades.map(calculatePremiumCollected));
+  const totalCurrentValue = nullableSumValues(open.map(calculatePreferredCurrentPositionValue));
+  const totalCostBasis = nullableSumValues(trades.map(trade => trade.importedSnapshot?.costBasisTotal ?? calculatePremiumCollected(trade)));
+  const totalRealizedPnl = nullableSumValues(trades.map(calculateRealizedPnl));
+
+  return {
+    contracts: trades.reduce((total, trade) => total + trade.contracts, 0),
+    openContracts: open.reduce((total, trade) => total + trade.contracts, 0),
+    premium: allPremium,
+    currentValue: totalCurrentValue,
+    costBasis: totalCostBasis,
+    equityRisk: sumValues(open.map(calculateEquityAtRisk)),
+    netRisk: sumValues(open.map(calculateNetCapitalAtRisk)),
+    unrealizedPnl: nullableSumValues(open.map(calculatePreferredUnrealizedPnl)),
+    realizedPnl: totalRealizedPnl,
+    averageSoldPrice: weightedAverageValue(trades.map(trade => ({ value: trade.soldPrice, weight: trade.contracts }))),
+    originalAnnualizedYield: weightedAverageValue(open.map(trade => ({ value: calculateOriginalAnnualizedYield(trade), weight: calculateNetCapitalAtRisk(trade) }))),
+    remainingAnnualizedYield: weightedAverageValue(open.map(trade => ({ value: calculateRemainingAnnualizedYieldToExpiry(trade, 'ask') ?? calculateRemainingAnnualizedYieldToExpiry(trade, 'mid'), weight: calculateNetCapitalAtRisk(trade) }))),
+    dte: weightedAverageValue(open.map(trade => ({ value: calculateRemainingDte(trade), weight: calculateNetCapitalAtRisk(trade) }))),
+  };
+}
+
+function nearestTrade(openTrades: PortfolioTrade[]): PortfolioTrade | null {
+  return openTrades.reduce<PortfolioTrade | null>((nearest, trade) => {
+    const dte = calculateRemainingDte(trade);
+    if (!isFiniteNumber(dte)) return nearest;
+    if (!nearest) return trade;
+    const nearestDte = calculateRemainingDte(nearest);
+    return !isFiniteNumber(nearestDte) || dte < nearestDte ? trade : nearest;
+  }, null);
+}
+
+function closestBreakevenTrade(openTrades: PortfolioTrade[]): PortfolioTrade | null {
+  return openTrades.reduce<PortfolioTrade | null>((closest, trade) => {
+    const distance = calculateDistanceToBreakeven(trade);
+    if (!isFiniteNumber(distance)) return closest;
+    if (!closest) return trade;
+    const closestDistance = calculateDistanceToBreakeven(closest);
+    return !isFiniteNumber(closestDistance) || distance < closestDistance ? trade : closest;
+  }, null);
+}
+
 function buildVisualData(openTrades: PortfolioTrade[]) {
   const byExpiration = aggregate(openTrades, trade => trade.expiration)
     .sort((a, b) => a.label.localeCompare(b.label))
@@ -829,10 +976,14 @@ function buildVisualData(openTrades: PortfolioTrade[]) {
     { label: '61-90 days', match: (dte: number | null) => dte != null && dte >= 61 && dte <= 90 },
     { label: '90+ days', match: (dte: number | null) => dte != null && dte > 90 },
   ];
-  const byDteBucket = dteBuckets.map(bucket => ({
-    label: bucket.label,
-    value: openTrades.filter(trade => bucket.match(calculateRemainingDte(trade))).reduce((total, trade) => total + (calculateEquityAtRisk(trade) ?? 0), 0),
-  })).filter(item => item.value > 0);
+  const byDteBucket = dteBuckets.map(bucket => {
+    const trades = openTrades.filter(trade => bucket.match(calculateRemainingDte(trade)));
+    return {
+      label: bucket.label,
+      value: sumValues(trades.map(calculateEquityAtRisk)),
+      sublabel: trades.length > 0 ? `${trades.length} trade${trades.length === 1 ? '' : 's'}` : undefined,
+    };
+  }).filter(item => item.value > 0);
 
   const riskBuckets = [
     { label: 'ITM / Below breakeven', match: (distance: number | null) => distance != null && distance < 0 },
@@ -842,26 +993,70 @@ function buildVisualData(openTrades: PortfolioTrade[]) {
     { label: '20%+ above breakeven', match: (distance: number | null) => distance != null && distance >= 0.20 },
     { label: 'No market price', match: (distance: number | null) => distance == null },
   ];
-  const byBreakevenCushion = riskBuckets.map(bucket => ({
-    label: bucket.label,
-    value: openTrades.filter(trade => bucket.match(calculateDistanceToBreakeven(trade))).reduce((total, trade) => total + (calculateEquityAtRisk(trade) ?? 0), 0),
-  })).filter(item => item.value > 0);
+  const byBreakevenCushion = riskBuckets.map(bucket => {
+    const trades = openTrades.filter(trade => bucket.match(calculateDistanceToBreakeven(trade)));
+    const closest = [...trades]
+      .map(trade => ({ trade, distance: calculateDistanceToBreakeven(trade) }))
+      .sort((a, b) => (a.distance ?? 999) - (b.distance ?? 999))
+      .slice(0, 3)
+      .map(item => `${item.trade.ticker} ${formatCurrency(item.trade.strike, 0)}`)
+      .join(', ');
+    return {
+      label: bucket.label,
+      value: sumValues(trades.map(calculateEquityAtRisk)),
+      sublabel: trades.length > 0 ? `${trades.length} trade${trades.length === 1 ? '' : 's'}${closest ? ` · ${closest}` : ''}` : undefined,
+    };
+  }).filter(item => item.value > 0);
 
-  return { byExpiration, byTicker, byDteBucket, byBreakevenCushion };
+  const largestTicker = byTicker[0] ?? null;
+  const largestExpiration = byExpiration.reduce<typeof byExpiration[number] | null>((largest, item) => !largest || item.value > largest.value ? item : largest, null);
+  const largestSingleTrade = openTrades.reduce<PortfolioTrade | null>((largest, trade) => {
+    const risk = calculateEquityAtRisk(trade) ?? 0;
+    const largestRisk = largest ? calculateEquityAtRisk(largest) ?? 0 : -1;
+    return risk > largestRisk ? trade : largest;
+  }, null);
+  const closestBreakeven = closestBreakevenTrade(openTrades);
+  const nearestExpiration = nearestTrade(openTrades);
+  const highestRemainingYield = openTrades.reduce<PortfolioTrade | null>((highest, trade) => {
+    const value = calculateRemainingAnnualizedYieldToExpiry(trade, 'ask') ?? calculateRemainingAnnualizedYieldToExpiry(trade, 'mid');
+    if (!isFiniteNumber(value)) return highest;
+    const current = highest ? calculateRemainingAnnualizedYieldToExpiry(highest, 'ask') ?? calculateRemainingAnnualizedYieldToExpiry(highest, 'mid') : null;
+    return !isFiniteNumber(current) || value > current ? trade : highest;
+  }, null);
+
+  const concentrationCards = [
+    largestTicker ? { label: 'Largest Ticker Exposure', value: `${largestTicker.label} ${formatCurrency(largestTicker.value, 0)}`, sublabel: largestTicker.sublabel } : null,
+    largestExpiration ? { label: 'Largest Expiration', value: `${largestExpiration.label} ${formatCurrency(largestExpiration.value, 0)}`, sublabel: largestExpiration.sublabel } : null,
+    largestSingleTrade ? { label: 'Largest Single Trade', value: `${largestSingleTrade.ticker} ${formatCurrency(largestSingleTrade.strike, 0)}`, sublabel: `${formatCurrency(calculateEquityAtRisk(largestSingleTrade), 0)} equity risk` } : null,
+    closestBreakeven ? { label: 'Closest To Breakeven', value: `${closestBreakeven.ticker} ${formatCurrency(closestBreakeven.strike, 0)}`, sublabel: formatPctValue(calculateDistanceToBreakeven(closestBreakeven)), color: percentColor(calculateDistanceToBreakeven(closestBreakeven)) } : null,
+    nearestExpiration ? { label: 'Nearest Expiration', value: expiryLabel(nearestExpiration.expiration), sublabel: `${nearestExpiration.ticker} · ${formatDteValue(calculateRemainingDte(nearestExpiration))}` } : null,
+  ].filter(Boolean) as Array<{ label: string; value: string; sublabel?: string; color?: string }>;
+
+  const insights = [
+    largestTicker ? { label: 'Largest exposure', value: `${largestTicker.label} ${formatCurrency(largestTicker.value, 0)}`, sublabel: largestTicker.sublabel } : null,
+    nearestExpiration ? { label: 'Nearest expiration', value: expiryLabel(nearestExpiration.expiration), sublabel: `${nearestExpiration.ticker} ${formatCurrency(nearestExpiration.strike, 0)} Put` } : null,
+    closestBreakeven ? { label: 'Closest to breakeven', value: `${closestBreakeven.ticker} ${formatCurrency(closestBreakeven.strike, 0)} Put`, sublabel: formatPctValue(calculateDistanceToBreakeven(closestBreakeven)), color: percentColor(calculateDistanceToBreakeven(closestBreakeven)) } : null,
+    highestRemainingYield ? { label: 'Highest remain. yield', value: `${highestRemainingYield.ticker} ${formatCurrency(highestRemainingYield.strike, 0)} Put`, sublabel: formatPctValue(calculateRemainingAnnualizedYieldToExpiry(highestRemainingYield, 'ask') ?? calculateRemainingAnnualizedYieldToExpiry(highestRemainingYield, 'mid')), color: 'var(--accent-light)' } : null,
+    largestExpiration ? { label: 'Most concentrated exp.', value: largestExpiration.label, sublabel: formatCurrency(largestExpiration.value, 0) } : null,
+  ].filter(Boolean) as Array<{ label: string; value: string; sublabel?: string; color?: string }>;
+
+  return { byExpiration, byTicker, byDteBucket, byBreakevenCushion, concentrationCards, insights };
 }
 
 function aggregate(trades: PortfolioTrade[], keyFn: (trade: PortfolioTrade) => string) {
-  const byKey = new Map<string, { label: string; value: number; premium: number }>();
+  const byKey = new Map<string, { label: string; value: number; premium: number; netRisk: number; contracts: number }>();
   trades.forEach(trade => {
     const key = keyFn(trade);
-    const current = byKey.get(key) ?? { label: key, value: 0, premium: 0 };
+    const current = byKey.get(key) ?? { label: key, value: 0, premium: 0, netRisk: 0, contracts: 0 };
     current.value += calculateEquityAtRisk(trade) ?? 0;
     current.premium += calculatePremiumCollected(trade) ?? 0;
+    current.netRisk += calculateNetCapitalAtRisk(trade) ?? 0;
+    current.contracts += trade.contracts;
     byKey.set(key, current);
   });
   return [...byKey.values()].map(item => ({
     label: item.label,
     value: item.value,
-    sublabel: item.premium > 0 ? `Premium ${formatCurrency(item.premium, 0)}` : undefined,
+    sublabel: `${item.contracts} ctr · premium ${formatCurrency(item.premium, 0)} · net ${formatCurrency(item.netRisk, 0)}`,
   }));
 }
