@@ -30,6 +30,7 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
   const [error, setError] = useState('');
   const [rows, setRows] = useState<ImportEditableRow[]>([]);
   const [missingActions, setMissingActions] = useState<Record<string, ExistingTradeAction['action']>>({});
+  const [soldDate, setSoldDate] = useState(() => new Date().toISOString().split('T')[0]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -103,15 +104,14 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
 
   const applyImport = () => {
     const nowIso = new Date().toISOString();
-    const importDate = nowIso.split('T')[0];
-    onApply(applyPortfolioImportPlan(plan, trades, importDate, nowIso));
+    onApply(applyPortfolioImportPlan(plan, trades, soldDate || nowIso.split('T')[0], nowIso));
   };
 
   return (
     <div className="fixed inset-0 z-[85]">
       <button type="button" aria-label="Close import modal" onClick={onClose} className="absolute inset-0 bg-black/55" />
-      <div className="absolute inset-x-2 top-3 bottom-3 lg:inset-x-1/2 lg:top-6 lg:bottom-6 lg:w-[1040px] lg:-translate-x-1/2 rounded-lg overflow-y-auto p-4 sm:p-5 shadow-2xl" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
-        <div className="flex items-start justify-between gap-3 mb-4">
+      <div className="absolute inset-x-2 top-3 bottom-3 lg:inset-x-1/2 lg:top-[4vh] lg:bottom-auto lg:w-[min(96vw,1500px)] lg:h-[min(92vh,1000px)] lg:-translate-x-1/2 rounded-lg overflow-hidden p-4 sm:p-5 shadow-2xl flex flex-col" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
+        <div className="flex items-start justify-between gap-3 mb-3 flex-shrink-0">
           <div className="min-w-0">
             <h2 className="text-lg font-bold" style={{ color: 'var(--text)' }}>Import Screenshot</h2>
             <p className="text-xs mt-1 max-w-2xl" style={{ color: 'var(--text-muted)' }}>
@@ -123,8 +123,8 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
           </button>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-4">
-          <div className="space-y-3 min-w-0">
+        <div className="grid grid-cols-1 lg:grid-cols-[420px_minmax(0,1fr)] gap-4 min-h-0 flex-1 overflow-y-auto lg:overflow-hidden">
+          <div className="space-y-3 min-w-0 lg:overflow-y-auto lg:pr-1">
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
@@ -184,16 +184,27 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
                 <AlertTriangle className="w-4 h-4 flex-shrink-0" /> {error}
               </div>
             )}
+            <label className="block rounded-lg p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+              <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Sold / Opened Date</span>
+              <input
+                type="date"
+                value={soldDate}
+                onChange={event => setSoldDate(event.target.value)}
+                className="w-full rounded-lg px-3 py-2 text-base sm:text-sm outline-none min-h-[42px]"
+                style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
+              />
+              <span className="block text-[11px] mt-1" style={{ color: 'var(--text-dim)' }}>Brokerage screenshots do not show the open date, so this date is applied to imported rows.</span>
+            </label>
           </div>
 
-          <div className="min-w-0 space-y-4">
+          <div className="min-w-0 min-h-0 space-y-3 lg:flex lg:flex-col lg:overflow-hidden">
             <ReviewSummary plan={plan} />
             <ParsedRowsTable rows={rows} setRows={setRows} plan={plan} />
             <MissingTradesTable plan={plan} setMissingActions={setMissingActions} />
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row justify-end gap-2 mt-5">
+        <div className="flex flex-col sm:flex-row justify-end gap-2 mt-3 pt-3 flex-shrink-0" style={{ borderTop: '1px solid var(--border)' }}>
           <button onClick={onClose} className="px-4 py-2 rounded-lg text-xs min-h-[44px]" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
           <button
             onClick={applyImport}
@@ -230,57 +241,69 @@ function MiniCard({ label, value }: { label: string; value: number }) {
 }
 
 function ParsedRowsTable({ rows, setRows, plan }: { rows: ImportEditableRow[]; setRows: (rows: ImportEditableRow[]) => void; plan: PortfolioImportPlan }) {
-  const actionByKey = new Map<string, string>([
-    ...plan.adds.map(action => [action.key, 'Add'] as const),
-    ...plan.updates.map(action => [action.key, 'Update'] as const),
-    ...plan.skipped.map(action => [action.key, 'Skipped'] as const),
-  ]);
+  const actionForRow = (row: ImportEditableRow): string => {
+    if (plan.adds.some(action => action.row === row)) return 'Add';
+    if (plan.updates.some(action => action.row === row)) return 'Update';
+    if (plan.skipped.some(action => action.row === row)) return 'Skipped';
+    return 'Review';
+  };
 
   const updateRow = (index: number, patch: Partial<ImportEditableRow>) => {
     setRows(rows.map((row, rowIndex) => rowIndex === index ? normalizeEditableRow({ ...row, ...patch }) : row));
   };
 
   return (
-    <section className="rounded-lg min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+    <section className="rounded-lg min-w-0 lg:flex lg:flex-col lg:min-h-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
       <div className="px-3 py-2 text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>Parsed Positions</div>
       {rows.length === 0 ? (
         <p className="p-4 text-sm" style={{ color: 'var(--text-dim)' }}>Upload or paste a screenshot to review parsed rows.</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-[980px] w-full text-[11px]">
-            <thead>
+        <div className="overflow-auto lg:max-h-none lg:flex-1">
+          <table className="min-w-[1260px] w-full text-[10px]">
+            <thead className="sticky top-0 z-10">
               <tr style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text-muted)' }}>
-                <th className="px-2 py-2 text-left">Use</th>
-                <th className="px-2 py-2 text-left">Action</th>
-                <th className="px-2 py-2 text-left">Ticker</th>
-                <th className="px-2 py-2 text-right">Expiry</th>
-                <th className="px-2 py-2 text-right">Strike</th>
-                <th className="px-2 py-2 text-right">Contracts</th>
-                <th className="px-2 py-2 text-right">Avg Cost</th>
-                <th className="px-2 py-2 text-right">Last</th>
-                <th className="px-2 py-2 text-right">Total G/L</th>
-                <th className="px-2 py-2 text-right">Current Value</th>
-                <th className="px-2 py-2 text-left">Warnings</th>
+                <th className="px-1.5 py-1.5 text-left">Use</th>
+                <th className="px-1.5 py-1.5 text-left">Status</th>
+                <th className="px-1.5 py-1.5 text-left">Action</th>
+                <th className="px-1.5 py-1.5 text-left">Ticker</th>
+                <th className="px-1.5 py-1.5 text-right">Expiry</th>
+                <th className="px-1.5 py-1.5 text-right">Strike</th>
+                <th className="px-1.5 py-1.5 text-right">Qty</th>
+                <th className="px-1.5 py-1.5 text-right">Contracts</th>
+                <th className="px-1.5 py-1.5 text-left">Side</th>
+                <th className="px-1.5 py-1.5 text-right">Avg Cost</th>
+                <th className="px-1.5 py-1.5 text-right">Cost Total</th>
+                <th className="px-1.5 py-1.5 text-right">Last</th>
+                <th className="px-1.5 py-1.5 text-right">Total G/L</th>
+                <th className="px-1.5 py-1.5 text-right">Current Value</th>
+                <th className="px-1.5 py-1.5 text-left">Warnings</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((row, index) => {
-                const key = row.expiration ? `${row.ticker}|put|${row.expiration}|${Number(row.strike.toFixed(4)).toString()}` : `${row.rawText}-${index}`;
+                const action = actionForRow(row);
+                const criticalOk = isImportableRow(row);
+                const hasOnlyDateWarning = row.warnings.every(warning => warning.startsWith('Entry date'));
+                const statusColor = criticalOk ? hasOnlyDateWarning ? 'var(--green)' : 'var(--yellow)' : 'var(--red)';
                 return (
-                  <tr key={`${key}-${index}`} style={{ borderTop: '1px solid var(--border)' }}>
-                    <td className="px-2 py-1">
+                  <tr key={`${row.rawText}-${index}`} style={{ borderTop: '1px solid var(--border)' }}>
+                    <td className="px-1.5 py-1">
                       <input type="checkbox" checked={row.selected} onChange={event => updateRow(index, { selected: event.target.checked })} />
                     </td>
-                    <td className="px-2 py-1 font-medium" style={{ color: actionByKey.get(key) === 'Skipped' ? 'var(--red)' : 'var(--accent-light)' }}>{actionByKey.get(key) ?? 'Review'}</td>
-                    <td className="px-2 py-1"><SmallInput value={row.ticker} onChange={value => updateRow(index, { ticker: value.toUpperCase() })} /></td>
-                    <td className="px-2 py-1"><SmallInput type="date" value={row.expiration} onChange={value => updateRow(index, { expiration: value })} align="right" /></td>
-                    <td className="px-2 py-1"><SmallInput value={String(row.strike || '')} onChange={value => updateRow(index, { strike: Number(value) })} align="right" /></td>
-                    <td className="px-2 py-1"><SmallInput value={String(row.contracts ?? '')} onChange={value => updateRow(index, { contracts: Number(value), quantity: -Math.abs(Number(value)) })} align="right" /></td>
-                    <td className="px-2 py-1"><SmallInput value={row.averageCostBasis == null ? '' : String(row.averageCostBasis)} onChange={value => updateRow(index, { averageCostBasis: Number(value) })} align="right" /></td>
-                    <td className="px-2 py-1 text-right font-mono">{formatOptionPrice(row.lastPrice)}</td>
-                    <td className="px-2 py-1 text-right font-mono">{formatCurrency(row.totalGainLossDollar, 0)}</td>
-                    <td className="px-2 py-1 text-right font-mono">{formatCurrency(row.currentValue, 0)}</td>
-                    <td className="px-2 py-1 text-left max-w-[260px]" style={{ color: row.warnings.length ? 'var(--yellow)' : 'var(--text-dim)' }}>{row.warnings.join(' ') || DASH}</td>
+                    <td className="px-1.5 py-1 font-medium" style={{ color: statusColor }}>{criticalOk ? hasOnlyDateWarning ? 'OK' : 'Check' : 'Fix'}</td>
+                    <td className="px-1.5 py-1 font-medium" style={{ color: action === 'Skipped' ? 'var(--red)' : 'var(--accent-light)' }}>{action}</td>
+                    <td className="px-1.5 py-1"><SmallInput value={row.ticker} onChange={value => updateRow(index, { ticker: value.toUpperCase() })} /></td>
+                    <td className="px-1.5 py-1"><SmallInput type="date" value={row.expiration} onChange={value => updateRow(index, { expiration: value })} align="right" wide /></td>
+                    <td className="px-1.5 py-1"><SmallInput value={String(row.strike || '')} onChange={value => updateRow(index, { strike: Number(value) })} align="right" /></td>
+                    <td className="px-1.5 py-1 text-right font-mono">{row.quantity ?? DASH}</td>
+                    <td className="px-1.5 py-1"><SmallInput value={String(row.contracts ?? '')} onChange={value => updateRow(index, { contracts: Number(value), quantity: -Math.abs(Number(value)), side: 'short' })} align="right" /></td>
+                    <td className="px-1.5 py-1 font-mono" style={{ color: row.side === 'short' ? 'var(--green)' : 'var(--text-muted)' }}>{row.side}</td>
+                    <td className="px-1.5 py-1"><SmallInput value={row.averageCostBasis == null ? '' : String(row.averageCostBasis)} onChange={value => updateRow(index, { averageCostBasis: Number(value) })} align="right" /></td>
+                    <td className="px-1.5 py-1 text-right font-mono">{formatCurrency(row.costBasisTotal, 0)}</td>
+                    <td className="px-1.5 py-1 text-right font-mono">{formatOptionPrice(row.lastPrice)}</td>
+                    <td className="px-1.5 py-1 text-right font-mono">{formatCurrency(row.totalGainLossDollar, 0)}</td>
+                    <td className="px-1.5 py-1 text-right font-mono">{formatCurrency(row.currentValue, 0)}</td>
+                    <td className="px-1.5 py-1 text-left max-w-[300px] truncate" title={row.warnings.join(' ')} style={{ color: row.warnings.length && !hasOnlyDateWarning ? 'var(--yellow)' : 'var(--text-dim)' }}>{row.warnings.join(' ') || DASH}</td>
                   </tr>
                 );
               })}
@@ -337,13 +360,13 @@ function MissingTradesTable({ plan, setMissingActions }: { plan: PortfolioImport
   );
 }
 
-function SmallInput({ value, onChange, align = 'left', type = 'text' }: { value: string; onChange: (value: string) => void; align?: 'left' | 'right'; type?: string }) {
+function SmallInput({ value, onChange, align = 'left', type = 'text', wide = false }: { value: string; onChange: (value: string) => void; align?: 'left' | 'right'; type?: string; wide?: boolean }) {
   return (
     <input
       type={type}
       value={value}
       onChange={event => onChange(event.target.value)}
-      className={`w-full min-w-[86px] rounded px-2 py-1 text-xs font-mono outline-none ${align === 'right' ? 'text-right' : 'text-left'}`}
+      className={`w-full ${wide ? 'min-w-[118px]' : 'min-w-[70px]'} rounded px-1.5 py-1 text-[11px] font-mono outline-none ${align === 'right' ? 'text-right' : 'text-left'}`}
       style={{ backgroundColor: 'var(--input-bg)', color: 'var(--text)', border: '1px solid var(--border)' }}
     />
   );
@@ -358,6 +381,7 @@ function normalizeEditableRow(row: ImportEditableRow): ImportEditableRow {
     strike: Number.isFinite(row.strike) ? row.strike : 0,
     contracts: Number.isFinite(row.contracts) ? Math.abs(Number(row.contracts)) : null,
     quantity: Number.isFinite(row.contracts) ? -Math.abs(Number(row.contracts)) : row.quantity,
+    side: Number.isFinite(row.contracts) ? 'short' : row.side,
     averageCostBasis: Number.isFinite(row.averageCostBasis) ? row.averageCostBasis : undefined,
     warnings: valid ? warnings : [...warnings, 'Corrected row is still missing required import fields.'],
   };
