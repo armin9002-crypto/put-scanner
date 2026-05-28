@@ -36,6 +36,7 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
   const [soldDate, setSoldDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [diagnostics, setDiagnostics] = useState<PortfolioImportDiagnostics | null>(null);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [showMissing, setShowMissing] = useState(true);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -123,7 +124,7 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
   return (
     <div className="fixed inset-0 z-[85]">
       <button type="button" aria-label="Close import modal" onClick={onClose} className="absolute inset-0 bg-black/55" />
-      <div className="absolute inset-x-2 top-3 bottom-3 lg:inset-x-1/2 lg:top-[4vh] lg:bottom-auto lg:w-[min(96vw,1500px)] lg:h-[min(92vh,1000px)] lg:-translate-x-1/2 rounded-lg overflow-hidden p-4 sm:p-5 shadow-2xl flex flex-col" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
+      <div className="absolute inset-x-2 top-3 bottom-3 md:inset-x-4 md:top-4 md:bottom-4 xl:inset-x-1/2 xl:top-[3vh] xl:bottom-auto xl:w-[min(96vw,1800px)] xl:h-[94vh] xl:-translate-x-1/2 rounded-lg overflow-hidden p-3 sm:p-4 shadow-2xl flex flex-col" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
         <div className="flex items-start justify-between gap-3 mb-3 flex-shrink-0">
           <div className="min-w-0">
             <h2 className="text-lg font-bold" style={{ color: 'var(--text)' }}>Import Screenshot</h2>
@@ -136,7 +137,7 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
           </button>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-[420px_minmax(0,1fr)] gap-4 min-h-0 flex-1 overflow-y-auto lg:overflow-hidden">
+        <div className="grid grid-cols-1 lg:grid-cols-[360px_minmax(0,1fr)] 2xl:grid-cols-[400px_minmax(0,1fr)] gap-3 min-h-0 flex-1 overflow-y-auto lg:overflow-hidden">
           <div className="space-y-3 min-w-0 lg:overflow-y-auto lg:pr-1">
             <button
               type="button"
@@ -147,7 +148,7 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
                 const file = [...event.dataTransfer.files].find(item => item.type.startsWith('image/'));
                 if (file) void handleFile(file);
               }}
-              className="w-full rounded-lg p-5 text-center min-h-[180px] flex flex-col items-center justify-center gap-3"
+              className="w-full rounded-lg p-4 text-center min-h-[140px] flex flex-col items-center justify-center gap-2"
               style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px dashed var(--accent-border)' }}
             >
               <Upload className="w-8 h-8" style={{ color: 'var(--accent-light)' }} />
@@ -171,7 +172,7 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
                 <div className="flex items-center gap-2 text-xs mb-2" style={{ color: 'var(--text-muted)' }}>
                   <FileImage className="w-3.5 h-3.5" /> <span className="truncate">{fileName}</span>
                 </div>
-                <img src={imageUrl} alt="Brokerage screenshot preview" className="w-full max-h-[360px] object-contain rounded" />
+                <img src={imageUrl} alt="Brokerage screenshot preview" className="w-full max-h-[300px] 2xl:max-h-[380px] object-contain rounded" />
               </div>
             ) : (
               <div className="rounded-lg p-3 text-xs flex items-start gap-2" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
@@ -235,7 +236,7 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
           <div className="min-w-0 min-h-0 space-y-3 lg:flex lg:flex-col lg:overflow-hidden">
             <ReviewSummary plan={plan} />
             <ParsedRowsTable rows={rows} setRows={setRows} plan={plan} />
-            <MissingTradesTable plan={plan} setMissingActions={setMissingActions} />
+            <MissingTradesTable plan={plan} setMissingActions={setMissingActions} expanded={showMissing} onToggle={() => setShowMissing(value => !value)} />
           </div>
         </div>
 
@@ -243,7 +244,7 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
           <button onClick={onClose} className="px-4 py-2 rounded-lg text-xs min-h-[44px]" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
           <button
             onClick={applyImport}
-            disabled={selectedImportableCount === 0 && plan.missingFromImport.every(item => item.action === 'keep')}
+            disabled={selectedImportableCount === 0}
             className="px-4 py-2 rounded-lg text-xs font-medium text-white min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ backgroundColor: 'var(--accent)' }}
           >
@@ -257,7 +258,7 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
 
 function ReviewSummary({ plan }: { plan: PortfolioImportPlan }) {
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+    <div className="grid grid-cols-4 gap-2 flex-shrink-0">
       <MiniCard label="Add" value={plan.adds.length} />
       <MiniCard label="Update" value={plan.updates.length} />
       <MiniCard label="Skipped" value={plan.skipped.length} />
@@ -268,9 +269,9 @@ function ReviewSummary({ plan }: { plan: PortfolioImportPlan }) {
 
 function MiniCard({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-lg p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+    <div className="rounded-lg px-3 py-2" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
       <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>{label}</div>
-      <div className="font-mono text-lg font-semibold" style={{ color: 'var(--text)' }}>{value}</div>
+      <div className="font-mono text-base font-semibold" style={{ color: 'var(--text)' }}>{value}</div>
     </div>
   );
 }
@@ -294,24 +295,23 @@ function ParsedRowsTable({ rows, setRows, plan }: { rows: ImportEditableRow[]; s
         <p className="p-4 text-sm" style={{ color: 'var(--text-dim)' }}>Upload or paste a screenshot to review parsed rows.</p>
       ) : (
         <div className="overflow-auto lg:max-h-none lg:flex-1">
-          <table className="min-w-[1260px] w-full text-[10px]">
+          <table className="min-w-[980px] w-full text-[10px] table-fixed">
             <thead className="sticky top-0 z-10">
               <tr style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text-muted)' }}>
-                <th className="px-1.5 py-1.5 text-left">Use</th>
-                <th className="px-1.5 py-1.5 text-left">Status</th>
-                <th className="px-1.5 py-1.5 text-left">Action</th>
-                <th className="px-1.5 py-1.5 text-left">Ticker</th>
-                <th className="px-1.5 py-1.5 text-right">Expiry</th>
-                <th className="px-1.5 py-1.5 text-right">Strike</th>
-                <th className="px-1.5 py-1.5 text-right">Qty</th>
-                <th className="px-1.5 py-1.5 text-right">Contracts</th>
-                <th className="px-1.5 py-1.5 text-left">Side</th>
-                <th className="px-1.5 py-1.5 text-right">Avg Cost</th>
-                <th className="px-1.5 py-1.5 text-right">Cost Total</th>
-                <th className="px-1.5 py-1.5 text-right">Last</th>
-                <th className="px-1.5 py-1.5 text-right">Total G/L</th>
-                <th className="px-1.5 py-1.5 text-right">Current Value</th>
-                <th className="px-1.5 py-1.5 text-left">Warnings</th>
+                <th className="px-1 py-1.5 text-left w-[34px]">Use</th>
+                <th className="px-1 py-1.5 text-left w-[48px]">Status</th>
+                <th className="px-1 py-1.5 text-left w-[48px]">Act</th>
+                <th className="px-1 py-1.5 text-left w-[70px]">Ticker</th>
+                <th className="px-1 py-1.5 text-right w-[118px]">Expiry</th>
+                <th className="px-1 py-1.5 text-right w-[64px]">Strike</th>
+                <th className="px-1 py-1.5 text-right w-[48px]">Qty</th>
+                <th className="px-1 py-1.5 text-right w-[54px]">Ctr</th>
+                <th className="px-1 py-1.5 text-right w-[76px]">Sold</th>
+                <th className="px-1 py-1.5 text-right w-[74px]">Last</th>
+                <th className="px-1 py-1.5 text-right w-[96px]">Value</th>
+                <th className="px-1 py-1.5 text-right w-[98px]">Cost</th>
+                <th className="px-1 py-1.5 text-right w-[96px]">Tot G/L</th>
+                <th className="px-1 py-1.5 text-left w-[82px]">Warn</th>
               </tr>
             </thead>
             <tbody>
@@ -322,23 +322,29 @@ function ParsedRowsTable({ rows, setRows, plan }: { rows: ImportEditableRow[]; s
                 const statusColor = criticalOk ? hasOnlyDateWarning ? 'var(--green)' : 'var(--yellow)' : 'var(--red)';
                 return (
                   <tr key={`${row.rawText}-${index}`} style={{ borderTop: '1px solid var(--border)' }}>
-                    <td className="px-1.5 py-1">
+                    <td className="px-1 py-0.5">
                       <input type="checkbox" checked={row.selected} onChange={event => updateRow(index, { selected: event.target.checked })} />
                     </td>
-                    <td className="px-1.5 py-1 font-medium" style={{ color: statusColor }}>{criticalOk ? hasOnlyDateWarning ? 'OK' : 'Check' : 'Fix'}</td>
-                    <td className="px-1.5 py-1 font-medium" style={{ color: action === 'Skipped' ? 'var(--red)' : 'var(--accent-light)' }}>{action}</td>
-                    <td className="px-1.5 py-1"><SmallInput value={row.ticker} onChange={value => updateRow(index, { ticker: value.toUpperCase() })} /></td>
-                    <td className="px-1.5 py-1"><SmallInput type="date" value={row.expiration} onChange={value => updateRow(index, { expiration: value })} align="right" wide /></td>
-                    <td className="px-1.5 py-1"><SmallInput value={String(row.strike || '')} onChange={value => updateRow(index, { strike: Number(value) })} align="right" /></td>
-                    <td className="px-1.5 py-1 text-right font-mono">{row.quantity ?? DASH}</td>
-                    <td className="px-1.5 py-1"><SmallInput value={String(row.contracts ?? '')} onChange={value => updateRow(index, { contracts: Number(value), quantity: -Math.abs(Number(value)), side: 'short' })} align="right" /></td>
-                    <td className="px-1.5 py-1 font-mono" style={{ color: row.side === 'short' ? 'var(--green)' : 'var(--text-muted)' }}>{row.side}</td>
-                    <td className="px-1.5 py-1"><SmallInput value={row.averageCostBasis == null ? '' : String(row.averageCostBasis)} onChange={value => updateRow(index, { averageCostBasis: Number(value) })} align="right" /></td>
-                    <td className="px-1.5 py-1 text-right font-mono">{formatCurrency(row.costBasisTotal, 0)}</td>
-                    <td className="px-1.5 py-1 text-right font-mono">{formatOptionPrice(row.lastPrice)}</td>
-                    <td className="px-1.5 py-1 text-right font-mono">{formatCurrency(row.totalGainLossDollar, 0)}</td>
-                    <td className="px-1.5 py-1 text-right font-mono">{formatCurrency(row.currentValue, 0)}</td>
-                    <td className="px-1.5 py-1 text-left max-w-[300px] truncate" title={row.warnings.join(' ')} style={{ color: row.warnings.length && !hasOnlyDateWarning ? 'var(--yellow)' : 'var(--text-dim)' }}>{row.warnings.join(' ') || DASH}</td>
+                    <td className="px-1 py-0.5 font-medium truncate" style={{ color: statusColor }}>{criticalOk ? hasOnlyDateWarning ? 'OK' : 'Check' : 'Fix'}</td>
+                    <td className="px-1 py-0.5 font-medium truncate" style={{ color: action === 'Skipped' ? 'var(--red)' : 'var(--accent-light)' }}>{action}</td>
+                    <td className="px-1 py-0.5"><SmallInput value={row.ticker} onChange={value => updateRow(index, { ticker: value.toUpperCase() })} /></td>
+                    <td className="px-1 py-0.5"><SmallInput type="date" value={row.expiration} onChange={value => updateRow(index, { expiration: value })} align="right" wide /></td>
+                    <td className="px-1 py-0.5"><SmallInput value={String(row.strike || '')} onChange={value => updateRow(index, { strike: Number(value) })} align="right" /></td>
+                    <td className="px-1 py-0.5 text-right font-mono tabular-nums">{row.quantity ?? DASH}</td>
+                    <td className="px-1 py-0.5"><SmallInput value={String(row.contracts ?? '')} onChange={value => updateRow(index, { contracts: Number(value), quantity: -Math.abs(Number(value)), side: 'short' })} align="right" /></td>
+                    <td className="px-1 py-0.5"><SmallInput value={row.averageCostBasis == null ? '' : String(row.averageCostBasis)} onChange={value => updateRow(index, { averageCostBasis: Number(value) })} align="right" /></td>
+                    <td className="px-1 py-0.5 text-right font-mono tabular-nums">{formatOptionPrice(row.lastPrice)}</td>
+                    <td className="px-1 py-0.5 text-right font-mono tabular-nums">{formatCurrency(row.currentValue, 0)}</td>
+                    <td className="px-1 py-0.5 text-right font-mono tabular-nums">{formatCurrency(row.costBasisTotal, 0)}</td>
+                    <td className="px-1 py-0.5 text-right font-mono tabular-nums">{formatCurrency(row.totalGainLossDollar, 0)}</td>
+                    <td className="px-1 py-0.5 text-left">
+                      {row.warnings.length > 0 ? (
+                        <span className="inline-flex max-w-full items-center gap-1 rounded px-1.5 py-0.5" title={row.warnings.join(' ')} style={{ color: hasOnlyDateWarning ? 'var(--text-dim)' : 'var(--yellow)', backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
+                          <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                          <span className="truncate">{row.warnings.length}</span>
+                        </span>
+                      ) : DASH}
+                    </td>
                   </tr>
                 );
               })}
@@ -350,12 +356,20 @@ function ParsedRowsTable({ rows, setRows, plan }: { rows: ImportEditableRow[]; s
   );
 }
 
-function MissingTradesTable({ plan, setMissingActions }: { plan: PortfolioImportPlan; setMissingActions: (updater: (prev: Record<string, ExistingTradeAction['action']>) => Record<string, ExistingTradeAction['action']>) => void }) {
+function MissingTradesTable({ plan, setMissingActions, expanded, onToggle }: { plan: PortfolioImportPlan; setMissingActions: (updater: (prev: Record<string, ExistingTradeAction['action']>) => Record<string, ExistingTradeAction['action']>) => void; expanded: boolean; onToggle: () => void }) {
   if (plan.missingFromImport.length === 0) return null;
   return (
-    <section className="rounded-lg min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-      <div className="px-3 py-2 text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>Missing From Screenshot</div>
-      <div className="overflow-x-auto">
+    <section className="rounded-lg min-w-0 flex-shrink-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full px-3 py-2 text-left text-xs uppercase tracking-wider font-semibold flex items-center justify-between"
+        style={{ color: 'var(--text-muted)', borderBottom: expanded ? '1px solid var(--border)' : '0' }}
+      >
+        <span>Missing From Screenshot ({plan.missingFromImport.length})</span>
+        <span>{expanded ? 'Hide' : 'Show'}</span>
+      </button>
+      {expanded && <div className="overflow-x-auto max-h-[180px]">
         <table className="min-w-[680px] w-full text-[11px]">
           <thead>
             <tr style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text-muted)' }}>
@@ -390,7 +404,7 @@ function MissingTradesTable({ plan, setMissingActions }: { plan: PortfolioImport
             ))}
           </tbody>
         </table>
-      </div>
+      </div>}
     </section>
   );
 }
@@ -401,7 +415,7 @@ function SmallInput({ value, onChange, align = 'left', type = 'text', wide = fal
       type={type}
       value={value}
       onChange={event => onChange(event.target.value)}
-      className={`w-full ${wide ? 'min-w-[118px]' : 'min-w-[70px]'} rounded px-1.5 py-1 text-[11px] font-mono outline-none ${align === 'right' ? 'text-right' : 'text-left'}`}
+      className={`w-full ${wide ? 'min-w-[112px]' : 'min-w-[54px]'} rounded px-1 py-0.5 text-[10px] font-mono outline-none tabular-nums ${align === 'right' ? 'text-right' : 'text-left'}`}
       style={{ backgroundColor: 'var(--input-bg)', color: 'var(--text)', border: '1px solid var(--border)' }}
     />
   );
