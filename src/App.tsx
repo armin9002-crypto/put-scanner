@@ -1,10 +1,11 @@
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
-import { ShieldCheck, ScanLine, BarChart3, Moon, Sun, BookOpen, Star, Square } from 'lucide-react';
+import { ShieldCheck, ScanLine, BarChart3, Moon, Sun, BookOpen, Star, Square, Briefcase } from 'lucide-react';
 import { ThemeProvider, useTheme } from './lib/theme';
 import HomePage from './pages/HomePage';
 import OptionsPage from './pages/OptionsPage';
 import ScreenerPage from './pages/ScreenerPage';
 import WatchlistPage from './pages/WatchlistPage';
+import PortfolioPage from './pages/PortfolioPage';
 import ErrorBoundary from './components/ErrorBoundary';
 
 function ThemeToggle() {
@@ -88,6 +89,19 @@ function NavBar() {
             <Star className="w-3.5 h-3.5" />
             <span className="sm:inline">Watchlist</span>
           </NavLink>
+          <NavLink
+            to="/portfolio"
+            className={() =>
+              `flex items-center justify-center gap-1 md:gap-1.5 px-2 md:px-3 py-2 md:py-1.5 rounded-lg text-[11px] md:text-xs font-medium transition-all min-h-[40px] md:min-h-0 flex-1 md:flex-none whitespace-nowrap`
+            }
+            style={({ isActive }) => ({
+              backgroundColor: isActive ? 'var(--accent-bg)' : 'transparent',
+              color: isActive ? 'var(--accent-light)' : 'var(--text-muted)',
+            })}
+          >
+            <Briefcase className="w-3.5 h-3.5" />
+            <span className="sm:inline">Portfolio</span>
+          </NavLink>
         </div>
         <div className="ml-1 flex-shrink-0">
           <ThemeToggle />
@@ -106,6 +120,7 @@ function AppContent() {
           <Route path="/" element={<HomePage />} />
           <Route path="/screener" element={<ScreenerPage />} />
           <Route path="/watchlist" element={<WatchlistPage />} />
+          <Route path="/portfolio" element={<PortfolioPage />} />
           <Route path="/options/:ticker" element={<OptionsPage />} />
         </Routes>
       </ErrorBoundary>

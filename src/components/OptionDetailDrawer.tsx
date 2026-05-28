@@ -35,6 +35,13 @@ export interface OptionDetail {
   otmItmColor: string;
 }
 
+export interface AddToPortfolioDraft {
+  option: OptionDetail;
+  soldPrice: number;
+  contracts: number;
+  underlyingPrice: number | null;
+}
+
 interface OptionDetailDrawerProps {
   option: OptionDetail | null;
   ticker: string;
@@ -42,6 +49,7 @@ interface OptionDetailDrawerProps {
   dte: number | null;
   underlyingPrice: number | null;
   onClose: () => void;
+  onAddToPortfolio?: (draft: AddToPortfolioDraft) => void;
 }
 
 function formatPlainNumber(value: number | null | undefined, decimals = 2): string {
@@ -142,6 +150,7 @@ export default function OptionDetailDrawer({
   dte,
   underlyingPrice,
   onClose,
+  onAddToPortfolio,
 }: OptionDetailDrawerProps) {
   const defaultPrice = useMemo(() => option ? getDefaultSoldPrice(option) : null, [option]);
   const [contracts, setContracts] = useState('1');
@@ -290,6 +299,25 @@ export default function OptionDetailDrawer({
                 </button>
               ))}
             </div>
+            {onAddToPortfolio && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (activeSoldPrice == null || validContracts == null) return;
+                  onAddToPortfolio({
+                    option,
+                    soldPrice: activeSoldPrice,
+                    contracts: validContracts,
+                    underlyingPrice,
+                  });
+                }}
+                disabled={activeSoldPrice == null || validContracts == null}
+                className="w-full mb-3 px-3 py-2 rounded-lg text-xs font-medium text-white disabled:opacity-50 disabled:cursor-not-allowed min-h-[42px]"
+                style={{ backgroundColor: 'var(--accent)' }}
+              >
+                Add to Portfolio
+              </button>
+            )}
             <DetailRow label="Total Premium" value={formatCurrency(positionMetrics.totalPremium)} color="var(--green)" />
             <DetailRow label="Equity at Risk" value={formatCurrency(positionMetrics.equityAtRisk)} />
             <DetailRow label="Max Loss" value={formatCurrency(positionMetrics.maximumLoss)} color="var(--red)" />

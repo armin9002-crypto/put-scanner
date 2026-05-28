@@ -6,6 +6,7 @@ import { fetchOptions, fetchExtendedPrice, calculatePutDelta, formatPrice, forma
 import type { ExtendedPriceData, IVRankData } from '../lib/api';
 import { addToWatchlist, removeFromWatchlist, isInWatchlist, makeWatchlistId } from '../lib/watchlist';
 import type { WatchlistItem } from '../lib/watchlist';
+import { addPortfolioTrade } from '../lib/portfolioStorage';
 import { calculateMoneyness, calculateYieldPercent } from '../lib/optionMetrics';
 import SparklineChart from '../components/SparklineChart';
 import ErrorBoundary from '../components/ErrorBoundary';
@@ -903,6 +904,30 @@ export default function OptionsPage() {
               expirationLabel={selectedExpiration?.label ?? ''}
               dte={selectedExpiration?.dte ?? null}
               underlyingPrice={currentPrice > 0 ? currentPrice : null}
+              onAddToPortfolio={draft => {
+                if (!ticker || !selectedExpiration) return;
+                const expiration = new Date(selectedExpiration.date * 1000).toISOString().split('T')[0];
+                addPortfolioTrade({
+                  ticker,
+                  optionType: 'put',
+                  strike: draft.option.strike,
+                  expiration,
+                  contracts: draft.contracts,
+                  soldPrice: draft.soldPrice,
+                  soldDate: new Date().toISOString().split('T')[0],
+                  status: 'open',
+                  notes: '',
+                  entrySnapshot: {
+                    underlyingPrice: draft.underlyingPrice,
+                    bid: draft.option.bid,
+                    ask: draft.option.ask,
+                    last: draft.option.last,
+                    iv: draft.option.impliedVolatility,
+                    delta: draft.option.delta,
+                  },
+                });
+                setSelectedOption(null);
+              }}
               onClose={() => setSelectedOption(null)}
             />
           </Suspense>
