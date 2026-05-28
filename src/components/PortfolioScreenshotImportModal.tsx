@@ -6,10 +6,13 @@ import {
   applyPortfolioImportPlan,
   buildPortfolioImportPlan,
   isImportableRow,
-  parseBrokerageScreenshotText,
+  parseBrokerageScreenshotOcr,
+  validateParsedBrokerageRow,
   type ExistingTradeAction,
   type ImportEditableRow,
+  type PortfolioImportDiagnostics,
   type PortfolioImportPlan,
+  type PortfolioImportOcrWord,
 } from '../lib/portfolioScreenshotImport';
 
 interface PortfolioScreenshotImportModalProps {
@@ -31,6 +34,8 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
   const [rows, setRows] = useState<ImportEditableRow[]>([]);
   const [missingActions, setMissingActions] = useState<Record<string, ExistingTradeAction['action']>>({});
   const [soldDate, setSoldDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [diagnostics, setDiagnostics] = useState<PortfolioImportDiagnostics | null>(null);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -59,6 +64,7 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
     setImageUrl(URL.createObjectURL(file));
     setFileName(file.name || 'Pasted screenshot');
     setRows([]);
+    setDiagnostics(null);
     setMissingActions({});
     setError('');
     setStatus('loading');
@@ -75,14 +81,21 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
           }
         },
       });
-      const parsedRows = parseBrokerageScreenshotText(result.data.text).map(row => ({
+      const parsed = parseBrokerageScreenshotOcr({
+        text: result.data.text,
+        words: extractTesseractWords(result.data),
+      });
+      const parsedRows = parsed.rows.map(row => ({
         ...row,
-        selected: isImportableRow(row),
+        selected: isImportableRow(row) && (row.confidence ?? 0) >= 0.72,
       }));
       setRows(parsedRows);
+      setDiagnostics(parsed.diagnostics);
       setStatus('done');
       if (parsedRows.length === 0) {
         setError('No sold put rows were detected. You can cancel and add trades manually.');
+      } else if (parsed.diagnostics.warnings.length > 0) {
+        setError(parsed.diagnostics.warnings.join(' '));
       }
     } catch (err) {
       setStatus('error');
@@ -195,6 +208,28 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
               />
               <span className="block text-[11px] mt-1" style={{ color: 'var(--text-dim)' }}>Brokerage screenshots do not show the open date, so this date is applied to imported rows.</span>
             </label>
+            {diagnostics && (
+              <div className="rounded-lg p-3 text-xs" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowDiagnostics(value => !value)}
+                  className="font-medium"
+                  style={{ color: 'var(--accent-light)' }}
+                >
+                  {showDiagnostics ? 'Hide' : 'Show'} OCR diagnostics
+                </button>
+                {showDiagnostics && (
+                  <div className="mt-2 space-y-1 font-mono" style={{ color: 'var(--text-muted)' }}>
+                    <div>Words: {diagnostics.ocrWordCount}</div>
+                    <div>Headers: {diagnostics.detectedHeaderColumns.join(', ') || DASH}</div>
+                    <div>Detected rows: {diagnostics.detectedOptionRowCount}</div>
+                    <div>Parsed rows: {diagnostics.parsedRowCount}</div>
+                    <div>Importable rows: {diagnostics.importableRowCount}</div>
+                    {diagnostics.warnings.map(warning => <div key={warning} style={{ color: 'var(--yellow)' }}>{warning}</div>)}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="min-w-0 min-h-0 space-y-3 lg:flex lg:flex-col lg:overflow-hidden">
@@ -249,7 +284,7 @@ function ParsedRowsTable({ rows, setRows, plan }: { rows: ImportEditableRow[]; s
   };
 
   const updateRow = (index: number, patch: Partial<ImportEditableRow>) => {
-    setRows(rows.map((row, rowIndex) => rowIndex === index ? normalizeEditableRow({ ...row, ...patch }) : row));
+    setRows(rows.map((row, rowIndex) => rowIndex === index ? normalizeEditableRow({ ...row, ...patch }, row.selected) : row));
   };
 
   return (
@@ -372,10 +407,8 @@ function SmallInput({ value, onChange, align = 'left', type = 'text', wide = fal
   );
 }
 
-function normalizeEditableRow(row: ImportEditableRow): ImportEditableRow {
-  const warnings = row.warnings.filter(warning => !warning.startsWith('Corrected row is'));
-  const valid = isImportableRow(row);
-  return {
+function normalizeEditableRow(row: ImportEditableRow, selected: boolean): ImportEditableRow {
+  const validated = validateParsedBrokerageRow({
     ...row,
     ticker: row.ticker.trim().toUpperCase(),
     strike: Number.isFinite(row.strike) ? row.strike : 0,
@@ -383,8 +416,39 @@ function normalizeEditableRow(row: ImportEditableRow): ImportEditableRow {
     quantity: Number.isFinite(row.contracts) ? -Math.abs(Number(row.contracts)) : row.quantity,
     side: Number.isFinite(row.contracts) ? 'short' : row.side,
     averageCostBasis: Number.isFinite(row.averageCostBasis) ? row.averageCostBasis : undefined,
-    warnings: valid ? warnings : [...warnings, 'Corrected row is still missing required import fields.'],
-  };
+    warnings: row.warnings.filter(warning => warning.startsWith('Entry date')),
+  });
+  return { ...validated, selected };
+}
+
+interface TesseractWordLike {
+  text: string;
+  confidence: number;
+  bbox: { x0: number; y0: number; x1: number; y1: number };
+}
+
+interface TesseractLineLike {
+  words?: TesseractWordLike[];
+}
+
+interface TesseractParagraphLike {
+  lines?: TesseractLineLike[];
+}
+
+interface TesseractBlockLike {
+  paragraphs?: TesseractParagraphLike[];
+}
+
+interface TesseractPageLike {
+  blocks?: TesseractBlockLike[] | null;
+}
+
+function extractTesseractWords(page: TesseractPageLike): PortfolioImportOcrWord[] {
+  return (page.blocks ?? []).flatMap(block => (block.paragraphs ?? []).flatMap(paragraph => (paragraph.lines ?? []).flatMap(line => (line.words ?? []).map(word => ({
+    text: word.text,
+    confidence: word.confidence,
+    bbox: word.bbox,
+  })))));
 }
 
 async function preprocessImage(file: File): Promise<Blob> {
