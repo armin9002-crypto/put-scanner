@@ -5,6 +5,16 @@ import { calculatePutDelta, fetchBatchPrices, fetchOptions } from '../lib/api';
 import { formatCurrency, formatDate, formatOptionPrice, formatPercent, formatPercentPoints } from '../lib/format';
 import { calculateDte, calculateMoneyness, calculateYieldPercent, isFiniteNumber } from '../lib/optionMetrics';
 import {
+  getTradeDistanceToBreakeven,
+  getTradeDistanceToStrike,
+  getTradeGrossRisk,
+  groupByBreakevenRiskBucket,
+  groupByDteBucket,
+  groupByExpiration,
+  type PortfolioBreakevenRiskBucket,
+  type PortfolioExposureGroup,
+} from '../lib/portfolioAnalytics';
+import {
   addPortfolioTrade,
   deletePortfolioTrade,
   loadPortfolioTrades,
@@ -21,7 +31,6 @@ import {
   calculateCurrentNominalYield,
   calculateCurrentOptionMark,
   calculateCurrentPositionValue,
-  calculateDistanceToBreakeven,
   calculateDistanceToStrike,
   calculateEquityAtRisk,
   calculateNetCapitalAtRisk,
@@ -51,7 +60,6 @@ interface TradeModalProps {
   onSave: (trade: PortfolioTradeInput, id?: string) => void;
   onDelete: (id: string) => void;
 }
-
 interface DrawerSelection {
   option: OptionDetail;
   ticker: string;
@@ -140,36 +148,6 @@ function completeSumValues(values: Array<number | null | undefined>): number | n
   return sumValues(values);
 }
 
-function BarList({ title, items, emptyLabel = 'No open trade exposure.' }: { title: string; items: Array<{ label: string; value: number; sublabel?: string; detail?: string }>; emptyLabel?: string }) {
-  const max = Math.max(...items.map(item => item.value), 0);
-  return (
-    <section className="rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-      <h2 className="text-xs uppercase tracking-wider font-semibold mb-3" style={{ color: 'var(--text-muted)' }}>{title}</h2>
-      {items.length === 0 ? (
-        <p className="text-sm" style={{ color: 'var(--text-dim)' }}>{emptyLabel}</p>
-      ) : (
-        <div className="space-y-3">
-          {items.map(item => {
-            const width = max > 0 ? Math.max(4, (item.value / max) * 100) : 0;
-            return (
-              <div key={item.label} className="min-w-0">
-                <div className="flex items-center justify-between gap-3 text-xs mb-1">
-                  <span className="font-medium truncate" style={{ color: 'var(--text)' }}>{item.label}</span>
-                  <span className="font-mono tabular-nums flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>{formatCurrency(item.value, 0)}</span>
-                </div>
-                <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--surface-alt)' }}>
-                  <div className="h-full rounded-full" style={{ width: `${width}%`, backgroundColor: 'var(--accent)' }} />
-                </div>
-                {(item.sublabel || item.detail) && <div className="text-[10px] mt-1 truncate" title={item.detail ?? item.sublabel} style={{ color: 'var(--text-dim)' }}>{item.sublabel ?? item.detail}</div>}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </section>
-  );
-}
-
 function SummaryCard({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <div className="rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
@@ -179,28 +157,244 @@ function SummaryCard({ label, value, color }: { label: string; value: string; co
   );
 }
 
-function CompactMetricCard({ label, value, sublabel, color }: { label: string; value: string; sublabel?: string; color?: string }) {
-  return (
-    <div className="rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-      <div className="text-[10px] uppercase tracking-wider mb-1 truncate" style={{ color: 'var(--text-dim)' }}>{label}</div>
-      <div className="text-sm font-mono font-semibold tabular-nums truncate" style={{ color: color ?? 'var(--text)' }}>{value}</div>
-      {sublabel && <div className="text-[10px] mt-1 truncate" title={sublabel} style={{ color: 'var(--text-muted)' }}>{sublabel}</div>}
-    </div>
-  );
+function formatShortDate(iso: string): string {
+  return formatDate(`${iso}T00:00:00`);
 }
 
-function InsightsPanel({ insights }: { insights: Array<{ label: string; value: string; sublabel?: string; color?: string }> }) {
-  if (insights.length === 0) return null;
+function formatCompactCurrency(value: number | null | undefined): string {
+  if (!isFiniteNumber(value)) return DASH;
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) return `${value < 0 ? '-' : ''}$${(abs / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `${value < 0 ? '-' : ''}$${Math.round(abs / 1_000).toLocaleString('en-US')}K`;
+  return formatCurrency(value, 0);
+}
+
+function RiskCockpit({
+  trades,
+  markBasis,
+  onTickerClick,
+  onDetailsClick,
+}: {
+  trades: PortfolioTrade[];
+  markBasis: MarkBasis;
+  onTickerClick: (ticker: string) => void;
+  onDetailsClick: (trade: PortfolioTrade) => void;
+}) {
+  const maturity = useMemo(() => groupByExpiration(trades, markBasis), [trades, markBasis]);
+  const dteBuckets = useMemo(() => groupByDteBucket(trades, markBasis), [trades, markBasis]);
+  const breakevenBuckets = useMemo(() => groupByBreakevenRiskBucket(trades, markBasis), [trades, markBasis]);
+  const attention = useMemo(() => buildNeedsAttention(trades).slice(0, 5), [trades]);
+
+  if (trades.length === 0) {
+    return (
+      <section className="rounded-lg p-3 mb-4 text-sm" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+        No open positions for the risk cockpit.
+      </section>
+    );
+  }
+
   return (
-    <section className="rounded-lg p-3 mb-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-      <h2 className="text-xs uppercase tracking-wider font-semibold mb-3" style={{ color: 'var(--text-muted)' }}>Portfolio Insights</h2>
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-2">
-        {insights.map(item => (
-          <CompactMetricCard key={item.label} label={item.label} value={item.value} sublabel={item.sublabel} color={item.color} />
-        ))}
+    <section className="mb-4">
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--text-muted)' }}>Risk Cockpit</h2>
+        <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Gross risk view</span>
+      </div>
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+        <CompactExposureBars title="Maturity Wall" groups={maturity} labelFormatter={formatShortDate} emptyLabel="No maturities." />
+        <DteBucketExposure groups={dteBuckets} />
+        <BreakevenHeatMap groups={breakevenBuckets} />
+        <NeedsAttentionList items={attention} onTickerClick={onTickerClick} onDetailsClick={onDetailsClick} />
       </div>
     </section>
   );
+}
+
+function CompactExposureBars({
+  title,
+  groups,
+  labelFormatter = value => value,
+  emptyLabel,
+}: {
+  title: string;
+  groups: PortfolioExposureGroup[];
+  labelFormatter?: (value: string) => string;
+  emptyLabel: string;
+}) {
+  const max = Math.max(...groups.map(group => group.grossRisk), 0);
+  return (
+    <section className="rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>{title}</h3>
+        <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>{groups.length} buckets</span>
+      </div>
+      {groups.length === 0 ? (
+        <p className="text-xs" style={{ color: 'var(--text-dim)' }}>{emptyLabel}</p>
+      ) : (
+        <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1">
+          {groups.map(group => {
+            const width = max > 0 ? Math.max(3, (group.grossRisk / max) * 100) : 0;
+            const tooltip = [
+              `Gross Risk: ${formatCurrency(group.grossRisk, 0)}`,
+              `Net Capital: ${formatCurrency(group.netCapitalAtRisk, 0)}`,
+              `Premium: ${formatCurrency(group.premiumCollected, 0)}`,
+              `Trades: ${group.tradeCount}`,
+              `Original AY: ${formatPctValue(group.originalAY)}`,
+            ].join('\n');
+            return (
+              <div key={group.key} title={tooltip}>
+                <div className="flex items-center justify-between gap-2 text-[11px] mb-1">
+                  <span className="font-medium truncate" style={{ color: 'var(--text)' }}>{labelFormatter(group.label)}</span>
+                  <span className="font-mono tabular-nums flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>{formatCompactCurrency(group.grossRisk)}</span>
+                </div>
+                <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--surface-alt)' }}>
+                  <div className="h-full rounded-full" style={{ width: `${width}%`, backgroundColor: 'var(--accent)' }} />
+                </div>
+                <div className="flex justify-between gap-2 mt-1 text-[10px]" style={{ color: 'var(--text-dim)' }}>
+                  <span>{group.tradeCount} trade{group.tradeCount === 1 ? '' : 's'}</span>
+                  <span className="truncate">Prem {formatCompactCurrency(group.premiumCollected)} · Net {formatCompactCurrency(group.netCapitalAtRisk)}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function DteBucketExposure({ groups }: { groups: PortfolioExposureGroup[] }) {
+  const max = Math.max(...groups.map(group => group.grossRisk), 0);
+  return (
+    <section className="rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>DTE Bucket Exposure</h3>
+        <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Gross risk</span>
+      </div>
+      {groups.length === 0 ? (
+        <p className="text-xs" style={{ color: 'var(--text-dim)' }}>No DTE exposure.</p>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {groups.map(group => {
+            const intensity = max > 0 ? Math.max(0.08, group.grossRisk / max) : 0.08;
+            return (
+              <div key={group.key} className="rounded p-2 min-w-0" title={`Premium: ${formatCurrency(group.premiumCollected, 0)}\nTrades: ${group.tradeCount}`} style={{ backgroundColor: `color-mix(in srgb, var(--accent) ${Math.round(intensity * 38)}%, var(--surface-alt))`, border: '1px solid var(--border)' }}>
+                <div className="text-[11px] font-semibold truncate" style={{ color: 'var(--text)' }}>{group.label}</div>
+                <div className="font-mono text-sm tabular-nums" style={{ color: 'var(--text)' }}>{formatCompactCurrency(group.grossRisk)}</div>
+                <div className="text-[10px] truncate" style={{ color: 'var(--text-dim)' }}>{group.tradeCount} trades · {formatCompactCurrency(group.premiumCollected)} prem</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function BreakevenHeatMap({ groups }: { groups: PortfolioExposureGroup[] }) {
+  const ordered: PortfolioBreakevenRiskBucket[] = ['Below Breakeven', '0-5% Above Breakeven', '5-10% Above Breakeven', '10-20% Above Breakeven', '20%+ Above Breakeven', 'Unknown'];
+  const byKey = new Map(groups.map(group => [group.key, group]));
+  return (
+    <section className="rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Breakeven Risk Heat Map</h3>
+        <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Distance buckets</span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {ordered.map(label => {
+          const group = byKey.get(label);
+          const tone = breakevenTone(label);
+          return (
+            <div key={label} className="rounded p-2 min-w-0" title={group ? `Gross Risk: ${formatCurrency(group.grossRisk, 0)}\nNet Capital: ${formatCurrency(group.netCapitalAtRisk, 0)}\nTrades: ${group.tradeCount}` : 'No positions'} style={{ backgroundColor: tone.background, border: `1px solid ${tone.border}` }}>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-semibold truncate" style={{ color: tone.color }}>{label}</span>
+                <span className="text-[10px] font-mono" style={{ color: 'var(--text-dim)' }}>{group?.tradeCount ?? 0}</span>
+              </div>
+              <div className="font-mono text-sm tabular-nums" style={{ color: 'var(--text)' }}>{formatCompactCurrency(group?.grossRisk ?? 0)}</div>
+              <div className="text-[10px] truncate" style={{ color: 'var(--text-dim)' }}>Net {formatCompactCurrency(group?.netCapitalAtRisk ?? 0)}</div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function NeedsAttentionList({
+  items,
+  onTickerClick,
+  onDetailsClick,
+}: {
+  items: PortfolioTrade[];
+  onTickerClick: (ticker: string) => void;
+  onDetailsClick: (trade: PortfolioTrade) => void;
+}) {
+  return (
+    <section className="rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Needs Attention</h3>
+        <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Top {items.length}</span>
+      </div>
+      {items.length === 0 ? (
+        <p className="text-xs" style={{ color: 'var(--text-dim)' }}>No positions need review.</p>
+      ) : (
+        <div className="space-y-1.5 max-h-[240px] overflow-y-auto pr-1">
+          {items.map(trade => {
+            const beDistance = getTradeDistanceToBreakeven(trade);
+            const strikeDistance = getTradeDistanceToStrike(trade);
+            return (
+              <div key={trade.id} className="grid grid-cols-[minmax(88px,1fr)_auto] gap-2 rounded px-2 py-1.5" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <button onClick={() => onTickerClick(trade.ticker)} className="font-mono text-xs font-bold truncate underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</button>
+                    <button onClick={() => onDetailsClick(trade)} className="font-mono text-xs truncate underline-offset-2 hover:underline" style={{ color: 'var(--text)' }}>{formatCurrency(trade.strike, 0)} Put</button>
+                  </div>
+                  <div className="text-[10px] truncate" style={{ color: 'var(--text-dim)' }}>{expiryLabel(trade.expiration)} · {formatDteValue(calculateRemainingDte(trade))}</div>
+                </div>
+                <div className="text-right font-mono text-[10px] tabular-nums">
+                  <div style={{ color: percentColor(beDistance) }}>BE {formatPctValue(beDistance)}</div>
+                  <div style={{ color: percentColor(strikeDistance) }}>Strike {formatPctValue(strikeDistance)}</div>
+                  <div style={{ color: 'var(--text-muted)' }}>{formatCompactCurrency(getTradeGrossRisk(trade))}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function breakevenTone(label: PortfolioBreakevenRiskBucket): { background: string; border: string; color: string } {
+  if (label === 'Below Breakeven') return { background: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.28)', color: 'var(--red)' };
+  if (label === '0-5% Above Breakeven') return { background: 'rgba(249,115,22,0.12)', border: 'rgba(249,115,22,0.26)', color: 'var(--orange)' };
+  if (label === '5-10% Above Breakeven') return { background: 'rgba(250,204,21,0.10)', border: 'rgba(250,204,21,0.24)', color: 'var(--yellow)' };
+  if (label === '10-20% Above Breakeven') return { background: 'rgba(59,130,246,0.10)', border: 'rgba(59,130,246,0.22)', color: 'var(--accent-light)' };
+  if (label === '20%+ Above Breakeven') return { background: 'rgba(34,197,94,0.10)', border: 'rgba(34,197,94,0.22)', color: 'var(--green)' };
+  return { background: 'var(--surface-alt)', border: 'var(--border)', color: 'var(--text-muted)' };
+}
+
+function buildNeedsAttention(trades: PortfolioTrade[]): PortfolioTrade[] {
+  return [...trades].sort((a, b) => attentionScore(b) - attentionScore(a));
+}
+
+function attentionScore(trade: PortfolioTrade): number {
+  const distanceToBreakeven = getTradeDistanceToBreakeven(trade);
+  const distanceToStrike = getTradeDistanceToStrike(trade);
+  const dte = calculateRemainingDte(trade);
+  const grossRisk = getTradeGrossRisk(trade) ?? 0;
+  const delta = trade.latestMarketData?.delta;
+  let score = 0;
+
+  if (!isFiniteNumber(distanceToBreakeven)) score += 20;
+  else if (distanceToBreakeven < 0) score += 120 + Math.min(60, Math.abs(distanceToBreakeven) * 300);
+  else score += Math.max(0, 80 - distanceToBreakeven * 800);
+
+  if (isFiniteNumber(distanceToStrike)) score += distanceToStrike < 0 ? 60 : Math.max(0, 45 - distanceToStrike * 450);
+  if (isFiniteNumber(dte)) score += dte <= 0 ? 40 : Math.max(0, 35 - dte);
+  if (isFiniteNumber(delta)) score += Math.min(45, Math.abs(delta) * 70);
+  score += Math.min(35, grossRisk / 10_000);
+
+  return score;
 }
 
 function parseNumber(value: string): number | null {
@@ -407,7 +601,6 @@ export default function PortfolioPage() {
   const openTrades = useMemo(() => trades.filter(trade => trade.status === 'open'), [trades]);
   const markSummary = useMemo(() => calculatePortfolioMarkSummary(openTrades, markBasis), [openTrades, markBasis]);
 
-  const visualData = useMemo(() => buildVisualData(openTrades, markBasis), [openTrades, markBasis]);
   const scheduleTotals = useMemo(() => buildScheduleTotals(openTrades, markBasis), [openTrades, markBasis]);
 
   useEffect(() => {
@@ -713,22 +906,12 @@ export default function PortfolioPage() {
               <div className="rounded-lg px-3 py-2 mb-4 text-sm" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>No open trades.</div>
             )}
 
-            <InsightsPanel insights={visualData.insights} />
-
-            {visualData.concentrationCards.length > 0 && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-2 mb-4">
-                {visualData.concentrationCards.map(item => (
-                  <CompactMetricCard key={item.label} label={item.label} value={item.value} sublabel={item.sublabel} color={item.color} />
-                ))}
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-4">
-              <BarList title="Maturity Wall" items={visualData.byExpiration} />
-              <BarList title="Exposure by Ticker" items={visualData.byTicker} />
-              <BarList title="Exposure by DTE Bucket" items={visualData.byDteBucket} />
-              <BarList title="Breakeven Cushion / Risk Ladder" items={visualData.byBreakevenCushion} />
-            </div>
+            <RiskCockpit
+              trades={openTrades}
+              markBasis={markBasis}
+              onTickerClick={ticker => navigate(`/options/${ticker.trim().toUpperCase()}`)}
+              onDetailsClick={openDrawer}
+            />
 
             <div className="md:hidden space-y-2 mb-4">
               {sortedTrades.map(trade => (
@@ -963,124 +1146,4 @@ function buildScheduleTotals(openTrades: PortfolioTrade[], basis: MarkBasis) {
     currentAnnualizedYield: currentDollarDays > 0 && totalCurrentPremium != null ? totalCurrentPremium / currentDollarDays : null,
     dte: weightedAverageValue(openTrades.map(trade => ({ value: calculateRemainingDte(trade), weight: calculateNetCapitalAtRisk(trade) }))),
   };
-}
-
-function nearestTrade(openTrades: PortfolioTrade[]): PortfolioTrade | null {
-  return openTrades.reduce<PortfolioTrade | null>((nearest, trade) => {
-    const dte = calculateRemainingDte(trade);
-    if (!isFiniteNumber(dte)) return nearest;
-    if (!nearest) return trade;
-    const nearestDte = calculateRemainingDte(nearest);
-    return !isFiniteNumber(nearestDte) || dte < nearestDte ? trade : nearest;
-  }, null);
-}
-
-function closestBreakevenTrade(openTrades: PortfolioTrade[]): PortfolioTrade | null {
-  return openTrades.reduce<PortfolioTrade | null>((closest, trade) => {
-    const distance = calculateDistanceToBreakeven(trade);
-    if (!isFiniteNumber(distance)) return closest;
-    if (!closest) return trade;
-    const closestDistance = calculateDistanceToBreakeven(closest);
-    return !isFiniteNumber(closestDistance) || distance < closestDistance ? trade : closest;
-  }, null);
-}
-
-function buildVisualData(openTrades: PortfolioTrade[], basis: MarkBasis) {
-  const byExpiration = aggregate(openTrades, trade => trade.expiration)
-    .sort((a, b) => a.label.localeCompare(b.label))
-    .map(item => ({ ...item, label: expiryLabel(item.label) }));
-  const byTicker = aggregate(openTrades, trade => trade.ticker).sort((a, b) => b.value - a.value);
-
-  const dteBuckets = [
-    { label: 'Expired / 0 DTE', match: (dte: number | null) => dte == null || dte <= 0 },
-    { label: '1-7 days', match: (dte: number | null) => dte != null && dte >= 1 && dte <= 7 },
-    { label: '8-14 days', match: (dte: number | null) => dte != null && dte >= 8 && dte <= 14 },
-    { label: '15-30 days', match: (dte: number | null) => dte != null && dte >= 15 && dte <= 30 },
-    { label: '31-60 days', match: (dte: number | null) => dte != null && dte >= 31 && dte <= 60 },
-    { label: '61-90 days', match: (dte: number | null) => dte != null && dte >= 61 && dte <= 90 },
-    { label: '90+ days', match: (dte: number | null) => dte != null && dte > 90 },
-  ];
-  const byDteBucket = dteBuckets.map(bucket => {
-    const trades = openTrades.filter(trade => bucket.match(calculateRemainingDte(trade)));
-    return {
-      label: bucket.label,
-      value: sumValues(trades.map(calculateEquityAtRisk)),
-      sublabel: trades.length > 0 ? `${trades.length} trade${trades.length === 1 ? '' : 's'}` : undefined,
-    };
-  }).filter(item => item.value > 0);
-
-  const riskBuckets = [
-    { label: 'ITM / Below breakeven', match: (distance: number | null) => distance != null && distance < 0 },
-    { label: '0-5% above breakeven', match: (distance: number | null) => distance != null && distance >= 0 && distance < 0.05 },
-    { label: '5-10% above breakeven', match: (distance: number | null) => distance != null && distance >= 0.05 && distance < 0.10 },
-    { label: '10-20% above breakeven', match: (distance: number | null) => distance != null && distance >= 0.10 && distance < 0.20 },
-    { label: '20%+ above breakeven', match: (distance: number | null) => distance != null && distance >= 0.20 },
-    { label: 'No market price', match: (distance: number | null) => distance == null },
-  ];
-  const byBreakevenCushion = riskBuckets.map(bucket => {
-    const trades = openTrades.filter(trade => bucket.match(calculateDistanceToBreakeven(trade)));
-    const closest = [...trades]
-      .map(trade => ({ trade, distance: calculateDistanceToBreakeven(trade) }))
-      .sort((a, b) => (a.distance ?? 999) - (b.distance ?? 999))
-      .slice(0, 3)
-      .map(item => `${item.trade.ticker} ${formatCurrency(item.trade.strike, 0)}`)
-      .join(', ');
-    return {
-      label: bucket.label,
-      value: sumValues(trades.map(calculateEquityAtRisk)),
-      sublabel: trades.length > 0 ? `${trades.length} trade${trades.length === 1 ? '' : 's'}${closest ? ` · ${closest}` : ''}` : undefined,
-    };
-  }).filter(item => item.value > 0);
-
-  const largestTicker = byTicker[0] ?? null;
-  const largestExpiration = byExpiration.reduce<typeof byExpiration[number] | null>((largest, item) => !largest || item.value > largest.value ? item : largest, null);
-  const largestSingleTrade = openTrades.reduce<PortfolioTrade | null>((largest, trade) => {
-    const risk = calculateEquityAtRisk(trade) ?? 0;
-    const largestRisk = largest ? calculateEquityAtRisk(largest) ?? 0 : -1;
-    return risk > largestRisk ? trade : largest;
-  }, null);
-  const closestBreakeven = closestBreakevenTrade(openTrades);
-  const nearestExpiration = nearestTrade(openTrades);
-  const highestRemainingYield = openTrades.reduce<PortfolioTrade | null>((highest, trade) => {
-    const value = calculateCurrentAnnualizedYield(trade, basis);
-    if (!isFiniteNumber(value)) return highest;
-    const current = highest ? calculateCurrentAnnualizedYield(highest, basis) : null;
-    return !isFiniteNumber(current) || value > current ? trade : highest;
-  }, null);
-
-  const concentrationCards = [
-    largestTicker ? { label: 'Largest Ticker Exposure', value: `${largestTicker.label} ${formatCurrency(largestTicker.value, 0)}`, sublabel: largestTicker.sublabel } : null,
-    largestExpiration ? { label: 'Largest Expiration', value: `${largestExpiration.label} ${formatCurrency(largestExpiration.value, 0)}`, sublabel: largestExpiration.sublabel } : null,
-    largestSingleTrade ? { label: 'Largest Single Trade', value: `${largestSingleTrade.ticker} ${formatCurrency(largestSingleTrade.strike, 0)}`, sublabel: `${formatCurrency(calculateEquityAtRisk(largestSingleTrade), 0)} equity risk` } : null,
-    closestBreakeven ? { label: 'Closest To Breakeven', value: `${closestBreakeven.ticker} ${formatCurrency(closestBreakeven.strike, 0)}`, sublabel: formatPctValue(calculateDistanceToBreakeven(closestBreakeven)), color: percentColor(calculateDistanceToBreakeven(closestBreakeven)) } : null,
-    nearestExpiration ? { label: 'Nearest Expiration', value: expiryLabel(nearestExpiration.expiration), sublabel: `${nearestExpiration.ticker} · ${formatDteValue(calculateRemainingDte(nearestExpiration))}` } : null,
-  ].filter(Boolean) as Array<{ label: string; value: string; sublabel?: string; color?: string }>;
-
-  const insights = [
-    largestTicker ? { label: 'Largest exposure', value: `${largestTicker.label} ${formatCurrency(largestTicker.value, 0)}`, sublabel: largestTicker.sublabel } : null,
-    nearestExpiration ? { label: 'Nearest expiration', value: expiryLabel(nearestExpiration.expiration), sublabel: `${nearestExpiration.ticker} ${formatCurrency(nearestExpiration.strike, 0)} Put` } : null,
-    closestBreakeven ? { label: 'Closest to breakeven', value: `${closestBreakeven.ticker} ${formatCurrency(closestBreakeven.strike, 0)} Put`, sublabel: formatPctValue(calculateDistanceToBreakeven(closestBreakeven)), color: percentColor(calculateDistanceToBreakeven(closestBreakeven)) } : null,
-    highestRemainingYield ? { label: 'Highest current AY', value: `${highestRemainingYield.ticker} ${formatCurrency(highestRemainingYield.strike, 0)} Put`, sublabel: formatPctValue(calculateCurrentAnnualizedYield(highestRemainingYield, basis)), color: 'var(--accent-light)' } : null,
-    largestExpiration ? { label: 'Most concentrated exp.', value: largestExpiration.label, sublabel: formatCurrency(largestExpiration.value, 0) } : null,
-  ].filter(Boolean) as Array<{ label: string; value: string; sublabel?: string; color?: string }>;
-
-  return { byExpiration, byTicker, byDteBucket, byBreakevenCushion, concentrationCards, insights };
-}
-
-function aggregate(trades: PortfolioTrade[], keyFn: (trade: PortfolioTrade) => string) {
-  const byKey = new Map<string, { label: string; value: number; premium: number; netRisk: number; contracts: number }>();
-  trades.forEach(trade => {
-    const key = keyFn(trade);
-    const current = byKey.get(key) ?? { label: key, value: 0, premium: 0, netRisk: 0, contracts: 0 };
-    current.value += calculateEquityAtRisk(trade) ?? 0;
-    current.premium += calculatePremiumCollected(trade) ?? 0;
-    current.netRisk += calculateNetCapitalAtRisk(trade) ?? 0;
-    current.contracts += trade.contracts;
-    byKey.set(key, current);
-  });
-  return [...byKey.values()].map(item => ({
-    label: item.label,
-    value: item.value,
-    sublabel: `${item.contracts} ctr · premium ${formatCurrency(item.premium, 0)} · net ${formatCurrency(item.netRisk, 0)}`,
-  }));
 }
