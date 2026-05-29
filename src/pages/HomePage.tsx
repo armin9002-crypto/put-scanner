@@ -48,8 +48,7 @@ function setExpiryAvailabilityCache(data: ExpiryAvailabilityCache): void {
   } catch { /* ignore unavailable storage */ }
 }
 
-function marketChangeColor(ticker: string, changePercent: number): string {
-  if (ticker === 'VIX' || ticker === 'VXN') return changePercent >= 0 ? 'var(--orange)' : 'var(--green)';
+function marketChangeColor(changePercent: number): string {
   return changePercent >= 0 ? 'var(--green)' : 'var(--red)';
 }
 
@@ -75,7 +74,7 @@ function MarketChartCard({
   onOpenChart: (ticker: string, displayTicker: string) => void;
 }) {
   const changePct = data?.changePercent ?? 0;
-  const color = data ? marketChangeColor(ticker, changePct) : 'var(--yellow)';
+  const color = data ? marketChangeColor(changePct) : 'var(--yellow)';
   const prefix = ticker === 'VIX' || ticker === 'VXN' ? '' : '$';
 
   return (
