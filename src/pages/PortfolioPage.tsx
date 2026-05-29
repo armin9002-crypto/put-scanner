@@ -158,23 +158,23 @@ function completeSumValues(values: Array<number | null | undefined>): number | n
 
 function SummaryCard({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
-    <div className="rounded-lg p-2.5 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-      <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-dim)' }}>{label}</div>
-      <div className="text-sm sm:text-base font-mono font-semibold tabular-nums break-words" style={{ color: color ?? 'var(--text)' }}>{value}</div>
+    <div className="rounded-lg p-2 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <div className="text-[9px] uppercase tracking-wider mb-0.5 truncate" title={label} style={{ color: 'var(--text-dim)' }}>{label}</div>
+      <div className="text-xs xl:text-sm font-mono font-semibold tabular-nums truncate" title={value} style={{ color: color ?? 'var(--text)' }}>{value}</div>
     </div>
   );
 }
 
 function MarkBasisToggle({ markBasis, onChange }: { markBasis: MarkBasis; onChange: (basis: MarkBasis) => void }) {
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 min-w-0">
+    <div className="flex items-center gap-1.5 min-w-0 whitespace-nowrap">
       <span className="text-[10px] uppercase tracking-wider font-semibold whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>Mark book at</span>
       <div className="inline-flex rounded-lg overflow-hidden w-fit" style={{ border: '1px solid var(--border)' }}>
         {MARK_BASIS_OPTIONS.map(option => (
           <button
             key={option}
             onClick={() => onChange(option)}
-            className="px-3 py-2 text-xs font-semibold min-w-[56px]"
+            className="px-2.5 py-2 text-xs font-semibold min-w-[48px] sm:min-w-[52px]"
             style={{
               backgroundColor: markBasis === option ? 'var(--accent)' : 'var(--surface-alt)',
               color: markBasis === option ? 'white' : 'var(--text-muted)',
@@ -1011,28 +1011,27 @@ export default function PortfolioPage() {
   return (
     <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>
       <div className="max-w-[1800px] mx-auto px-2 sm:px-4 lg:px-6 py-4 sm:py-6">
-        <div className="grid grid-cols-1 xl:grid-cols-[minmax(220px,1fr)_auto_minmax(420px,1fr)] xl:items-center gap-3 mb-4">
+        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3 mb-3">
           <div className="min-w-0">
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight" style={{ color: 'var(--text)' }}>Portfolio</h1>
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Sold cash-secured puts, local persistence, and manual market refresh.</p>
+            <div className="text-[10px] mt-1" style={{ color: 'var(--text-dim)' }}>
+              {lastRefreshed ? `Last refreshed: ${lastRefreshed.toLocaleString()}` : 'Last refreshed: saved snapshots are shown until you refresh open trades.'}
+            </div>
           </div>
-          {trades.length > 0 && <MarkBasisToggle markBasis={markBasis} onChange={setMarkBasis} />}
-          <div className="flex flex-col sm:flex-row xl:justify-end gap-2">
-            <button onClick={() => setShowAddModal(true)} className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium text-white min-h-[44px] sm:min-h-0" style={{ backgroundColor: 'var(--accent)' }}>
+          <div className="flex flex-wrap lg:flex-nowrap items-center justify-start lg:justify-end gap-2 lg:shrink-0">
+            {trades.length > 0 && <MarkBasisToggle markBasis={markBasis} onChange={setMarkBasis} />}
+            <button onClick={() => setShowAddModal(true)} className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-white min-h-[44px] sm:min-h-0 whitespace-nowrap" style={{ backgroundColor: 'var(--accent)' }}>
               <Plus className="w-3.5 h-3.5" /> Add Trade
             </button>
-            <button onClick={() => setShowImportModal(true)} className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium min-h-[44px] sm:min-h-0" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
+            <button onClick={() => setShowImportModal(true)} className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium min-h-[44px] sm:min-h-0 whitespace-nowrap" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
               <FileImage className="w-3.5 h-3.5" /> Import Screenshot
             </button>
-            <button onClick={handleRefreshOpenTrades} disabled={refreshing || openTrades.length === 0} className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px] sm:min-h-0" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
+            <button onClick={handleRefreshOpenTrades} disabled={refreshing || openTrades.length === 0} className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px] sm:min-h-0 whitespace-nowrap" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
               {refreshing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
               Refresh Open Trades
             </button>
           </div>
-        </div>
-
-        <div className="text-[10px] mb-3" style={{ color: 'var(--text-dim)' }}>
-          {lastRefreshed ? `Last refreshed: ${lastRefreshed.toLocaleString()}` : 'Last refreshed: saved snapshots are shown until you refresh open trades.'}
         </div>
         {refreshWarning && (
           <div className="flex items-center gap-2 rounded-lg px-3 py-2 mb-3 text-xs" style={{ backgroundColor: 'rgba(250,204,21,0.10)', color: 'var(--yellow)', border: '1px solid rgba(250,204,21,0.22)' }}>
@@ -1056,7 +1055,7 @@ export default function PortfolioPage() {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-9 gap-2 mb-3">
+            <div className="grid grid-cols-2 md:grid-cols-5 xl:grid-cols-10 gap-1.5 mb-3">
               <SummaryCard label="Open Trades" value={String(summary.totalOpenTrades)} />
               <SummaryCard label="Premium Collected" value={formatCurrency(summary.totalPremiumCollected, 0)} color="var(--green)" />
               <SummaryCard label="Gross Risk" value={formatCurrency(summary.totalEquityAtRisk, 0)} />
@@ -1180,15 +1179,20 @@ export default function PortfolioPage() {
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatPctValue(calculateOriginalAnnualizedYield(trade))}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatPctValue(calculateCurrentNominalYield(trade, markBasis))}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatPctValue(calculateCurrentAnnualizedYield(trade, markBasis))}</td>
-                          <td className="px-2 py-1 text-left max-w-[240px]" style={{ color: trade.notes ? 'var(--text-secondary)' : 'var(--text-dim)' }}>
-                            {redeployBadges.length > 0 && (
-                              <div className="flex flex-wrap gap-1 mb-1">
-                                {redeployBadges.map(badge => (
-                                  <span key={badge} className="rounded px-1 py-0.5 text-[9px] whitespace-nowrap" style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)', border: '1px solid var(--accent-border)' }}>{badge}</span>
-                                ))}
-                              </div>
-                            )}
-                            <div className="truncate">{trade.importedSnapshot ? 'Entry date missing - import date used. ' : ''}{trade.notes || DASH}</div>
+                          <td className="px-2 py-1 text-left w-[240px] max-w-[240px]" style={{ color: trade.notes ? 'var(--text-secondary)' : 'var(--text-dim)' }}>
+                            <div className="flex items-center gap-1 min-w-0 h-5 overflow-hidden whitespace-nowrap">
+                              {redeployBadges.length > 0 && (
+                                <>
+                                  <span className="shrink-0 rounded px-1 py-0.5 text-[9px] leading-none whitespace-nowrap" title={redeployBadges.join(', ')} style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)', border: '1px solid var(--accent-border)' }}>{redeployBadges[0]}</span>
+                                  {redeployBadges.length > 1 && (
+                                    <span className="shrink-0 rounded px-1 py-0.5 text-[9px] leading-none whitespace-nowrap" title={redeployBadges.slice(1).join(', ')} style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>+{redeployBadges.length - 1}</span>
+                                  )}
+                                </>
+                              )}
+                              <span className="truncate min-w-0" title={`${trade.importedSnapshot ? 'Entry date missing - import date used. ' : ''}${trade.notes || DASH}`}>
+                                {trade.importedSnapshot ? 'Entry date missing - import date used. ' : ''}{trade.notes || DASH}
+                              </span>
+                            </div>
                           </td>
                           <td className="px-2 py-1 whitespace-nowrap">
                             <div className="flex items-center gap-1">
