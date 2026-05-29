@@ -299,68 +299,6 @@ function NeedsAttentionList({
   );
 }
 
-function YieldAndConcentrationCard({
-  markSummary,
-  totalPremiumCollected,
-  trades,
-  byTicker,
-  totalGrossRisk,
-}: {
-  markSummary: ReturnType<typeof calculatePortfolioMarkSummary>;
-  totalPremiumCollected: number;
-  trades: PortfolioTrade[];
-  byTicker: PortfolioExposureGroup[];
-  totalGrossRisk: number;
-}) {
-  return (
-    <section className="rounded-lg p-3 min-w-0 h-full" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Yield & Concentration</h3>
-        <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Dollar-days and gross risk</span>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div className="min-w-0">
-          <div className="mb-2">
-            <h4 className="text-[11px] font-semibold" style={{ color: 'var(--text)' }}>Yield Comparison</h4>
-            <p className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Portfolio AY uses aggregate dollar-days.</p>
-          </div>
-          <YieldComparisonRows markSummary={markSummary} totalPremiumCollected={totalPremiumCollected} />
-        </div>
-        <div className="min-w-0">
-          <div className="flex items-center justify-between gap-2 mb-2">
-            <h4 className="text-[11px] font-semibold" style={{ color: 'var(--text)' }}>Concentration Insights</h4>
-            <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Gross risk lens</span>
-          </div>
-          <ConcentrationInsightRows trades={trades} byTicker={byTicker} totalGrossRisk={totalGrossRisk} />
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function YieldComparisonRows({ markSummary, totalPremiumCollected }: { markSummary: ReturnType<typeof calculatePortfolioMarkSummary>; totalPremiumCollected: number }) {
-  const rows = [
-    { label: 'Original NY', value: formatPctValue(markSummary.portfolioOriginalNominalYield) },
-    { label: 'Original AY', value: formatPctValue(markSummary.portfolioOriginalAnnualizedYield) },
-    { label: 'Current NY', value: formatPctValue(markSummary.portfolioCurrentNominalYield) },
-    { label: 'Current AY', value: formatPctValue(markSummary.portfolioCurrentAnnualizedYield) },
-    { label: 'Premium Collected', value: formatCurrency(totalPremiumCollected, 0), muted: true },
-    { label: 'Remaining Premium', value: formatCurrency(markSummary.totalCurrentPremium, 0), muted: true },
-    { label: '% Captured', value: formatPctValue(markSummary.percentCaptured), color: pnlColor(markSummary.percentCaptured) },
-  ];
-
-  return (
-    <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-      {rows.map(row => (
-        <div key={row.label} className="flex items-baseline justify-between gap-2 min-w-0">
-          <span className="text-[10px] truncate" style={{ color: 'var(--text-dim)' }}>{row.label}</span>
-          <span className="font-mono text-xs tabular-nums font-semibold whitespace-nowrap" style={{ color: row.color ?? (row.muted ? 'var(--text-secondary)' : 'var(--text)') }}>{row.value}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function CloseCandidatesCard({ candidates, onTickerClick }: { candidates: CloseCandidate[]; onTickerClick: (ticker: string) => void }) {
   return (
     <section className="rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
@@ -439,39 +377,6 @@ function ConcentrationBars({
         </div>
       )}
     </section>
-  );
-}
-
-function ConcentrationInsightRows({
-  trades,
-  byTicker,
-  totalGrossRisk,
-}: {
-  trades: PortfolioTrade[];
-  byTicker: PortfolioExposureGroup[];
-  totalGrossRisk: number;
-}) {
-  const largestSingle = trades.reduce<PortfolioTrade | null>((largest, trade) => {
-    const risk = calculateEquityAtRisk(trade) ?? 0;
-    const largestRisk = largest ? calculateEquityAtRisk(largest) ?? 0 : -1;
-    return risk > largestRisk ? trade : largest;
-  }, null);
-  const largestTicker = byTicker[0] ?? null;
-  const rows = [
-    largestTicker ? ['Largest ticker', `${largestTicker.label} - ${formatCompactCurrency(largestTicker.grossRisk)} (${formatPctValue(percentOfTotal(largestTicker.grossRisk, totalGrossRisk))})`] : null,
-    largestSingle ? ['Largest position', `${largestSingle.ticker} ${formatCurrency(largestSingle.strike, 0)} Put - ${formatCompactCurrency(calculateEquityAtRisk(largestSingle))}`] : null,
-    ['Open gross risk', formatCompactCurrency(totalGrossRisk)],
-  ].filter(Boolean) as Array<[string, string]>;
-
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
-      {rows.map(([label, value]) => (
-        <div key={label} className="rounded p-2 min-w-0" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
-          <div className="text-[10px] uppercase tracking-wider truncate" style={{ color: 'var(--text-dim)' }}>{label}</div>
-          <div className="text-xs font-mono font-semibold tabular-nums truncate" title={value} style={{ color: 'var(--text)' }}>{value}</div>
-        </div>
-      ))}
-    </div>
   );
 }
 
@@ -1052,26 +957,17 @@ export default function PortfolioPage() {
               {openTrades.length === 0 ? (
                 <section className="rounded-lg p-3 text-sm" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>No open positions for analytics.</section>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3">
-                  <div className="xl:col-span-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-12 gap-3">
+                  <div className="md:col-span-1 xl:col-span-7">
                     <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openTrades, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." />
                   </div>
-                  <div className="xl:col-span-3">
-                    <YieldAndConcentrationCard
-                      markSummary={markSummary}
-                      totalPremiumCollected={summary.totalPremiumCollected}
-                      trades={openTrades}
-                      byTicker={groupByTicker(openTrades, markBasis)}
-                      totalGrossRisk={sumValues(openTrades.map(calculateEquityAtRisk))}
-                    />
-                  </div>
-                  <div className="xl:col-span-2">
-                    <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openTrades, markBasis)} totalGrossRisk={sumValues(openTrades.map(calculateEquityAtRisk))} maxItems={8} />
-                  </div>
-                  <div className="xl:col-span-2">
+                  <div className="md:col-span-1 xl:col-span-5">
                     <CloseCandidatesCard candidates={buildCloseCandidates(openTrades, markBasis).slice(0, 5)} onTickerClick={ticker => navigate(`/options/${ticker.trim().toUpperCase()}`)} />
                   </div>
-                  <div className="xl:col-span-2">
+                  <div className="md:col-span-1 xl:col-span-7">
+                    <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openTrades, markBasis)} totalGrossRisk={sumValues(openTrades.map(calculateEquityAtRisk))} maxItems={8} />
+                  </div>
+                  <div className="md:col-span-1 xl:col-span-5">
                     <NeedsAttentionList items={buildNeedsAttention(openTrades).slice(0, 5)} onTickerClick={ticker => navigate(`/options/${ticker.trim().toUpperCase()}`)} onDetailsClick={openDrawer} />
                   </div>
                 </div>
