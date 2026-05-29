@@ -1,7 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Briefcase, Edit2, FileImage, Loader2, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { calculatePutDelta, fetchBatchPrices, fetchOptions } from '../lib/api';
-import { formatCurrency, formatDate, formatOptionPrice, formatPercent } from '../lib/format';
+import { formatCurrency, formatDate, formatOptionPrice, formatPercent, formatPercentPoints } from '../lib/format';
 import { calculateDte, calculateMoneyness, calculateYieldPercent, isFiniteNumber } from '../lib/optionMetrics';
 import {
   addPortfolioTrade,
@@ -15,22 +16,25 @@ import {
 } from '../lib/portfolioStorage';
 import {
   calculateBreakeven,
+  calculateCurrentAnnualizedYield,
+  calculateCurrentMarkValueAbsolute,
+  calculateCurrentNominalYield,
   calculateCurrentOptionMark,
+  calculateCurrentPositionValue,
   calculateDistanceToBreakeven,
   calculateDistanceToStrike,
   calculateEquityAtRisk,
-  calculatePreferredCurrentPositionValue,
-  calculatePreferredUnrealizedPnl,
   calculateNetCapitalAtRisk,
+  calculateOriginalNominalYield,
   calculateOriginalAnnualizedYield,
   calculateOriginalDte,
+  calculatePercentCaptured,
+  calculatePortfolioMarkSummary,
   calculatePortfolioSummary,
   calculatePremiumCollected,
-  calculateRemainingAnnualizedYieldToExpiry,
   calculateRemainingDte,
-  calculateRealizedPnl,
-  calculateUnrealizedPnl,
-  getPreferredMtmSource,
+  calculateTotalGainLoss,
+  type MarkBasis,
 } from '../lib/portfolioMetrics';
 import type { OptionDetail } from '../components/OptionDetailDrawer';
 import ErrorBoundary from '../components/ErrorBoundary';
@@ -38,6 +42,8 @@ import PortfolioScreenshotImportModal from '../components/PortfolioScreenshotImp
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 const DASH = '\u2014';
+const PORTFOLIO_MARK_BASIS_KEY = 'put_scanner_portfolio_mark_basis';
+const MARK_BASIS_OPTIONS: MarkBasis[] = ['bid', 'ask', 'last'];
 
 interface TradeModalProps {
   trade: PortfolioTrade | null;
@@ -54,7 +60,7 @@ interface DrawerSelection {
   underlyingPrice: number | null;
 }
 
-type SortField = 'ticker' | 'expiration' | 'dte' | 'strike' | 'contracts' | 'premium' | 'risk' | 'pnl' | 'status';
+type SortField = 'ticker' | 'expiration' | 'dte' | 'strike' | 'contracts' | 'premium' | 'risk' | 'pnl' | 'delta';
 type SortDir = 'asc' | 'desc';
 
 function todayIso(): string {
@@ -76,6 +82,16 @@ function formatPctValue(value: number | null | undefined): string {
   return isFiniteNumber(value) ? formatPercent(value) : DASH;
 }
 
+function formatDelta(value: number | null | undefined): string {
+  if (!isFiniteNumber(value)) return DASH;
+  return value.toFixed(2);
+}
+
+function formatSignedNumber(value: number | null | undefined): string {
+  if (!isFiniteNumber(value)) return DASH;
+  return `${value >= 0 ? '+' : ''}${Math.round(value).toLocaleString('en-US')}`;
+}
+
 function pnlColor(value: number | null | undefined): string {
   if (!isFiniteNumber(value)) return 'var(--text-dim)';
   return value >= 0 ? 'var(--green)' : 'var(--red)';
@@ -86,31 +102,25 @@ function percentColor(value: number | null | undefined): string {
   return value >= 0 ? 'var(--green)' : 'var(--red)';
 }
 
-function statusLabel(status: PortfolioTradeStatus): string {
-  return status.charAt(0).toUpperCase() + status.slice(1);
-}
-
-function statusColor(status: PortfolioTradeStatus): string {
-  if (status === 'open') return 'var(--green)';
-  if (status === 'assigned') return 'var(--orange)';
-  if (status === 'expired') return 'var(--yellow)';
-  return 'var(--text-muted)';
-}
-
 function expiryLabel(iso: string): string {
   return formatDate(`${iso}T00:00:00`);
 }
 
-function getPreferredMark(trade: PortfolioTrade): number | null {
-  return calculateCurrentOptionMark(trade, 'ask') ?? calculateCurrentOptionMark(trade, 'mid') ?? calculateCurrentOptionMark(trade, 'last');
+function getInitialMarkBasis(): MarkBasis {
+  try {
+    const saved = localStorage.getItem(PORTFOLIO_MARK_BASIS_KEY);
+    return MARK_BASIS_OPTIONS.includes(saved as MarkBasis) ? saved as MarkBasis : 'ask';
+  } catch {
+    return 'ask';
+  }
 }
 
-function mtmSourceLabel(trade: PortfolioTrade): string {
-  const source = getPreferredMtmSource(trade);
-  if (source === 'ask') return 'Ask close';
-  if (source === 'imported_snapshot') return 'Imported snapshot';
-  if (source === 'mid') return 'Mid close';
-  return DASH;
+function persistMarkBasis(value: MarkBasis) {
+  try {
+    localStorage.setItem(PORTFOLIO_MARK_BASIS_KEY, value);
+  } catch {
+    // Preference persistence is best-effort only.
+  }
 }
 
 function weightedAverageValue(items: Array<{ value: number | null | undefined; weight: number | null | undefined }>): number | null {
@@ -125,9 +135,9 @@ function sumValues(values: Array<number | null | undefined>): number {
   return values.reduce<number>((total, value) => total + (isFiniteNumber(value) ? value : 0), 0);
 }
 
-function nullableSumValues(values: Array<number | null | undefined>): number | null {
-  const valid = values.filter(isFiniteNumber);
-  return valid.length > 0 ? sumValues(valid) : null;
+function completeSumValues(values: Array<number | null | undefined>): number | null {
+  if (values.length === 0 || values.some(value => !isFiniteNumber(value))) return null;
+  return sumValues(values);
 }
 
 function BarList({ title, items, emptyLabel = 'No open trade exposure.' }: { title: string; items: Array<{ label: string; value: number; sublabel?: string; detail?: string }>; emptyLabel?: string }) {
@@ -373,6 +383,7 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
 }
 
 export default function PortfolioPage() {
+  const navigate = useNavigate();
   const [trades, setTrades] = useState<PortfolioTrade[]>([]);
   const [editingTrade, setEditingTrade] = useState<PortfolioTrade | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -381,6 +392,7 @@ export default function PortfolioPage() {
   const [refreshWarning, setRefreshWarning] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [drawerSelection, setDrawerSelection] = useState<DrawerSelection | null>(null);
+  const [markBasis, setMarkBasis] = useState<MarkBasis>(getInitialMarkBasis);
   const [sortField, setSortField] = useState<SortField>('expiration');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
 
@@ -393,12 +405,17 @@ export default function PortfolioPage() {
 
   const summary = useMemo(() => calculatePortfolioSummary(trades), [trades]);
   const openTrades = useMemo(() => trades.filter(trade => trade.status === 'open'), [trades]);
+  const markSummary = useMemo(() => calculatePortfolioMarkSummary(openTrades, markBasis), [openTrades, markBasis]);
 
-  const visualData = useMemo(() => buildVisualData(openTrades), [openTrades]);
-  const scheduleTotals = useMemo(() => buildScheduleTotals(trades), [trades]);
+  const visualData = useMemo(() => buildVisualData(openTrades, markBasis), [openTrades, markBasis]);
+  const scheduleTotals = useMemo(() => buildScheduleTotals(openTrades, markBasis), [openTrades, markBasis]);
+
+  useEffect(() => {
+    persistMarkBasis(markBasis);
+  }, [markBasis]);
 
   const sortedTrades = useMemo(() => {
-    const next = [...trades];
+    const next = [...openTrades];
     next.sort((a, b) => {
       const dir = sortDir === 'asc' ? 1 : -1;
       const value = (trade: PortfolioTrade): number | string => {
@@ -410,8 +427,8 @@ export default function PortfolioPage() {
           case 'contracts': return trade.contracts;
           case 'premium': return calculatePremiumCollected(trade) ?? -1;
           case 'risk': return calculateEquityAtRisk(trade) ?? -1;
-          case 'pnl': return calculateUnrealizedPnl(trade, 'ask') ?? -999999999;
-          case 'status': return trade.status;
+          case 'pnl': return calculateTotalGainLoss(trade, markBasis) ?? -999999999;
+          case 'delta': return trade.latestMarketData?.delta ?? 999999;
           default: return trade.expiration;
         }
       };
@@ -421,7 +438,7 @@ export default function PortfolioPage() {
       return ((aVal as number) - (bVal as number)) * dir;
     });
     return next;
-  }, [trades, sortField, sortDir]);
+  }, [openTrades, sortField, sortDir, markBasis]);
 
   const persistTrades = useCallback((next: PortfolioTrade[]) => {
     savePortfolioTrades(next);
@@ -439,13 +456,6 @@ export default function PortfolioPage() {
     const next = deletePortfolioTrade(id);
     setTrades(next);
     setEditingTrade(null);
-  }, []);
-
-  const updateStatus = useCallback((trade: PortfolioTrade, status: PortfolioTradeStatus) => {
-    const patch: Partial<PortfolioTrade> = status === 'expired'
-      ? { status, closePrice: 0, closeDate: todayIso() }
-      : { status };
-    setTrades(updatePortfolioTrade(trade.id, patch));
   }, []);
 
   const handleRefreshOpenTrades = useCallback(async () => {
@@ -604,7 +614,7 @@ export default function PortfolioPage() {
   }, []);
 
   const sortButton = (field: SortField, label: string, align = 'text-right') => (
-    <th className={`px-2 py-2 text-[10px] uppercase tracking-wider font-medium whitespace-nowrap ${align}`} style={{ color: 'var(--text-muted)' }}>
+    <th className={`px-2 py-2 text-[11px] font-medium whitespace-nowrap ${align}`} style={{ color: 'var(--text-muted)' }}>
       <button onClick={() => {
         if (sortField === field) setSortDir(dir => dir === 'asc' ? 'desc' : 'asc');
         else {
@@ -662,15 +672,40 @@ export default function PortfolioPage() {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-9 gap-2 mb-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-lg p-3 mb-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+              <div>
+                <div className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: 'var(--text-muted)' }}>Mark Book At</div>
+                <p className="text-[11px]" style={{ color: 'var(--text-dim)' }}>Selected mark controls current value, P/L, % captured, Current NY, and Current AY.</p>
+              </div>
+              <div className="inline-flex rounded-lg overflow-hidden self-start sm:self-auto" style={{ border: '1px solid var(--border)' }}>
+                {MARK_BASIS_OPTIONS.map(option => (
+                  <button
+                    key={option}
+                    onClick={() => setMarkBasis(option)}
+                    className="px-4 py-2 text-xs font-semibold min-w-[64px]"
+                    style={{
+                      backgroundColor: markBasis === option ? 'var(--accent)' : 'var(--surface-alt)',
+                      color: markBasis === option ? 'white' : 'var(--text-muted)',
+                      borderRight: option !== 'last' ? '1px solid var(--border)' : '0',
+                    }}
+                  >
+                    {option.charAt(0).toUpperCase() + option.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-11 gap-2 mb-4">
               <SummaryCard label="Open Trades" value={String(summary.totalOpenTrades)} />
               <SummaryCard label="Open Contracts" value={String(summary.totalOpenContracts)} />
               <SummaryCard label="Premium Collected" value={formatCurrency(summary.totalPremiumCollected, 0)} color="var(--green)" />
-              <SummaryCard label="Equity at Risk" value={formatCurrency(summary.totalEquityAtRisk, 0)} />
+              <SummaryCard label="Gross Risk" value={formatCurrency(summary.totalEquityAtRisk, 0)} />
               <SummaryCard label="Net Capital at Risk" value={formatCurrency(summary.totalNetCapitalAtRisk, 0)} />
-              <SummaryCard label="Current MTM P/L" value={formatCurrency(summary.totalUnrealizedPnlPreferred, 0)} color={pnlColor(summary.totalUnrealizedPnlPreferred)} />
-              <SummaryCard label="Weighted Avg Orig. AY" value={formatPctValue(summary.weightedAverageOriginalAnnualizedYield)} color="var(--accent-light)" />
-              <SummaryCard label="Weighted Avg Rem. AY" value={formatPctValue(summary.weightedAverageRemainingAnnualizedYield)} color="var(--accent-light)" />
+              <SummaryCard label="Total Gain/Loss" value={formatCurrency(markSummary.totalGainLoss, 0)} color={pnlColor(markSummary.totalGainLoss)} />
+              <SummaryCard label="% Captured" value={formatPctValue(markSummary.percentCaptured)} color={pnlColor(markSummary.percentCaptured)} />
+              <SummaryCard label="Weighted Avg Delta" value={formatDelta(markSummary.weightedAverageDelta)} color={pnlColor(markSummary.weightedAverageDelta)} />
+              <SummaryCard label="Total Delta Exposure" value={formatSignedNumber(markSummary.totalDeltaExposure)} color={pnlColor(markSummary.totalDeltaExposure)} />
+              <SummaryCard label="Portfolio Current AY" value={formatPctValue(markSummary.portfolioCurrentAnnualizedYield)} color="var(--accent-light)" />
               <SummaryCard label="Weighted Avg DTE" value={isFiniteNumber(summary.weightedAverageRemainingDte) ? `${Math.round(summary.weightedAverageRemainingDte)} DTE` : DASH} />
             </div>
 
@@ -704,15 +739,14 @@ export default function PortfolioPage() {
                       <button onClick={() => openDrawer(trade)} className="font-mono text-sm underline-offset-2 hover:underline" style={{ color: 'var(--text)' }}>{formatCurrency(trade.strike)} Put</button>
                       <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{expiryLabel(trade.expiration)} · {formatDteValue(calculateRemainingDte(trade))}</div>
                     </div>
-                    <span className="text-[10px] font-bold px-2 py-1 rounded" style={{ color: statusColor(trade.status), backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>{statusLabel(trade.status)}</span>
                   </div>
                   <div className="grid grid-cols-2 gap-2 mt-3 text-xs">
                     <Metric label="Premium" value={formatCurrency(calculatePremiumCollected(trade), 0)} color="var(--green)" />
-                    <Metric label="Equity Risk" value={formatCurrency(calculateEquityAtRisk(trade), 0)} />
-                    <Metric label="MTM Basis" value={mtmSourceLabel(trade)} />
-                    <Metric label="Current Value" value={formatCurrency(calculatePreferredCurrentPositionValue(trade), 0)} />
-                    <Metric label="Unrealized P/L" value={formatCurrency(calculatePreferredUnrealizedPnl(trade), 0)} color={pnlColor(calculatePreferredUnrealizedPnl(trade))} />
-                    <Metric label="Cost Basis" value={formatCurrency(trade.importedSnapshot?.costBasisTotal ?? calculatePremiumCollected(trade), 0)} />
+                    <Metric label="Gross Risk" value={formatCurrency(calculateEquityAtRisk(trade), 0)} />
+                    <Metric label="Current Mark" value={formatOptionPrice(calculateCurrentOptionMark(trade, markBasis))} />
+                    <Metric label="Total Gain/Loss" value={formatCurrency(calculateTotalGainLoss(trade, markBasis), 0)} color={pnlColor(calculateTotalGainLoss(trade, markBasis))} />
+                    <Metric label="% Captured" value={formatPctValue(calculatePercentCaptured(trade, markBasis))} color={pnlColor(calculatePercentCaptured(trade, markBasis))} />
+                    <Metric label="Delta" value={formatDelta(trade.latestMarketData?.delta)} color={pnlColor(trade.latestMarketData?.delta)} />
                   </div>
                   {trade.importedSnapshot && (
                     <p className="text-[11px] mt-2" style={{ color: 'var(--yellow)' }}>Entry date missing - using import date. Edit if needed.</p>
@@ -720,7 +754,6 @@ export default function PortfolioPage() {
                   {trade.notes && <p className="text-xs mt-3" style={{ color: 'var(--text-secondary)' }}>{trade.notes}</p>}
                   <div className="flex flex-wrap gap-2 mt-3">
                     <button onClick={() => setEditingTrade(trade)} className="px-3 py-2 rounded-lg text-xs min-h-[40px]" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Edit</button>
-                    <StatusSelect value={trade.status} onChange={status => updateStatus(trade, status)} />
                   </div>
                 </div>
               ))}
@@ -736,36 +769,39 @@ export default function PortfolioPage() {
                       {sortButton('dte', 'DTE')}
                       {sortButton('strike', 'Strike')}
                       {sortButton('contracts', 'Contracts')}
-                      <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Sold</th>
-                      <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Bid</th>
-                      <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Ask</th>
-                      <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Mark</th>
-                      <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>MTM Basis</th>
-                      <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Current Value</th>
-                      <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Total G/L</th>
-                      <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Cost Basis</th>
-                      {sortButton('premium', 'Premium')}
-                      {sortButton('risk', 'Risk')}
-                      <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Net Risk</th>
-                      <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Breakeven</th>
-                      <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Underlying</th>
-                      <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Dist Strike</th>
-                      <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Dist BE</th>
-                      {sortButton('pnl', 'Unreal P/L')}
-                      <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Realized P/L</th>
-                      <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Orig AY</th>
-                      <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-right" style={{ color: 'var(--text-muted)' }}>Remain AY</th>
-                      {sortButton('status', 'Status')}
-                      <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-left min-w-[160px]" style={{ color: 'var(--text-muted)' }}>Notes</th>
-                      <th className="px-2 py-2 text-[10px] uppercase tracking-wider font-medium text-left" style={{ color: 'var(--text-muted)' }}>Actions</th>
+                      <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>Sold Price</th>
+                      <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>Premium Collected</th>
+                      {sortButton('risk', 'Gross Risk')}
+                      <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>Net Capital at Risk</th>
+                      <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>Breakeven</th>
+                      <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>Current Mark</th>
+                      <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>Current Value</th>
+                      {sortButton('pnl', 'Total Gain/Loss')}
+                      <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>% Captured</th>
+                      {sortButton('delta', 'Delta')}
+                      <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>Underlying</th>
+                      <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>Distance to Strike</th>
+                      <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>IV</th>
+                      <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>OI / Volume</th>
+                      <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>Original NY</th>
+                      <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>Original AY</th>
+                      <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>Current NY</th>
+                      <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>Current AY</th>
+                      <th className="px-2 py-2 text-[11px] font-medium text-left min-w-[160px]" style={{ color: 'var(--text-muted)' }}>Notes</th>
+                      <th className="px-2 py-2 text-[11px] font-medium text-left" style={{ color: 'var(--text-muted)' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {sortedTrades.map((trade, index) => {
-                      const pnl = calculatePreferredUnrealizedPnl(trade);
+                      const totalGainLoss = calculateTotalGainLoss(trade, markBasis);
+                      const currentValue = calculateCurrentPositionValue(trade, markBasis);
+                      const currentMark = calculateCurrentOptionMark(trade, markBasis);
+                      const delta = trade.latestMarketData?.delta ?? null;
                       return (
                         <tr key={trade.id} style={{ borderBottom: '1px solid var(--border)', backgroundColor: index % 2 ? 'var(--row-alt)' : 'transparent' }}>
-                          <td className="px-2 py-1 text-left font-mono font-bold whitespace-nowrap" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</td>
+                          <td className="px-2 py-1 text-left font-mono font-bold whitespace-nowrap">
+                            <button onClick={() => navigate(`/options/${trade.ticker.trim().toUpperCase()}`)} className="underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</button>
+                          </td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{expiryLabel(trade.expiration)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatDteValue(calculateRemainingDte(trade))}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">
@@ -773,27 +809,23 @@ export default function PortfolioPage() {
                           </td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{trade.contracts}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatOptionPrice(trade.soldPrice)}</td>
-                          <td className="px-2 py-1 text-right font-mono tabular-nums">{formatOptionPrice(trade.latestMarketData?.optionBid)}</td>
-                          <td className="px-2 py-1 text-right font-mono tabular-nums">{formatOptionPrice(trade.latestMarketData?.optionAsk)}</td>
-                          <td className="px-2 py-1 text-right font-mono tabular-nums">{formatOptionPrice(getPreferredMark(trade))}</td>
-                          <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap" title={mtmSourceLabel(trade)}>{mtmSourceLabel(trade)}</td>
-                          <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(calculatePreferredCurrentPositionValue(trade), 0)}</td>
-                          <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(trade.importedSnapshot?.totalGainLossDollar) }}>{formatCurrency(trade.importedSnapshot?.totalGainLossDollar, 0)}</td>
-                          <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(trade.importedSnapshot?.costBasisTotal ?? calculatePremiumCollected(trade), 0)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(calculatePremiumCollected(trade), 0)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(calculateEquityAtRisk(trade), 0)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(calculateNetCapitalAtRisk(trade), 0)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(calculateBreakeven(trade))}</td>
+                          <td className="px-2 py-1 text-right font-mono tabular-nums">{formatOptionPrice(currentMark)}</td>
+                          <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(currentValue, 0)}</td>
+                          <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(totalGainLoss) }}>{formatCurrency(totalGainLoss, 0)}</td>
+                          <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(calculatePercentCaptured(trade, markBasis)) }}>{formatPctValue(calculatePercentCaptured(trade, markBasis))}</td>
+                          <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(delta) }}>{formatDelta(delta)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(trade.latestMarketData?.underlyingPrice ?? trade.entrySnapshot?.underlyingPrice)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: percentColor(calculateDistanceToStrike(trade)) }}>{formatPctValue(calculateDistanceToStrike(trade))}</td>
-                          <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: percentColor(calculateDistanceToBreakeven(trade)) }}>{formatPctValue(calculateDistanceToBreakeven(trade))}</td>
-                          <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(pnl) }}>{formatCurrency(pnl, 0)}</td>
-                          <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(calculateRealizedPnl(trade)) }}>{formatCurrency(calculateRealizedPnl(trade), 0)}</td>
+                          <td className="px-2 py-1 text-right font-mono tabular-nums">{formatPercentPoints(trade.latestMarketData?.iv, 1)}</td>
+                          <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{isFiniteNumber(trade.latestMarketData?.openInterest) || isFiniteNumber(trade.latestMarketData?.volume) ? `${trade.latestMarketData?.openInterest ?? DASH} / ${trade.latestMarketData?.volume ?? DASH}` : DASH}</td>
+                          <td className="px-2 py-1 text-right font-mono tabular-nums">{formatPctValue(calculateOriginalNominalYield(trade))}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatPctValue(calculateOriginalAnnualizedYield(trade))}</td>
-                          <td className="px-2 py-1 text-right font-mono tabular-nums">{formatPctValue(calculateRemainingAnnualizedYieldToExpiry(trade, 'ask') ?? calculateRemainingAnnualizedYieldToExpiry(trade, 'mid'))}</td>
-                          <td className="px-2 py-1 text-right whitespace-nowrap">
-                            <StatusSelect value={trade.status} onChange={status => updateStatus(trade, status)} compact />
-                          </td>
+                          <td className="px-2 py-1 text-right font-mono tabular-nums">{formatPctValue(calculateCurrentNominalYield(trade, markBasis))}</td>
+                          <td className="px-2 py-1 text-right font-mono tabular-nums">{formatPctValue(calculateCurrentAnnualizedYield(trade, markBasis))}</td>
                           <td className="px-2 py-1 text-left max-w-[220px] truncate" style={{ color: trade.notes ? 'var(--text-secondary)' : 'var(--text-dim)' }}>
                             {trade.importedSnapshot ? 'Entry date missing - import date used. ' : ''}{trade.notes || DASH}
                           </td>
@@ -811,28 +843,26 @@ export default function PortfolioPage() {
                       <td className="px-2 py-2 text-right font-mono tabular-nums">{DASH}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums">{isFiniteNumber(scheduleTotals.dte) ? `${Math.round(scheduleTotals.dte)} DTE` : DASH}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums">{DASH}</td>
-                      <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold" title={`${scheduleTotals.openContracts} open contracts`}>{scheduleTotals.contracts}</td>
-                      <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold">{formatOptionPrice(scheduleTotals.averageSoldPrice)}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums">{DASH}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums">{DASH}</td>
-                      <td className="px-2 py-2 text-right font-mono tabular-nums">{DASH}</td>
-                      <td className="px-2 py-2 text-right font-mono tabular-nums whitespace-nowrap">Ask / Snapshot</td>
-                      <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold">{formatCurrency(scheduleTotals.currentValue, 0)}</td>
-                      <td className="px-2 py-2 text-right font-mono tabular-nums">{DASH}</td>
-                      <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold">{formatCurrency(scheduleTotals.costBasis, 0)}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold" style={{ color: 'var(--green)' }}>{formatCurrency(scheduleTotals.premium, 0)}</td>
-                      <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold">{formatCurrency(scheduleTotals.equityRisk, 0)}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold">{formatCurrency(scheduleTotals.grossRisk, 0)}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold">{formatCurrency(scheduleTotals.netRisk, 0)}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums">{DASH}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums">{DASH}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold">{formatCurrency(scheduleTotals.currentValue, 0)}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold" style={{ color: pnlColor(scheduleTotals.totalGainLoss) }}>{formatCurrency(scheduleTotals.totalGainLoss, 0)}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold" style={{ color: pnlColor(scheduleTotals.percentCaptured) }}>{formatPctValue(scheduleTotals.percentCaptured)}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold" style={{ color: pnlColor(scheduleTotals.weightedAverageDelta) }}>{formatDelta(scheduleTotals.weightedAverageDelta)}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums">{DASH}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums">{DASH}</td>
-                      <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold" style={{ color: pnlColor(scheduleTotals.unrealizedPnl) }}>{formatCurrency(scheduleTotals.unrealizedPnl, 0)}</td>
-                      <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold" style={{ color: pnlColor(scheduleTotals.realizedPnl) }}>{formatCurrency(scheduleTotals.realizedPnl, 0)}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums">{DASH}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums">{DASH}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold">{formatPctValue(scheduleTotals.originalNominalYield)}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold">{formatPctValue(scheduleTotals.originalAnnualizedYield)}</td>
-                      <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold">{formatPctValue(scheduleTotals.remainingAnnualizedYield)}</td>
-                      <td className="px-2 py-2 text-right font-mono tabular-nums">{DASH}</td>
-                      <td className="px-2 py-2 text-left text-[10px]" style={{ color: 'var(--text-dim)' }}>Open risk totals use open positions.</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold">{formatPctValue(scheduleTotals.currentNominalYield)}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold">{formatPctValue(scheduleTotals.currentAnnualizedYield)}</td>
+                      <td className="px-2 py-2 text-left text-[10px]" style={{ color: 'var(--text-dim)' }}>Portfolio-level yields use aggregate dollar-days.</td>
                       <td className="px-2 py-2 text-left">{DASH}</td>
                     </tr>
                   </tbody>
@@ -841,7 +871,7 @@ export default function PortfolioPage() {
             </div>
 
             <div className="mt-3 text-[10px]" style={{ color: 'var(--text-dim)' }}>
-              Realized P/L: {formatCurrency(summary.realizedPnl, 0)} · Closed trades: {summary.totalClosedTrades} · Current MTM defaults to ask, then imported snapshot current value, then mid when unavailable.
+              Closed trades: {summary.totalClosedTrades} · Current mark-dependent metrics use the selected {markBasis.toUpperCase()} basis and show {DASH} when that mark is unavailable.
             </div>
           </>
         )}
@@ -901,43 +931,37 @@ function Metric({ label, value, color }: { label: string; value: string; color?:
   );
 }
 
-function StatusSelect({ value, onChange, compact = false }: { value: PortfolioTradeStatus; onChange: (status: PortfolioTradeStatus) => void; compact?: boolean }) {
-  return (
-    <select
-      value={value}
-      onChange={event => onChange(event.target.value as PortfolioTradeStatus)}
-      className={`rounded-lg outline-none ${compact ? 'px-2 py-1 text-[11px]' : 'px-3 py-2 text-xs min-h-[40px]'}`}
-      style={{ backgroundColor: 'var(--input-bg)', color: statusColor(value), border: '1px solid var(--border)' }}
-    >
-      <option value="open">Open</option>
-      <option value="closed">Closed</option>
-      <option value="expired">Expired</option>
-      <option value="assigned">Assigned</option>
-    </select>
-  );
-}
-
-function buildScheduleTotals(trades: PortfolioTrade[]) {
-  const open = trades.filter(trade => trade.status === 'open');
-  const allPremium = sumValues(trades.map(calculatePremiumCollected));
-  const totalCurrentValue = nullableSumValues(open.map(calculatePreferredCurrentPositionValue));
-  const totalCostBasis = nullableSumValues(trades.map(trade => trade.importedSnapshot?.costBasisTotal ?? calculatePremiumCollected(trade)));
-  const totalRealizedPnl = nullableSumValues(trades.map(calculateRealizedPnl));
+function buildScheduleTotals(openTrades: PortfolioTrade[], basis: MarkBasis) {
+  const premium = sumValues(openTrades.map(calculatePremiumCollected));
+  const grossRisk = sumValues(openTrades.map(calculateEquityAtRisk));
+  const netRisk = sumValues(openTrades.map(calculateNetCapitalAtRisk));
+  const currentValue = completeSumValues(openTrades.map(trade => calculateCurrentPositionValue(trade, basis)));
+  const totalCurrentPremium = completeSumValues(openTrades.map(trade => calculateCurrentMarkValueAbsolute(trade, basis)));
+  const totalGainLoss = currentValue != null ? premium + currentValue : null;
+  const originalDollarDays = sumValues(openTrades.map(trade => {
+    const tradeNetRisk = calculateNetCapitalAtRisk(trade);
+    const dte = calculateOriginalDte(trade);
+    return tradeNetRisk != null && isFiniteNumber(dte) && dte > 0 ? tradeNetRisk * dte / 365 : null;
+  }));
+  const currentDollarDays = sumValues(openTrades.map(trade => {
+    const tradeNetRisk = calculateNetCapitalAtRisk(trade);
+    const dte = calculateRemainingDte(trade);
+    return tradeNetRisk != null && isFiniteNumber(dte) && dte > 0 ? tradeNetRisk * dte / 365 : null;
+  }));
 
   return {
-    contracts: trades.reduce((total, trade) => total + trade.contracts, 0),
-    openContracts: open.reduce((total, trade) => total + trade.contracts, 0),
-    premium: allPremium,
-    currentValue: totalCurrentValue,
-    costBasis: totalCostBasis,
-    equityRisk: sumValues(open.map(calculateEquityAtRisk)),
-    netRisk: sumValues(open.map(calculateNetCapitalAtRisk)),
-    unrealizedPnl: nullableSumValues(open.map(calculatePreferredUnrealizedPnl)),
-    realizedPnl: totalRealizedPnl,
-    averageSoldPrice: weightedAverageValue(trades.map(trade => ({ value: trade.soldPrice, weight: trade.contracts }))),
-    originalAnnualizedYield: weightedAverageValue(open.map(trade => ({ value: calculateOriginalAnnualizedYield(trade), weight: calculateNetCapitalAtRisk(trade) }))),
-    remainingAnnualizedYield: weightedAverageValue(open.map(trade => ({ value: calculateRemainingAnnualizedYieldToExpiry(trade, 'ask') ?? calculateRemainingAnnualizedYieldToExpiry(trade, 'mid'), weight: calculateNetCapitalAtRisk(trade) }))),
-    dte: weightedAverageValue(open.map(trade => ({ value: calculateRemainingDte(trade), weight: calculateNetCapitalAtRisk(trade) }))),
+    premium,
+    grossRisk,
+    netRisk,
+    currentValue,
+    totalGainLoss,
+    percentCaptured: premium > 0 && totalGainLoss != null ? totalGainLoss / premium : null,
+    weightedAverageDelta: weightedAverageValue(openTrades.map(trade => ({ value: trade.latestMarketData?.delta, weight: calculateEquityAtRisk(trade) }))),
+    originalNominalYield: netRisk > 0 ? premium / netRisk : null,
+    originalAnnualizedYield: originalDollarDays > 0 ? premium / originalDollarDays : null,
+    currentNominalYield: netRisk > 0 && totalCurrentPremium != null ? totalCurrentPremium / netRisk : null,
+    currentAnnualizedYield: currentDollarDays > 0 && totalCurrentPremium != null ? totalCurrentPremium / currentDollarDays : null,
+    dte: weightedAverageValue(openTrades.map(trade => ({ value: calculateRemainingDte(trade), weight: calculateNetCapitalAtRisk(trade) }))),
   };
 }
 
@@ -961,7 +985,7 @@ function closestBreakevenTrade(openTrades: PortfolioTrade[]): PortfolioTrade | n
   }, null);
 }
 
-function buildVisualData(openTrades: PortfolioTrade[]) {
+function buildVisualData(openTrades: PortfolioTrade[], basis: MarkBasis) {
   const byExpiration = aggregate(openTrades, trade => trade.expiration)
     .sort((a, b) => a.label.localeCompare(b.label))
     .map(item => ({ ...item, label: expiryLabel(item.label) }));
@@ -1018,9 +1042,9 @@ function buildVisualData(openTrades: PortfolioTrade[]) {
   const closestBreakeven = closestBreakevenTrade(openTrades);
   const nearestExpiration = nearestTrade(openTrades);
   const highestRemainingYield = openTrades.reduce<PortfolioTrade | null>((highest, trade) => {
-    const value = calculateRemainingAnnualizedYieldToExpiry(trade, 'ask') ?? calculateRemainingAnnualizedYieldToExpiry(trade, 'mid');
+    const value = calculateCurrentAnnualizedYield(trade, basis);
     if (!isFiniteNumber(value)) return highest;
-    const current = highest ? calculateRemainingAnnualizedYieldToExpiry(highest, 'ask') ?? calculateRemainingAnnualizedYieldToExpiry(highest, 'mid') : null;
+    const current = highest ? calculateCurrentAnnualizedYield(highest, basis) : null;
     return !isFiniteNumber(current) || value > current ? trade : highest;
   }, null);
 
@@ -1036,7 +1060,7 @@ function buildVisualData(openTrades: PortfolioTrade[]) {
     largestTicker ? { label: 'Largest exposure', value: `${largestTicker.label} ${formatCurrency(largestTicker.value, 0)}`, sublabel: largestTicker.sublabel } : null,
     nearestExpiration ? { label: 'Nearest expiration', value: expiryLabel(nearestExpiration.expiration), sublabel: `${nearestExpiration.ticker} ${formatCurrency(nearestExpiration.strike, 0)} Put` } : null,
     closestBreakeven ? { label: 'Closest to breakeven', value: `${closestBreakeven.ticker} ${formatCurrency(closestBreakeven.strike, 0)} Put`, sublabel: formatPctValue(calculateDistanceToBreakeven(closestBreakeven)), color: percentColor(calculateDistanceToBreakeven(closestBreakeven)) } : null,
-    highestRemainingYield ? { label: 'Highest remain. yield', value: `${highestRemainingYield.ticker} ${formatCurrency(highestRemainingYield.strike, 0)} Put`, sublabel: formatPctValue(calculateRemainingAnnualizedYieldToExpiry(highestRemainingYield, 'ask') ?? calculateRemainingAnnualizedYieldToExpiry(highestRemainingYield, 'mid')), color: 'var(--accent-light)' } : null,
+    highestRemainingYield ? { label: 'Highest current AY', value: `${highestRemainingYield.ticker} ${formatCurrency(highestRemainingYield.strike, 0)} Put`, sublabel: formatPctValue(calculateCurrentAnnualizedYield(highestRemainingYield, basis)), color: 'var(--accent-light)' } : null,
     largestExpiration ? { label: 'Most concentrated exp.', value: largestExpiration.label, sublabel: formatCurrency(largestExpiration.value, 0) } : null,
   ].filter(Boolean) as Array<{ label: string; value: string; sublabel?: string; color?: string }>;
 

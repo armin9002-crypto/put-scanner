@@ -22,6 +22,19 @@ export interface PortfolioSummaryMetrics {
   realizedPnl: number | null;
 }
 
+export interface PortfolioMarkSummaryMetrics {
+  totalCurrentValue: number | null;
+  totalGainLoss: number | null;
+  totalCurrentPremium: number | null;
+  percentCaptured: number | null;
+  portfolioOriginalNominalYield: number | null;
+  portfolioOriginalAnnualizedYield: number | null;
+  portfolioCurrentNominalYield: number | null;
+  portfolioCurrentAnnualizedYield: number | null;
+  weightedAverageDelta: number | null;
+  totalDeltaExposure: number | null;
+}
+
 function validContracts(trade: PortfolioTrade): number | null {
   return Number.isInteger(trade.contracts) && trade.contracts > 0 ? trade.contracts : null;
 }
@@ -100,6 +113,10 @@ export function calculateCurrentOptionMark(trade: PortfolioTrade, basis: MarkBas
   return positive(md.optionLast, true);
 }
 
+export function calculateOriginalNominalYield(trade: PortfolioTrade): number | null {
+  return safeRatio(calculatePremiumCollected(trade), calculateNetCapitalAtRisk(trade));
+}
+
 export function calculateUnrealizedPnl(trade: PortfolioTrade, basis: MarkBasis): number | null {
   if (!isOpenTrade(trade)) return null;
   const mark = calculateCurrentOptionMark(trade, basis);
@@ -119,6 +136,35 @@ export function calculateCurrentPositionValue(trade: PortfolioTrade, basis: Mark
   const mark = calculateCurrentOptionMark(trade, basis);
   const contracts = validContracts(trade);
   return mark != null && contracts != null ? -mark * 100 * contracts : null;
+}
+
+export function calculateCurrentMarkValueAbsolute(trade: PortfolioTrade, basis: MarkBasis): number | null {
+  if (!isOpenTrade(trade)) return null;
+  const mark = calculateCurrentOptionMark(trade, basis);
+  const contracts = validContracts(trade);
+  return mark != null && contracts != null ? mark * 100 * contracts : null;
+}
+
+export function calculateTotalGainLoss(trade: PortfolioTrade, basis: MarkBasis): number | null {
+  if (!isOpenTrade(trade)) return null;
+  const premium = calculatePremiumCollected(trade);
+  const currentValue = calculateCurrentPositionValue(trade, basis);
+  return premium != null && currentValue != null ? premium + currentValue : null;
+}
+
+export function calculatePercentCaptured(trade: PortfolioTrade, basis: MarkBasis): number | null {
+  return safeRatio(calculateTotalGainLoss(trade, basis), calculatePremiumCollected(trade));
+}
+
+export function calculateCurrentNominalYield(trade: PortfolioTrade, basis: MarkBasis): number | null {
+  return safeRatio(calculateCurrentMarkValueAbsolute(trade, basis), calculateNetCapitalAtRisk(trade));
+}
+
+export function calculateCurrentAnnualizedYield(trade: PortfolioTrade, basis: MarkBasis): number | null {
+  const nominal = calculateCurrentNominalYield(trade, basis);
+  const remainingDte = calculateRemainingDte(trade);
+  if (nominal == null || !isFiniteNumber(remainingDte) || remainingDte <= 0) return null;
+  return nominal * (365 / remainingDte);
 }
 
 export function calculatePreferredCurrentPositionValue(trade: PortfolioTrade): number | null {
@@ -155,6 +201,24 @@ export function calculateRemainingAnnualizedYieldToExpiry(trade: PortfolioTrade,
   const currentNetRisk = equityAtRisk != null && optionValue != null ? equityAtRisk - optionValue : null;
   const ratio = safeRatio(optionValue, currentNetRisk);
   return ratio == null ? null : ratio * (365 / remainingDte);
+}
+
+export function calculateWeightedAverageDelta(trades: PortfolioTrade[]): number | null {
+  return weightedAverage(
+    trades.filter(isOpenTrade).map(trade => ({
+      value: isFiniteNumber(trade.latestMarketData?.delta) ? trade.latestMarketData.delta : null,
+      weight: calculateEquityAtRisk(trade),
+    }))
+  );
+}
+
+export function calculateTotalDeltaExposure(trades: PortfolioTrade[]): number | null {
+  const values = trades.filter(isOpenTrade).map(trade => {
+    const delta = trade.latestMarketData?.delta;
+    const contracts = validContracts(trade);
+    return isFiniteNumber(delta) && contracts != null ? delta * 100 * contracts : null;
+  }).filter(isFiniteNumber);
+  return values.length > 0 ? sum(values) : null;
 }
 
 export function calculateDistanceToStrike(trade: PortfolioTrade): number | null {
@@ -232,6 +296,39 @@ export function calculatePortfolioSummary(trades: PortfolioTrade[]): PortfolioSu
   };
 }
 
+export function calculatePortfolioMarkSummary(trades: PortfolioTrade[], basis: MarkBasis): PortfolioMarkSummaryMetrics {
+  const openTrades = trades.filter(isOpenTrade);
+  const totalPremium = sum(openTrades.map(calculatePremiumCollected));
+  const totalNetRisk = sum(openTrades.map(calculateNetCapitalAtRisk));
+  const totalCurrentValue = completeNullableSum(openTrades.map(trade => calculateCurrentPositionValue(trade, basis)));
+  const totalCurrentPremium = completeNullableSum(openTrades.map(trade => calculateCurrentMarkValueAbsolute(trade, basis)));
+  const totalGainLoss = totalCurrentValue != null ? totalPremium + totalCurrentValue : null;
+
+  const originalDollarDays = sum(openTrades.map(trade => {
+    const netRisk = calculateNetCapitalAtRisk(trade);
+    const dte = calculateOriginalDte(trade);
+    return netRisk != null && isFiniteNumber(dte) && dte > 0 ? netRisk * dte / 365 : null;
+  }));
+  const currentDollarDays = sum(openTrades.map(trade => {
+    const netRisk = calculateNetCapitalAtRisk(trade);
+    const dte = calculateRemainingDte(trade);
+    return netRisk != null && isFiniteNumber(dte) && dte > 0 ? netRisk * dte / 365 : null;
+  }));
+
+  return {
+    totalCurrentValue,
+    totalGainLoss,
+    totalCurrentPremium,
+    percentCaptured: safeRatio(totalGainLoss, totalPremium),
+    portfolioOriginalNominalYield: safeRatio(totalPremium, totalNetRisk),
+    portfolioOriginalAnnualizedYield: originalDollarDays > 0 ? totalPremium / originalDollarDays : null,
+    portfolioCurrentNominalYield: safeRatio(totalCurrentPremium, totalNetRisk),
+    portfolioCurrentAnnualizedYield: totalCurrentPremium != null && currentDollarDays > 0 ? totalCurrentPremium / currentDollarDays : null,
+    weightedAverageDelta: calculateWeightedAverageDelta(openTrades),
+    totalDeltaExposure: calculateTotalDeltaExposure(openTrades),
+  };
+}
+
 function parseIsoDateUtc(value: string): number | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const [year, month, day] = value.split('-').map(Number);
@@ -246,6 +343,11 @@ function sum(values: Array<number | null>): number {
 function nullableSum(values: Array<number | null>): number | null {
   const valid = values.filter(isFiniteNumber);
   return valid.length > 0 ? sum(valid) : null;
+}
+
+function completeNullableSum(values: Array<number | null>): number | null {
+  if (values.length === 0 || values.some(value => !isFiniteNumber(value))) return null;
+  return sum(values);
 }
 
 function weightedAverage(items: Array<{ value: number | null; weight: number | null }>): number | null {
