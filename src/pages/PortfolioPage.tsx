@@ -201,36 +201,6 @@ function formatCompactCurrency(value: number | null | undefined): string {
   return formatCurrency(value, 0);
 }
 
-function RiskCockpit({
-  trades,
-  markBasis,
-  onTickerClick,
-  onDetailsClick,
-}: {
-  trades: PortfolioTrade[];
-  markBasis: MarkBasis;
-  onTickerClick: (ticker: string) => void;
-  onDetailsClick: (trade: PortfolioTrade) => void;
-}) {
-  const maturity = useMemo(() => groupByExpiration(trades, markBasis), [trades, markBasis]);
-  const tickerExposure = useMemo(() => groupByTicker(trades, markBasis), [trades, markBasis]);
-  const attention = useMemo(() => buildNeedsAttention(trades).slice(0, 5), [trades]);
-
-  if (trades.length === 0) {
-    return (
-      <section className="rounded-lg p-3 text-sm" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>No open positions for analytics.</section>
-    );
-  }
-
-  return (
-    <>
-      <CompactExposureBars title="Maturity Wall" groups={maturity} labelFormatter={formatShortDate} emptyLabel="No maturities." />
-      <ConcentrationBars title="Exposure by Ticker" groups={tickerExposure} totalGrossRisk={sumValues(trades.map(calculateEquityAtRisk))} maxItems={8} />
-      <NeedsAttentionList items={attention} onTickerClick={onTickerClick} onDetailsClick={onDetailsClick} />
-    </>
-  );
-}
-
 function CompactExposureBars({
   title,
   groups,
@@ -329,32 +299,46 @@ function NeedsAttentionList({
   );
 }
 
-function YieldAnalytics({
-  trades,
-  markBasis,
+function YieldAndConcentrationCard({
   markSummary,
   totalPremiumCollected,
-  onTickerClick,
+  trades,
+  byTicker,
+  totalGrossRisk,
 }: {
-  trades: PortfolioTrade[];
-  markBasis: MarkBasis;
   markSummary: ReturnType<typeof calculatePortfolioMarkSummary>;
   totalPremiumCollected: number;
-  onTickerClick: (ticker: string) => void;
+  trades: PortfolioTrade[];
+  byTicker: PortfolioExposureGroup[];
+  totalGrossRisk: number;
 }) {
-  const closeCandidates = useMemo(() => buildCloseCandidates(trades, markBasis).slice(0, 5), [trades, markBasis]);
-
-  if (trades.length === 0) return null;
-
   return (
-    <>
-      <YieldComparisonCard markSummary={markSummary} totalPremiumCollected={totalPremiumCollected} />
-      <CloseCandidatesCard candidates={closeCandidates} onTickerClick={onTickerClick} />
-    </>
+    <section className="rounded-lg p-3 min-w-0 h-full" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Yield & Concentration</h3>
+        <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Dollar-days and gross risk</span>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="min-w-0">
+          <div className="mb-2">
+            <h4 className="text-[11px] font-semibold" style={{ color: 'var(--text)' }}>Yield Comparison</h4>
+            <p className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Portfolio AY uses aggregate dollar-days.</p>
+          </div>
+          <YieldComparisonRows markSummary={markSummary} totalPremiumCollected={totalPremiumCollected} />
+        </div>
+        <div className="min-w-0">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <h4 className="text-[11px] font-semibold" style={{ color: 'var(--text)' }}>Concentration Insights</h4>
+            <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Gross risk lens</span>
+          </div>
+          <ConcentrationInsightRows trades={trades} byTicker={byTicker} totalGrossRisk={totalGrossRisk} />
+        </div>
+      </div>
+    </section>
   );
 }
 
-function YieldComparisonCard({ markSummary, totalPremiumCollected }: { markSummary: ReturnType<typeof calculatePortfolioMarkSummary>; totalPremiumCollected: number }) {
+function YieldComparisonRows({ markSummary, totalPremiumCollected }: { markSummary: ReturnType<typeof calculatePortfolioMarkSummary>; totalPremiumCollected: number }) {
   const rows = [
     { label: 'Original NY', value: formatPctValue(markSummary.portfolioOriginalNominalYield) },
     { label: 'Original AY', value: formatPctValue(markSummary.portfolioOriginalAnnualizedYield) },
@@ -366,20 +350,14 @@ function YieldComparisonCard({ markSummary, totalPremiumCollected }: { markSumma
   ];
 
   return (
-    <section className="rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-      <div className="mb-2">
-        <h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Yield Comparison</h3>
-        <p className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Portfolio AY uses aggregate dollar-days.</p>
-      </div>
-      <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-        {rows.map(row => (
-          <div key={row.label} className="flex items-baseline justify-between gap-2 min-w-0">
-            <span className="text-[10px] truncate" style={{ color: 'var(--text-dim)' }}>{row.label}</span>
-            <span className="font-mono text-xs tabular-nums font-semibold whitespace-nowrap" style={{ color: row.color ?? (row.muted ? 'var(--text-secondary)' : 'var(--text)') }}>{row.value}</span>
-          </div>
-        ))}
-      </div>
-    </section>
+    <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+      {rows.map(row => (
+        <div key={row.label} className="flex items-baseline justify-between gap-2 min-w-0">
+          <span className="text-[10px] truncate" style={{ color: 'var(--text-dim)' }}>{row.label}</span>
+          <span className="font-mono text-xs tabular-nums font-semibold whitespace-nowrap" style={{ color: row.color ?? (row.muted ? 'var(--text-secondary)' : 'var(--text)') }}>{row.value}</span>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -464,7 +442,7 @@ function ConcentrationBars({
   );
 }
 
-function ConcentrationInsights({
+function ConcentrationInsightRows({
   trades,
   byTicker,
   totalGrossRisk,
@@ -486,20 +464,14 @@ function ConcentrationInsights({
   ].filter(Boolean) as Array<[string, string]>;
 
   return (
-    <section className="rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Concentration Insights</h3>
-        <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Gross risk lens</span>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
-        {rows.map(([label, value]) => (
-          <div key={label} className="rounded p-2 min-w-0" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
-            <div className="text-[10px] uppercase tracking-wider truncate" style={{ color: 'var(--text-dim)' }}>{label}</div>
-            <div className="text-xs font-mono font-semibold tabular-nums truncate" title={value} style={{ color: 'var(--text)' }}>{value}</div>
-          </div>
-        ))}
-      </div>
-    </section>
+    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
+      {rows.map(([label, value]) => (
+        <div key={label} className="rounded p-2 min-w-0" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
+          <div className="text-[10px] uppercase tracking-wider truncate" style={{ color: 'var(--text-dim)' }}>{label}</div>
+          <div className="text-xs font-mono font-semibold tabular-nums truncate" title={value} style={{ color: 'var(--text)' }}>{value}</div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -1072,6 +1044,40 @@ export default function PortfolioPage() {
               <div className="rounded-lg px-3 py-2 mb-4 text-sm" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>No open trades.</div>
             )}
 
+            <section className="mt-4 mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--text-muted)' }}>Portfolio Analytics</h2>
+                <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Compact risk and yield views</span>
+              </div>
+              {openTrades.length === 0 ? (
+                <section className="rounded-lg p-3 text-sm" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>No open positions for analytics.</section>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3">
+                  <div className="xl:col-span-3">
+                    <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openTrades, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." />
+                  </div>
+                  <div className="xl:col-span-3">
+                    <YieldAndConcentrationCard
+                      markSummary={markSummary}
+                      totalPremiumCollected={summary.totalPremiumCollected}
+                      trades={openTrades}
+                      byTicker={groupByTicker(openTrades, markBasis)}
+                      totalGrossRisk={sumValues(openTrades.map(calculateEquityAtRisk))}
+                    />
+                  </div>
+                  <div className="xl:col-span-2">
+                    <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openTrades, markBasis)} totalGrossRisk={sumValues(openTrades.map(calculateEquityAtRisk))} maxItems={8} />
+                  </div>
+                  <div className="xl:col-span-2">
+                    <CloseCandidatesCard candidates={buildCloseCandidates(openTrades, markBasis).slice(0, 5)} onTickerClick={ticker => navigate(`/options/${ticker.trim().toUpperCase()}`)} />
+                  </div>
+                  <div className="xl:col-span-2">
+                    <NeedsAttentionList items={buildNeedsAttention(openTrades).slice(0, 5)} onTickerClick={ticker => navigate(`/options/${ticker.trim().toUpperCase()}`)} onDetailsClick={openDrawer} />
+                  </div>
+                </div>
+              )}
+            </section>
+
             <h2 className="text-xs uppercase tracking-wider font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>Schedule of Positions</h2>
             <div className="md:hidden space-y-2 mb-4">
               {sortedTrades.map(trade => (
@@ -1239,32 +1245,6 @@ export default function PortfolioPage() {
               Closed trades: {summary.totalClosedTrades} · Current mark-dependent metrics use the selected {markBasis.toUpperCase()} basis and show {DASH} when that mark is unavailable.
             </div>
 
-            <section className="mt-4">
-              <div className="flex items-center justify-between mb-2">
-                <h2 className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--text-muted)' }}>Portfolio Analytics</h2>
-                <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Compact risk and yield views</span>
-              </div>
-              <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
-                <RiskCockpit
-                  trades={openTrades}
-                  markBasis={markBasis}
-                  onTickerClick={ticker => navigate(`/options/${ticker.trim().toUpperCase()}`)}
-                  onDetailsClick={openDrawer}
-                />
-                <YieldAnalytics
-                  trades={openTrades}
-                  markBasis={markBasis}
-                  markSummary={markSummary}
-                  totalPremiumCollected={summary.totalPremiumCollected}
-                  onTickerClick={ticker => navigate(`/options/${ticker.trim().toUpperCase()}`)}
-                />
-                <ConcentrationInsights
-                  trades={openTrades}
-                  byTicker={groupByTicker(openTrades, markBasis)}
-                  totalGrossRisk={sumValues(openTrades.map(calculateEquityAtRisk))}
-                />
-              </div>
-            </section>
           </>
         )}
 
