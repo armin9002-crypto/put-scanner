@@ -43,6 +43,11 @@ export interface PortfolioImportDiagnostics {
   ocrLineCount?: number;
   ocrWordSource?: string;
   ocrPassUsed?: string;
+  tesseractVersion?: string;
+  tsvPresent?: boolean;
+  hocrPresent?: boolean;
+  blocksPresent?: boolean;
+  structuredOcrUnavailable?: boolean;
   originalImage?: { width: number; height: number };
   preprocessedImage?: { width: number; height: number };
   detectedHeaderColumns: string[];
@@ -54,6 +59,8 @@ export interface PortfolioImportDiagnostics {
     rawSymbolText: string;
     rawExpiryText: string;
     rawCells: Record<string, string>;
+    parsedValues?: Record<string, string>;
+    validation?: Record<string, string>;
     validationScore: number;
     warnings: string[];
   }>;
@@ -173,6 +180,15 @@ const KNOWN_IMPORT_TICKERS = [
   'LABU', 'SSO', 'SOXL', 'YINN', 'TQQQ', 'QQQ', 'SPY', 'VIX', 'VXN', 'UPRO', 'TNA', 'FAS', 'AGQ', 'NAIL',
   'SQQQ', 'UVXY', 'SOXS', 'TECL', 'FNGU', 'CWEB', 'YANG', 'IWM', 'DIA', 'QLD', 'SSO',
 ];
+
+const EXPLICIT_TICKER_REPAIRS: Record<string, string> = {
+  T0QQ: 'TQQQ',
+  TQQ0: 'TQQQ',
+  TQOQ: 'TQQQ',
+  TOQQ: 'TQQQ',
+  TQQO: 'TQQQ',
+  TAQQ: 'TQQQ',
+};
 
 export function normalizeOcrText(value: string): string {
   return value
@@ -349,7 +365,7 @@ export function parseBrokerageScreenshotOcr(input: { text: string; words?: Portf
       detectedOptionRowCount: Math.max(rows.length, wordRows.length),
       parsedRowCount: rows.length,
       importableRowCount: rows.filter(isImportableRow).length,
-      warnings: words.length > 0 ? ['Word-level OCR was incomplete; used Fidelity text fallback with accounting validation.'] : ['Word-level OCR data was unavailable; used Fidelity text fallback.'],
+      warnings: words.length > 0 ? ['Structured OCR was incomplete; used Fidelity text fallback with accounting validation.'] : ['Structured OCR output unavailable; using text fallback.'],
       rowDiagnostics: rows.map(rowDiagnosticsFromParsedRow),
     },
   };
@@ -393,10 +409,13 @@ export function buildPortfolioImportPlan(rows: ImportEditableRow[], existingTrad
   const existingOpen = existingTrades.filter(trade => trade.status === 'open');
   const existingByKey = new Map(existingOpen.map(trade => [makePortfolioContractKey(trade), trade]));
   const selectedRows = rows.filter(row => row.selected);
+  const importableRows = rows.filter(isImportableRow);
   const importedKeys = new Set<string>();
   const plan: PortfolioImportPlan = { adds: [], updates: [], skipped: [], missingFromImport: [], warnings: [] };
   const rowOccurrences = new Map<string, number>();
   const matchedExistingKeys = new Set<string>();
+
+  if (rows.length === 0) return plan;
 
   selectedRows.forEach(row => {
     const baseKey = makePortfolioContractKey(row);
@@ -421,17 +440,21 @@ export function buildPortfolioImportPlan(rows: ImportEditableRow[], existingTrad
     }
   });
 
-  existingOpen.forEach(trade => {
-    const key = makePortfolioContractKey(trade);
-    if (importedKeys.has(key)) return;
-    const expired = new Date(`${trade.expiration}T00:00:00Z`).getTime() < startOfTodayUtc();
-    plan.missingFromImport.push({
-      key,
-      trade,
-      suggestedStatus: expired ? 'expired' : undefined,
-      action: 'keep',
+  if (importableRows.length === 0 && rows.length > 0) {
+    plan.warnings.push('Import could not confidently parse positions. Existing positions were not compared.');
+  } else {
+    existingOpen.forEach(trade => {
+      const key = makePortfolioContractKey(trade);
+      if (importedKeys.has(key)) return;
+      const expired = new Date(`${trade.expiration}T00:00:00Z`).getTime() < startOfTodayUtc();
+      plan.missingFromImport.push({
+        key,
+        trade,
+        suggestedStatus: expired ? 'expired' : undefined,
+        action: 'keep',
+      });
     });
-  });
+  }
 
   if (plan.skipped.length > 0) plan.warnings.push('Some parsed rows are missing required fields and will not be imported unless corrected.');
   return plan;
@@ -1156,10 +1179,10 @@ function chooseBestRows(wordRows: ParsedBrokerageOptionRow[], textRows: ParsedBr
 function repairTicker(rawTicker: string): string {
   const cleaned = rawTicker.toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/0/g, 'O');
   if (KNOWN_IMPORT_TICKERS.includes(cleaned)) return cleaned;
-  if (cleaned === 'TAQ' || cleaned === 'TQQ' || cleaned === 'TQOQ' || cleaned === 'TOQQ' || cleaned === 'TQQO') return 'TQQQ';
+  if (EXPLICIT_TICKER_REPAIRS[cleaned]) return EXPLICIT_TICKER_REPAIRS[cleaned];
   const scored = KNOWN_IMPORT_TICKERS
     .map(ticker => ({ ticker, distance: editDistance(cleaned, ticker) }))
-    .filter(item => item.distance <= 1 || (cleaned.length >= 4 && item.distance <= 2))
+    .filter(item => item.distance <= 1 && Math.abs(item.ticker.length - cleaned.length) <= 1)
     .sort((a, b) => a.distance - b.distance || a.ticker.length - b.ticker.length);
   return scored[0]?.ticker ?? cleaned;
 }
@@ -1197,8 +1220,37 @@ function rowDiagnosticsFromParsedRow(row: ParsedBrokerageOptionRow): NonNullable
       averageCostBasis: valueText(row.averageCostBasis),
       costBasisTotal: valueText(row.costBasisTotal),
     },
+    parsedValues: {
+      ticker: row.ticker,
+      strike: valueText(row.strike),
+      expiration: row.expiration,
+      quantity: valueText(row.quantity),
+      contracts: valueText(row.contracts),
+      averageCostBasis: valueText(row.averageCostBasis),
+      currentValue: valueText(row.currentValue),
+    },
+    validation: buildValidationDiagnostics(row),
     validationScore: row.confidence ?? 0,
     warnings: row.warnings,
+  };
+}
+
+function buildValidationDiagnostics(row: ParsedBrokerageOptionRow): Record<string, string> {
+  const contracts = row.contracts;
+  return {
+    contracts: contracts != null && row.quantity != null ? `${contracts} vs abs(${row.quantity})` : 'missing',
+    costBasis: contracts != null && row.averageCostBasis != null && row.costBasisTotal != null
+      ? `${roundMoney(row.averageCostBasis * contracts * 100)} expected / ${row.costBasisTotal} parsed`
+      : 'missing',
+    currentValue: contracts != null && row.lastPrice != null && row.currentValue != null
+      ? `${roundMoney(-row.lastPrice * contracts * 100)} expected / ${row.currentValue} parsed`
+      : 'missing',
+    totalGainLoss: row.costBasisTotal != null && row.currentValue != null && row.totalGainLossDollar != null
+      ? `${roundMoney(row.costBasisTotal + row.currentValue)} expected / ${row.totalGainLossDollar} parsed`
+      : 'missing',
+    todayGainLoss: contracts != null && row.lastPriceChange != null && row.todayGainLossDollar != null
+      ? `${roundMoney(-row.lastPriceChange * contracts * 100)} expected / ${row.todayGainLossDollar} parsed`
+      : 'missing',
   };
 }
 

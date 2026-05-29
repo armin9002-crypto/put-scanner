@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Clipboard, FileImage, Upload, X } from 'lucide-react';
+import { AlertTriangle, Clipboard, Copy, FileImage, Upload, X } from 'lucide-react';
 import { formatCurrency, formatDate, formatOptionPrice } from '../lib/format';
 import type { PortfolioTrade } from '../lib/portfolioStorage';
 import {
@@ -75,46 +75,58 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
     try {
       const tesseract = await import('tesseract.js');
       setStatus('reading');
-      const parsed = await runOcrImportPasses(file, async (processed, passLabel, dimensions) => {
-        const ocrOptions = {
-          logger: (message: { status?: string; progress?: number }) => {
-            if (message.status === 'recognizing text' && typeof message.progress === 'number') {
-              setProgress(Math.round(message.progress * 100));
-            }
-          },
-          tessedit_pageseg_mode: passLabel === 'fallback' ? '11' : '6',
-          preserve_interword_spaces: '1',
-        } as unknown as Parameters<typeof tesseract.recognize>[2];
-        const result = await tesseract.recognize(processed.blob, 'eng', ocrOptions);
-        const extracted = extractTesseractWords(result.data);
-        const parsedResult = parseBrokerageScreenshotOcr({
-          text: result.data.text,
-          words: extracted.words,
-        });
-        return {
-          ...parsedResult,
-          diagnostics: {
-            ...parsedResult.diagnostics,
-            ocrWordCount: extracted.words.length,
-            ocrLineCount: extracted.lineCount || parsedResult.diagnostics.ocrLineCount,
-            ocrWordSource: extracted.source,
-            ocrPassUsed: passLabel,
-            originalImage: dimensions.original,
-            preprocessedImage: dimensions.processed,
-          },
-        };
+      const worker = await tesseract.createWorker('eng', 1, {
+        logger: (message: { status?: string; progress?: number }) => {
+          if (message.status === 'recognizing text' && typeof message.progress === 'number') {
+            setProgress(Math.round(message.progress * 100));
+          }
+        },
       });
-      const parsedRows = parsed.rows.map(row => ({
-        ...row,
-        selected: isImportableRow(row) && (row.confidence ?? 0) >= 0.62,
-      }));
-      setRows(parsedRows);
-      setDiagnostics(parsed.diagnostics);
-      setStatus('done');
-      if (parsedRows.length === 0) {
-        setError('No sold put rows were detected. You can cancel and add trades manually.');
-      } else if (parsed.diagnostics.warnings.length > 0) {
-        setError(parsed.diagnostics.warnings.join(' '));
+      try {
+        const parsed = await runOcrImportPasses(file, async (processed, passLabel, dimensions) => {
+          await worker.setParameters({
+            tessedit_pageseg_mode: passLabel === 'fallback' ? tesseract.PSM.SPARSE_TEXT : tesseract.PSM.SINGLE_BLOCK,
+            preserve_interword_spaces: '1',
+            user_defined_dpi: '300',
+          });
+          const result = await worker.recognize(processed.blob, {}, { text: true, tsv: true, hocr: true, blocks: true });
+          const extracted = extractTesseractWords(result.data);
+          const parsedResult = parseBrokerageScreenshotOcr({
+            text: result.data.text,
+            words: extracted.words,
+          });
+          return {
+            ...parsedResult,
+            diagnostics: {
+              ...parsedResult.diagnostics,
+              ocrWordCount: extracted.words.length,
+              ocrLineCount: extracted.lineCount || parsedResult.diagnostics.ocrLineCount,
+              ocrWordSource: extracted.source,
+              ocrPassUsed: passLabel,
+              tesseractVersion: result.data.version,
+              tsvPresent: extracted.tsvPresent,
+              hocrPresent: extracted.hocrPresent,
+              blocksPresent: extracted.blocksPresent,
+              structuredOcrUnavailable: extracted.words.length === 0,
+              originalImage: dimensions.original,
+              preprocessedImage: dimensions.processed,
+            },
+          };
+        });
+        const parsedRows = parsed.rows.map(row => ({
+          ...row,
+          selected: isImportableRow(row) && (row.confidence ?? 0) >= 0.62,
+        }));
+        setRows(parsedRows);
+        setDiagnostics(parsed.diagnostics);
+        setStatus('done');
+        if (parsedRows.length === 0) {
+          setError('No sold put rows were detected. You can cancel and add trades manually.');
+        } else if (parsed.diagnostics.warnings.length > 0) {
+          setError(parsed.diagnostics.warnings.join(' '));
+        }
+      } finally {
+        await worker.terminate();
       }
     } catch (err) {
       setStatus('error');
@@ -237,12 +249,23 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
                 >
                   {showDiagnostics ? 'Hide' : 'Show'} OCR diagnostics
                 </button>
+                <button
+                  type="button"
+                  onClick={() => void navigator.clipboard?.writeText(JSON.stringify(diagnostics, null, 2))}
+                  className="ml-3 inline-flex items-center gap-1 font-medium"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  <Copy className="w-3 h-3" /> Copy diagnostics JSON
+                </button>
                 {showDiagnostics && (
                   <div className="mt-2 space-y-1 font-mono max-h-[260px] overflow-auto pr-1" style={{ color: 'var(--text-muted)' }}>
                     {diagnostics.originalImage && <div>Original: {diagnostics.originalImage.width}x{diagnostics.originalImage.height}</div>}
                     {diagnostics.preprocessedImage && <div>Processed: {diagnostics.preprocessedImage.width}x{diagnostics.preprocessedImage.height}</div>}
+                    <div>Tesseract: {diagnostics.tesseractVersion ?? DASH}</div>
                     <div>OCR pass: {diagnostics.ocrPassUsed ?? DASH}</div>
                     <div>Word source: {diagnostics.ocrWordSource ?? DASH}</div>
+                    <div>TSV: {diagnostics.tsvPresent ? 'yes' : 'no'} | hOCR: {diagnostics.hocrPresent ? 'yes' : 'no'} | blocks: {diagnostics.blocksPresent ? 'yes' : 'no'}</div>
+                    {diagnostics.structuredOcrUnavailable && <div style={{ color: 'var(--red)' }}>Structured OCR output unavailable; using text fallback.</div>}
                     <div>Words: {diagnostics.ocrWordCount}</div>
                     <div>Lines: {diagnostics.ocrLineCount ?? DASH}</div>
                     <div>Headers: {diagnostics.detectedHeaderColumns.join(', ') || DASH}</div>
@@ -254,6 +277,8 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
                       <details key={`${row.rawSymbolText}-${index}`} className="pt-1">
                         <summary style={{ color: 'var(--accent-light)' }}>{index + 1}. {row.rawSymbolText} {row.rawExpiryText || DASH} ({Math.round(row.validationScore * 100)}%)</summary>
                         <div>Cells: {JSON.stringify(row.rawCells)}</div>
+                        <div>Parsed: {JSON.stringify(row.parsedValues)}</div>
+                        <div>Validation: {JSON.stringify(row.validation)}</div>
                         {row.warnings.map(warning => <div key={warning} style={{ color: 'var(--yellow)' }}>{warning}</div>)}
                       </details>
                     ))}
@@ -288,11 +313,16 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
 
 function ReviewSummary({ plan }: { plan: PortfolioImportPlan }) {
   return (
-    <div className="grid grid-cols-4 gap-2 flex-shrink-0">
-      <MiniCard label="Add" value={plan.adds.length} />
-      <MiniCard label="Update" value={plan.updates.length} />
-      <MiniCard label="Skipped" value={plan.skipped.length} />
-      <MiniCard label="Missing" value={plan.missingFromImport.length} />
+    <div className="space-y-2 flex-shrink-0">
+      <div className="grid grid-cols-4 gap-2">
+        <MiniCard label="Add" value={plan.adds.length} />
+        <MiniCard label="Update" value={plan.updates.length} />
+        <MiniCard label="Skipped" value={plan.skipped.length} />
+        <MiniCard label="Missing" value={plan.missingFromImport.length} />
+      </div>
+      {plan.warnings.map(warning => (
+        <div key={warning} className="rounded-lg px-3 py-2 text-xs" style={{ backgroundColor: 'rgba(250,204,21,0.10)', color: 'var(--yellow)', border: '1px solid rgba(250,204,21,0.22)' }}>{warning}</div>
+      ))}
     </div>
   );
 }
@@ -488,6 +518,9 @@ interface TesseractBlockLike {
 
 interface TesseractPageLike {
   text?: string;
+  version?: string;
+  tsv?: string | null;
+  hocr?: string | null;
   words?: TesseractWordLike[];
   lines?: TesseractLineLike[];
   blocks?: TesseractBlockLike[] | null;
@@ -497,6 +530,9 @@ interface ExtractedTesseractWords {
   words: PortfolioImportOcrWord[];
   lineCount: number;
   source: string;
+  tsvPresent: boolean;
+  hocrPresent: boolean;
+  blocksPresent: boolean;
 }
 
 interface ProcessedImage {
@@ -506,25 +542,102 @@ interface ProcessedImage {
 }
 
 function extractTesseractWords(page: TesseractPageLike): ExtractedTesseractWords {
+  const tsvPresent = !!page.tsv;
+  const hocrPresent = !!page.hocr;
+  const blocksPresent = Array.isArray(page.blocks) && page.blocks.length > 0;
+
+  const tsvWords = parseTsvWords(page.tsv);
+  if (tsvWords.words.length > 0) {
+    return { ...tsvWords, source: 'tsv', tsvPresent, hocrPresent, blocksPresent };
+  }
+
+  const hocrWords = parseHocrWords(page.hocr);
+  if (hocrWords.words.length > 0) {
+    return { ...hocrWords, source: 'hocr', tsvPresent, hocrPresent, blocksPresent };
+  }
+
   const direct = normalizeTesseractWords(page.words ?? []);
   if (direct.length > 0) {
-    return { words: direct, lineCount: page.lines?.length ?? 0, source: 'data.words' };
+    return { words: direct, lineCount: page.lines?.length ?? 0, source: 'data.words', tsvPresent, hocrPresent, blocksPresent };
   }
 
   const blockWords = (page.blocks ?? []).flatMap(block => (block.paragraphs ?? []).flatMap(paragraph => (paragraph.lines ?? []).flatMap(line => line.words ?? [])));
   const normalizedBlockWords = normalizeTesseractWords(blockWords);
   if (normalizedBlockWords.length > 0) {
     const lineCount = (page.blocks ?? []).reduce((total, block) => total + (block.paragraphs ?? []).reduce((paragraphTotal, paragraph) => paragraphTotal + (paragraph.lines?.length ?? 0), 0), 0);
-    return { words: normalizedBlockWords, lineCount, source: 'blocks.paragraphs.lines.words' };
+    return { words: normalizedBlockWords, lineCount, source: 'blocks.paragraphs.lines.words', tsvPresent, hocrPresent, blocksPresent };
   }
 
   const lineWords = (page.lines ?? []).flatMap(line => line.words ?? []);
   const normalizedLineWords = normalizeTesseractWords(lineWords);
   if (normalizedLineWords.length > 0) {
-    return { words: normalizedLineWords, lineCount: page.lines?.length ?? 0, source: 'data.lines.words' };
+    return { words: normalizedLineWords, lineCount: page.lines?.length ?? 0, source: 'data.lines.words', tsvPresent, hocrPresent, blocksPresent };
   }
 
-  return { words: [], lineCount: page.lines?.length ?? 0, source: 'text_fallback' };
+  return { words: [], lineCount: page.lines?.length ?? 0, source: 'text_fallback', tsvPresent, hocrPresent, blocksPresent };
+}
+
+function parseTsvWords(tsv: string | null | undefined): { words: PortfolioImportOcrWord[]; lineCount: number } {
+  if (!tsv) return { words: [], lineCount: 0 };
+  const rows = tsv.split(/\r?\n/).filter(Boolean);
+  const header = rows.shift()?.split('\t') ?? [];
+  const index = (name: string) => header.indexOf(name);
+  const levelIndex = index('level');
+  const leftIndex = index('left');
+  const topIndex = index('top');
+  const widthIndex = index('width');
+  const heightIndex = index('height');
+  const confIndex = index('conf');
+  const textIndex = index('text');
+  const lineIndexes = new Set<string>();
+  const words: PortfolioImportOcrWord[] = [];
+
+  rows.forEach(row => {
+    const columns = row.split('\t');
+    if (columns[levelIndex] !== '5') return;
+    const text = (columns[textIndex] ?? '').trim();
+    if (!text) return;
+    const left = Number(columns[leftIndex]);
+    const top = Number(columns[topIndex]);
+    const width = Number(columns[widthIndex]);
+    const height = Number(columns[heightIndex]);
+    const confidence = Number(columns[confIndex]);
+    if (!Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
+    if (Number.isFinite(confidence) && confidence < 10 && !/^[-+−–—$.,()%\d]+$/.test(text)) return;
+    lineIndexes.add(`${columns[index('block_num')]}:${columns[index('par_num')]}:${columns[index('line_num')]}`);
+    words.push({
+      text,
+      confidence: Number.isFinite(confidence) ? confidence : 60,
+      bbox: { x0: left, y0: top, x1: left + width, y1: top + height },
+    });
+  });
+
+  return { words, lineCount: lineIndexes.size };
+}
+
+function parseHocrWords(hocr: string | null | undefined): { words: PortfolioImportOcrWord[]; lineCount: number } {
+  if (!hocr || typeof DOMParser === 'undefined') return { words: [], lineCount: 0 };
+  const document = new DOMParser().parseFromString(hocr, 'text/html');
+  const elements = Array.from(document.querySelectorAll('.ocrx_word'));
+  const lineCount = document.querySelectorAll('.ocr_line').length;
+  const words = elements.flatMap(element => {
+    const text = element.textContent?.trim() ?? '';
+    const title = element.getAttribute('title') ?? '';
+    const bboxMatch = title.match(/bbox\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)/);
+    if (!text || !bboxMatch) return [];
+    const confidenceMatch = title.match(/x_wconf\s+(\d+(?:\.\d+)?)/);
+    return [{
+      text,
+      confidence: confidenceMatch ? Number(confidenceMatch[1]) : 60,
+      bbox: {
+        x0: Number(bboxMatch[1]),
+        y0: Number(bboxMatch[2]),
+        x1: Number(bboxMatch[3]),
+        y1: Number(bboxMatch[4]),
+      },
+    }];
+  });
+  return { words, lineCount };
 }
 
 function normalizeTesseractWords(words: TesseractWordLike[]): PortfolioImportOcrWord[] {
