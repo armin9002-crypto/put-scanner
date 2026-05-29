@@ -73,6 +73,9 @@ export interface PortfolioImportParseResult {
 
 export interface ImportEditableRow extends ParsedBrokerageOptionRow {
   selected: boolean;
+  dateAcquired?: string;
+  dateAcquiredEdited?: boolean;
+  importAction?: 'add' | 'update' | 'keep' | 'skip';
 }
 
 export interface ParsedImportAction {
@@ -80,6 +83,13 @@ export interface ParsedImportAction {
   row: ImportEditableRow;
   existingTrade?: PortfolioTrade;
   warnings: string[];
+  differences?: ImportDifference[];
+}
+
+export interface ImportDifference {
+  field: string;
+  existing: string;
+  imported: string;
 }
 
 export interface ExistingTradeAction {
@@ -92,6 +102,7 @@ export interface ExistingTradeAction {
 export interface PortfolioImportPlan {
   adds: ParsedImportAction[];
   updates: ParsedImportAction[];
+  keeps: ParsedImportAction[];
   skipped: ParsedImportAction[];
   missingFromImport: ExistingTradeAction[];
   warnings: string[];
@@ -408,35 +419,44 @@ export function parsedBrokerageRowToPortfolioTrade(row: ImportEditableRow, impor
 export function buildPortfolioImportPlan(rows: ImportEditableRow[], existingTrades: PortfolioTrade[]): PortfolioImportPlan {
   const existingOpen = existingTrades.filter(trade => trade.status === 'open');
   const existingByKey = new Map(existingOpen.map(trade => [makePortfolioContractKey(trade), trade]));
-  const selectedRows = rows.filter(row => row.selected);
   const importableRows = rows.filter(isImportableRow);
   const importedKeys = new Set<string>();
-  const plan: PortfolioImportPlan = { adds: [], updates: [], skipped: [], missingFromImport: [], warnings: [] };
+  const plan: PortfolioImportPlan = { adds: [], updates: [], keeps: [], skipped: [], missingFromImport: [], warnings: [] };
   const rowOccurrences = new Map<string, number>();
   const matchedExistingKeys = new Set<string>();
 
   if (rows.length === 0) return plan;
 
-  selectedRows.forEach(row => {
-    const baseKey = makePortfolioContractKey(row);
+  rows.forEach(row => {
+    const importable = isImportableRow(row);
+    const baseKey = importable ? makePortfolioContractKey(row) : row.rawText;
     const occurrence = (rowOccurrences.get(baseKey) ?? 0) + 1;
     rowOccurrences.set(baseKey, occurrence);
     const key = occurrence === 1 ? baseKey : `${baseKey}#${occurrence}`;
-    importedKeys.add(baseKey);
-    const existingTrade = occurrence === 1 ? existingByKey.get(baseKey) : undefined;
+    if (importable) importedKeys.add(baseKey);
+    const existingTrade = importable && occurrence === 1 ? existingByKey.get(baseKey) : undefined;
+    const differences = existingTrade && importable ? getImportDifferences(existingTrade, row) : [];
     const action: ParsedImportAction = {
       key,
       row,
       existingTrade,
       warnings: row.warnings,
+      differences,
     };
-    if (!isImportableRow(row)) {
+    const requestedAction = row.importAction;
+    if (!row.selected || requestedAction === 'skip' || !importable) {
       plan.skipped.push(action);
-    } else if (action.existingTrade && !matchedExistingKeys.has(baseKey)) {
+    } else if (existingTrade && requestedAction === 'keep') {
+      plan.keeps.push(action);
+    } else if (existingTrade && differences.length === 0 && requestedAction !== 'update') {
+      plan.keeps.push(action);
+    } else if (existingTrade && !matchedExistingKeys.has(baseKey)) {
       matchedExistingKeys.add(baseKey);
       plan.updates.push(action);
-    } else {
+    } else if (!existingTrade) {
       plan.adds.push(action);
+    } else {
+      plan.keeps.push(action);
     }
   });
 
@@ -456,7 +476,9 @@ export function buildPortfolioImportPlan(rows: ImportEditableRow[], existingTrad
     });
   }
 
-  if (plan.skipped.length > 0) plan.warnings.push('Some parsed rows are missing required fields and will not be imported unless corrected.');
+  if (plan.skipped.some(action => !isImportableRow(action.row))) {
+    plan.warnings.push('Some parsed rows are missing required fields and will not be imported unless corrected.');
+  }
   return plan;
 }
 
@@ -465,8 +487,9 @@ export function applyPortfolioImportPlan(plan: PortfolioImportPlan, existingTrad
   const next = [...existingTrades];
 
   plan.adds.forEach(action => {
-    if (!action.row.selected) return;
-    const input = parsedBrokerageRowToPortfolioTrade(action.row, importDate, nowIso);
+    if (!action.row.selected || action.row.importAction === 'skip') return;
+    const rowImportDate = action.row.dateAcquired || importDate;
+    const input = parsedBrokerageRowToPortfolioTrade(action.row, rowImportDate, nowIso);
     if (!input) return;
     next.push({
       ...input,
@@ -477,16 +500,18 @@ export function applyPortfolioImportPlan(plan: PortfolioImportPlan, existingTrad
   });
 
   plan.updates.forEach(action => {
-    if (!action.row.selected || !action.existingTrade) return;
+    if (!action.row.selected || action.row.importAction === 'skip' || action.row.importAction === 'keep' || !action.existingTrade) return;
     const existing = byId.get(action.existingTrade.id);
     if (!existing) return;
-    const input = parsedBrokerageRowToPortfolioTrade(action.row, importDate, nowIso);
+    const rowImportDate = action.row.dateAcquiredEdited && action.row.dateAcquired ? action.row.dateAcquired : existing.soldDate;
+    const input = parsedBrokerageRowToPortfolioTrade(action.row, rowImportDate, nowIso);
     if (!input) return;
     const updated: PortfolioTrade = {
       ...existing,
       contracts: input.contracts,
       soldPrice: input.soldPrice,
-      notes: existing.notes || 'Imported screenshot used import date as sold date.',
+      soldDate: rowImportDate,
+      notes: existing.notes ?? '',
       updatedAt: nowIso,
       latestMarketData: {
         ...existing.latestMarketData,
@@ -512,6 +537,60 @@ export function applyPortfolioImportPlan(plan: PortfolioImportPlan, existingTrad
   });
 
   return next;
+}
+
+export function getImportDifferences(existingTrade: PortfolioTrade, row: ImportEditableRow): ImportDifference[] {
+  const differences: ImportDifference[] = [];
+  addTextDifference(differences, 'Ticker', existingTrade.ticker, row.ticker);
+  addTextDifference(differences, 'Expiry', existingTrade.expiration, row.expiration);
+  addNumberDifference(differences, 'Strike', existingTrade.strike, row.strike, 0.0001, formatPlainNumber);
+  addNumberDifference(differences, 'Quantity', -Math.abs(existingTrade.contracts), row.quantity, 0.01, formatPlainNumber);
+  addNumberDifference(differences, 'Contracts', existingTrade.contracts, row.contracts, 0.01, formatPlainNumber);
+  addNumberDifference(differences, 'Sold price', existingTrade.soldPrice, row.averageCostBasis, 0.005, formatOptionDiff);
+  addNumberDifference(differences, 'Last', existingTrade.importedSnapshot?.lastPrice ?? existingTrade.latestMarketData?.optionLast, row.lastPrice, 0.005, formatOptionDiff);
+  addNumberDifference(differences, 'Current value', existingTrade.importedSnapshot?.currentValue, row.currentValue, 1, formatMoneyDiff);
+  addNumberDifference(differences, 'Cost basis', existingTrade.importedSnapshot?.costBasisTotal, row.costBasisTotal, 1, formatMoneyDiff);
+  addNumberDifference(differences, 'Total G/L', existingTrade.importedSnapshot?.totalGainLossDollar, row.totalGainLossDollar, 1, formatMoneyDiff);
+  return differences;
+}
+
+function addTextDifference(differences: ImportDifference[], field: string, existing: string | undefined, imported: string | undefined): void {
+  const existingValue = (existing ?? '').trim().toUpperCase();
+  const importedValue = (imported ?? '').trim().toUpperCase();
+  if (!existingValue && !importedValue) return;
+  if (existingValue === importedValue) return;
+  differences.push({ field, existing: existingValue || '—', imported: importedValue || '—' });
+}
+
+function addNumberDifference(
+  differences: ImportDifference[],
+  field: string,
+  existing: number | null | undefined,
+  imported: number | null | undefined,
+  tolerance: number,
+  formatter: (value: number | null | undefined) => string
+): void {
+  const existingValid = Number.isFinite(existing);
+  const importedValid = Number.isFinite(imported);
+  if (!existingValid && !importedValid) return;
+  if (existingValid && importedValid && Math.abs(Number(existing) - Number(imported)) <= tolerance) return;
+  differences.push({ field, existing: formatter(existing), imported: formatter(imported) });
+}
+
+function formatPlainNumber(value: number | null | undefined): string {
+  if (!Number.isFinite(value)) return '—';
+  return Number(value).toLocaleString(undefined, { maximumFractionDigits: 4 });
+}
+
+function formatOptionDiff(value: number | null | undefined): string {
+  if (!Number.isFinite(value)) return '—';
+  return Number(value).toFixed(2);
+}
+
+function formatMoneyDiff(value: number | null | undefined): string {
+  if (!Number.isFinite(value)) return '—';
+  const abs = Math.abs(Number(value)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  return `${Number(value) < 0 ? '-' : ''}$${abs}`;
 }
 
 export function isImportableRow(row: ImportEditableRow | ParsedBrokerageOptionRow): row is ImportEditableRow & { quantity: number; contracts: number; averageCostBasis: number } {

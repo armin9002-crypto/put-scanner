@@ -5,11 +5,15 @@ import type { PortfolioTrade } from '../lib/portfolioStorage';
 import {
   applyPortfolioImportPlan,
   buildPortfolioImportPlan,
+  getImportDifferences,
   isImportableRow,
+  makePortfolioContractKey,
   parseBrokerageScreenshotOcr,
   validateParsedBrokerageRow,
   type ExistingTradeAction,
   type ImportEditableRow,
+  type ParsedImportAction,
+  type ParsedBrokerageOptionRow,
   type PortfolioImportDiagnostics,
   type PortfolioImportParseResult,
   type PortfolioImportPlan,
@@ -56,6 +60,13 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
   }, [missingActions, rows, trades]);
 
   const selectedImportableCount = plan.adds.length + plan.updates.length;
+
+  useEffect(() => {
+    setRows(previous => previous.map(row => {
+      if (row.dateAcquiredEdited || row.importAction !== 'add') return row;
+      return { ...row, dateAcquired: soldDate };
+    }));
+  }, [soldDate]);
 
   const handleFile = useCallback(async (file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -113,10 +124,7 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
             },
           };
         });
-        const parsedRows = parsed.rows.map(row => ({
-          ...row,
-          selected: isImportableRow(row) && (row.confidence ?? 0) >= 0.62,
-        }));
+        const parsedRows = createEditableImportRows(parsed.rows, trades, soldDate);
         setRows(parsedRows);
         setDiagnostics(parsed.diagnostics);
         setStatus('done');
@@ -132,7 +140,7 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
       setStatus('error');
       setError(err instanceof Error ? err.message : 'OCR failed. The screenshot was not imported.');
     }
-  }, [imageUrl]);
+  }, [imageUrl, soldDate, trades]);
 
   useEffect(() => {
     const onPaste = (event: ClipboardEvent) => {
@@ -314,9 +322,10 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
 function ReviewSummary({ plan }: { plan: PortfolioImportPlan }) {
   return (
     <div className="space-y-2 flex-shrink-0">
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-5 gap-2">
         <MiniCard label="Add" value={plan.adds.length} />
         <MiniCard label="Update" value={plan.updates.length} />
+        <MiniCard label="Keep" value={plan.keeps.length} />
         <MiniCard label="Skipped" value={plan.skipped.length} />
         <MiniCard label="Missing" value={plan.missingFromImport.length} />
       </div>
@@ -336,16 +345,54 @@ function MiniCard({ label, value }: { label: string; value: number }) {
   );
 }
 
+function createEditableImportRows(rows: ParsedBrokerageOptionRow[], trades: PortfolioTrade[], globalSoldDate: string): ImportEditableRow[] {
+  const existingByKey = new Map(
+    trades
+      .filter(trade => trade.status === 'open')
+      .map(trade => [makePortfolioContractKey(trade), trade])
+  );
+
+  return rows.map(row => {
+    const importable = isImportableRow(row);
+    const existing = importable ? existingByKey.get(makePortfolioContractKey(row)) : undefined;
+    const differences = existing && importable ? getImportDifferences(existing, { ...row, selected: true }) : [];
+    const selected = importable && (row.confidence ?? 0) >= 0.62 && (!existing || differences.length > 0);
+    const importAction: ImportEditableRow['importAction'] = !importable
+      ? 'skip'
+      : existing
+        ? differences.length > 0 ? 'update' : 'keep'
+        : 'add';
+
+    return {
+      ...row,
+      selected: importAction === 'keep' ? true : selected,
+      dateAcquired: existing?.soldDate ?? globalSoldDate,
+      dateAcquiredEdited: false,
+      importAction,
+    };
+  });
+}
+
 function ParsedRowsTable({ rows, setRows, plan }: { rows: ImportEditableRow[]; setRows: (rows: ImportEditableRow[]) => void; plan: PortfolioImportPlan }) {
-  const actionForRow = (row: ImportEditableRow): string => {
-    if (plan.adds.some(action => action.row === row)) return 'Add';
-    if (plan.updates.some(action => action.row === row)) return 'Update';
-    if (plan.skipped.some(action => action.row === row)) return 'Skipped';
-    return 'Review';
+  const [openWarningIndex, setOpenWarningIndex] = useState<number | null>(null);
+  const [openDiffIndex, setOpenDiffIndex] = useState<number | null>(null);
+  const actions = [...plan.adds, ...plan.updates, ...plan.keeps, ...plan.skipped];
+  const planActionForRow = (row: ImportEditableRow): ParsedImportAction | undefined => actions.find(action => action.row === row);
+  const actionLabel = (row: ImportEditableRow, action?: ParsedImportAction): string => {
+    if (!row.selected || row.importAction === 'skip' || plan.skipped.some(item => item.row === row)) return 'Skip';
+    if (row.importAction === 'keep' || plan.keeps.some(item => item.row === row)) return 'Keep';
+    if (row.importAction === 'update' || plan.updates.some(item => item.row === row)) return 'Update';
+    if (row.importAction === 'add' || plan.adds.some(item => item.row === row)) return 'Add';
+    return action?.existingTrade ? 'Keep' : 'Add';
   };
 
   const updateRow = (index: number, patch: Partial<ImportEditableRow>) => {
     setRows(rows.map((row, rowIndex) => rowIndex === index ? normalizeEditableRow({ ...row, ...patch }, row.selected) : row));
+  };
+
+  const setRowAction = (index: number, nextAction: ImportEditableRow['importAction']) => {
+    const selected = nextAction !== 'skip';
+    setRows(rows.map((row, rowIndex) => rowIndex === index ? normalizeEditableRow({ ...row, importAction: nextAction, selected }, selected) : row));
   };
 
   return (
@@ -355,17 +402,18 @@ function ParsedRowsTable({ rows, setRows, plan }: { rows: ImportEditableRow[]; s
         <p className="p-4 text-sm" style={{ color: 'var(--text-dim)' }}>Upload or paste a screenshot to review parsed rows.</p>
       ) : (
         <div className="overflow-auto lg:max-h-none lg:flex-1">
-          <table className="min-w-[980px] w-full text-[10px] table-fixed">
+          <table className="min-w-[1180px] w-full text-[10px] table-fixed">
             <thead className="sticky top-0 z-10">
               <tr style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text-muted)' }}>
                 <th className="px-1 py-1.5 text-left w-[34px]">Use</th>
                 <th className="px-1 py-1.5 text-left w-[48px]">Status</th>
-                <th className="px-1 py-1.5 text-left w-[48px]">Act</th>
+                <th className="px-1 py-1.5 text-left w-[118px]">Action</th>
                 <th className="px-1 py-1.5 text-left w-[70px]">Ticker</th>
                 <th className="px-1 py-1.5 text-right w-[118px]">Expiry</th>
                 <th className="px-1 py-1.5 text-right w-[64px]">Strike</th>
                 <th className="px-1 py-1.5 text-right w-[48px]">Qty</th>
                 <th className="px-1 py-1.5 text-right w-[54px]">Ctr</th>
+                <th className="px-1 py-1.5 text-right w-[118px]">Date Acq.</th>
                 <th className="px-1 py-1.5 text-right w-[76px]">Sold</th>
                 <th className="px-1 py-1.5 text-right w-[74px]">Last</th>
                 <th className="px-1 py-1.5 text-right w-[96px]">Value</th>
@@ -376,22 +424,75 @@ function ParsedRowsTable({ rows, setRows, plan }: { rows: ImportEditableRow[]; s
             </thead>
             <tbody>
               {rows.map((row, index) => {
-                const action = actionForRow(row);
+                const planAction = planActionForRow(row);
+                const action = actionLabel(row, planAction);
+                const differences = planAction?.differences ?? [];
+                const hasExisting = !!planAction?.existingTrade;
                 const criticalOk = isImportableRow(row);
                 const hasOnlyDateWarning = row.warnings.every(warning => warning.startsWith('Entry date'));
                 const statusColor = criticalOk ? hasOnlyDateWarning ? 'var(--green)' : 'var(--yellow)' : 'var(--red)';
                 return (
                   <tr key={`${row.rawText}-${index}`} style={{ borderTop: '1px solid var(--border)' }}>
                     <td className="px-1 py-0.5">
-                      <input type="checkbox" checked={row.selected} onChange={event => updateRow(index, { selected: event.target.checked })} />
+                      <input
+                        type="checkbox"
+                        checked={row.selected && row.importAction !== 'skip'}
+                        onChange={event => {
+                          if (!event.target.checked) {
+                            setRowAction(index, 'skip');
+                            return;
+                          }
+                          setRowAction(index, row.importAction === 'skip' ? (hasExisting ? differences.length > 0 ? 'update' : 'keep' : 'add') : row.importAction);
+                        }}
+                      />
                     </td>
                     <td className="px-1 py-0.5 font-medium truncate" style={{ color: statusColor }}>{criticalOk ? hasOnlyDateWarning ? 'OK' : 'Check' : 'Fix'}</td>
-                    <td className="px-1 py-0.5 font-medium truncate" style={{ color: action === 'Skipped' ? 'var(--red)' : 'var(--accent-light)' }}>{action}</td>
+                    <td className="px-1 py-0.5">
+                      <div className="flex items-center gap-1 min-w-0">
+                        <select
+                          value={row.importAction ?? (hasExisting ? differences.length > 0 ? 'update' : 'keep' : 'add')}
+                          onChange={event => setRowAction(index, event.target.value as ImportEditableRow['importAction'])}
+                          className="min-w-0 flex-1 rounded px-1 py-0.5 text-[10px] outline-none"
+                          style={{ backgroundColor: 'var(--input-bg)', color: action === 'Skip' ? 'var(--red)' : 'var(--text)', border: '1px solid var(--border)' }}
+                        >
+                          {!hasExisting && <option value="add">Add</option>}
+                          {hasExisting && <option value="update">Update</option>}
+                          {hasExisting && <option value="keep">Keep</option>}
+                          <option value="skip">Skip</option>
+                        </select>
+                        {differences.length > 0 && (
+                          <span className="relative">
+                            <button
+                              type="button"
+                              onClick={() => setOpenDiffIndex(openDiffIndex === index ? null : index)}
+                              className="rounded px-1 py-0.5 font-medium"
+                              style={{ color: 'var(--accent-light)', backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}
+                            >
+                              {differences.length}
+                            </button>
+                            {openDiffIndex === index && (
+                              <div className="absolute left-0 top-6 z-50 w-72 rounded-lg p-2 text-[11px] shadow-xl" style={{ backgroundColor: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)' }}>
+                                <div className="font-semibold mb-1">Existing vs Screenshot</div>
+                                <div className="space-y-1">
+                                  {differences.map(diff => (
+                                    <div key={`${diff.field}-${diff.existing}-${diff.imported}`} className="grid grid-cols-[88px_1fr] gap-2">
+                                      <span style={{ color: 'var(--text-muted)' }}>{diff.field}</span>
+                                      <span className="font-mono tabular-nums">{diff.existing} → {diff.imported}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-1 py-0.5"><SmallInput value={row.ticker} onChange={value => updateRow(index, { ticker: value.toUpperCase() })} /></td>
                     <td className="px-1 py-0.5"><SmallInput type="date" value={row.expiration} onChange={value => updateRow(index, { expiration: value })} align="right" wide /></td>
                     <td className="px-1 py-0.5"><SmallInput value={String(row.strike || '')} onChange={value => updateRow(index, { strike: Number(value) })} align="right" /></td>
                     <td className="px-1 py-0.5 text-right font-mono tabular-nums">{row.quantity ?? DASH}</td>
                     <td className="px-1 py-0.5"><SmallInput value={String(row.contracts ?? '')} onChange={value => updateRow(index, { contracts: Number(value), quantity: -Math.abs(Number(value)), side: 'short' })} align="right" /></td>
+                    <td className="px-1 py-0.5"><SmallInput type="date" value={row.dateAcquired ?? ''} onChange={value => updateRow(index, { dateAcquired: value, dateAcquiredEdited: true })} align="right" wide /></td>
                     <td className="px-1 py-0.5"><SmallInput value={row.averageCostBasis == null ? '' : String(row.averageCostBasis)} onChange={value => updateRow(index, { averageCostBasis: Number(value) })} align="right" /></td>
                     <td className="px-1 py-0.5 text-right font-mono tabular-nums">{formatOptionPrice(row.lastPrice)}</td>
                     <td className="px-1 py-0.5 text-right font-mono tabular-nums">{formatCurrency(row.currentValue, 0)}</td>
@@ -399,9 +500,26 @@ function ParsedRowsTable({ rows, setRows, plan }: { rows: ImportEditableRow[]; s
                     <td className="px-1 py-0.5 text-right font-mono tabular-nums">{formatCurrency(row.totalGainLossDollar, 0)}</td>
                     <td className="px-1 py-0.5 text-left">
                       {row.warnings.length > 0 ? (
-                        <span className="inline-flex max-w-full items-center gap-1 rounded px-1.5 py-0.5" title={row.warnings.join(' ')} style={{ color: hasOnlyDateWarning ? 'var(--text-dim)' : 'var(--yellow)', backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
-                          <AlertTriangle className="w-3 h-3 flex-shrink-0" />
-                          <span className="truncate">{row.warnings.length}</span>
+                        <span className="relative inline-block">
+                          <button
+                            type="button"
+                            aria-label="View import warnings"
+                            title={row.warnings.join('\n')}
+                            onClick={() => setOpenWarningIndex(openWarningIndex === index ? null : index)}
+                            className="inline-flex max-w-full items-center gap-1 rounded px-1.5 py-0.5"
+                            style={{ color: hasOnlyDateWarning ? 'var(--text-dim)' : 'var(--yellow)', backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}
+                          >
+                            <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                            <span className="truncate">{row.warnings.length}</span>
+                          </button>
+                          {openWarningIndex === index && (
+                            <div className="absolute right-0 top-6 z-50 w-72 rounded-lg p-2 text-[11px] shadow-xl" style={{ backgroundColor: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)' }}>
+                              <div className="font-semibold mb-1">Import Warnings</div>
+                              <ul className="space-y-1">
+                                {row.warnings.map(warning => <li key={warning}>• {warning}</li>)}
+                              </ul>
+                            </div>
+                          )}
                         </span>
                       ) : DASH}
                     </td>
@@ -430,6 +548,9 @@ function MissingTradesTable({ plan, setMissingActions, expanded, onToggle }: { p
         <span>{expanded ? 'Hide' : 'Show'}</span>
       </button>
       {expanded && <div className="overflow-x-auto max-h-[180px]">
+        <p className="px-3 py-2 text-[11px]" style={{ color: 'var(--text-dim)' }}>
+          These existing open trades were not found in the imported screenshot. They will remain in your portfolio unless you manually close or mark them.
+        </p>
         <table className="min-w-[680px] w-full text-[11px]">
           <thead>
             <tr style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text-muted)' }}>
@@ -492,7 +613,13 @@ function normalizeEditableRow(row: ImportEditableRow, selected: boolean): Import
     averageCostBasis: Number.isFinite(row.averageCostBasis) ? row.averageCostBasis : undefined,
     warnings: row.warnings.filter(warning => warning.startsWith('Entry date')),
   });
-  return { ...validated, selected };
+  return {
+    ...validated,
+    selected,
+    dateAcquired: row.dateAcquired,
+    dateAcquiredEdited: row.dateAcquiredEdited,
+    importAction: row.importAction,
+  };
 }
 
 interface TesseractWordLike {
