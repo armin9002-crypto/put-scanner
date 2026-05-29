@@ -8,15 +8,8 @@ import {
   getTradeDistanceToBreakeven,
   getTradeDistanceToStrike,
   getTradeGrossRisk,
-  getPortfolioEtfMetadata,
-  groupByBreakevenRiskBucket,
-  groupByCategory,
-  groupByDteBucket,
   groupByExpiration,
-  groupByLeverage,
-  groupByThemeBucket,
   groupByTicker,
-  type PortfolioBreakevenRiskBucket,
   type PortfolioExposureGroup,
 } from '../lib/portfolioAnalytics';
 import {
@@ -81,14 +74,6 @@ interface CloseCandidate {
   dte: number | null;
   score: number;
   reasons: string[];
-}
-
-interface CapturedDistributionBucket {
-  label: string;
-  match: (value: number) => boolean;
-  tradeCount: number;
-  grossRisk: number;
-  premiumCollected: number;
 }
 
 type SortField = 'ticker' | 'expiration' | 'dte' | 'strike' | 'contracts' | 'premium' | 'risk' | 'pnl' | 'delta';
@@ -173,9 +158,33 @@ function completeSumValues(values: Array<number | null | undefined>): number | n
 
 function SummaryCard({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
-    <div className="rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+    <div className="rounded-lg p-2.5 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
       <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-dim)' }}>{label}</div>
-      <div className="text-base sm:text-lg font-mono font-semibold tabular-nums break-words" style={{ color: color ?? 'var(--text)' }}>{value}</div>
+      <div className="text-sm sm:text-base font-mono font-semibold tabular-nums break-words" style={{ color: color ?? 'var(--text)' }}>{value}</div>
+    </div>
+  );
+}
+
+function MarkBasisToggle({ markBasis, onChange }: { markBasis: MarkBasis; onChange: (basis: MarkBasis) => void }) {
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 min-w-0">
+      <span className="text-[10px] uppercase tracking-wider font-semibold whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>Mark book at</span>
+      <div className="inline-flex rounded-lg overflow-hidden w-fit" style={{ border: '1px solid var(--border)' }}>
+        {MARK_BASIS_OPTIONS.map(option => (
+          <button
+            key={option}
+            onClick={() => onChange(option)}
+            className="px-3 py-2 text-xs font-semibold min-w-[56px]"
+            style={{
+              backgroundColor: markBasis === option ? 'var(--accent)' : 'var(--surface-alt)',
+              color: markBasis === option ? 'white' : 'var(--text-muted)',
+              borderRight: option !== 'last' ? '1px solid var(--border)' : '0',
+            }}
+          >
+            {option.charAt(0).toUpperCase() + option.slice(1)}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -204,31 +213,21 @@ function RiskCockpit({
   onDetailsClick: (trade: PortfolioTrade) => void;
 }) {
   const maturity = useMemo(() => groupByExpiration(trades, markBasis), [trades, markBasis]);
-  const dteBuckets = useMemo(() => groupByDteBucket(trades, markBasis), [trades, markBasis]);
-  const breakevenBuckets = useMemo(() => groupByBreakevenRiskBucket(trades, markBasis), [trades, markBasis]);
+  const tickerExposure = useMemo(() => groupByTicker(trades, markBasis), [trades, markBasis]);
   const attention = useMemo(() => buildNeedsAttention(trades).slice(0, 5), [trades]);
 
   if (trades.length === 0) {
     return (
-      <section className="rounded-lg p-3 mb-4 text-sm" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
-        No open positions for the risk cockpit.
-      </section>
+      <section className="rounded-lg p-3 text-sm" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>No open positions for analytics.</section>
     );
   }
 
   return (
-    <section className="mb-4">
-      <div className="flex items-center justify-between mb-2">
-        <h2 className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--text-muted)' }}>Risk Cockpit</h2>
-        <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Gross risk view</span>
-      </div>
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-        <CompactExposureBars title="Maturity Wall" groups={maturity} labelFormatter={formatShortDate} emptyLabel="No maturities." />
-        <DteBucketExposure groups={dteBuckets} />
-        <BreakevenHeatMap groups={breakevenBuckets} />
-        <NeedsAttentionList items={attention} onTickerClick={onTickerClick} onDetailsClick={onDetailsClick} />
-      </div>
-    </section>
+    <>
+      <CompactExposureBars title="Maturity Wall" groups={maturity} labelFormatter={formatShortDate} emptyLabel="No maturities." />
+      <ConcentrationBars title="Exposure by Ticker" groups={tickerExposure} totalGrossRisk={sumValues(trades.map(calculateEquityAtRisk))} maxItems={8} />
+      <NeedsAttentionList items={attention} onTickerClick={onTickerClick} onDetailsClick={onDetailsClick} />
+    </>
   );
 }
 
@@ -281,63 +280,6 @@ function CompactExposureBars({
           })}
         </div>
       )}
-    </section>
-  );
-}
-
-function DteBucketExposure({ groups }: { groups: PortfolioExposureGroup[] }) {
-  const max = Math.max(...groups.map(group => group.grossRisk), 0);
-  return (
-    <section className="rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>DTE Bucket Exposure</h3>
-        <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Gross risk</span>
-      </div>
-      {groups.length === 0 ? (
-        <p className="text-xs" style={{ color: 'var(--text-dim)' }}>No DTE exposure.</p>
-      ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {groups.map(group => {
-            const intensity = max > 0 ? Math.max(0.08, group.grossRisk / max) : 0.08;
-            return (
-              <div key={group.key} className="rounded p-2 min-w-0" title={`Premium: ${formatCurrency(group.premiumCollected, 0)}\nTrades: ${group.tradeCount}`} style={{ backgroundColor: `color-mix(in srgb, var(--accent) ${Math.round(intensity * 38)}%, var(--surface-alt))`, border: '1px solid var(--border)' }}>
-                <div className="text-[11px] font-semibold truncate" style={{ color: 'var(--text)' }}>{group.label}</div>
-                <div className="font-mono text-sm tabular-nums" style={{ color: 'var(--text)' }}>{formatCompactCurrency(group.grossRisk)}</div>
-                <div className="text-[10px] truncate" style={{ color: 'var(--text-dim)' }}>{group.tradeCount} trades · {formatCompactCurrency(group.premiumCollected)} prem</div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function BreakevenHeatMap({ groups }: { groups: PortfolioExposureGroup[] }) {
-  const ordered: PortfolioBreakevenRiskBucket[] = ['Below Breakeven', '0-5% Above Breakeven', '5-10% Above Breakeven', '10-20% Above Breakeven', '20%+ Above Breakeven', 'Unknown'];
-  const byKey = new Map(groups.map(group => [group.key, group]));
-  return (
-    <section className="rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Breakeven Risk Heat Map</h3>
-        <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Distance buckets</span>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        {ordered.map(label => {
-          const group = byKey.get(label);
-          const tone = breakevenTone(label);
-          return (
-            <div key={label} className="rounded p-2 min-w-0" title={group ? `Gross Risk: ${formatCurrency(group.grossRisk, 0)}\nNet Capital: ${formatCurrency(group.netCapitalAtRisk, 0)}\nTrades: ${group.tradeCount}` : 'No positions'} style={{ backgroundColor: tone.background, border: `1px solid ${tone.border}` }}>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] font-semibold truncate" style={{ color: tone.color }}>{label}</span>
-                <span className="text-[10px] font-mono" style={{ color: 'var(--text-dim)' }}>{group?.tradeCount ?? 0}</span>
-              </div>
-              <div className="font-mono text-sm tabular-nums" style={{ color: 'var(--text)' }}>{formatCompactCurrency(group?.grossRisk ?? 0)}</div>
-              <div className="text-[10px] truncate" style={{ color: 'var(--text-dim)' }}>Net {formatCompactCurrency(group?.netCapitalAtRisk ?? 0)}</div>
-            </div>
-          );
-        })}
-      </div>
     </section>
   );
 }
@@ -401,22 +343,14 @@ function YieldAnalytics({
   onTickerClick: (ticker: string) => void;
 }) {
   const closeCandidates = useMemo(() => buildCloseCandidates(trades, markBasis).slice(0, 5), [trades, markBasis]);
-  const distribution = useMemo(() => buildCapturedDistribution(trades, markBasis), [trades, markBasis]);
 
   if (trades.length === 0) return null;
 
   return (
-    <section className="mb-4">
-      <div className="flex items-center justify-between mb-2">
-        <h2 className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--text-muted)' }}>Yield Analytics</h2>
-        <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Current values use {markBasis.toUpperCase()}</span>
-      </div>
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
-        <YieldComparisonCard markSummary={markSummary} totalPremiumCollected={totalPremiumCollected} />
-        <CloseCandidatesCard candidates={closeCandidates} onTickerClick={onTickerClick} />
-        <PremiumCapturedDistribution buckets={distribution} />
-      </div>
-    </section>
+    <>
+      <YieldComparisonCard markSummary={markSummary} totalPremiumCollected={totalPremiumCollected} />
+      <CloseCandidatesCard candidates={closeCandidates} onTickerClick={onTickerClick} />
+    </>
   );
 }
 
@@ -434,7 +368,7 @@ function YieldComparisonCard({ markSummary, totalPremiumCollected }: { markSumma
   return (
     <section className="rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
       <div className="mb-2">
-        <h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Original vs Current Yield</h3>
+        <h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Yield Comparison</h3>
         <p className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Portfolio AY uses aggregate dollar-days.</p>
       </div>
       <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
@@ -479,73 +413,6 @@ function CloseCandidatesCard({ candidates, onTickerClick }: { candidates: CloseC
           ))}
         </div>
       )}
-    </section>
-  );
-}
-
-function PremiumCapturedDistribution({ buckets }: { buckets: CapturedDistributionBucket[] }) {
-  const max = Math.max(...buckets.map(bucket => bucket.grossRisk), 0);
-  const visible = buckets.filter(bucket => bucket.tradeCount > 0);
-  return (
-    <section className="rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Premium Captured Distribution</h3>
-        <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Gross risk</span>
-      </div>
-      {visible.length === 0 ? (
-        <p className="text-xs" style={{ color: 'var(--text-dim)' }}>No mark-based capture data.</p>
-      ) : (
-        <div className="space-y-2">
-          {visible.map(bucket => {
-            const width = max > 0 ? Math.max(4, bucket.grossRisk / max * 100) : 0;
-            return (
-              <div key={bucket.label}>
-                <div className="flex items-center justify-between gap-2 text-[11px] mb-1">
-                  <span className="truncate" style={{ color: 'var(--text)' }}>{bucket.label}</span>
-                  <span className="font-mono tabular-nums" style={{ color: 'var(--text-secondary)' }}>{bucket.tradeCount} / {formatCompactCurrency(bucket.grossRisk)}</span>
-                </div>
-                <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--surface-alt)' }}>
-                  <div className="h-full rounded-full" style={{ width: `${width}%`, backgroundColor: bucket.label.startsWith('Losing') ? 'var(--red)' : 'var(--accent)' }} />
-                </div>
-                <div className="text-[10px] mt-0.5 truncate" style={{ color: 'var(--text-dim)' }}>Premium {formatCompactCurrency(bucket.premiumCollected)}</div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function ConcentrationAnalytics({ trades, markBasis }: { trades: PortfolioTrade[]; markBasis: MarkBasis }) {
-  const byTicker = useMemo(() => groupByTicker(trades, markBasis), [trades, markBasis]);
-  const byCategory = useMemo(() => groupByCategory(trades, markBasis), [trades, markBasis]);
-  const byLeverage = useMemo(() => groupByLeverage(trades, markBasis), [trades, markBasis]);
-  const byTheme = useMemo(() => groupByThemeBucket(trades, markBasis), [trades, markBasis]);
-  const totalGrossRisk = sumValues(trades.map(calculateEquityAtRisk));
-
-  if (trades.length === 0) return null;
-
-  return (
-    <section className="mb-4">
-      <div className="flex items-center justify-between mb-2">
-        <h2 className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--text-muted)' }}>Concentration</h2>
-        <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Theme buckets are static ETF groups, not live correlation data.</span>
-      </div>
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-        <ConcentrationBars title="Exposure by Ticker" groups={byTicker} totalGrossRisk={totalGrossRisk} maxItems={8} />
-        <ConcentrationBars title="Exposure by Category" groups={byCategory} totalGrossRisk={totalGrossRisk} />
-        <LeverageExposure groups={byLeverage} totalGrossRisk={totalGrossRisk} />
-        <ThemeBucketExposure groups={byTheme} trades={trades} totalGrossRisk={totalGrossRisk} />
-        <ConcentrationInsights
-          trades={trades}
-          byTicker={byTicker}
-          byCategory={byCategory}
-          byLeverage={byLeverage}
-          byTheme={byTheme}
-          totalGrossRisk={totalGrossRisk}
-        />
-      </div>
     </section>
   );
 }
@@ -597,79 +464,13 @@ function ConcentrationBars({
   );
 }
 
-function LeverageExposure({ groups, totalGrossRisk }: { groups: PortfolioExposureGroup[]; totalGrossRisk: number }) {
-  return (
-    <section className="rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Exposure by Leverage</h3>
-        <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>% of gross risk</span>
-      </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-        {groups.map(group => (
-          <div key={group.key} className="rounded p-2 min-w-0" title={groupTooltip(group)} style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] font-semibold truncate" style={{ color: 'var(--text)' }}>{group.label}</span>
-              <span className="text-[10px] font-mono" style={{ color: 'var(--text-dim)' }}>{group.tradeCount}</span>
-            </div>
-            <div className="font-mono text-sm tabular-nums" style={{ color: 'var(--text)' }}>{formatCompactCurrency(group.grossRisk)}</div>
-            <div className="text-[10px]" style={{ color: 'var(--text-dim)' }}>{formatPctValue(percentOfTotal(group.grossRisk, totalGrossRisk))} of book</div>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function ThemeBucketExposure({ groups, trades, totalGrossRisk }: { groups: PortfolioExposureGroup[]; trades: PortfolioTrade[]; totalGrossRisk: number }) {
-  const max = Math.max(...groups.map(group => group.grossRisk), 0);
-  return (
-    <section className="rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Correlated Risk Buckets</h3>
-        <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Theme Buckets</span>
-      </div>
-      {groups.length === 0 ? (
-        <p className="text-xs" style={{ color: 'var(--text-dim)' }}>No theme exposure.</p>
-      ) : (
-        <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
-          {groups.map(group => {
-            const width = max > 0 ? Math.max(4, group.grossRisk / max * 100) : 0;
-            const tickers = topTickersForTheme(trades, group.key);
-            return (
-              <div key={group.key} title={`${groupTooltip(group)}\nTop tickers: ${tickers || DASH}`}>
-                <div className="flex items-center justify-between gap-2 text-[11px] mb-1">
-                  <span className="font-medium truncate" style={{ color: 'var(--text)' }}>{group.label}</span>
-                  <span className="font-mono tabular-nums flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>{formatCompactCurrency(group.grossRisk)}</span>
-                </div>
-                <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--surface-alt)' }}>
-                  <div className="h-full rounded-full" style={{ width: `${width}%`, backgroundColor: 'var(--accent)' }} />
-                </div>
-                <div className="grid grid-cols-[1fr_auto] gap-2 mt-1 text-[10px]" style={{ color: 'var(--text-dim)' }}>
-                  <span className="truncate">{tickers || DASH}</span>
-                  <span className="font-mono">{formatPctValue(percentOfTotal(group.grossRisk, totalGrossRisk))}</span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </section>
-  );
-}
-
 function ConcentrationInsights({
   trades,
   byTicker,
-  byCategory,
-  byLeverage,
-  byTheme,
   totalGrossRisk,
 }: {
   trades: PortfolioTrade[];
   byTicker: PortfolioExposureGroup[];
-  byCategory: PortfolioExposureGroup[];
-  byLeverage: PortfolioExposureGroup[];
-  byTheme: PortfolioExposureGroup[];
   totalGrossRisk: number;
 }) {
   const largestSingle = trades.reduce<PortfolioTrade | null>((largest, trade) => {
@@ -678,21 +479,14 @@ function ConcentrationInsights({
     return risk > largestRisk ? trade : largest;
   }, null);
   const largestTicker = byTicker[0] ?? null;
-  const largestCategory = byCategory[0] ?? null;
-  const largestLeverage = [...byLeverage].sort((a, b) => b.grossRisk - a.grossRisk)[0] ?? null;
-  const largestTheme = byTheme[0] ?? null;
-  const threeX = byLeverage.find(group => group.key === '3x') ?? null;
   const rows = [
-    largestTicker ? ['Largest ticker', `${largestTicker.label} - ${formatCompactCurrency(largestTicker.grossRisk)}`] : null,
-    largestCategory ? ['Largest category', `${largestCategory.label} - ${formatCompactCurrency(largestCategory.grossRisk)}`] : null,
-    largestLeverage ? ['Largest leverage', `${largestLeverage.label} - ${formatPctValue(percentOfTotal(largestLeverage.grossRisk, totalGrossRisk))}`] : null,
-    largestTheme ? ['Largest theme', `${largestTheme.label} - ${formatCompactCurrency(largestTheme.grossRisk)}`] : null,
-    threeX ? ['3x ETF exposure', `${formatPctValue(percentOfTotal(threeX.grossRisk, totalGrossRisk))} of gross risk`] : null,
+    largestTicker ? ['Largest ticker', `${largestTicker.label} - ${formatCompactCurrency(largestTicker.grossRisk)} (${formatPctValue(percentOfTotal(largestTicker.grossRisk, totalGrossRisk))})`] : null,
     largestSingle ? ['Largest position', `${largestSingle.ticker} ${formatCurrency(largestSingle.strike, 0)} Put - ${formatCompactCurrency(calculateEquityAtRisk(largestSingle))}`] : null,
+    ['Open gross risk', formatCompactCurrency(totalGrossRisk)],
   ].filter(Boolean) as Array<[string, string]>;
 
   return (
-    <section className="rounded-lg p-3 min-w-0 xl:col-span-2" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+    <section className="rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Concentration Insights</h3>
         <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Gross risk lens</span>
@@ -707,15 +501,6 @@ function ConcentrationInsights({
       </div>
     </section>
   );
-}
-
-function breakevenTone(label: PortfolioBreakevenRiskBucket): { background: string; border: string; color: string } {
-  if (label === 'Below Breakeven') return { background: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.28)', color: 'var(--red)' };
-  if (label === '0-5% Above Breakeven') return { background: 'rgba(249,115,22,0.12)', border: 'rgba(249,115,22,0.26)', color: 'var(--orange)' };
-  if (label === '5-10% Above Breakeven') return { background: 'rgba(250,204,21,0.10)', border: 'rgba(250,204,21,0.24)', color: 'var(--yellow)' };
-  if (label === '10-20% Above Breakeven') return { background: 'rgba(59,130,246,0.10)', border: 'rgba(59,130,246,0.22)', color: 'var(--accent-light)' };
-  if (label === '20%+ Above Breakeven') return { background: 'rgba(34,197,94,0.10)', border: 'rgba(34,197,94,0.22)', color: 'var(--green)' };
-  return { background: 'var(--surface-alt)', border: 'var(--border)', color: 'var(--text-muted)' };
 }
 
 function buildNeedsAttention(trades: PortfolioTrade[]): PortfolioTrade[] {
@@ -786,29 +571,6 @@ function getRedeployBadges(trade: PortfolioTrade, basis: MarkBasis): string[] {
   return badges;
 }
 
-function buildCapturedDistribution(trades: PortfolioTrade[], basis: MarkBasis): CapturedDistributionBucket[] {
-  const buckets: CapturedDistributionBucket[] = [
-    { label: 'Losing / negative', match: value => value < 0, tradeCount: 0, grossRisk: 0, premiumCollected: 0 },
-    { label: '0-25%', match: value => value >= 0 && value < 0.25, tradeCount: 0, grossRisk: 0, premiumCollected: 0 },
-    { label: '25-50%', match: value => value >= 0.25 && value < 0.50, tradeCount: 0, grossRisk: 0, premiumCollected: 0 },
-    { label: '50-75%', match: value => value >= 0.50 && value < 0.75, tradeCount: 0, grossRisk: 0, premiumCollected: 0 },
-    { label: '75-90%', match: value => value >= 0.75 && value < 0.90, tradeCount: 0, grossRisk: 0, premiumCollected: 0 },
-    { label: '90%+', match: value => value >= 0.90, tradeCount: 0, grossRisk: 0, premiumCollected: 0 },
-  ];
-
-  trades.forEach(trade => {
-    const captured = calculatePercentCaptured(trade, basis);
-    if (!isFiniteNumber(captured)) return;
-    const bucket = buckets.find(item => item.match(captured));
-    if (!bucket) return;
-    bucket.tradeCount += 1;
-    bucket.grossRisk += calculateEquityAtRisk(trade) ?? 0;
-    bucket.premiumCollected += calculatePremiumCollected(trade) ?? 0;
-  });
-
-  return buckets;
-}
-
 function percentOfTotal(value: number | null | undefined, total: number | null | undefined): number | null {
   return isFiniteNumber(value) && isFiniteNumber(total) && total > 0 ? value / total : null;
 }
@@ -823,20 +585,6 @@ function groupTooltip(group: PortfolioExposureGroup): string {
     `Underlying Eq.: ${formatCurrency(group.underlyingEquivalentExposure, 0)}`,
     `Trades: ${group.tradeCount}`,
   ].join('\n');
-}
-
-function topTickersForTheme(trades: PortfolioTrade[], theme: string): string {
-  const byTicker = new Map<string, number>();
-  trades.forEach(trade => {
-    if (getPortfolioEtfMetadata(trade.ticker).theme !== theme) return;
-    const ticker = trade.ticker.trim().toUpperCase();
-    byTicker.set(ticker, (byTicker.get(ticker) ?? 0) + (calculateEquityAtRisk(trade) ?? 0));
-  });
-  return [...byTicker.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 4)
-    .map(([ticker, risk]) => `${ticker} ${formatCompactCurrency(risk)}`)
-    .join(', ');
 }
 
 function parseNumber(value: string): number | null {
@@ -1263,12 +1011,13 @@ export default function PortfolioPage() {
   return (
     <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>
       <div className="max-w-[1800px] mx-auto px-2 sm:px-4 lg:px-6 py-4 sm:py-6">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-5">
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(220px,1fr)_auto_minmax(420px,1fr)] xl:items-center gap-3 mb-4">
           <div className="min-w-0">
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight" style={{ color: 'var(--text)' }}>Portfolio</h1>
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Sold cash-secured puts, local persistence, and manual market refresh.</p>
           </div>
-          <div className="flex flex-col sm:flex-row gap-2">
+          {trades.length > 0 && <MarkBasisToggle markBasis={markBasis} onChange={setMarkBasis} />}
+          <div className="flex flex-col sm:flex-row xl:justify-end gap-2">
             <button onClick={() => setShowAddModal(true)} className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium text-white min-h-[44px] sm:min-h-0" style={{ backgroundColor: 'var(--accent)' }}>
               <Plus className="w-3.5 h-3.5" /> Add Trade
             </button>
@@ -1307,40 +1056,16 @@ export default function PortfolioPage() {
           </div>
         ) : (
           <>
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-lg p-3 mb-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-              <div>
-                <div className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: 'var(--text-muted)' }}>Mark Book At</div>
-                <p className="text-[11px]" style={{ color: 'var(--text-dim)' }}>Selected mark controls current value, P/L, % captured, Current NY, and Current AY.</p>
-              </div>
-              <div className="inline-flex rounded-lg overflow-hidden self-start sm:self-auto" style={{ border: '1px solid var(--border)' }}>
-                {MARK_BASIS_OPTIONS.map(option => (
-                  <button
-                    key={option}
-                    onClick={() => setMarkBasis(option)}
-                    className="px-4 py-2 text-xs font-semibold min-w-[64px]"
-                    style={{
-                      backgroundColor: markBasis === option ? 'var(--accent)' : 'var(--surface-alt)',
-                      color: markBasis === option ? 'white' : 'var(--text-muted)',
-                      borderRight: option !== 'last' ? '1px solid var(--border)' : '0',
-                    }}
-                  >
-                    {option.charAt(0).toUpperCase() + option.slice(1)}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-11 gap-2 mb-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-9 gap-2 mb-3">
               <SummaryCard label="Open Trades" value={String(summary.totalOpenTrades)} />
-              <SummaryCard label="Open Contracts" value={String(summary.totalOpenContracts)} />
               <SummaryCard label="Premium Collected" value={formatCurrency(summary.totalPremiumCollected, 0)} color="var(--green)" />
               <SummaryCard label="Gross Risk" value={formatCurrency(summary.totalEquityAtRisk, 0)} />
               <SummaryCard label="Net Capital at Risk" value={formatCurrency(summary.totalNetCapitalAtRisk, 0)} />
               <SummaryCard label="Total Gain/Loss" value={formatCurrency(markSummary.totalGainLoss, 0)} color={pnlColor(markSummary.totalGainLoss)} />
               <SummaryCard label="% Captured" value={formatPctValue(markSummary.percentCaptured)} color={pnlColor(markSummary.percentCaptured)} />
+              <SummaryCard label="Original AY" value={formatPctValue(markSummary.portfolioOriginalAnnualizedYield)} color="var(--accent-light)" />
+              <SummaryCard label="Current AY" value={formatPctValue(markSummary.portfolioCurrentAnnualizedYield)} color="var(--accent-light)" />
               <SummaryCard label="Weighted Avg Delta" value={formatDelta(markSummary.weightedAverageDelta)} color={pnlColor(markSummary.weightedAverageDelta)} />
-              <SummaryCard label="Total Delta Exposure" value={formatSignedNumber(markSummary.totalDeltaExposure)} color={pnlColor(markSummary.totalDeltaExposure)} />
-              <SummaryCard label="Portfolio Current AY" value={formatPctValue(markSummary.portfolioCurrentAnnualizedYield)} color="var(--accent-light)" />
               <SummaryCard label="Weighted Avg DTE" value={isFiniteNumber(summary.weightedAverageRemainingDte) ? `${Math.round(summary.weightedAverageRemainingDte)} DTE` : DASH} />
             </div>
 
@@ -1348,23 +1073,7 @@ export default function PortfolioPage() {
               <div className="rounded-lg px-3 py-2 mb-4 text-sm" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>No open trades.</div>
             )}
 
-            <RiskCockpit
-              trades={openTrades}
-              markBasis={markBasis}
-              onTickerClick={ticker => navigate(`/options/${ticker.trim().toUpperCase()}`)}
-              onDetailsClick={openDrawer}
-            />
-
-            <YieldAnalytics
-              trades={openTrades}
-              markBasis={markBasis}
-              markSummary={markSummary}
-              totalPremiumCollected={summary.totalPremiumCollected}
-              onTickerClick={ticker => navigate(`/options/${ticker.trim().toUpperCase()}`)}
-            />
-
-            <ConcentrationAnalytics trades={openTrades} markBasis={markBasis} />
-
+            <h2 className="text-xs uppercase tracking-wider font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>Schedule of Positions</h2>
             <div className="md:hidden space-y-2 mb-4">
               {sortedTrades.map(trade => (
                 <div key={trade.id} className="rounded-lg p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
@@ -1525,6 +1234,33 @@ export default function PortfolioPage() {
             <div className="mt-3 text-[10px]" style={{ color: 'var(--text-dim)' }}>
               Closed trades: {summary.totalClosedTrades} · Current mark-dependent metrics use the selected {markBasis.toUpperCase()} basis and show {DASH} when that mark is unavailable.
             </div>
+
+            <section className="mt-4">
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--text-muted)' }}>Portfolio Analytics</h2>
+                <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Compact risk and yield views</span>
+              </div>
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+                <RiskCockpit
+                  trades={openTrades}
+                  markBasis={markBasis}
+                  onTickerClick={ticker => navigate(`/options/${ticker.trim().toUpperCase()}`)}
+                  onDetailsClick={openDrawer}
+                />
+                <YieldAnalytics
+                  trades={openTrades}
+                  markBasis={markBasis}
+                  markSummary={markSummary}
+                  totalPremiumCollected={summary.totalPremiumCollected}
+                  onTickerClick={ticker => navigate(`/options/${ticker.trim().toUpperCase()}`)}
+                />
+                <ConcentrationInsights
+                  trades={openTrades}
+                  byTicker={groupByTicker(openTrades, markBasis)}
+                  totalGrossRisk={sumValues(openTrades.map(calculateEquityAtRisk))}
+                />
+              </div>
+            </section>
           </>
         )}
 
