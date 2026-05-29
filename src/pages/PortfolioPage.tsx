@@ -214,15 +214,15 @@ function CompactExposureBars({
 }) {
   const max = Math.max(...groups.map(group => group.grossRisk), 0);
   return (
-    <section className="rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-      <div className="flex items-center justify-between mb-2">
+    <section className="rounded-lg p-3 min-w-0 h-full flex flex-col" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <div className="flex items-center justify-between mb-2 shrink-0">
         <h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>{title}</h3>
         <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>{groups.length} buckets</span>
       </div>
       {groups.length === 0 ? (
         <p className="text-xs" style={{ color: 'var(--text-dim)' }}>{emptyLabel}</p>
       ) : (
-        <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1">
+        <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1 min-h-0">
           {groups.map(group => {
             const width = max > 0 ? Math.max(3, (group.grossRisk / max) * 100) : 0;
             const tooltip = [
@@ -264,15 +264,15 @@ function NeedsAttentionList({
   onDetailsClick: (trade: PortfolioTrade) => void;
 }) {
   return (
-    <section className="rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-      <div className="flex items-center justify-between mb-2">
+    <section className="rounded-lg p-3 min-w-0 h-full flex flex-col" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <div className="flex items-center justify-between mb-2 shrink-0">
         <h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Needs Attention</h3>
         <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Top {items.length}</span>
       </div>
       {items.length === 0 ? (
         <p className="text-xs" style={{ color: 'var(--text-dim)' }}>No positions need review.</p>
       ) : (
-        <div className="space-y-1.5 max-h-[240px] overflow-y-auto pr-1">
+        <div className="space-y-1.5 max-h-[240px] overflow-y-auto pr-1 min-h-0">
           {items.map(trade => {
             const beDistance = getTradeDistanceToBreakeven(trade);
             const strikeDistance = getTradeDistanceToStrike(trade);
@@ -301,8 +301,8 @@ function NeedsAttentionList({
 
 function CloseCandidatesCard({ candidates, onTickerClick }: { candidates: CloseCandidate[]; onTickerClick: (ticker: string) => void }) {
   return (
-    <section className="rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-      <div className="flex items-start justify-between gap-2 mb-2">
+    <section className="rounded-lg p-3 min-w-0 h-full flex flex-col" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <div className="flex items-start justify-between gap-2 mb-2 shrink-0">
         <div>
           <h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Close Candidates</h3>
           <p className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Potential close/redeploy candidates.</p>
@@ -312,7 +312,7 @@ function CloseCandidatesCard({ candidates, onTickerClick }: { candidates: CloseC
       {candidates.length === 0 ? (
         <p className="text-xs" style={{ color: 'var(--text-dim)' }}>No obvious close candidates at the selected mark.</p>
       ) : (
-        <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1">
+        <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1 min-h-0">
           {candidates.map(candidate => (
             <div key={candidate.trade.id} className="rounded px-2 py-1.5" title={candidate.reasons.join(', ')} style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
               <div className="grid grid-cols-[minmax(88px,1fr)_auto_auto] gap-2 items-baseline">
@@ -347,15 +347,15 @@ function ConcentrationBars({
   const visible = groups.slice(0, maxItems);
   const max = Math.max(...visible.map(group => group.grossRisk), 0);
   return (
-    <section className="rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-      <div className="flex items-center justify-between mb-2">
+    <section className="rounded-lg p-3 min-w-0 h-full flex flex-col" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <div className="flex items-center justify-between mb-2 shrink-0">
         <h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>{title}</h3>
         <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>{groups.length} groups</span>
       </div>
       {visible.length === 0 ? (
         <p className="text-xs" style={{ color: 'var(--text-dim)' }}>No concentration data.</p>
       ) : (
-        <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1">
+        <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1 min-h-0">
           {visible.map(group => {
             const width = max > 0 ? Math.max(4, group.grossRisk / max * 100) : 0;
             return (
@@ -888,11 +888,10 @@ export default function PortfolioPage() {
   return (
     <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>
       <div className="max-w-[1800px] mx-auto px-2 sm:px-4 lg:px-6 py-4 sm:py-6">
-        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3 mb-3">
-          <div className="min-w-0">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2 mb-3">
+          <div className="min-w-0 lg:flex-shrink">
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight" style={{ color: 'var(--text)' }}>Portfolio</h1>
-            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Sold cash-secured puts, local persistence, and manual market refresh.</p>
-            <div className="text-[10px] mt-1" style={{ color: 'var(--text-dim)' }}>
+            <div className="text-[10px]" style={{ color: 'var(--text-dim)' }}>
               {lastRefreshed ? `Last refreshed: ${lastRefreshed.toLocaleString()}` : 'Last refreshed: saved snapshots are shown until you refresh open trades.'}
             </div>
           </div>
