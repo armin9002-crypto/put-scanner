@@ -948,7 +948,7 @@ export default function PortfolioPage() {
               <div className="rounded-lg px-3 py-2 mb-4 text-sm" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>No open trades.</div>
             )}
 
-            <section className="mt-4 mb-4">
+            <section className="mt-4 mb-4 w-full xl:w-3/4 2xl:max-w-[1350px]">
               <div className="flex items-center justify-between mb-2">
                 <h2 className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--text-muted)' }}>Portfolio Analytics</h2>
                 <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Compact risk and yield views</span>
