@@ -63,17 +63,30 @@ export interface PortfolioExposureGroup extends PortfolioTotals {
   label: string;
 }
 
-interface EtfMetadata {
+export interface EtfMetadata {
   category: string;
+  leverage: string;
   theme: string;
 }
 
 const ETF_METADATA = new Map(
   ETF_LIST.map(etf => [etf.ticker.toUpperCase(), {
-    category: etf.type,
+    category: getCategoryBucket(etf.type),
+    leverage: getLeverageBucket(etf.leverage, etf.underlying, etf.type),
     theme: getThemeBucket(etf.underlying, etf.type),
   }])
 );
+
+const FALLBACK_METADATA = new Map<string, EtfMetadata>([
+  ['SPY', { category: 'Broad Index', leverage: '1x', theme: 'Broad Market / S&P 500' }],
+  ['VOO', { category: 'Broad Index', leverage: '1x', theme: 'Broad Market / S&P 500' }],
+  ['IVV', { category: 'Broad Index', leverage: '1x', theme: 'Broad Market / S&P 500' }],
+  ['QQQ', { category: 'Broad Index', leverage: '1x', theme: 'Nasdaq / Mega-cap Tech' }],
+  ['IWM', { category: 'Broad Index', leverage: '1x', theme: 'Small Caps' }],
+  ['DIA', { category: 'Broad Index', leverage: '1x', theme: 'Broad Market / S&P 500' }],
+  ['VIX', { category: 'Volatility', leverage: 'Volatility', theme: 'Volatility' }],
+  ['VXN', { category: 'Volatility', leverage: 'Volatility', theme: 'Volatility' }],
+]);
 
 const DTE_BUCKETS: Array<{ label: PortfolioDteBucket; match: (dte: number | null) => boolean }> = [
   { label: 'Expired / 0 DTE', match: dte => dte == null || dte <= 0 },
@@ -245,6 +258,11 @@ export function groupByCategory(trades: PortfolioTrade[], markBasis: MarkBasis):
     .sort((a, b) => b.grossRisk - a.grossRisk);
 }
 
+export function groupByLeverage(trades: PortfolioTrade[], markBasis: MarkBasis): PortfolioExposureGroup[] {
+  return buildGroups(openTrades(trades), markBasis, trade => getMetadata(trade).leverage, trade => getMetadata(trade).leverage)
+    .sort((a, b) => leverageSort(a.label) - leverageSort(b.label) || b.grossRisk - a.grossRisk);
+}
+
 export function groupByThemeBucket(trades: PortfolioTrade[], markBasis: MarkBasis): PortfolioExposureGroup[] {
   return buildGroups(openTrades(trades), markBasis, trade => getMetadata(trade).theme, trade => getMetadata(trade).theme)
     .sort((a, b) => b.grossRisk - a.grossRisk);
@@ -305,21 +323,52 @@ function buildTotals(trades: PortfolioTrade[], markBasis: MarkBasis): PortfolioT
   };
 }
 
+export function getPortfolioEtfMetadata(ticker: string): EtfMetadata {
+  const normalized = normalizeTicker(ticker);
+  return ETF_METADATA.get(normalized) ?? FALLBACK_METADATA.get(normalized) ?? { category: 'Other', leverage: 'Other', theme: 'Other' };
+}
+
 function getMetadata(trade: PortfolioTrade): EtfMetadata {
-  return ETF_METADATA.get(normalizeTicker(trade.ticker)) ?? { category: 'Other', theme: 'Other' };
+  return getPortfolioEtfMetadata(trade.ticker);
+}
+
+function getCategoryBucket(category: string): string {
+  if (category === 'Broad Index') return 'Broad Index';
+  if (category === 'Commodity') return 'Commodity';
+  if (category === 'Country') return 'Country';
+  if (category === 'Sector') return 'Sector';
+  if (category === 'Volatility') return 'Volatility';
+  return 'Other';
+}
+
+function getLeverageBucket(leverage: string, underlying: string, category: string): string {
+  const value = `${leverage} ${underlying} ${category}`.toLowerCase();
+  if (/vix|volatility/.test(value)) return 'Volatility';
+  if (/inverse|bear|short/.test(value)) return 'Inverse';
+  if (/\b3x\b/.test(value)) return '3x';
+  if (/\b2x\b/.test(value)) return '2x';
+  if (/\b1x\b/.test(value)) return '1x';
+  return 'Other';
+}
+
+function leverageSort(label: string): number {
+  const order = ['1x', '2x', '3x', 'Inverse', 'Volatility', 'Other'];
+  const index = order.indexOf(label);
+  return index === -1 ? order.length : index;
 }
 
 function getThemeBucket(underlying: string, category: string): string {
   const value = `${underlying} ${category}`.toLowerCase();
-  if (/nasdaq|qqq|fang|technology|internet|semiconductor|software/.test(value)) return 'Growth / Tech';
-  if (/china|emerging|brazil|india|europe|country/.test(value)) return 'Country / EM';
-  if (/oil|gas|energy|crude|natural gas/.test(value)) return 'Energy';
-  if (/gold|silver|mining|commodity|materials/.test(value)) return 'Commodities / Materials';
+  if (/vix|volatility/.test(value)) return 'Volatility';
+  if (/semiconductor/.test(value)) return 'Semiconductors';
+  if (/biotech|healthcare/.test(value)) return 'Biotech';
+  if (/china/.test(value)) return 'China';
+  if (/russell|small cap|mid cap/.test(value)) return 'Small Caps';
+  if (/nasdaq|qqq|fang|technology|internet|software/.test(value)) return 'Nasdaq / Mega-cap Tech';
+  if (/s&p|dow|broad|high beta/.test(value)) return 'Broad Market / S&P 500';
+  if (/oil|gas|energy|crude|natural gas|gold|silver|mining|commodity|materials/.test(value)) return 'Commodities';
   if (/financial|bank/.test(value)) return 'Financials';
-  if (/biotech|healthcare/.test(value)) return 'Healthcare / Biotech';
-  if (/s&p|dow|russell|broad|mid cap|small cap|high beta/.test(value)) return 'Broad Market';
-  if (/utilities|defense|industrial|homebuilder/.test(value)) return 'Cyclical / Defensive';
-  return category || 'Other';
+  return 'Other';
 }
 
 function openTrades(trades: PortfolioTrade[]): PortfolioTrade[] {

@@ -8,9 +8,14 @@ import {
   getTradeDistanceToBreakeven,
   getTradeDistanceToStrike,
   getTradeGrossRisk,
+  getPortfolioEtfMetadata,
   groupByBreakevenRiskBucket,
+  groupByCategory,
   groupByDteBucket,
   groupByExpiration,
+  groupByLeverage,
+  groupByThemeBucket,
+  groupByTicker,
   type PortfolioBreakevenRiskBucket,
   type PortfolioExposureGroup,
 } from '../lib/portfolioAnalytics';
@@ -512,6 +517,198 @@ function PremiumCapturedDistribution({ buckets }: { buckets: CapturedDistributio
   );
 }
 
+function ConcentrationAnalytics({ trades, markBasis }: { trades: PortfolioTrade[]; markBasis: MarkBasis }) {
+  const byTicker = useMemo(() => groupByTicker(trades, markBasis), [trades, markBasis]);
+  const byCategory = useMemo(() => groupByCategory(trades, markBasis), [trades, markBasis]);
+  const byLeverage = useMemo(() => groupByLeverage(trades, markBasis), [trades, markBasis]);
+  const byTheme = useMemo(() => groupByThemeBucket(trades, markBasis), [trades, markBasis]);
+  const totalGrossRisk = sumValues(trades.map(calculateEquityAtRisk));
+
+  if (trades.length === 0) return null;
+
+  return (
+    <section className="mb-4">
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--text-muted)' }}>Concentration</h2>
+        <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Theme buckets are static ETF groups, not live correlation data.</span>
+      </div>
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+        <ConcentrationBars title="Exposure by Ticker" groups={byTicker} totalGrossRisk={totalGrossRisk} maxItems={8} />
+        <ConcentrationBars title="Exposure by Category" groups={byCategory} totalGrossRisk={totalGrossRisk} />
+        <LeverageExposure groups={byLeverage} totalGrossRisk={totalGrossRisk} />
+        <ThemeBucketExposure groups={byTheme} trades={trades} totalGrossRisk={totalGrossRisk} />
+        <ConcentrationInsights
+          trades={trades}
+          byTicker={byTicker}
+          byCategory={byCategory}
+          byLeverage={byLeverage}
+          byTheme={byTheme}
+          totalGrossRisk={totalGrossRisk}
+        />
+      </div>
+    </section>
+  );
+}
+
+function ConcentrationBars({
+  title,
+  groups,
+  totalGrossRisk,
+  maxItems = 6,
+}: {
+  title: string;
+  groups: PortfolioExposureGroup[];
+  totalGrossRisk: number;
+  maxItems?: number;
+}) {
+  const visible = groups.slice(0, maxItems);
+  const max = Math.max(...visible.map(group => group.grossRisk), 0);
+  return (
+    <section className="rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>{title}</h3>
+        <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>{groups.length} groups</span>
+      </div>
+      {visible.length === 0 ? (
+        <p className="text-xs" style={{ color: 'var(--text-dim)' }}>No concentration data.</p>
+      ) : (
+        <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1">
+          {visible.map(group => {
+            const width = max > 0 ? Math.max(4, group.grossRisk / max * 100) : 0;
+            return (
+              <div key={group.key} title={groupTooltip(group)}>
+                <div className="flex items-center justify-between gap-2 text-[11px] mb-1">
+                  <span className="font-medium truncate" style={{ color: 'var(--text)' }}>{group.label}</span>
+                  <span className="font-mono tabular-nums flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>{formatCompactCurrency(group.grossRisk)}</span>
+                </div>
+                <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--surface-alt)' }}>
+                  <div className="h-full rounded-full" style={{ width: `${width}%`, backgroundColor: 'var(--accent)' }} />
+                </div>
+                <div className="flex justify-between gap-2 mt-1 text-[10px]" style={{ color: 'var(--text-dim)' }}>
+                  <span>{formatPctValue(percentOfTotal(group.grossRisk, totalGrossRisk))}</span>
+                  <span className="truncate">{group.tradeCount} trades - Net {formatCompactCurrency(group.netCapitalAtRisk)}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function LeverageExposure({ groups, totalGrossRisk }: { groups: PortfolioExposureGroup[]; totalGrossRisk: number }) {
+  return (
+    <section className="rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Exposure by Leverage</h3>
+        <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>% of gross risk</span>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        {groups.map(group => (
+          <div key={group.key} className="rounded p-2 min-w-0" title={groupTooltip(group)} style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] font-semibold truncate" style={{ color: 'var(--text)' }}>{group.label}</span>
+              <span className="text-[10px] font-mono" style={{ color: 'var(--text-dim)' }}>{group.tradeCount}</span>
+            </div>
+            <div className="font-mono text-sm tabular-nums" style={{ color: 'var(--text)' }}>{formatCompactCurrency(group.grossRisk)}</div>
+            <div className="text-[10px]" style={{ color: 'var(--text-dim)' }}>{formatPctValue(percentOfTotal(group.grossRisk, totalGrossRisk))} of book</div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ThemeBucketExposure({ groups, trades, totalGrossRisk }: { groups: PortfolioExposureGroup[]; trades: PortfolioTrade[]; totalGrossRisk: number }) {
+  const max = Math.max(...groups.map(group => group.grossRisk), 0);
+  return (
+    <section className="rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Correlated Risk Buckets</h3>
+        <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Theme Buckets</span>
+      </div>
+      {groups.length === 0 ? (
+        <p className="text-xs" style={{ color: 'var(--text-dim)' }}>No theme exposure.</p>
+      ) : (
+        <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
+          {groups.map(group => {
+            const width = max > 0 ? Math.max(4, group.grossRisk / max * 100) : 0;
+            const tickers = topTickersForTheme(trades, group.key);
+            return (
+              <div key={group.key} title={`${groupTooltip(group)}\nTop tickers: ${tickers || DASH}`}>
+                <div className="flex items-center justify-between gap-2 text-[11px] mb-1">
+                  <span className="font-medium truncate" style={{ color: 'var(--text)' }}>{group.label}</span>
+                  <span className="font-mono tabular-nums flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>{formatCompactCurrency(group.grossRisk)}</span>
+                </div>
+                <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--surface-alt)' }}>
+                  <div className="h-full rounded-full" style={{ width: `${width}%`, backgroundColor: 'var(--accent)' }} />
+                </div>
+                <div className="grid grid-cols-[1fr_auto] gap-2 mt-1 text-[10px]" style={{ color: 'var(--text-dim)' }}>
+                  <span className="truncate">{tickers || DASH}</span>
+                  <span className="font-mono">{formatPctValue(percentOfTotal(group.grossRisk, totalGrossRisk))}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ConcentrationInsights({
+  trades,
+  byTicker,
+  byCategory,
+  byLeverage,
+  byTheme,
+  totalGrossRisk,
+}: {
+  trades: PortfolioTrade[];
+  byTicker: PortfolioExposureGroup[];
+  byCategory: PortfolioExposureGroup[];
+  byLeverage: PortfolioExposureGroup[];
+  byTheme: PortfolioExposureGroup[];
+  totalGrossRisk: number;
+}) {
+  const largestSingle = trades.reduce<PortfolioTrade | null>((largest, trade) => {
+    const risk = calculateEquityAtRisk(trade) ?? 0;
+    const largestRisk = largest ? calculateEquityAtRisk(largest) ?? 0 : -1;
+    return risk > largestRisk ? trade : largest;
+  }, null);
+  const largestTicker = byTicker[0] ?? null;
+  const largestCategory = byCategory[0] ?? null;
+  const largestLeverage = [...byLeverage].sort((a, b) => b.grossRisk - a.grossRisk)[0] ?? null;
+  const largestTheme = byTheme[0] ?? null;
+  const threeX = byLeverage.find(group => group.key === '3x') ?? null;
+  const rows = [
+    largestTicker ? ['Largest ticker', `${largestTicker.label} - ${formatCompactCurrency(largestTicker.grossRisk)}`] : null,
+    largestCategory ? ['Largest category', `${largestCategory.label} - ${formatCompactCurrency(largestCategory.grossRisk)}`] : null,
+    largestLeverage ? ['Largest leverage', `${largestLeverage.label} - ${formatPctValue(percentOfTotal(largestLeverage.grossRisk, totalGrossRisk))}`] : null,
+    largestTheme ? ['Largest theme', `${largestTheme.label} - ${formatCompactCurrency(largestTheme.grossRisk)}`] : null,
+    threeX ? ['3x ETF exposure', `${formatPctValue(percentOfTotal(threeX.grossRisk, totalGrossRisk))} of gross risk`] : null,
+    largestSingle ? ['Largest position', `${largestSingle.ticker} ${formatCurrency(largestSingle.strike, 0)} Put - ${formatCompactCurrency(calculateEquityAtRisk(largestSingle))}`] : null,
+  ].filter(Boolean) as Array<[string, string]>;
+
+  return (
+    <section className="rounded-lg p-3 min-w-0 xl:col-span-2" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Concentration Insights</h3>
+        <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Gross risk lens</span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
+        {rows.map(([label, value]) => (
+          <div key={label} className="rounded p-2 min-w-0" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
+            <div className="text-[10px] uppercase tracking-wider truncate" style={{ color: 'var(--text-dim)' }}>{label}</div>
+            <div className="text-xs font-mono font-semibold tabular-nums truncate" title={value} style={{ color: 'var(--text)' }}>{value}</div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function breakevenTone(label: PortfolioBreakevenRiskBucket): { background: string; border: string; color: string } {
   if (label === 'Below Breakeven') return { background: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.28)', color: 'var(--red)' };
   if (label === '0-5% Above Breakeven') return { background: 'rgba(249,115,22,0.12)', border: 'rgba(249,115,22,0.26)', color: 'var(--orange)' };
@@ -610,6 +807,36 @@ function buildCapturedDistribution(trades: PortfolioTrade[], basis: MarkBasis): 
   });
 
   return buckets;
+}
+
+function percentOfTotal(value: number | null | undefined, total: number | null | undefined): number | null {
+  return isFiniteNumber(value) && isFiniteNumber(total) && total > 0 ? value / total : null;
+}
+
+function groupTooltip(group: PortfolioExposureGroup): string {
+  return [
+    `Gross Risk: ${formatCurrency(group.grossRisk, 0)}`,
+    `Net Capital: ${formatCurrency(group.netCapitalAtRisk, 0)}`,
+    `Premium: ${formatCurrency(group.premiumCollected, 0)}`,
+    `Total Gain/Loss: ${formatCurrency(group.totalGainLoss, 0)}`,
+    `Delta Exposure: ${formatSignedNumber(group.deltaExposure)}`,
+    `Underlying Eq.: ${formatCurrency(group.underlyingEquivalentExposure, 0)}`,
+    `Trades: ${group.tradeCount}`,
+  ].join('\n');
+}
+
+function topTickersForTheme(trades: PortfolioTrade[], theme: string): string {
+  const byTicker = new Map<string, number>();
+  trades.forEach(trade => {
+    if (getPortfolioEtfMetadata(trade.ticker).theme !== theme) return;
+    const ticker = trade.ticker.trim().toUpperCase();
+    byTicker.set(ticker, (byTicker.get(ticker) ?? 0) + (calculateEquityAtRisk(trade) ?? 0));
+  });
+  return [...byTicker.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 4)
+    .map(([ticker, risk]) => `${ticker} ${formatCompactCurrency(risk)}`)
+    .join(', ');
 }
 
 function parseNumber(value: string): number | null {
@@ -1135,6 +1362,8 @@ export default function PortfolioPage() {
               totalPremiumCollected={summary.totalPremiumCollected}
               onTickerClick={ticker => navigate(`/options/${ticker.trim().toUpperCase()}`)}
             />
+
+            <ConcentrationAnalytics trades={openTrades} markBasis={markBasis} />
 
             <div className="md:hidden space-y-2 mb-4">
               {sortedTrades.map(trade => (
