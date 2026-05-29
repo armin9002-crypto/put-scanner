@@ -11,6 +11,7 @@ import {
   type ExistingTradeAction,
   type ImportEditableRow,
   type PortfolioImportDiagnostics,
+  type PortfolioImportParseResult,
   type PortfolioImportPlan,
   type PortfolioImportOcrWord,
 } from '../lib/portfolioScreenshotImport';
@@ -36,7 +37,7 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
   const [soldDate, setSoldDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [diagnostics, setDiagnostics] = useState<PortfolioImportDiagnostics | null>(null);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
-  const [showMissing, setShowMissing] = useState(true);
+  const [showMissing, setShowMissing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -72,23 +73,40 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
     setProgress(0);
 
     try {
-      const processed = await preprocessImage(file);
       const tesseract = await import('tesseract.js');
       setStatus('reading');
-      const result = await tesseract.recognize(processed, 'eng', {
-        logger: message => {
-          if (message.status === 'recognizing text' && typeof message.progress === 'number') {
-            setProgress(Math.round(message.progress * 100));
-          }
-        },
-      });
-      const parsed = parseBrokerageScreenshotOcr({
-        text: result.data.text,
-        words: extractTesseractWords(result.data),
+      const parsed = await runOcrImportPasses(file, async (processed, passLabel, dimensions) => {
+        const ocrOptions = {
+          logger: (message: { status?: string; progress?: number }) => {
+            if (message.status === 'recognizing text' && typeof message.progress === 'number') {
+              setProgress(Math.round(message.progress * 100));
+            }
+          },
+          tessedit_pageseg_mode: passLabel === 'fallback' ? '11' : '6',
+          preserve_interword_spaces: '1',
+        } as unknown as Parameters<typeof tesseract.recognize>[2];
+        const result = await tesseract.recognize(processed.blob, 'eng', ocrOptions);
+        const extracted = extractTesseractWords(result.data);
+        const parsedResult = parseBrokerageScreenshotOcr({
+          text: result.data.text,
+          words: extracted.words,
+        });
+        return {
+          ...parsedResult,
+          diagnostics: {
+            ...parsedResult.diagnostics,
+            ocrWordCount: extracted.words.length,
+            ocrLineCount: extracted.lineCount || parsedResult.diagnostics.ocrLineCount,
+            ocrWordSource: extracted.source,
+            ocrPassUsed: passLabel,
+            originalImage: dimensions.original,
+            preprocessedImage: dimensions.processed,
+          },
+        };
       });
       const parsedRows = parsed.rows.map(row => ({
         ...row,
-        selected: isImportableRow(row) && (row.confidence ?? 0) >= 0.72,
+        selected: isImportableRow(row) && (row.confidence ?? 0) >= 0.62,
       }));
       setRows(parsedRows);
       setDiagnostics(parsed.diagnostics);
@@ -124,7 +142,7 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
   return (
     <div className="fixed inset-0 z-[85]">
       <button type="button" aria-label="Close import modal" onClick={onClose} className="absolute inset-0 bg-black/55" />
-      <div className="absolute inset-x-2 top-3 bottom-3 md:inset-x-4 md:top-4 md:bottom-4 xl:inset-x-1/2 xl:top-[3vh] xl:bottom-auto xl:w-[min(96vw,1800px)] xl:h-[94vh] xl:-translate-x-1/2 rounded-lg overflow-hidden p-3 sm:p-4 shadow-2xl flex flex-col" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
+      <div className="absolute inset-x-2 top-3 bottom-3 md:inset-x-4 md:top-4 md:bottom-4 xl:inset-x-1/2 xl:top-[4vh] xl:bottom-auto xl:w-[min(96vw,1600px)] xl:h-[min(92vh,1000px)] xl:-translate-x-1/2 rounded-lg overflow-hidden p-3 sm:p-4 shadow-2xl flex flex-col" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
         <div className="flex items-start justify-between gap-3 mb-3 flex-shrink-0">
           <div className="min-w-0">
             <h2 className="text-lg font-bold" style={{ color: 'var(--text)' }}>Import Screenshot</h2>
@@ -172,7 +190,7 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
                 <div className="flex items-center gap-2 text-xs mb-2" style={{ color: 'var(--text-muted)' }}>
                   <FileImage className="w-3.5 h-3.5" /> <span className="truncate">{fileName}</span>
                 </div>
-                <img src={imageUrl} alt="Brokerage screenshot preview" className="w-full max-h-[300px] 2xl:max-h-[380px] object-contain rounded" />
+                <img src={imageUrl} alt="Brokerage screenshot preview" className="w-full max-h-[260px] 2xl:max-h-[330px] object-contain rounded" />
               </div>
             ) : (
               <div className="rounded-lg p-3 text-xs flex items-start gap-2" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
@@ -220,13 +238,25 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
                   {showDiagnostics ? 'Hide' : 'Show'} OCR diagnostics
                 </button>
                 {showDiagnostics && (
-                  <div className="mt-2 space-y-1 font-mono" style={{ color: 'var(--text-muted)' }}>
+                  <div className="mt-2 space-y-1 font-mono max-h-[260px] overflow-auto pr-1" style={{ color: 'var(--text-muted)' }}>
+                    {diagnostics.originalImage && <div>Original: {diagnostics.originalImage.width}x{diagnostics.originalImage.height}</div>}
+                    {diagnostics.preprocessedImage && <div>Processed: {diagnostics.preprocessedImage.width}x{diagnostics.preprocessedImage.height}</div>}
+                    <div>OCR pass: {diagnostics.ocrPassUsed ?? DASH}</div>
+                    <div>Word source: {diagnostics.ocrWordSource ?? DASH}</div>
                     <div>Words: {diagnostics.ocrWordCount}</div>
+                    <div>Lines: {diagnostics.ocrLineCount ?? DASH}</div>
                     <div>Headers: {diagnostics.detectedHeaderColumns.join(', ') || DASH}</div>
                     <div>Detected rows: {diagnostics.detectedOptionRowCount}</div>
                     <div>Parsed rows: {diagnostics.parsedRowCount}</div>
                     <div>Importable rows: {diagnostics.importableRowCount}</div>
                     {diagnostics.warnings.map(warning => <div key={warning} style={{ color: 'var(--yellow)' }}>{warning}</div>)}
+                    {diagnostics.rowDiagnostics?.map((row, index) => (
+                      <details key={`${row.rawSymbolText}-${index}`} className="pt-1">
+                        <summary style={{ color: 'var(--accent-light)' }}>{index + 1}. {row.rawSymbolText} {row.rawExpiryText || DASH} ({Math.round(row.validationScore * 100)}%)</summary>
+                        <div>Cells: {JSON.stringify(row.rawCells)}</div>
+                        {row.warnings.map(warning => <div key={warning} style={{ color: 'var(--yellow)' }}>{warning}</div>)}
+                      </details>
+                    ))}
                   </div>
                 )}
               </div>
@@ -437,11 +467,14 @@ function normalizeEditableRow(row: ImportEditableRow, selected: boolean): Import
 
 interface TesseractWordLike {
   text: string;
-  confidence: number;
-  bbox: { x0: number; y0: number; x1: number; y1: number };
+  confidence?: number;
+  bbox?: { x0: number; y0: number; x1: number; y1: number };
 }
 
 interface TesseractLineLike {
+  text?: string;
+  confidence?: number;
+  bbox?: { x0: number; y0: number; x1: number; y1: number };
   words?: TesseractWordLike[];
 }
 
@@ -454,37 +487,101 @@ interface TesseractBlockLike {
 }
 
 interface TesseractPageLike {
+  text?: string;
+  words?: TesseractWordLike[];
+  lines?: TesseractLineLike[];
   blocks?: TesseractBlockLike[] | null;
 }
 
-function extractTesseractWords(page: TesseractPageLike): PortfolioImportOcrWord[] {
-  return (page.blocks ?? []).flatMap(block => (block.paragraphs ?? []).flatMap(paragraph => (paragraph.lines ?? []).flatMap(line => (line.words ?? []).map(word => ({
-    text: word.text,
-    confidence: word.confidence,
-    bbox: word.bbox,
-  })))));
+interface ExtractedTesseractWords {
+  words: PortfolioImportOcrWord[];
+  lineCount: number;
+  source: string;
 }
 
-async function preprocessImage(file: File): Promise<Blob> {
+interface ProcessedImage {
+  blob: Blob;
+  dimensions: { width: number; height: number };
+  original: { width: number; height: number };
+}
+
+function extractTesseractWords(page: TesseractPageLike): ExtractedTesseractWords {
+  const direct = normalizeTesseractWords(page.words ?? []);
+  if (direct.length > 0) {
+    return { words: direct, lineCount: page.lines?.length ?? 0, source: 'data.words' };
+  }
+
+  const blockWords = (page.blocks ?? []).flatMap(block => (block.paragraphs ?? []).flatMap(paragraph => (paragraph.lines ?? []).flatMap(line => line.words ?? [])));
+  const normalizedBlockWords = normalizeTesseractWords(blockWords);
+  if (normalizedBlockWords.length > 0) {
+    const lineCount = (page.blocks ?? []).reduce((total, block) => total + (block.paragraphs ?? []).reduce((paragraphTotal, paragraph) => paragraphTotal + (paragraph.lines?.length ?? 0), 0), 0);
+    return { words: normalizedBlockWords, lineCount, source: 'blocks.paragraphs.lines.words' };
+  }
+
+  const lineWords = (page.lines ?? []).flatMap(line => line.words ?? []);
+  const normalizedLineWords = normalizeTesseractWords(lineWords);
+  if (normalizedLineWords.length > 0) {
+    return { words: normalizedLineWords, lineCount: page.lines?.length ?? 0, source: 'data.lines.words' };
+  }
+
+  return { words: [], lineCount: page.lines?.length ?? 0, source: 'text_fallback' };
+}
+
+function normalizeTesseractWords(words: TesseractWordLike[]): PortfolioImportOcrWord[] {
+  return words.flatMap(word => {
+    if (!word.text || !word.bbox) return [];
+    return [{
+      text: word.text,
+      confidence: typeof word.confidence === 'number' ? word.confidence : 60,
+      bbox: word.bbox,
+    }];
+  });
+}
+
+async function runOcrImportPasses(
+  file: File,
+  recognize: (processed: ProcessedImage, passLabel: 'primary' | 'fallback', dimensions: { original: { width: number; height: number }; processed: { width: number; height: number } }) => Promise<PortfolioImportParseResult>
+): Promise<PortfolioImportParseResult> {
+  const primary = await preprocessImage(file, 'primary');
+  const primaryResult = await recognize(primary, 'primary', { original: primary.original, processed: primary.dimensions });
+  const enoughRows = primaryResult.diagnostics.importableRowCount >= 8 ||
+    (primaryResult.diagnostics.detectedOptionRowCount > 0 && primaryResult.diagnostics.detectedOptionRowCount < 8 && primaryResult.diagnostics.importableRowCount >= Math.floor(primaryResult.diagnostics.detectedOptionRowCount * 0.85));
+  if (primaryResult.diagnostics.ocrWordCount >= 40 && enoughRows) return primaryResult;
+
+  const fallback = await preprocessImage(file, 'fallback');
+  const fallbackResult = await recognize(fallback, 'fallback', { original: fallback.original, processed: fallback.dimensions });
+  return fallbackResult.diagnostics.importableRowCount >= primaryResult.diagnostics.importableRowCount ? fallbackResult : primaryResult;
+}
+
+async function preprocessImage(file: File, variant: 'primary' | 'fallback'): Promise<ProcessedImage> {
   const bitmap = await createImageBitmap(file);
-  const scale = bitmap.width < 1600 ? Math.min(2.5, 1600 / bitmap.width) : 1;
+  const targetWidth = variant === 'fallback' ? 3200 : 3000;
+  const scale = Math.max(1, targetWidth / bitmap.width);
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(bitmap.width * scale);
   canvas.height = Math.round(bitmap.height * scale);
   const context = canvas.getContext('2d', { willReadFrequently: true });
-  if (!context) return file;
+  if (!context) return { blob: file, dimensions: { width: bitmap.width, height: bitmap.height }, original: { width: bitmap.width, height: bitmap.height } };
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = 'high';
   context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
   const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
   const data = imageData.data;
   for (let i = 0; i < data.length; i += 4) {
     const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
-    const contrast = Math.max(0, Math.min(255, (gray - 128) * 1.35 + 128));
+    const contrastFactor = variant === 'fallback' ? 1.75 : 1.45;
+    const bias = variant === 'fallback' ? 6 : 0;
+    const contrast = Math.max(0, Math.min(255, (gray - 128) * contrastFactor + 128 - bias));
     data[i] = contrast;
     data[i + 1] = contrast;
     data[i + 2] = contrast;
   }
   context.putImageData(imageData, 0, 0);
   return new Promise(resolve => {
-    canvas.toBlob(blob => resolve(blob ?? file), 'image/png');
+    canvas.toBlob(blob => resolve({
+      blob: blob ?? file,
+      dimensions: { width: canvas.width, height: canvas.height },
+      original: { width: bitmap.width, height: bitmap.height },
+    }), 'image/png');
   });
 }

@@ -40,11 +40,23 @@ export interface PortfolioImportOcrWord {
 
 export interface PortfolioImportDiagnostics {
   ocrWordCount: number;
+  ocrLineCount?: number;
+  ocrWordSource?: string;
+  ocrPassUsed?: string;
+  originalImage?: { width: number; height: number };
+  preprocessedImage?: { width: number; height: number };
   detectedHeaderColumns: string[];
   detectedOptionRowCount: number;
   parsedRowCount: number;
   importableRowCount: number;
   warnings: string[];
+  rowDiagnostics?: Array<{
+    rawSymbolText: string;
+    rawExpiryText: string;
+    rawCells: Record<string, string>;
+    validationScore: number;
+    warnings: string[];
+  }>;
 }
 
 export interface PortfolioImportParseResult {
@@ -121,6 +133,21 @@ interface ColumnToken {
   confidence: number;
 }
 
+interface FidelityCells {
+  lastPrice?: number;
+  lastPriceChange?: number;
+  todayGainLossDollar?: number;
+  todayGainLossPercent?: number;
+  totalGainLossDollar?: number;
+  totalGainLossPercent?: number;
+  currentValue?: number;
+  percentOfAccount?: number;
+  quantity?: number;
+  averageCostBasis?: number;
+  costBasisTotal?: number;
+  score: number;
+}
+
 const MONTHS: Record<string, string> = {
   JAN: '01',
   FEB: '02',
@@ -141,6 +168,11 @@ const MONTHS: Record<string, string> = {
 };
 
 const ENTRY_DATE_WARNING = 'Entry date not shown in screenshot. Import date used as sold date. Edit trade if needed.';
+
+const KNOWN_IMPORT_TICKERS = [
+  'LABU', 'SSO', 'SOXL', 'YINN', 'TQQQ', 'QQQ', 'SPY', 'VIX', 'VXN', 'UPRO', 'TNA', 'FAS', 'AGQ', 'NAIL',
+  'SQQQ', 'UVXY', 'SOXS', 'TECL', 'FNGU', 'CWEB', 'YANG', 'IWM', 'DIA', 'QLD', 'SSO',
+];
 
 export function normalizeOcrText(value: string): string {
   return value
@@ -185,7 +217,8 @@ export function parseSignedNumber(value: string): number | undefined {
 
 export function parseOptionQuantity(rawText: string): QuantityParseResult {
   const cleaned = rawText.replace(/\bM\b/gi, ' ').replace(/\u2212/g, '-').replace(/[–—]/g, '-');
-  const matches = [...cleaned.matchAll(/(?:^|[\s$%])(-?\d{1,3})(?=\s|$)/g)];
+  const joinedMinus = cleaned.replace(/-\s+(\d)/g, '-$1');
+  const matches = [...joinedMinus.matchAll(/(?:^|[\s$%])(-?\d{1,3})(?=\s|$)/g)];
   const signed = matches.find(match => match[1].startsWith('-')) ?? matches[0];
   if (!signed) return { rawQuantity: null, contracts: null, side: 'unknown' };
   const rawQuantity = Number(signed[1]);
@@ -197,22 +230,40 @@ export function parseOptionQuantity(rawText: string): QuantityParseResult {
   };
 }
 
+export function parseBrokerageQuantityCell(rawText: string, cellWords: PortfolioImportOcrWord[] = []): QuantityParseResult {
+  const wordText = cellWords
+    .sort((a, b) => a.bbox.x0 - b.bbox.x0)
+    .map(word => word.text)
+    .join(' ');
+  return parseOptionQuantity(`${rawText} ${wordText}`);
+}
+
 export function parseDate(value: string): string | null {
-  const match = value.toUpperCase().replace(/\bJUI\b/g, 'JUL').match(/\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|SEPT|OCT|NOV|DEC)[\s.-]*(\d{1,2})[\s,.-]*(20\d{2})\b/);
+  const corrected = value
+    .toUpperCase()
+    .replace(/\bJUI\b/g, 'JUL')
+    .replace(/\bJUNI\b/g, 'JUN')
+    .replace(/\bJUl\b/g, 'JUL')
+    .replace(/[|]/g, ' ');
+  const match = corrected.match(/\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|SEPT|OCT|NOV|DEC)[\s.-]*(\d{1,2})[\s,.-]*(20\s*\d\s*\d|20\d{2})\b/);
   if (!match) return null;
   const [, monthName, day, year] = match;
   const month = MONTHS[monthName];
   if (!month) return null;
-  return `${year}-${month}-${day.padStart(2, '0')}`;
+  return `${year.replace(/\s+/g, '')}-${month}-${day.padStart(2, '0')}`;
 }
 
 export function parseOptionSymbolLine(value: string): { ticker: string; strike: number; optionType: 'put' } | null {
-  const normalized = value.replace(/[^\w.\s-]/g, ' ').replace(/\s+/g, ' ').trim();
+  const normalized = value
+    .replace(/[^\w.\s-]/g, ' ')
+    .replace(/\bP(?:u[tf]|uf|ul|vt)\b/gi, 'Put')
+    .replace(/\s+/g, ' ')
+    .trim();
   const match = normalized.match(/\b([A-Z][A-Z0-9]{1,7})\s+(\d+(?:\.\d+)?)\s+(?:P|PUT|PUTS)\b/i);
   if (!match) return null;
   const strike = Number(match[2]);
   if (!Number.isFinite(strike) || strike <= 0) return null;
-  return { ticker: match[1].toUpperCase(), strike, optionType: 'put' };
+  return { ticker: repairTicker(match[1].toUpperCase()), strike, optionType: 'put' };
 }
 
 export function makePortfolioContractKey({ ticker, optionType, expiration, strike }: { ticker: string; optionType: 'put'; expiration: string; strike: number }): string {
@@ -223,24 +274,83 @@ export function parseBrokerageScreenshotText(ocrText: string): ParsedBrokerageOp
   return parseBrokerageScreenshotOcr({ text: ocrText, words: [] }).rows;
 }
 
+export function runPortfolioScreenshotImportSelfCheck(): { ok: boolean; failures: string[] } {
+  const expected = [
+    ['LABU', 80, '2026-06-18', -3, 3, 2.69, -1050],
+    ['LABU', 65, '2027-01-15', -4, 4, 7.20, -2000],
+    ['SSO', 54.5, '2026-06-18', -3, 3, 4.49, -660],
+    ['SOXL', 40, '2026-07-17', -15, 15, 0.88, -930],
+    ['YINN', 30, '2027-01-15', -2, 2, 8.29, -1420],
+    ['TQQQ', 25, '2026-06-18', -4, 4, 1.46, -40],
+    ['TQQQ', 27.5, '2027-01-15', -5, 5, 3.50, -760],
+    ['TQQQ', 45, '2026-07-17', -3, 3, 0.94, -150],
+  ] as const;
+  const fixture = `
+LABU 80 Put
+Jun-18-2026
+3.50 +2.73 -819.00 -354.55% -242.02 -29.96% -1050.00 -0.21% -3 2.69 807.98
+LABU 65 Put
+Jan-15-2027
+5.00 +1.30 -520.00 -35.14% +878.21 +30.51% -2000.00 -0.40% -4 7.20 2878.21
+SSO 54.5 Put
+Jun-18-2026
+2.20 +1.66 -498.00 -307.41% +687.98 +51.03% -660.00 -0.13% -3 4.49 1347.98
+SOXL 40 Put
+Jul-17-2026
+0.62 +0.17 -255.00 -37.78% +394.88 +29.80% -930.00 -0.19% -15 0.88 1324.88
+YINN 30 Put
+Jan-15-2027
+7.10 +0.40 -80.00 -5.98% +238.59 +14.38% -1420.00 -0.29% -2 8.29 1658.59
+TQQQ 25 Put
+Jun-18-2026
+0.10 +0.08 -32.00 -400.00% +545.31 +93.16% -40.00 -0.01% -4 1.46 585.31
+TAQ 27.5 Put
+Jan-15-2027
+1.52 +0.03 -15.00 -2.02% +991.63 +56.61% -760.00 -0.15% -5 3.50 1751.63
+TQQ0 45 Put
+Jul-17-2026
+0.50 0.00 0.00 0.00% +132.98 +46.99% -150.00 -0.03% -3 0.94 282.98
+`;
+  const rows = parseBrokerageScreenshotText(fixture);
+  const failures: string[] = [];
+  if (rows.length !== expected.length) failures.push(`Expected 8 rows, parsed ${rows.length}.`);
+  expected.forEach(([ticker, strike, expiration, quantity, contracts, averageCostBasis, currentValue], index) => {
+    const row = rows[index];
+    if (!row) return;
+    if (row.ticker !== ticker) failures.push(`Row ${index + 1} ticker expected ${ticker}, got ${row.ticker}.`);
+    if (row.strike !== strike) failures.push(`Row ${index + 1} strike expected ${strike}, got ${row.strike}.`);
+    if (row.expiration !== expiration) failures.push(`Row ${index + 1} expiration expected ${expiration}, got ${row.expiration}.`);
+    if (row.quantity !== quantity) failures.push(`Row ${index + 1} quantity expected ${quantity}, got ${row.quantity}.`);
+    if (row.contracts !== contracts) failures.push(`Row ${index + 1} contracts expected ${contracts}, got ${row.contracts}.`);
+    if (!roughlyEqual(row.averageCostBasis ?? NaN, averageCostBasis, 0.02)) failures.push(`Row ${index + 1} avg cost expected ${averageCostBasis}, got ${row.averageCostBasis}.`);
+    if (!roughlyEqual(row.currentValue ?? NaN, currentValue, 1)) failures.push(`Row ${index + 1} current value expected ${currentValue}, got ${row.currentValue}.`);
+  });
+  return { ok: failures.length === 0, failures };
+}
+
 export function parseBrokerageScreenshotOcr(input: { text: string; words?: PortfolioImportOcrWord[] }): PortfolioImportParseResult {
   const words = normalizeOcrWords(input.words ?? []);
   if (words.length > 0) {
     const tableResult = parseBrokerageScreenshotWords(words);
-    if (tableResult.rows.length > 0) return tableResult;
+    if (tableResult.diagnostics.importableRowCount >= 8) return tableResult;
   }
 
   const lines = normalizeOcrText(input.text).split('\n');
-  const rows = dedupeParsedRows(getOptionRowBlocks(lines).map(parseRowBlock).filter(Boolean) as ParsedBrokerageOptionRow[]);
+  const textRows = dedupeParsedRows(getOptionRowBlocks(lines).map(parseRowBlock).filter(Boolean) as ParsedBrokerageOptionRow[]);
+  const wordRows = words.length > 0 ? parseBrokerageScreenshotWords(words).rows : [];
+  const rows = chooseBestRows(wordRows, textRows);
   return {
     rows,
     diagnostics: {
       ocrWordCount: words.length,
+      ocrLineCount: lines.length,
+      ocrWordSource: words.length > 0 ? 'word_geometry_plus_text_fallback' : 'text_fallback',
       detectedHeaderColumns: [],
-      detectedOptionRowCount: rows.length,
+      detectedOptionRowCount: Math.max(rows.length, wordRows.length),
       parsedRowCount: rows.length,
       importableRowCount: rows.filter(isImportableRow).length,
-      warnings: words.length > 0 ? ['Word-level OCR parsing did not detect rows; used text fallback.'] : ['Word-level OCR data was unavailable; used text fallback.'],
+      warnings: words.length > 0 ? ['Word-level OCR was incomplete; used Fidelity text fallback with accounting validation.'] : ['Word-level OCR data was unavailable; used Fidelity text fallback.'],
+      rowDiagnostics: rows.map(rowDiagnosticsFromParsedRow),
     },
   };
 }
@@ -463,11 +573,14 @@ function parseBrokerageScreenshotWords(words: PortfolioImportOcrWord[]): Portfol
     rows,
     diagnostics: {
       ocrWordCount: words.length,
+      ocrLineCount: lines.length,
+      ocrWordSource: 'word_geometry',
       detectedHeaderColumns,
       detectedOptionRowCount: blocks.length,
       parsedRowCount: rows.length,
       importableRowCount,
       warnings: diagnosticsWarnings,
+      rowDiagnostics: rows.map(rowDiagnosticsFromParsedRow),
     },
   };
 }
@@ -600,7 +713,7 @@ function parseTableRowBlock(block: TableRowBlock): ParsedBrokerageOptionRow | nu
     percentOfAccount: cells.percentOfAccount,
     averageCostBasis,
     costBasisTotal,
-    confidence: Math.max(0.25, Math.min(1, baseConfidence)),
+    confidence: Math.max(0.25, Math.min(1, Math.max(baseConfidence, 0.55) + cells.score / 250)),
     warnings: [...warnings, ENTRY_DATE_WARNING],
   });
 }
@@ -661,26 +774,51 @@ function extractColumnTokens(words: PortfolioImportOcrWord[]): ColumnToken[] {
   return tokens.sort((a, b) => a.x - b.x);
 }
 
-function mapFidelityTokens(tokens: ColumnToken[]) {
+function mapFidelityTokens(tokens: ColumnToken[]): FidelityCells {
   const nonPercent = tokens.filter(token => !token.isPercent);
   const percent = tokens.filter(token => token.isPercent);
   const quantityIndex = findQuantityColumnIndex(nonPercent);
   const quantity = quantityIndex >= 0 ? nonPercent[quantityIndex].value : undefined;
   const afterQuantity = quantityIndex >= 0 ? nonPercent.slice(quantityIndex + 1) : [];
   const beforeQuantity = quantityIndex >= 0 ? nonPercent.slice(0, quantityIndex) : nonPercent;
-
-  return {
-    lastPrice: beforeQuantity[0]?.value,
-    lastPriceChange: beforeQuantity[1]?.value,
-    todayGainLossDollar: beforeQuantity[2]?.value,
+  const lastPrice = beforeQuantity[0]?.value;
+  const lastPriceChange = beforeQuantity[1]?.value;
+  const currentValue = findCurrentValueToken(beforeQuantity, lastPrice, quantity)?.value;
+  const costBasisTotal = findBestCostBasisTotal(afterQuantity, quantity);
+  const directAverageCost = findBestAverageCost(afterQuantity, quantity, costBasisTotal);
+  const averageCostBasis = quantity != null && costBasisTotal != null
+    ? reconcileAverageCost(directAverageCost, costBasisTotal, Math.abs(quantity))
+    : directAverageCost;
+  const totalGainLossDollar = findTotalGainLossToken(beforeQuantity, currentValue, costBasisTotal)?.value ?? beforeQuantity[3]?.value;
+  const todayGainLossDollar = beforeQuantity[2]?.value;
+  const validationScore = scoreFidelityCells({
+    lastPrice,
+    lastPriceChange,
+    todayGainLossDollar,
     todayGainLossPercent: percent[0]?.value / 100,
-    totalGainLossDollar: beforeQuantity[3]?.value,
+    totalGainLossDollar,
     totalGainLossPercent: percent[1]?.value / 100,
-    currentValue: findCurrentValueToken(beforeQuantity)?.value,
+    currentValue,
     percentOfAccount: percent[2]?.value / 100,
     quantity,
-    averageCostBasis: afterQuantity.find(token => token.value >= 0 && token.value <= 100)?.value,
-    costBasisTotal: afterQuantity.find(token => Math.abs(token.value) > 100)?.value,
+    averageCostBasis,
+    costBasisTotal,
+    score: 0,
+  });
+
+  return {
+    lastPrice,
+    lastPriceChange,
+    todayGainLossDollar,
+    todayGainLossPercent: percent[0]?.value / 100,
+    totalGainLossDollar,
+    totalGainLossPercent: percent[1]?.value / 100,
+    currentValue,
+    percentOfAccount: percent[2]?.value / 100,
+    quantity,
+    averageCostBasis,
+    costBasisTotal,
+    score: validationScore,
   };
 }
 
@@ -701,10 +839,70 @@ function findQuantityColumnIndex(nonPercent: ColumnToken[]): number {
   return scored[0]?.index ?? -1;
 }
 
-function findCurrentValueToken(beforeQuantity: ColumnToken[]): ColumnToken | undefined {
+function findCurrentValueToken(beforeQuantity: ColumnToken[], lastPrice?: number, quantity?: number): ColumnToken | undefined {
+  const contracts = quantity == null ? null : Math.abs(quantity);
+  const expected = lastPrice != null && contracts != null ? -lastPrice * contracts * 100 : null;
+  if (expected != null) {
+    const match = beforeQuantity.find(token => roughlyEqual(token.value, expected, Math.max(5, Math.abs(expected) * 0.04)));
+    if (match) return match;
+  }
   const negative = [...beforeQuantity].reverse().find(token => token.value < 0 && Math.abs(token.value) >= 10);
   if (negative) return negative;
   return [...beforeQuantity].reverse().find(token => Math.abs(token.value) >= 10);
+}
+
+function findBestCostBasisTotal(afterQuantity: ColumnToken[], quantity?: number): number | undefined {
+  if (quantity == null) return afterQuantity.find(token => Math.abs(token.value) > 100)?.value;
+  const contracts = Math.abs(quantity);
+  const avgCandidates = afterQuantity.filter(token => token.value >= 0 && token.value <= 100);
+  for (const avg of avgCandidates) {
+    const expected = avg.value * contracts * 100;
+    const match = afterQuantity.find(token => roughlyEqual(Math.abs(token.value), expected, Math.max(8, expected * 0.06)));
+    if (match) return roundMoney(Math.abs(match.value));
+  }
+  const fallback = afterQuantity.find(token => Math.abs(token.value) > 100)?.value;
+  return fallback == null ? undefined : roundMoney(Math.abs(fallback));
+}
+
+function findBestAverageCost(afterQuantity: ColumnToken[], quantity?: number, costBasisTotal?: number): number | undefined {
+  const direct = afterQuantity.find(token => token.value >= 0 && token.value <= 100)?.value;
+  if (quantity != null && costBasisTotal != null) return reconcileAverageCost(direct, costBasisTotal, Math.abs(quantity));
+  return direct == null ? undefined : roundMoney(direct);
+}
+
+function reconcileAverageCost(direct: number | undefined, costBasisTotal: number, contracts: number): number {
+  const derived = roundMoney(costBasisTotal / contracts / 100);
+  if (direct == null) return derived;
+  return roughlyEqual(direct, derived, Math.max(0.03, derived * 0.05)) ? roundMoney(direct) : derived;
+}
+
+function findTotalGainLossToken(beforeQuantity: ColumnToken[], currentValue?: number, costBasisTotal?: number): ColumnToken | undefined {
+  const expected = currentValue != null && costBasisTotal != null ? costBasisTotal + currentValue : null;
+  if (expected != null) {
+    const match = beforeQuantity.find(token => roughlyEqual(token.value, expected, Math.max(5, Math.abs(expected) * 0.05)));
+    if (match) return match;
+  }
+  return beforeQuantity.filter(token => token.value !== currentValue).find((_, index, values) => index === values.length - 2);
+}
+
+function scoreFidelityCells(cells: FidelityCells): number {
+  let score = 0;
+  const contracts = cells.quantity == null ? null : Math.abs(cells.quantity);
+  if (contracts != null && contracts > 0) score += 20;
+  if (cells.quantity != null && cells.quantity < 0) score += 10;
+  if (contracts != null && cells.averageCostBasis != null && cells.costBasisTotal != null) {
+    const expected = cells.averageCostBasis * contracts * 100;
+    if (roughlyEqual(Math.abs(cells.costBasisTotal), expected, Math.max(5, expected * 0.03))) score += 30;
+  }
+  if (contracts != null && cells.lastPrice != null && cells.currentValue != null) {
+    const expected = -cells.lastPrice * contracts * 100;
+    if (roughlyEqual(cells.currentValue, expected, Math.max(5, Math.abs(expected) * 0.03))) score += 30;
+  }
+  if (cells.costBasisTotal != null && cells.currentValue != null && cells.totalGainLossDollar != null) {
+    const expected = cells.costBasisTotal + cells.currentValue;
+    if (roughlyEqual(cells.totalGainLossDollar, expected, Math.max(5, Math.abs(expected) * 0.05))) score += 20;
+  }
+  return score;
 }
 
 function inferSideFromCells(cells: { currentValue?: number; quantity?: number }): OptionSide {
@@ -943,6 +1141,69 @@ function dedupeParsedRows(rows: ParsedBrokerageOptionRow[]): ParsedBrokerageOpti
     if (!existing || (row.confidence ?? 0) > (existing.confidence ?? 0)) byKey.set(key, row);
   });
   return [...byKey.values()];
+}
+
+function chooseBestRows(wordRows: ParsedBrokerageOptionRow[], textRows: ParsedBrokerageOptionRow[]): ParsedBrokerageOptionRow[] {
+  if (wordRows.length === 0) return textRows;
+  if (textRows.length === 0) return wordRows;
+  const wordImportable = wordRows.filter(isImportableRow).length;
+  const textImportable = textRows.filter(isImportableRow).length;
+  if (textRows.length > wordRows.length && textImportable >= wordImportable) return textRows;
+  if (textImportable > wordImportable) return textRows;
+  return wordRows;
+}
+
+function repairTicker(rawTicker: string): string {
+  const cleaned = rawTicker.toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/0/g, 'O');
+  if (KNOWN_IMPORT_TICKERS.includes(cleaned)) return cleaned;
+  if (cleaned === 'TAQ' || cleaned === 'TQQ' || cleaned === 'TQOQ' || cleaned === 'TOQQ' || cleaned === 'TQQO') return 'TQQQ';
+  const scored = KNOWN_IMPORT_TICKERS
+    .map(ticker => ({ ticker, distance: editDistance(cleaned, ticker) }))
+    .filter(item => item.distance <= 1 || (cleaned.length >= 4 && item.distance <= 2))
+    .sort((a, b) => a.distance - b.distance || a.ticker.length - b.ticker.length);
+  return scored[0]?.ticker ?? cleaned;
+}
+
+function editDistance(a: string, b: string): number {
+  const dp = Array.from({ length: a.length + 1 }, () => Array<number>(b.length + 1).fill(0));
+  for (let i = 0; i <= a.length; i += 1) dp[i][0] = i;
+  for (let j = 0; j <= b.length; j += 1) dp[0][j] = j;
+  for (let i = 1; i <= a.length; i += 1) {
+    for (let j = 1; j <= b.length; j += 1) {
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+      );
+    }
+  }
+  return dp[a.length][b.length];
+}
+
+function rowDiagnosticsFromParsedRow(row: ParsedBrokerageOptionRow): NonNullable<PortfolioImportDiagnostics['rowDiagnostics']>[number] {
+  return {
+    rawSymbolText: `${row.ticker} ${row.strike} Put`,
+    rawExpiryText: row.expiration,
+    rawCells: {
+      lastPrice: valueText(row.lastPrice),
+      lastPriceChange: valueText(row.lastPriceChange),
+      todayGainLossDollar: valueText(row.todayGainLossDollar),
+      todayGainLossPercent: valueText(row.todayGainLossPercent),
+      totalGainLossDollar: valueText(row.totalGainLossDollar),
+      totalGainLossPercent: valueText(row.totalGainLossPercent),
+      currentValue: valueText(row.currentValue),
+      percentOfAccount: valueText(row.percentOfAccount),
+      quantity: valueText(row.quantity),
+      averageCostBasis: valueText(row.averageCostBasis),
+      costBasisTotal: valueText(row.costBasisTotal),
+    },
+    validationScore: row.confidence ?? 0,
+    warnings: row.warnings,
+  };
+}
+
+function valueText(value: number | null | undefined): string {
+  return Number.isFinite(value) ? String(value) : '';
 }
 
 function roundMoney(value: number): number {
