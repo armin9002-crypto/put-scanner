@@ -948,25 +948,24 @@ export default function PortfolioPage() {
               <div className="rounded-lg px-3 py-2 mb-4 text-sm" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>No open trades.</div>
             )}
 
-            <section className="mt-4 mb-4 w-full xl:w-3/4 2xl:max-w-[1350px]">
+            <section className="mt-4 mb-4 w-full max-w-full">
               <div className="flex items-center justify-between mb-2">
                 <h2 className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--text-muted)' }}>Portfolio Analytics</h2>
-                <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Compact risk and yield views</span>
               </div>
               {openTrades.length === 0 ? (
                 <section className="rounded-lg p-3 text-sm" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>No open positions for analytics.</section>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-12 gap-3">
-                  <div className="md:col-span-1 xl:col-span-7">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-12 gap-2">
+                  <div className="md:col-span-1 xl:col-span-8">
                     <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openTrades, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." />
                   </div>
-                  <div className="md:col-span-1 xl:col-span-5">
+                  <div className="md:col-span-1 xl:col-span-4">
                     <CloseCandidatesCard candidates={buildCloseCandidates(openTrades, markBasis).slice(0, 5)} onTickerClick={ticker => navigate(`/options/${ticker.trim().toUpperCase()}`)} />
                   </div>
-                  <div className="md:col-span-1 xl:col-span-7">
+                  <div className="md:col-span-1 xl:col-span-8">
                     <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openTrades, markBasis)} totalGrossRisk={sumValues(openTrades.map(calculateEquityAtRisk))} maxItems={8} />
                   </div>
-                  <div className="md:col-span-1 xl:col-span-5">
+                  <div className="md:col-span-1 xl:col-span-4">
                     <NeedsAttentionList items={buildNeedsAttention(openTrades).slice(0, 5)} onTickerClick={ticker => navigate(`/options/${ticker.trim().toUpperCase()}`)} onDetailsClick={openDrawer} />
                   </div>
                 </div>
