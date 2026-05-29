@@ -68,6 +68,24 @@ interface DrawerSelection {
   underlyingPrice: number | null;
 }
 
+interface CloseCandidate {
+  trade: PortfolioTrade;
+  percentCaptured: number | null;
+  currentAnnualizedYield: number | null;
+  remainingPremium: number | null;
+  dte: number | null;
+  score: number;
+  reasons: string[];
+}
+
+interface CapturedDistributionBucket {
+  label: string;
+  match: (value: number) => boolean;
+  tradeCount: number;
+  grossRisk: number;
+  premiumCollected: number;
+}
+
 type SortField = 'ticker' | 'expiration' | 'dte' | 'strike' | 'contracts' | 'premium' | 'risk' | 'pnl' | 'delta';
 type SortDir = 'asc' | 'desc';
 
@@ -364,6 +382,136 @@ function NeedsAttentionList({
   );
 }
 
+function YieldAnalytics({
+  trades,
+  markBasis,
+  markSummary,
+  totalPremiumCollected,
+  onTickerClick,
+}: {
+  trades: PortfolioTrade[];
+  markBasis: MarkBasis;
+  markSummary: ReturnType<typeof calculatePortfolioMarkSummary>;
+  totalPremiumCollected: number;
+  onTickerClick: (ticker: string) => void;
+}) {
+  const closeCandidates = useMemo(() => buildCloseCandidates(trades, markBasis).slice(0, 5), [trades, markBasis]);
+  const distribution = useMemo(() => buildCapturedDistribution(trades, markBasis), [trades, markBasis]);
+
+  if (trades.length === 0) return null;
+
+  return (
+    <section className="mb-4">
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--text-muted)' }}>Yield Analytics</h2>
+        <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Current values use {markBasis.toUpperCase()}</span>
+      </div>
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+        <YieldComparisonCard markSummary={markSummary} totalPremiumCollected={totalPremiumCollected} />
+        <CloseCandidatesCard candidates={closeCandidates} onTickerClick={onTickerClick} />
+        <PremiumCapturedDistribution buckets={distribution} />
+      </div>
+    </section>
+  );
+}
+
+function YieldComparisonCard({ markSummary, totalPremiumCollected }: { markSummary: ReturnType<typeof calculatePortfolioMarkSummary>; totalPremiumCollected: number }) {
+  const rows = [
+    { label: 'Original NY', value: formatPctValue(markSummary.portfolioOriginalNominalYield) },
+    { label: 'Original AY', value: formatPctValue(markSummary.portfolioOriginalAnnualizedYield) },
+    { label: 'Current NY', value: formatPctValue(markSummary.portfolioCurrentNominalYield) },
+    { label: 'Current AY', value: formatPctValue(markSummary.portfolioCurrentAnnualizedYield) },
+    { label: 'Premium Collected', value: formatCurrency(totalPremiumCollected, 0), muted: true },
+    { label: 'Remaining Premium', value: formatCurrency(markSummary.totalCurrentPremium, 0), muted: true },
+    { label: '% Captured', value: formatPctValue(markSummary.percentCaptured), color: pnlColor(markSummary.percentCaptured) },
+  ];
+
+  return (
+    <section className="rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <div className="mb-2">
+        <h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Original vs Current Yield</h3>
+        <p className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Portfolio AY uses aggregate dollar-days.</p>
+      </div>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+        {rows.map(row => (
+          <div key={row.label} className="flex items-baseline justify-between gap-2 min-w-0">
+            <span className="text-[10px] truncate" style={{ color: 'var(--text-dim)' }}>{row.label}</span>
+            <span className="font-mono text-xs tabular-nums font-semibold whitespace-nowrap" style={{ color: row.color ?? (row.muted ? 'var(--text-secondary)' : 'var(--text)') }}>{row.value}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function CloseCandidatesCard({ candidates, onTickerClick }: { candidates: CloseCandidate[]; onTickerClick: (ticker: string) => void }) {
+  return (
+    <section className="rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <div>
+          <h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Close Candidates</h3>
+          <p className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Potential close/redeploy candidates.</p>
+        </div>
+        <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Top {candidates.length}</span>
+      </div>
+      {candidates.length === 0 ? (
+        <p className="text-xs" style={{ color: 'var(--text-dim)' }}>No obvious close candidates at the selected mark.</p>
+      ) : (
+        <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1">
+          {candidates.map(candidate => (
+            <div key={candidate.trade.id} className="rounded px-2 py-1.5" title={candidate.reasons.join(', ')} style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
+              <div className="grid grid-cols-[minmax(88px,1fr)_auto_auto] gap-2 items-baseline">
+                <button onClick={() => onTickerClick(candidate.trade.ticker)} className="text-left font-mono text-xs font-bold truncate underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{candidate.trade.ticker}</button>
+                <span className="font-mono text-[11px] tabular-nums" style={{ color: pnlColor(candidate.percentCaptured) }}>{formatPctValue(candidate.percentCaptured)}</span>
+                <span className="font-mono text-[11px] tabular-nums" style={{ color: 'var(--text-secondary)' }}>{formatCurrency(candidate.remainingPremium, 0)}</span>
+              </div>
+              <div className="grid grid-cols-[minmax(88px,1fr)_auto_auto] gap-2 text-[10px] mt-0.5" style={{ color: 'var(--text-dim)' }}>
+                <span className="truncate">{expiryLabel(candidate.trade.expiration)} {formatCurrency(candidate.trade.strike, 0)} Put</span>
+                <span className="font-mono tabular-nums">{formatPctValue(candidate.currentAnnualizedYield)} AY</span>
+                <span className="font-mono tabular-nums">{formatDteValue(candidate.dte)}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PremiumCapturedDistribution({ buckets }: { buckets: CapturedDistributionBucket[] }) {
+  const max = Math.max(...buckets.map(bucket => bucket.grossRisk), 0);
+  const visible = buckets.filter(bucket => bucket.tradeCount > 0);
+  return (
+    <section className="rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Premium Captured Distribution</h3>
+        <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Gross risk</span>
+      </div>
+      {visible.length === 0 ? (
+        <p className="text-xs" style={{ color: 'var(--text-dim)' }}>No mark-based capture data.</p>
+      ) : (
+        <div className="space-y-2">
+          {visible.map(bucket => {
+            const width = max > 0 ? Math.max(4, bucket.grossRisk / max * 100) : 0;
+            return (
+              <div key={bucket.label}>
+                <div className="flex items-center justify-between gap-2 text-[11px] mb-1">
+                  <span className="truncate" style={{ color: 'var(--text)' }}>{bucket.label}</span>
+                  <span className="font-mono tabular-nums" style={{ color: 'var(--text-secondary)' }}>{bucket.tradeCount} / {formatCompactCurrency(bucket.grossRisk)}</span>
+                </div>
+                <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--surface-alt)' }}>
+                  <div className="h-full rounded-full" style={{ width: `${width}%`, backgroundColor: bucket.label.startsWith('Losing') ? 'var(--red)' : 'var(--accent)' }} />
+                </div>
+                <div className="text-[10px] mt-0.5 truncate" style={{ color: 'var(--text-dim)' }}>Premium {formatCompactCurrency(bucket.premiumCollected)}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function breakevenTone(label: PortfolioBreakevenRiskBucket): { background: string; border: string; color: string } {
   if (label === 'Below Breakeven') return { background: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.28)', color: 'var(--red)' };
   if (label === '0-5% Above Breakeven') return { background: 'rgba(249,115,22,0.12)', border: 'rgba(249,115,22,0.26)', color: 'var(--orange)' };
@@ -395,6 +543,73 @@ function attentionScore(trade: PortfolioTrade): number {
   score += Math.min(35, grossRisk / 10_000);
 
   return score;
+}
+
+function buildCloseCandidates(trades: PortfolioTrade[], basis: MarkBasis): CloseCandidate[] {
+  return trades
+    .map(trade => {
+      const percentCaptured = calculatePercentCaptured(trade, basis);
+      const currentAnnualizedYield = calculateCurrentAnnualizedYield(trade, basis);
+      const remainingPremium = calculateCurrentMarkValueAbsolute(trade, basis);
+      const currentMark = calculateCurrentOptionMark(trade, basis);
+      const dte = calculateRemainingDte(trade);
+      const breakevenCushion = getTradeDistanceToBreakeven(trade);
+      const reasons: string[] = [];
+
+      if (isFiniteNumber(percentCaptured) && percentCaptured >= 0.75) reasons.push('75%+ captured');
+      else if (isFiniteNumber(percentCaptured) && percentCaptured >= 0.50) reasons.push('50%+ captured');
+      if (isFiniteNumber(percentCaptured) && percentCaptured >= 0.50 && isFiniteNumber(currentAnnualizedYield) && currentAnnualizedYield < 0.05) reasons.push('low remaining yield');
+      if (isFiniteNumber(currentMark) && currentMark <= 0.05) reasons.push('small remaining premium');
+      if (isFiniteNumber(dte) && dte <= 14 && isFiniteNumber(breakevenCushion) && breakevenCushion >= 0.20) reasons.push('near expiry with cushion');
+
+      let score = 0;
+      if (isFiniteNumber(percentCaptured)) score += percentCaptured * 100;
+      if (isFiniteNumber(currentAnnualizedYield)) score += Math.max(0, 20 - currentAnnualizedYield * 200);
+      if (isFiniteNumber(currentMark) && currentMark <= 0.05) score += 30;
+      if (isFiniteNumber(dte)) score += Math.max(0, 20 - dte);
+      if (isFiniteNumber(breakevenCushion)) score += Math.min(20, breakevenCushion * 50);
+
+      return { trade, percentCaptured, currentAnnualizedYield, remainingPremium, dte, score, reasons };
+    })
+    .filter(candidate => candidate.reasons.length > 0)
+    .sort((a, b) => b.score - a.score);
+}
+
+function getRedeployBadges(trade: PortfolioTrade, basis: MarkBasis): string[] {
+  const percentCaptured = calculatePercentCaptured(trade, basis);
+  const currentAnnualizedYield = calculateCurrentAnnualizedYield(trade, basis);
+  const dte = calculateRemainingDte(trade);
+  const badges: string[] = [];
+
+  if (isFiniteNumber(percentCaptured) && percentCaptured >= 0.75) badges.push('75%+ Captured');
+  else if (isFiniteNumber(percentCaptured) && percentCaptured >= 0.50) badges.push('50%+ Captured');
+  if (isFiniteNumber(currentAnnualizedYield) && currentAnnualizedYield < 0.05) badges.push('Low Remaining Yield');
+  if (isFiniteNumber(dte) && dte <= 14) badges.push('Near Expiry');
+
+  return badges;
+}
+
+function buildCapturedDistribution(trades: PortfolioTrade[], basis: MarkBasis): CapturedDistributionBucket[] {
+  const buckets: CapturedDistributionBucket[] = [
+    { label: 'Losing / negative', match: value => value < 0, tradeCount: 0, grossRisk: 0, premiumCollected: 0 },
+    { label: '0-25%', match: value => value >= 0 && value < 0.25, tradeCount: 0, grossRisk: 0, premiumCollected: 0 },
+    { label: '25-50%', match: value => value >= 0.25 && value < 0.50, tradeCount: 0, grossRisk: 0, premiumCollected: 0 },
+    { label: '50-75%', match: value => value >= 0.50 && value < 0.75, tradeCount: 0, grossRisk: 0, premiumCollected: 0 },
+    { label: '75-90%', match: value => value >= 0.75 && value < 0.90, tradeCount: 0, grossRisk: 0, premiumCollected: 0 },
+    { label: '90%+', match: value => value >= 0.90, tradeCount: 0, grossRisk: 0, premiumCollected: 0 },
+  ];
+
+  trades.forEach(trade => {
+    const captured = calculatePercentCaptured(trade, basis);
+    if (!isFiniteNumber(captured)) return;
+    const bucket = buckets.find(item => item.match(captured));
+    if (!bucket) return;
+    bucket.tradeCount += 1;
+    bucket.grossRisk += calculateEquityAtRisk(trade) ?? 0;
+    bucket.premiumCollected += calculatePremiumCollected(trade) ?? 0;
+  });
+
+  return buckets;
 }
 
 function parseNumber(value: string): number | null {
@@ -913,6 +1128,14 @@ export default function PortfolioPage() {
               onDetailsClick={openDrawer}
             />
 
+            <YieldAnalytics
+              trades={openTrades}
+              markBasis={markBasis}
+              markSummary={markSummary}
+              totalPremiumCollected={summary.totalPremiumCollected}
+              onTickerClick={ticker => navigate(`/options/${ticker.trim().toUpperCase()}`)}
+            />
+
             <div className="md:hidden space-y-2 mb-4">
               {sortedTrades.map(trade => (
                 <div key={trade.id} className="rounded-lg p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
@@ -930,7 +1153,16 @@ export default function PortfolioPage() {
                     <Metric label="Total Gain/Loss" value={formatCurrency(calculateTotalGainLoss(trade, markBasis), 0)} color={pnlColor(calculateTotalGainLoss(trade, markBasis))} />
                     <Metric label="% Captured" value={formatPctValue(calculatePercentCaptured(trade, markBasis))} color={pnlColor(calculatePercentCaptured(trade, markBasis))} />
                     <Metric label="Delta" value={formatDelta(trade.latestMarketData?.delta)} color={pnlColor(trade.latestMarketData?.delta)} />
+                    <Metric label="Original AY" value={formatPctValue(calculateOriginalAnnualizedYield(trade))} />
+                    <Metric label="Current AY" value={formatPctValue(calculateCurrentAnnualizedYield(trade, markBasis))} />
                   </div>
+                  {getRedeployBadges(trade, markBasis).length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-3">
+                      {getRedeployBadges(trade, markBasis).map(badge => (
+                        <span key={badge} className="rounded px-1.5 py-0.5 text-[10px]" style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)', border: '1px solid var(--accent-border)' }}>{badge}</span>
+                      ))}
+                    </div>
+                  )}
                   {trade.importedSnapshot && (
                     <p className="text-[11px] mt-2" style={{ color: 'var(--yellow)' }}>Entry date missing - using import date. Edit if needed.</p>
                   )}
@@ -980,6 +1212,7 @@ export default function PortfolioPage() {
                       const currentValue = calculateCurrentPositionValue(trade, markBasis);
                       const currentMark = calculateCurrentOptionMark(trade, markBasis);
                       const delta = trade.latestMarketData?.delta ?? null;
+                      const redeployBadges = getRedeployBadges(trade, markBasis);
                       return (
                         <tr key={trade.id} style={{ borderBottom: '1px solid var(--border)', backgroundColor: index % 2 ? 'var(--row-alt)' : 'transparent' }}>
                           <td className="px-2 py-1 text-left font-mono font-bold whitespace-nowrap">
@@ -1009,8 +1242,15 @@ export default function PortfolioPage() {
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatPctValue(calculateOriginalAnnualizedYield(trade))}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatPctValue(calculateCurrentNominalYield(trade, markBasis))}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatPctValue(calculateCurrentAnnualizedYield(trade, markBasis))}</td>
-                          <td className="px-2 py-1 text-left max-w-[220px] truncate" style={{ color: trade.notes ? 'var(--text-secondary)' : 'var(--text-dim)' }}>
-                            {trade.importedSnapshot ? 'Entry date missing - import date used. ' : ''}{trade.notes || DASH}
+                          <td className="px-2 py-1 text-left max-w-[240px]" style={{ color: trade.notes ? 'var(--text-secondary)' : 'var(--text-dim)' }}>
+                            {redeployBadges.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mb-1">
+                                {redeployBadges.map(badge => (
+                                  <span key={badge} className="rounded px-1 py-0.5 text-[9px] whitespace-nowrap" style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)', border: '1px solid var(--accent-border)' }}>{badge}</span>
+                                ))}
+                              </div>
+                            )}
+                            <div className="truncate">{trade.importedSnapshot ? 'Entry date missing - import date used. ' : ''}{trade.notes || DASH}</div>
                           </td>
                           <td className="px-2 py-1 whitespace-nowrap">
                             <div className="flex items-center gap-1">
