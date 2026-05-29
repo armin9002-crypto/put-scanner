@@ -385,18 +385,19 @@ export function parseBrokerageScreenshotOcr(input: { text: string; words?: Portf
 export function parsedBrokerageRowToPortfolioTrade(row: ImportEditableRow, importDate: string, nowIso = new Date().toISOString()): PortfolioTradeInput | null {
   if (!isImportableRow(row)) return null;
   const noteWarning = 'Imported from brokerage screenshot. Entry date missing - import date used as sold date.';
+  const exactCostBasisTotal = getExactCostBasisTotal(row);
+  const soldPrice = getExactSoldPrice(row);
   return {
     ticker: row.ticker,
     optionType: 'put',
     strike: row.strike,
     expiration: row.expiration,
     contracts: row.contracts,
-    soldPrice: row.averageCostBasis,
+    soldPrice,
     soldDate: importDate,
     status: 'open',
     notes: noteWarning,
     latestMarketData: {
-      optionLast: row.lastPrice,
       refreshedAt: nowIso,
       availabilityStatus: 'imported_snapshot',
     },
@@ -410,8 +411,8 @@ export function parsedBrokerageRowToPortfolioTrade(row: ImportEditableRow, impor
       totalGainLossPercent: row.totalGainLossPercent,
       currentValue: row.currentValue,
       percentOfAccount: row.percentOfAccount,
-      averageCostBasis: row.averageCostBasis,
-      costBasisTotal: row.costBasisTotal,
+      averageCostBasis: soldPrice,
+      costBasisTotal: exactCostBasisTotal,
     },
   };
 }
@@ -513,10 +514,7 @@ export function applyPortfolioImportPlan(plan: PortfolioImportPlan, existingTrad
       soldDate: rowImportDate,
       notes: existing.notes ?? '',
       updatedAt: nowIso,
-      latestMarketData: {
-        ...existing.latestMarketData,
-        ...input.latestMarketData,
-      },
+      latestMarketData: existing.latestMarketData,
       importedSnapshot: input.importedSnapshot,
     };
     const index = next.findIndex(trade => trade.id === existing.id);
@@ -546,12 +544,27 @@ export function getImportDifferences(existingTrade: PortfolioTrade, row: ImportE
   addNumberDifference(differences, 'Strike', existingTrade.strike, row.strike, 0.0001, formatPlainNumber);
   addNumberDifference(differences, 'Quantity', -Math.abs(existingTrade.contracts), row.quantity, 0.01, formatPlainNumber);
   addNumberDifference(differences, 'Contracts', existingTrade.contracts, row.contracts, 0.01, formatPlainNumber);
-  addNumberDifference(differences, 'Sold price', existingTrade.soldPrice, row.averageCostBasis, 0.005, formatOptionDiff);
-  addNumberDifference(differences, 'Last', existingTrade.importedSnapshot?.lastPrice ?? existingTrade.latestMarketData?.optionLast, row.lastPrice, 0.005, formatOptionDiff);
-  addNumberDifference(differences, 'Current value', existingTrade.importedSnapshot?.currentValue, row.currentValue, 1, formatMoneyDiff);
-  addNumberDifference(differences, 'Cost basis', existingTrade.importedSnapshot?.costBasisTotal, row.costBasisTotal, 1, formatMoneyDiff);
-  addNumberDifference(differences, 'Total G/L', existingTrade.importedSnapshot?.totalGainLossDollar, row.totalGainLossDollar, 1, formatMoneyDiff);
+  addNumberDifference(differences, 'Sold price', existingTrade.soldPrice, getExactSoldPrice(row), 0.005, formatOptionDiff);
+  addNumberDifference(differences, 'Cost basis', getExistingCostBasisTotal(existingTrade), getExactCostBasisTotal(row), 1, formatMoneyDiff);
+  if (row.dateAcquiredEdited) addTextDifference(differences, 'Date acquired', existingTrade.soldDate, row.dateAcquired);
   return differences;
+}
+
+function getExactSoldPrice(row: ImportEditableRow & { contracts?: number | null; averageCostBasis?: number | null }): number {
+  if (Number.isFinite(row.costBasisTotal) && Number.isFinite(row.contracts) && (row.contracts ?? 0) > 0) {
+    return Number(row.costBasisTotal) / Number(row.contracts) / 100;
+  }
+  return Number(row.averageCostBasis);
+}
+
+function getExactCostBasisTotal(row: ImportEditableRow & { contracts?: number | null; averageCostBasis?: number | null }): number {
+  if (Number.isFinite(row.costBasisTotal)) return Number(row.costBasisTotal);
+  return getExactSoldPrice(row) * Number(row.contracts) * 100;
+}
+
+function getExistingCostBasisTotal(trade: PortfolioTrade): number {
+  if (Number.isFinite(trade.importedSnapshot?.costBasisTotal)) return Number(trade.importedSnapshot?.costBasisTotal);
+  return trade.soldPrice * trade.contracts * 100;
 }
 
 function addTextDifference(differences: ImportDifference[], field: string, existing: string | undefined, imported: string | undefined): void {
@@ -594,6 +607,8 @@ function formatMoneyDiff(value: number | null | undefined): string {
 }
 
 export function isImportableRow(row: ImportEditableRow | ParsedBrokerageOptionRow): row is ImportEditableRow & { quantity: number; contracts: number; averageCostBasis: number } {
+  const hasExactOrDerivedCostBasis = Number.isFinite(row.costBasisTotal) ||
+    (Number.isFinite(row.averageCostBasis) && Number.isFinite(row.contracts) && (row.contracts ?? 0) > 0);
   return !!row.ticker &&
     row.optionType === 'put' &&
     Number.isFinite(row.strike) &&
@@ -603,7 +618,8 @@ export function isImportableRow(row: ImportEditableRow | ParsedBrokerageOptionRo
     Number.isFinite(row.contracts) &&
     (row.contracts ?? 0) > 0 &&
     Number.isFinite(row.averageCostBasis) &&
-    (row.averageCostBasis ?? -1) >= 0;
+    (row.averageCostBasis ?? -1) >= 0 &&
+    hasExactOrDerivedCostBasis;
 }
 
 export function validateParsedBrokerageRow(row: ParsedBrokerageOptionRow): ParsedBrokerageOptionRow {
@@ -630,26 +646,25 @@ export function validateParsedBrokerageRow(row: ParsedBrokerageOptionRow): Parse
       warnings.push('Cost basis total does not match average cost x contracts x 100.');
       confidence -= 0.12;
     }
+  } else if (contracts != null && row.averageCostBasis != null && row.costBasisTotal == null) {
+    warnings.push('Cost basis total was not read; it will be derived from sold price x contracts x 100.');
   }
   if (contracts != null && row.lastPrice != null && row.currentValue != null && row.side === 'short') {
     const expected = -row.lastPrice * 100 * contracts;
     if (!roughlyEqual(row.currentValue, expected, Math.max(5, Math.abs(expected) * 0.03))) {
-      warnings.push('Current value does not match last price x contracts x 100.');
-      confidence -= 0.12;
+      warnings.push('Screenshot current value does not match last price x contracts x 100. Portfolio marks will use live option data after refresh.');
     }
   }
   if (row.costBasisTotal != null && row.currentValue != null && row.totalGainLossDollar != null) {
     const expected = row.costBasisTotal + row.currentValue;
     if (!roughlyEqual(row.totalGainLossDollar, expected, Math.max(5, Math.abs(expected) * 0.05))) {
-      warnings.push('Total gain/loss does not match cost basis plus current value.');
-      confidence -= 0.08;
+      warnings.push('Screenshot total gain/loss does not match cost basis plus current value. This will not affect imported position setup.');
     }
   }
   if (contracts != null && row.lastPriceChange != null && row.todayGainLossDollar != null && row.side === 'short') {
     const expected = -row.lastPriceChange * 100 * contracts;
     if (!roughlyEqual(row.todayGainLossDollar, expected, Math.max(5, Math.abs(expected) * 0.06))) {
-      warnings.push('Today gain/loss does not match last price change x contracts x 100.');
-      confidence -= 0.06;
+      warnings.push('Screenshot day gain/loss does not match last price change x contracts x 100. This is informational only.');
     }
   }
 

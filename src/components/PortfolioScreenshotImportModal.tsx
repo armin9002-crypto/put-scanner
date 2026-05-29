@@ -397,7 +397,12 @@ function ParsedRowsTable({ rows, setRows, plan }: { rows: ImportEditableRow[]; s
 
   return (
     <section className="rounded-lg min-w-0 lg:flex lg:flex-col lg:min-h-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-      <div className="px-3 py-2 text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>Parsed Positions</div>
+      <div className="px-3 py-2" style={{ borderBottom: '1px solid var(--border)' }}>
+        <div className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--text-muted)' }}>Parsed Positions</div>
+        <p className="mt-1 text-[11px]" style={{ color: 'var(--text-dim)' }}>
+          Import uses the screenshot for contract details and original cost basis. Current marks and portfolio P/L are refreshed from live option data after import.
+        </p>
+      </div>
       {rows.length === 0 ? (
         <p className="p-4 text-sm" style={{ color: 'var(--text-dim)' }}>Upload or paste a screenshot to review parsed rows.</p>
       ) : (
@@ -428,9 +433,9 @@ function ParsedRowsTable({ rows, setRows, plan }: { rows: ImportEditableRow[]; s
                 const action = actionLabel(row, planAction);
                 const differences = planAction?.differences ?? [];
                 const hasExisting = !!planAction?.existingTrade;
-                const criticalOk = isImportableRow(row);
-                const hasOnlyDateWarning = row.warnings.every(warning => warning.startsWith('Entry date'));
-                const statusColor = criticalOk ? hasOnlyDateWarning ? 'var(--green)' : 'var(--yellow)' : 'var(--red)';
+                const severity = getImportWarningSeverity(row);
+                const statusColor = severity === 'critical' ? 'var(--red)' : severity === 'check' ? 'var(--yellow)' : 'var(--green)';
+                const statusLabel = severity === 'critical' ? 'Fix' : severity === 'check' ? 'Check' : 'OK';
                 return (
                   <tr key={`${row.rawText}-${index}`} style={{ borderTop: '1px solid var(--border)' }}>
                     <td className="px-1 py-0.5">
@@ -446,7 +451,7 @@ function ParsedRowsTable({ rows, setRows, plan }: { rows: ImportEditableRow[]; s
                         }}
                       />
                     </td>
-                    <td className="px-1 py-0.5 font-medium truncate" style={{ color: statusColor }}>{criticalOk ? hasOnlyDateWarning ? 'OK' : 'Check' : 'Fix'}</td>
+                    <td className="px-1 py-0.5 font-medium truncate" style={{ color: statusColor }}>{statusLabel}</td>
                     <td className="px-1 py-0.5">
                       <div className="flex items-center gap-1 min-w-0">
                         <select
@@ -496,8 +501,8 @@ function ParsedRowsTable({ rows, setRows, plan }: { rows: ImportEditableRow[]; s
                     <td className="px-1 py-0.5"><SmallInput value={row.averageCostBasis == null ? '' : String(row.averageCostBasis)} onChange={value => updateRow(index, { averageCostBasis: Number(value) })} align="right" /></td>
                     <td className="px-1 py-0.5 text-right font-mono tabular-nums">{formatOptionPrice(row.lastPrice)}</td>
                     <td className="px-1 py-0.5 text-right font-mono tabular-nums">{formatCurrency(row.currentValue, 0)}</td>
-                    <td className="px-1 py-0.5 text-right font-mono tabular-nums">{formatCurrency(row.costBasisTotal, 0)}</td>
-                    <td className="px-1 py-0.5 text-right font-mono tabular-nums">{formatCurrency(row.totalGainLossDollar, 0)}</td>
+                    <td className="px-1 py-0.5 text-right font-mono tabular-nums">{formatCurrency(row.costBasisTotal, 2)}</td>
+                    <td className="px-1 py-0.5 text-right font-mono tabular-nums">{formatCurrency(row.totalGainLossDollar, 2)}</td>
                     <td className="px-1 py-0.5 text-left">
                       {row.warnings.length > 0 ? (
                         <span className="relative inline-block">
@@ -507,7 +512,11 @@ function ParsedRowsTable({ rows, setRows, plan }: { rows: ImportEditableRow[]; s
                             title={row.warnings.join('\n')}
                             onClick={() => setOpenWarningIndex(openWarningIndex === index ? null : index)}
                             className="inline-flex max-w-full items-center gap-1 rounded px-1.5 py-0.5"
-                            style={{ color: hasOnlyDateWarning ? 'var(--text-dim)' : 'var(--yellow)', backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}
+                            style={{
+                              color: severity === 'critical' ? 'var(--red)' : severity === 'check' ? 'var(--yellow)' : 'var(--text-dim)',
+                              backgroundColor: 'var(--surface-alt)',
+                              border: '1px solid var(--border)',
+                            }}
                           >
                             <AlertTriangle className="w-3 h-3 flex-shrink-0" />
                             <span className="truncate">{row.warnings.length}</span>
@@ -515,6 +524,9 @@ function ParsedRowsTable({ rows, setRows, plan }: { rows: ImportEditableRow[]; s
                           {openWarningIndex === index && (
                             <div className="absolute right-0 top-6 z-50 w-72 rounded-lg p-2 text-[11px] shadow-xl" style={{ backgroundColor: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)' }}>
                               <div className="font-semibold mb-1">Import Warnings</div>
+                              <div className="mb-1 text-[10px] uppercase tracking-wider" style={{ color: severity === 'critical' ? 'var(--red)' : severity === 'check' ? 'var(--yellow)' : 'var(--text-dim)' }}>
+                                {severity === 'critical' ? 'Critical issues' : severity === 'check' ? 'Check' : 'Informational notes'}
+                              </div>
                               <ul className="space-y-1">
                                 {row.warnings.map(warning => <li key={warning}>• {warning}</li>)}
                               </ul>
@@ -588,6 +600,16 @@ function MissingTradesTable({ plan, setMissingActions, expanded, onToggle }: { p
       </div>}
     </section>
   );
+}
+
+function getImportWarningSeverity(row: ImportEditableRow): 'none' | 'info' | 'check' | 'critical' {
+  if (!isImportableRow(row)) return 'critical';
+  const nonRoutineWarnings = row.warnings.filter(warning => !warning.startsWith('Entry date'));
+  if (nonRoutineWarnings.length === 0) return row.warnings.length > 0 ? 'info' : 'none';
+  const hasCoreWarning = nonRoutineWarnings.some(warning =>
+    /cost basis total does not match|cost basis total was not read|ticker corrected|expiration parsed/i.test(warning)
+  );
+  return hasCoreWarning ? 'check' : 'info';
 }
 
 function SmallInput({ value, onChange, align = 'left', type = 'text', wide = false }: { value: string; onChange: (value: string) => void; align?: 'left' | 'right'; type?: string; wide?: boolean }) {
