@@ -50,7 +50,7 @@ function isValidLoadResult(value: unknown): value is EtfPulseLoadResult {
     Array.isArray(value.errors);
 }
 
-function readRowsCache(): EtfPulseLoadResult | null {
+export function readEtfPulseRowsCache(): EtfPulseLoadResult | null {
   const storage = getStorage();
   if (!storage) return null;
   try {
@@ -121,7 +121,7 @@ export async function buildEtfPulseRows(options: {
   onProgress?: (progress: EtfPulseProgress) => void;
 } = {}): Promise<EtfPulseLoadResult> {
   if (!options.forceRefresh) {
-    const cached = readRowsCache();
+    const cached = readEtfPulseRowsCache();
     if (cached) return cached;
   }
 

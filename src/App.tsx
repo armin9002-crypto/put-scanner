@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
-import { ShieldCheck, ScanLine, BarChart3, Moon, Sun, BookOpen, Star, Square, Briefcase, Activity } from 'lucide-react';
+import { ShieldCheck, ScanLine, BarChart3, Moon, Sun, BookOpen, Star, Square, Briefcase, Activity, Gauge } from 'lucide-react';
 import { ThemeProvider, useTheme } from './lib/theme';
 import HomePage from './pages/HomePage';
 import OptionsPage from './pages/OptionsPage';
@@ -7,6 +7,7 @@ import ScreenerPage from './pages/ScreenerPage';
 import WatchlistPage from './pages/WatchlistPage';
 import PortfolioPage from './pages/PortfolioPage';
 import EtfPulsePage from './pages/EtfPulsePage';
+import TradeCockpitPage from './pages/TradeCockpitPage';
 import ErrorBoundary from './components/ErrorBoundary';
 
 function ThemeToggle() {
@@ -116,6 +117,19 @@ function NavBar() {
             <Activity className="w-3.5 h-3.5" />
             <span className="sm:inline">ETF Pulse</span>
           </NavLink>
+          <NavLink
+            to="/cockpit"
+            className={() =>
+              `flex items-center justify-center gap-1 md:gap-1.5 px-2 md:px-3 py-2 md:py-1.5 rounded-lg text-[11px] md:text-xs font-medium transition-all min-h-[40px] md:min-h-0 flex-1 md:flex-none whitespace-nowrap`
+            }
+            style={({ isActive }) => ({
+              backgroundColor: isActive ? 'var(--accent-bg)' : 'transparent',
+              color: isActive ? 'var(--accent-light)' : 'var(--text-muted)',
+            })}
+          >
+            <Gauge className="w-3.5 h-3.5" />
+            <span className="sm:inline">Cockpit</span>
+          </NavLink>
         </div>
         <div className="ml-1 flex-shrink-0">
           <ThemeToggle />
@@ -136,6 +150,7 @@ function AppContent() {
           <Route path="/watchlist" element={<WatchlistPage />} />
           <Route path="/portfolio" element={<PortfolioPage />} />
           <Route path="/pulse" element={<EtfPulsePage />} />
+          <Route path="/cockpit" element={<TradeCockpitPage />} />
           <Route path="/options/:ticker" element={<OptionsPage />} />
         </Routes>
       </ErrorBoundary>
