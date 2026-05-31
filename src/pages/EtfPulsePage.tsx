@@ -223,7 +223,7 @@ function VisualCard({ title, subtitle, children }: { title: string; subtitle: st
   );
 }
 
-function UniverseHeatmap({ rows, period }: { rows: EtfPulseRow[]; period: VisualPeriod }) {
+function UniverseHeatmap({ rows, period, onOpenTicker }: { rows: EtfPulseRow[]; period: VisualPeriod; onOpenTicker: (ticker: string) => void }) {
   const items = useMemo(() => [...rows].sort((a, b) => {
     const aValue = getReturnForPeriod(a, period);
     const bValue = getReturnForPeriod(b, period);
@@ -244,10 +244,13 @@ function UniverseHeatmap({ rows, period }: { rows: EtfPulseRow[]; period: Visual
         const trend = trendStyle(row);
         const style = heatmapTileStyle(value);
         return (
-          <div
+          <button
             key={row.ticker}
-            className="rounded-md p-2 min-h-[64px] overflow-hidden"
-            title={`${row.ticker} - ${row.name}\n${period}: ${formatPct(value)}\nRSI: ${isFiniteNumber(row.rsi14) ? row.rsi14.toFixed(1) : DASH}\nTrend: ${trend.label}\n20D RV: ${formatPct(row.realizedVolatility20)}\nvs 50D: ${formatPct(row.distance50)}\nvs 200D: ${formatPct(row.distance200)}`}
+            type="button"
+            onClick={() => onOpenTicker(row.ticker)}
+            aria-label={`Open ${row.ticker} ETF detail`}
+            className="rounded-md p-2 min-h-[64px] overflow-hidden text-left cursor-pointer transition duration-150 hover:-translate-y-0.5 hover:shadow-[0_0_0_1px_rgba(96,165,250,0.28)] focus:outline-none focus:ring-2 focus:ring-blue-400/40"
+            title={`${row.ticker} - ${row.name}\n${period}: ${formatPct(value)}\nRSI: ${isFiniteNumber(row.rsi14) ? row.rsi14.toFixed(1) : DASH}\nTrend: ${trend.label}\n20D RV: ${formatPct(row.realizedVolatility20)}\nRecent DD: ${formatPct(row.recentDrawdown30)}\nvs 50D: ${formatPct(row.distance50)}\nvs 200D: ${formatPct(row.distance200)}\n52W Pos: ${formatPct(row.position52Week)}\n52W DD: ${formatPct(row.drawdown52Week)}`}
             style={{ backgroundColor: style.backgroundColor, border: `1px solid ${style.borderColor}` }}
           >
             <div className="flex items-start justify-between gap-2">
@@ -255,14 +258,15 @@ function UniverseHeatmap({ rows, period }: { rows: EtfPulseRow[]; period: Visual
               <div className="font-mono text-xs font-semibold whitespace-nowrap" style={{ color: style.color }}>{formatPct(value)}</div>
             </div>
             <div className="mt-2 truncate text-[10px]" style={{ color: trend.color }}>{trend.label}</div>
-          </div>
+          </button>
         );
       })}
     </div>
   );
 }
 
-function MomentumQuadrant({ rows, period }: { rows: EtfPulseRow[]; period: VisualPeriod }) {
+function MomentumQuadrant({ rows, period, onOpenTicker }: { rows: EtfPulseRow[]; period: VisualPeriod; onOpenTicker: (ticker: string) => void }) {
+  const [hoveredTicker, setHoveredTicker] = useState<string | null>(null);
   const points = useMemo(() => rows
     .map(row => ({ row, x: getReturnForPeriod(row, period), y: row.rsi14 }))
     .filter((point): point is { row: EtfPulseRow; x: number; y: number } => isFiniteNumber(point.x) && isFiniteNumber(point.y)), [period, rows]);
@@ -283,6 +287,15 @@ function MomentumQuadrant({ rows, period }: { rows: EtfPulseRow[]; period: Visua
   const rsi50Y = scaleY(50);
   const rsi35Y = scaleY(35);
   const rsi70Y = scaleY(70);
+  const hoveredPoint = points.find(point => point.row.ticker === hoveredTicker) ?? null;
+  const tooltipWidth = 218;
+  const tooltipHeight = 178;
+  const tooltipX = hoveredPoint
+    ? Math.max(8, Math.min(width - tooltipWidth - 8, scaleX(hoveredPoint.x) + 14))
+    : 0;
+  const tooltipY = hoveredPoint
+    ? Math.max(8, Math.min(height - tooltipHeight - 8, scaleY(hoveredPoint.y) - tooltipHeight / 2))
+    : 0;
 
   if (points.length === 0) {
     return <div className="py-10 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No ETFs with return and RSI data match the current filters.</div>;
@@ -310,13 +323,65 @@ function MomentumQuadrant({ rows, period }: { rows: EtfPulseRow[]; period: Visua
         {points.map(({ row, x, y }) => {
           const trend = trendStyle(row);
           const radius = Math.max(4, Math.min(9, 4 + ((row.realizedVolatility20 ?? 0) * 7)));
+          const active = hoveredTicker === row.ticker;
           return (
-            <circle key={row.ticker} cx={scaleX(x)} cy={scaleY(y)} r={radius} fill={trend.color} fillOpacity={0.82} stroke="var(--bg)" strokeWidth={1.5}>
-              <title>{`${row.ticker} - ${row.name}\n${period}: ${formatPct(x)}\nRSI: ${y.toFixed(1)}\n20D RV: ${formatPct(row.realizedVolatility20)}\nTrend: ${trend.label}\nvs 50D: ${formatPct(row.distance50)}\nvs 200D: ${formatPct(row.distance200)}\n52W Pos: ${formatPct(row.position52Week)}\n52W DD: ${formatPct(row.drawdown52Week)}`}</title>
-            </circle>
+            <circle
+              key={row.ticker}
+              cx={scaleX(x)}
+              cy={scaleY(y)}
+              r={active ? radius + 3 : radius}
+              fill={trend.color}
+              fillOpacity={active ? 0.96 : 0.82}
+              stroke={active ? 'var(--accent-light)' : 'var(--bg)'}
+              strokeWidth={active ? 2.5 : 1.5}
+              className="cursor-pointer"
+              onMouseEnter={() => setHoveredTicker(row.ticker)}
+              onFocus={() => setHoveredTicker(row.ticker)}
+              onMouseLeave={() => setHoveredTicker(current => current === row.ticker ? null : current)}
+              onBlur={() => setHoveredTicker(current => current === row.ticker ? null : current)}
+              onClick={() => onOpenTicker(row.ticker)}
+              tabIndex={0}
+              role="button"
+              aria-label={`Open ${row.ticker} ETF detail`}
+              onKeyDown={event => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  onOpenTicker(row.ticker);
+                }
+              }}
+            />
           );
         })}
+        {hoveredPoint && (
+          <foreignObject x={tooltipX} y={tooltipY} width={tooltipWidth} height={tooltipHeight} pointerEvents="none">
+            <div
+              className="rounded-lg p-2.5 text-[11px] shadow-xl"
+              style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}
+            >
+              <div className="font-mono text-sm font-bold" style={{ color: 'var(--accent-light)' }}>{hoveredPoint.row.ticker}</div>
+              <div className="truncate text-[10px] mb-2" style={{ color: 'var(--text-muted)' }}>{hoveredPoint.row.name}</div>
+              <TooltipMetric label={`${period} return`} value={formatPct(hoveredPoint.x)} color={valueColor(hoveredPoint.x)} />
+              <TooltipMetric label="RSI" value={hoveredPoint.y.toFixed(1)} color={rsiColor(hoveredPoint.y)} />
+              <TooltipMetric label="Trend" value={trendStyle(hoveredPoint.row).label} color={trendStyle(hoveredPoint.row).color} />
+              <TooltipMetric label="20D RV" value={formatPct(hoveredPoint.row.realizedVolatility20)} color={volatilityColor(hoveredPoint.row.realizedVolatility20)} />
+              <TooltipMetric label="Recent DD" value={formatPct(hoveredPoint.row.recentDrawdown30)} color={recentDrawdownColor(hoveredPoint.row.recentDrawdown30)} />
+              <TooltipMetric label="vs 50D" value={formatPct(hoveredPoint.row.distance50)} color={valueColor(hoveredPoint.row.distance50)} />
+              <TooltipMetric label="vs 200D" value={formatPct(hoveredPoint.row.distance200)} color={valueColor(hoveredPoint.row.distance200)} />
+              <TooltipMetric label="52W Pos" value={formatPct(hoveredPoint.row.position52Week)} color={rangePositionColor(hoveredPoint.row.position52Week)} />
+              <TooltipMetric label="52W DD" value={formatPct(hoveredPoint.row.drawdown52Week)} color={drawdownColor(hoveredPoint.row.drawdown52Week)} />
+            </div>
+          </foreignObject>
+        )}
       </svg>
+    </div>
+  );
+}
+
+function TooltipMetric({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 leading-5">
+      <span style={{ color: 'var(--text-dim)' }}>{label}</span>
+      <span className="font-mono tabular-nums font-semibold text-right" style={{ color }}>{value}</span>
     </div>
   );
 }
@@ -360,6 +425,7 @@ export default function EtfPulsePage() {
   const leverageOptions = useMemo(() => ['All', ...new Set(getEtfPulseUniverse().map(etf => etf.leverage))], []);
   const typeOptions = useMemo(() => ['All', ...new Set(getEtfPulseUniverse().map(etf => etf.type))], []);
   const trendOptions: TrendFilter[] = ['All', 'Strong Uptrend', 'Uptrend', 'Weakening', 'Downtrend', 'Oversold', 'Overbought'];
+  const openTicker = (ticker: string) => navigate(`/options/${ticker.trim().toUpperCase()}`);
 
   const filteredRows = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -659,10 +725,10 @@ export default function EtfPulsePage() {
             </div>
             <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)] gap-3">
               <VisualCard title="Universe Heatmap" subtitle="Performance by selected period across the ETF universe.">
-                <UniverseHeatmap rows={filteredRows} period={selectedVisualPeriod} />
+                <UniverseHeatmap rows={filteredRows} period={selectedVisualPeriod} onOpenTicker={openTicker} />
               </VisualCard>
               <VisualCard title="Momentum Quadrant" subtitle="Selected-period return versus RSI. Point size reflects 20D realized volatility.">
-                <MomentumQuadrant rows={filteredRows} period={selectedVisualPeriod} />
+                <MomentumQuadrant rows={filteredRows} period={selectedVisualPeriod} onOpenTicker={openTicker} />
               </VisualCard>
             </div>
           </section>
