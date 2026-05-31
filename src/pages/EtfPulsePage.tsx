@@ -35,6 +35,7 @@ type PulseSortField =
 
 type SortDirection = 'asc' | 'desc';
 type TrendFilter = 'All' | EtfPulseTrend | 'Oversold' | 'Overbought';
+type VisualPeriod = '1D' | '5D' | '30D' | '3M' | '6M' | 'YTD' | '1Y';
 
 interface SortState {
   field: PulseSortField;
@@ -51,6 +52,8 @@ interface PulseColumn {
   sticky?: boolean;
   render: (row: EtfPulseRow, index: number) => ReactNode;
 }
+
+const VISUAL_PERIODS: VisualPeriod[] = ['1D', '5D', '30D', '3M', '6M', 'YTD', '1Y'];
 
 function formatPct(value: number | null | undefined, decimals = 1): string {
   if (!isFiniteNumber(value)) return DASH;
@@ -109,6 +112,29 @@ function volatilityColor(value: number | null | undefined): string {
   return 'var(--text-secondary)';
 }
 
+function getReturnForPeriod(row: EtfPulseRow, period: VisualPeriod): number | null {
+  switch (period) {
+    case '1D': return row.returns.oneDay;
+    case '5D': return row.returns.fiveDay;
+    case '30D': return row.returns.thirtyDay;
+    case '3M': return row.returns.threeMonth;
+    case '6M': return row.returns.sixMonth;
+    case 'YTD': return row.returns.yearToDate;
+    case '1Y': return row.returns.oneYear;
+    default: return null;
+  }
+}
+
+function heatmapTileStyle(value: number | null): { backgroundColor: string; borderColor: string; color: string } {
+  if (!isFiniteNumber(value)) return { backgroundColor: 'var(--surface-alt)', borderColor: 'var(--border)', color: 'var(--text-dim)' };
+  if (value >= 0.2) return { backgroundColor: 'rgba(34,197,94,0.28)', borderColor: 'rgba(34,197,94,0.42)', color: 'var(--green)' };
+  if (value >= 0.05) return { backgroundColor: 'rgba(34,197,94,0.18)', borderColor: 'rgba(34,197,94,0.30)', color: 'var(--green)' };
+  if (value >= 0) return { backgroundColor: 'rgba(34,197,94,0.08)', borderColor: 'rgba(34,197,94,0.18)', color: 'var(--text-secondary)' };
+  if (value > -0.05) return { backgroundColor: 'rgba(249,115,22,0.08)', borderColor: 'rgba(249,115,22,0.18)', color: 'var(--text-secondary)' };
+  if (value > -0.2) return { backgroundColor: 'rgba(249,115,22,0.18)', borderColor: 'rgba(249,115,22,0.32)', color: 'var(--orange)' };
+  return { backgroundColor: 'rgba(239,68,68,0.24)', borderColor: 'rgba(239,68,68,0.42)', color: 'var(--red)' };
+}
+
 function trendStyle(row: EtfPulseRow): { label: string; color: string; bg: string; border: string } {
   if (row.isOversold && (row.distance50 ?? 1) < 0) {
     return { label: 'Oversold', color: 'var(--accent-light)', bg: 'var(--accent-bg)', border: 'var(--accent-border)' };
@@ -163,6 +189,138 @@ function Badge({ children }: { children: string }) {
   );
 }
 
+function VisualPeriodSelector({ value, onChange }: { value: VisualPeriod; onChange: (period: VisualPeriod) => void }) {
+  return (
+    <div className="inline-flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+      {VISUAL_PERIODS.map(period => (
+        <button
+          key={period}
+          type="button"
+          onClick={() => onChange(period)}
+          className="px-2.5 py-1.5 text-[11px] font-medium transition-colors"
+          style={{
+            backgroundColor: value === period ? 'var(--accent-bg)' : 'var(--surface)',
+            color: value === period ? 'var(--accent-light)' : 'var(--text-muted)',
+            borderRight: period === VISUAL_PERIODS[VISUAL_PERIODS.length - 1] ? 'none' : '1px solid var(--border)',
+          }}
+        >
+          {period}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function VisualCard({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
+  return (
+    <section className="rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <div className="mb-3">
+        <h3 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>{title}</h3>
+        <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{subtitle}</p>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function UniverseHeatmap({ rows, period }: { rows: EtfPulseRow[]; period: VisualPeriod }) {
+  const items = useMemo(() => [...rows].sort((a, b) => {
+    const aValue = getReturnForPeriod(a, period);
+    const bValue = getReturnForPeriod(b, period);
+    if (aValue == null && bValue == null) return a.ticker.localeCompare(b.ticker);
+    if (aValue == null) return 1;
+    if (bValue == null) return -1;
+    return bValue - aValue;
+  }), [period, rows]);
+
+  if (items.length === 0) {
+    return <div className="py-10 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No ETFs match the current filters.</div>;
+  }
+
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8 gap-2">
+      {items.map(row => {
+        const value = getReturnForPeriod(row, period);
+        const trend = trendStyle(row);
+        const style = heatmapTileStyle(value);
+        return (
+          <div
+            key={row.ticker}
+            className="rounded-md p-2 min-h-[64px] overflow-hidden"
+            title={`${row.ticker} - ${row.name}\n${period}: ${formatPct(value)}\nRSI: ${isFiniteNumber(row.rsi14) ? row.rsi14.toFixed(1) : DASH}\nTrend: ${trend.label}\n20D RV: ${formatPct(row.realizedVolatility20)}\nvs 50D: ${formatPct(row.distance50)}\nvs 200D: ${formatPct(row.distance200)}`}
+            style={{ backgroundColor: style.backgroundColor, border: `1px solid ${style.borderColor}` }}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="font-mono text-xs font-bold truncate" style={{ color: 'var(--text)' }}>{row.ticker}</div>
+              <div className="font-mono text-xs font-semibold whitespace-nowrap" style={{ color: style.color }}>{formatPct(value)}</div>
+            </div>
+            <div className="mt-2 truncate text-[10px]" style={{ color: trend.color }}>{trend.label}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function MomentumQuadrant({ rows, period }: { rows: EtfPulseRow[]; period: VisualPeriod }) {
+  const points = useMemo(() => rows
+    .map(row => ({ row, x: getReturnForPeriod(row, period), y: row.rsi14 }))
+    .filter((point): point is { row: EtfPulseRow; x: number; y: number } => isFiniteNumber(point.x) && isFiniteNumber(point.y)), [period, rows]);
+
+  const width = 720;
+  const height = 360;
+  const padding = { top: 24, right: 24, bottom: 42, left: 50 };
+  const plotWidth = width - padding.left - padding.right;
+  const plotHeight = height - padding.top - padding.bottom;
+  const minX = Math.min(-0.05, ...points.map(point => point.x));
+  const maxX = Math.max(0.05, ...points.map(point => point.x));
+  const spanX = Math.max(0.02, maxX - minX);
+  const xMin = minX - spanX * 0.12;
+  const xMax = maxX + spanX * 0.12;
+  const scaleX = (value: number) => padding.left + ((value - xMin) / (xMax - xMin)) * plotWidth;
+  const scaleY = (value: number) => padding.top + ((100 - value) / 100) * plotHeight;
+  const zeroX = Math.max(padding.left, Math.min(padding.left + plotWidth, scaleX(0)));
+  const rsi50Y = scaleY(50);
+  const rsi35Y = scaleY(35);
+  const rsi70Y = scaleY(70);
+
+  if (points.length === 0) {
+    return <div className="py-10 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No ETFs with return and RSI data match the current filters.</div>;
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full min-w-[520px]" role="img" aria-label={`Momentum quadrant using ${period} return and RSI`}>
+        <rect x={0} y={0} width={width} height={height} rx={8} fill="transparent" />
+        <line x1={padding.left} x2={padding.left + plotWidth} y1={rsi70Y} y2={rsi70Y} stroke="rgba(251,146,60,0.35)" strokeDasharray="4 4" />
+        <line x1={padding.left} x2={padding.left + plotWidth} y1={rsi35Y} y2={rsi35Y} stroke="rgba(96,165,250,0.35)" strokeDasharray="4 4" />
+        <line x1={zeroX} x2={zeroX} y1={padding.top} y2={padding.top + plotHeight} stroke="var(--border)" />
+        <line x1={padding.left} x2={padding.left + plotWidth} y1={rsi50Y} y2={rsi50Y} stroke="var(--border)" />
+        <rect x={padding.left} y={padding.top} width={plotWidth} height={plotHeight} fill="none" stroke="var(--border)" />
+        <text x={padding.left + 8} y={padding.top + 16} fontSize="10" fill="var(--text-dim)">Mixed / Defensive</text>
+        <text x={padding.left + plotWidth - 118} y={padding.top + 16} fontSize="10" fill="var(--text-dim)">Strength / Extended</text>
+        <text x={padding.left + 8} y={padding.top + plotHeight - 8} fontSize="10" fill="var(--text-dim)">Weak / Oversold</text>
+        <text x={padding.left + plotWidth - 104} y={padding.top + plotHeight - 8} fontSize="10" fill="var(--text-dim)">Bounce / Improving</text>
+        <text x={padding.left} y={height - 14} fontSize="11" fill="var(--text-muted)">{period} return</text>
+        <text x={8} y={padding.top + 10} fontSize="11" fill="var(--text-muted)">RSI</text>
+        <text x={padding.left - 28} y={scaleY(70) + 4} fontSize="10" fill="var(--text-dim)">70</text>
+        <text x={padding.left - 28} y={scaleY(50) + 4} fontSize="10" fill="var(--text-dim)">50</text>
+        <text x={padding.left - 28} y={scaleY(35) + 4} fontSize="10" fill="var(--text-dim)">35</text>
+        <text x={scaleX(0) + 4} y={height - 14} fontSize="10" fill="var(--text-dim)">0%</text>
+        {points.map(({ row, x, y }) => {
+          const trend = trendStyle(row);
+          const radius = Math.max(4, Math.min(9, 4 + ((row.realizedVolatility20 ?? 0) * 7)));
+          return (
+            <circle key={row.ticker} cx={scaleX(x)} cy={scaleY(y)} r={radius} fill={trend.color} fillOpacity={0.82} stroke="var(--bg)" strokeWidth={1.5}>
+              <title>{`${row.ticker} - ${row.name}\n${period}: ${formatPct(x)}\nRSI: ${y.toFixed(1)}\n20D RV: ${formatPct(row.realizedVolatility20)}\nTrend: ${trend.label}\nvs 50D: ${formatPct(row.distance50)}\nvs 200D: ${formatPct(row.distance200)}\n52W Pos: ${formatPct(row.position52Week)}\n52W DD: ${formatPct(row.drawdown52Week)}`}</title>
+            </circle>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
 export default function EtfPulsePage() {
   const navigate = useNavigate();
   const [result, setResult] = useState<EtfPulseLoadResult | null>(null);
@@ -174,6 +332,7 @@ export default function EtfPulsePage() {
   const [typeFilter, setTypeFilter] = useState('All');
   const [trendFilter, setTrendFilter] = useState<TrendFilter>('All');
   const [sort, setSort] = useState<SortState>({ field: 'ticker', direction: 'asc' });
+  const [selectedVisualPeriod, setSelectedVisualPeriod] = useState<VisualPeriod>('30D');
 
   const loadRows = async (forceRefresh = false) => {
     setLoading(true);
@@ -463,34 +622,54 @@ export default function EtfPulsePage() {
           </div>
         </div>
 
-        <div className="rounded-lg overflow-hidden flex-1 min-h-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-          <div className="h-full max-w-full overflow-auto overscroll-contain">
-            <table className="w-full table-fixed text-[11px]" style={{ minWidth: tableMinWidth }}>
-              <colgroup>
-                {columns.map(column => <col key={column.key} style={{ width: column.width }} />)}
-              </colgroup>
-              <thead className="sticky top-0 z-30">
-                <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
-                  {columns.map(headerCell)}
-                </tr>
-              </thead>
-              <tbody>
-                {loading && rows.length === 0 ? (
-                  <tr><td colSpan={columns.length} className="px-3 py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>Loading {progress.loaded} / {progress.total} ETFs...</td></tr>
-                ) : filteredRows.length === 0 ? (
-                  <tr><td colSpan={columns.length} className="px-3 py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No ETFs match these filters.</td></tr>
-                ) : filteredRows.map((row, index) => (
-                  <tr key={row.ticker} style={{ borderBottom: '1px solid var(--border)', backgroundColor: index % 2 ? 'var(--row-alt)' : 'transparent' }}>
-                    {columns.map(column => bodyCell(column, row, index))}
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pr-1">
+          <div className="rounded-lg overflow-hidden h-[min(56vh,620px)] min-h-[320px]" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+            <div className="h-full max-w-full overflow-auto overscroll-contain">
+              <table className="w-full table-fixed text-[11px]" style={{ minWidth: tableMinWidth }}>
+                <colgroup>
+                  {columns.map(column => <col key={column.key} style={{ width: column.width }} />)}
+                </colgroup>
+                <thead className="sticky top-0 z-30">
+                  <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
+                    {columns.map(headerCell)}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {loading && rows.length === 0 ? (
+                    <tr><td colSpan={columns.length} className="px-3 py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>Loading {progress.loaded} / {progress.total} ETFs...</td></tr>
+                  ) : filteredRows.length === 0 ? (
+                    <tr><td colSpan={columns.length} className="px-3 py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No ETFs match these filters.</td></tr>
+                  ) : filteredRows.map((row, index) => (
+                    <tr key={row.ticker} style={{ borderBottom: '1px solid var(--border)', backgroundColor: index % 2 ? 'var(--row-alt)' : 'transparent' }}>
+                      {columns.map(column => bodyCell(column, row, index))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
 
-        <div className="mt-2 flex-shrink-0 text-[10px]" style={{ color: 'var(--text-dim)' }}>
-          Filters and sorting are client-side. Refresh loads one cached 2Y daily series per ETF with limited concurrency.
+          <section className="mt-4 pb-3">
+            <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 mb-3">
+              <div>
+                <h2 className="text-base font-semibold" style={{ color: 'var(--text)' }}>ETF Pulse Visuals</h2>
+                <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Heatmap and momentum quadrant use the currently filtered ETF Pulse rows.</p>
+              </div>
+              <VisualPeriodSelector value={selectedVisualPeriod} onChange={setSelectedVisualPeriod} />
+            </div>
+            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)] gap-3">
+              <VisualCard title="Universe Heatmap" subtitle="Performance by selected period across the ETF universe.">
+                <UniverseHeatmap rows={filteredRows} period={selectedVisualPeriod} />
+              </VisualCard>
+              <VisualCard title="Momentum Quadrant" subtitle="Selected-period return versus RSI. Point size reflects 20D realized volatility.">
+                <MomentumQuadrant rows={filteredRows} period={selectedVisualPeriod} />
+              </VisualCard>
+            </div>
+          </section>
+
+          <div className="mt-2 pb-1 text-[10px]" style={{ color: 'var(--text-dim)' }}>
+            Filters and sorting are client-side. Refresh loads one cached 2Y daily series per ETF with limited concurrency.
+          </div>
         </div>
       </div>
     </div>
