@@ -21,11 +21,15 @@ type PulseSortField =
   | 'sixMonth'
   | 'yearToDate'
   | 'oneYear'
+  | 'recentDrawdown30'
   | 'rsi14'
+  | 'realizedVolatility20'
+  | 'distance20'
   | 'distance50'
   | 'distance200'
   | 'high52Week'
   | 'percentOf52WeekHigh'
+  | 'position52Week'
   | 'drawdown52Week'
   | 'trend';
 
@@ -72,6 +76,28 @@ function drawdownColor(value: number | null | undefined): string {
   return 'var(--red)';
 }
 
+function recentDrawdownColor(value: number | null | undefined): string {
+  if (!isFiniteNumber(value)) return 'var(--text-dim)';
+  if (value >= -0.05) return 'var(--text-dim)';
+  if (value >= -0.15) return 'var(--yellow)';
+  return 'var(--red)';
+}
+
+function rangePositionColor(value: number | null | undefined): string {
+  if (!isFiniteNumber(value)) return 'var(--text-dim)';
+  if (value > 0.8) return 'var(--green)';
+  if (value >= 0.4) return 'var(--text-secondary)';
+  return 'var(--orange)';
+}
+
+function volatilityColor(value: number | null | undefined): string {
+  if (!isFiniteNumber(value)) return 'var(--text-dim)';
+  if (value >= 0.9) return 'var(--red)';
+  if (value >= 0.55) return 'var(--orange)';
+  if (value >= 0.35) return 'var(--yellow)';
+  return 'var(--text-secondary)';
+}
+
 function trendStyle(row: EtfPulseRow): { label: string; color: string; bg: string; border: string } {
   if (row.isOversold && (row.distance50 ?? 1) < 0) {
     return { label: 'Oversold', color: 'var(--accent-light)', bg: 'var(--accent-bg)', border: 'var(--accent-border)' };
@@ -98,11 +124,15 @@ function sortValue(row: EtfPulseRow, field: PulseSortField): number | string {
     case 'sixMonth': return row.returns.sixMonth ?? Number.NEGATIVE_INFINITY;
     case 'yearToDate': return row.returns.yearToDate ?? Number.NEGATIVE_INFINITY;
     case 'oneYear': return row.returns.oneYear ?? Number.NEGATIVE_INFINITY;
+    case 'recentDrawdown30': return row.recentDrawdown30 ?? Number.NEGATIVE_INFINITY;
     case 'rsi14': return row.rsi14 ?? Number.NEGATIVE_INFINITY;
+    case 'realizedVolatility20': return row.realizedVolatility20 ?? Number.NEGATIVE_INFINITY;
+    case 'distance20': return row.distance20 ?? Number.NEGATIVE_INFINITY;
     case 'distance50': return row.distance50 ?? Number.NEGATIVE_INFINITY;
     case 'distance200': return row.distance200 ?? Number.NEGATIVE_INFINITY;
     case 'high52Week': return row.high52Week ?? Number.NEGATIVE_INFINITY;
     case 'percentOf52WeekHigh': return row.percentOf52WeekHigh ?? Number.NEGATIVE_INFINITY;
+    case 'position52Week': return row.position52Week ?? Number.NEGATIVE_INFINITY;
     case 'drawdown52Week': return row.drawdown52Week ?? Number.NEGATIVE_INFINITY;
     case 'trend': return trendStyle(row).label;
     default: return row.ticker;
@@ -216,10 +246,11 @@ export default function EtfPulsePage() {
     return { strongCount, below200, oversold, biggestDrawdown };
   }, [rows]);
 
-  const sortButton = (field: PulseSortField, label: string, align = 'text-right') => (
+  const sortButton = (field: PulseSortField, label: string, align = 'text-right', title = label) => (
     <th className={`px-2 py-2 text-[11px] font-medium whitespace-nowrap ${align}`} style={{ color: 'var(--text-muted)' }}>
       <button
         type="button"
+        title={title}
         onClick={() => setSort(current => current.field === field ? { field, direction: current.direction === 'asc' ? 'desc' : 'asc' } : { field, direction: 'asc' })}
         className="hover:opacity-80"
       >
@@ -305,7 +336,7 @@ export default function EtfPulsePage() {
 
         <div className="rounded-lg overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
           <div className="overflow-x-auto max-w-full overscroll-contain">
-            <table className="min-w-[1480px] w-full text-[11px]">
+            <table className="min-w-[1740px] w-full text-[11px]">
               <thead className="sticky z-30" style={{ top: `calc(2.75rem + ${stickyControlsHeight}px)` }}>
                 <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
                   {sortButton('ticker', 'Ticker', 'text-left sticky left-0 z-20')}
@@ -320,20 +351,24 @@ export default function EtfPulsePage() {
                   {sortButton('sixMonth', '6M')}
                   {sortButton('yearToDate', 'YTD')}
                   {sortButton('oneYear', '1Y')}
+                  {sortButton('recentDrawdown30', 'Recent DD', 'text-right', '30-day drawdown from recent peak')}
                   {sortButton('rsi14', 'RSI')}
-                  {sortButton('distance50', 'vs 50D')}
-                  {sortButton('distance200', 'vs 200D')}
+                  {sortButton('realizedVolatility20', '20D RV', 'text-right', '20-day annualized realized volatility')}
+                  {sortButton('distance20', 'vs 20D', 'text-right', 'Distance versus 20-day moving average')}
+                  {sortButton('distance50', 'vs 50D', 'text-right', 'Distance versus 50-day moving average')}
+                  {sortButton('distance200', 'vs 200D', 'text-right', 'Distance versus 200-day moving average')}
                   {sortButton('high52Week', '52W High')}
                   {sortButton('percentOf52WeekHigh', '% 52W High')}
-                  {sortButton('drawdown52Week', '52W DD')}
+                  {sortButton('position52Week', '52W Pos', 'text-right', 'Position inside the 52-week range')}
+                  {sortButton('drawdown52Week', '52W DD', 'text-right', 'Drawdown from 52-week high')}
                   {sortButton('trend', 'Trend', 'text-left')}
                 </tr>
               </thead>
               <tbody>
                 {loading && rows.length === 0 ? (
-                  <tr><td colSpan={19} className="px-3 py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>Loading {progress.loaded} / {progress.total} ETFs...</td></tr>
+                  <tr><td colSpan={23} className="px-3 py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>Loading {progress.loaded} / {progress.total} ETFs...</td></tr>
                 ) : filteredRows.length === 0 ? (
-                  <tr><td colSpan={19} className="px-3 py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No ETFs match these filters.</td></tr>
+                  <tr><td colSpan={23} className="px-3 py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No ETFs match these filters.</td></tr>
                 ) : filteredRows.map((row, index) => {
                   const trend = trendStyle(row);
                   return (
@@ -355,11 +390,15 @@ export default function EtfPulsePage() {
                       <ReturnCell value={row.returns.sixMonth} />
                       <ReturnCell value={row.returns.yearToDate} />
                       <ReturnCell value={row.returns.oneYear} />
+                      <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap" style={{ color: recentDrawdownColor(row.recentDrawdown30) }}>{formatPct(row.recentDrawdown30)}</td>
                       <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: rsiColor(row.rsi14) }}>{isFiniteNumber(row.rsi14) ? row.rsi14.toFixed(1) : DASH}</td>
+                      <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap" style={{ color: volatilityColor(row.realizedVolatility20) }}>{formatPct(row.realizedVolatility20)}</td>
+                      <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: valueColor(row.distance20) }}>{formatPct(row.distance20)}</td>
                       <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: valueColor(row.distance50) }}>{formatPct(row.distance50)}</td>
                       <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: valueColor(row.distance200) }}>{formatPct(row.distance200)}</td>
                       <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatPrice(row.high52Week)}</td>
                       <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: highPctColor(row.percentOf52WeekHigh) }}>{formatPct(row.percentOf52WeekHigh)}</td>
+                      <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: rangePositionColor(row.position52Week) }}>{formatPct(row.position52Week)}</td>
                       <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: drawdownColor(row.drawdown52Week) }}>{formatPct(row.drawdown52Week)}</td>
                       <td className="px-2 py-1 text-left whitespace-nowrap">
                         <span className="inline-flex rounded px-1.5 py-0.5 text-[10px] font-semibold" title={`RSI ${isFiniteNumber(row.rsi14) ? row.rsi14.toFixed(1) : DASH}`} style={{ color: trend.color, backgroundColor: trend.bg, border: `1px solid ${trend.border}` }}>{trend.label}</span>

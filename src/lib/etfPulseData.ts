@@ -18,7 +18,7 @@ export interface EtfPulseProgress {
   ticker?: string;
 }
 
-const ROW_CACHE_KEY = 'etf_pulse_rows:v1';
+const ROW_CACHE_KEY = 'etf_pulse_rows:v2';
 const ROW_CACHE_TTL = 6 * 60 * 60 * 1000;
 const CONCURRENCY_LIMIT = 5;
 

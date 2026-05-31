@@ -20,13 +20,19 @@ export interface EtfPulseRow {
     oneYear: number | null;
   };
   rsi14: number | null;
+  realizedVolatility20: number | null;
+  sma20: number | null;
   sma50: number | null;
   sma200: number | null;
+  distance20: number | null;
   distance50: number | null;
   distance200: number | null;
   high52Week: number | null;
+  low52Week: number | null;
   percentOf52WeekHigh: number | null;
+  position52Week: number | null;
   drawdown52Week: number | null;
+  recentDrawdown30: number | null;
   trend: EtfPulseTrend;
   isOversold: boolean;
   isOverbought: boolean;
@@ -75,6 +81,22 @@ export function calculateSma(points: ChartPoint[], period: number): number | nul
   return Number.isFinite(value) ? value : null;
 }
 
+export function calculateRealizedVolatility(points: ChartPoint[], period = 20): number | null {
+  const clean = cleanPoints(points);
+  if (clean.length < period + 1) return null;
+  const slice = clean.slice(-(period + 1));
+  const returns: number[] = [];
+  for (let index = 1; index < slice.length; index += 1) {
+    const ratio = safeRatio(slice[index].price, slice[index - 1].price);
+    if (ratio == null) return null;
+    returns.push(ratio - 1);
+  }
+  const mean = returns.reduce((sum, value) => sum + value, 0) / returns.length;
+  const variance = returns.reduce((sum, value) => sum + ((value - mean) ** 2), 0) / returns.length;
+  const realizedVolatility = Math.sqrt(variance) * Math.sqrt(252);
+  return Number.isFinite(realizedVolatility) ? realizedVolatility : null;
+}
+
 export function calculateRsi14(points: ChartPoint[]): number | null {
   const clean = cleanPoints(points);
   if (clean.length < 15) return null;
@@ -101,8 +123,21 @@ export function calculate52WeekHigh(points: ChartPoint[]): number | null {
   return Number.isFinite(high) ? high : null;
 }
 
+export function calculate52WeekLow(points: ChartPoint[]): number | null {
+  const clean = cleanPoints(points).slice(-252);
+  if (clean.length === 0) return null;
+  const low = Math.min(...clean.map(point => point.price));
+  return Number.isFinite(low) ? low : null;
+}
+
 export function calculatePercentOf52WeekHigh(latest: number | null, high: number | null): number | null {
   return safeRatio(latest, high);
+}
+
+export function calculate52WeekPosition(latest: number | null, low: number | null, high: number | null): number | null {
+  if (latest == null || low == null || high == null || high <= low) return null;
+  const position = (latest - low) / (high - low);
+  return Number.isFinite(position) ? position : null;
 }
 
 export function calculate52WeekDrawdown(latest: number | null, high: number | null): number | null {
@@ -110,16 +145,26 @@ export function calculate52WeekDrawdown(latest: number | null, high: number | nu
   return percent == null ? null : percent - 1;
 }
 
+export function calculateRecentDrawdown(points: ChartPoint[], latest: number | null, period = 30): number | null {
+  const clean = cleanPoints(points);
+  if (latest == null || clean.length < period) return null;
+  const recent = clean.slice(-period);
+  const recentHigh = Math.max(...recent.map(point => point.price));
+  const ratio = safeRatio(latest, Number.isFinite(recentHigh) ? recentHigh : null);
+  return ratio == null ? null : Math.min(0, ratio - 1);
+}
+
 export function calculateTrendBadge(metrics: {
   latest: number | null;
+  distance20: number | null;
   distance50: number | null;
   distance200: number | null;
   thirtyDayReturn: number | null;
 }): EtfPulseTrend {
   if (metrics.latest == null || metrics.distance50 == null || metrics.distance200 == null) return 'Neutral';
-  if (metrics.distance50 > 0 && metrics.distance200 > 0 && (metrics.thirtyDayReturn ?? 0) > 0) return 'Strong Uptrend';
+  if ((metrics.distance20 ?? metrics.distance50) > 0 && metrics.distance50 > 0 && metrics.distance200 > 0 && (metrics.thirtyDayReturn ?? 0) > 0) return 'Strong Uptrend';
   if (metrics.distance200 > 0 && metrics.distance50 >= -0.02) return 'Uptrend';
-  if (metrics.distance50 < 0 && metrics.distance200 > 0) return 'Weakening';
+  if (((metrics.distance20 ?? 0) < 0 || metrics.distance50 < 0) && metrics.distance200 > 0) return 'Weakening';
   if (metrics.distance50 < 0 && metrics.distance200 < 0) return 'Downtrend';
   return 'Neutral';
 }
@@ -128,9 +173,12 @@ export function buildEtfPulseRow(etf: ETFInfo, points: ChartPoint[], latestPrice
   const clean = cleanPoints(points);
   const latestClose = finite(clean[clean.length - 1]?.price);
   const latest = finite(latestPrice) ?? latestClose;
+  const sma20 = calculateSma(clean, 20);
   const sma50 = calculateSma(clean, 50);
   const sma200 = calculateSma(clean, 200);
   const high52Week = calculate52WeekHigh(clean);
+  const low52Week = calculate52WeekLow(clean);
+  const distance20 = latest != null && sma20 != null ? latest / sma20 - 1 : null;
   const distance50 = latest != null && sma50 != null ? latest / sma50 - 1 : null;
   const distance200 = latest != null && sma200 != null ? latest / sma200 - 1 : null;
   const thirtyDay = calculateReturn(clean, 30);
@@ -153,14 +201,20 @@ export function buildEtfPulseRow(etf: ETFInfo, points: ChartPoint[], latestPrice
       oneYear: calculateReturn(clean, 252),
     },
     rsi14,
+    realizedVolatility20: calculateRealizedVolatility(clean, 20),
+    sma20,
     sma50,
     sma200,
+    distance20,
     distance50,
     distance200,
     high52Week,
+    low52Week,
     percentOf52WeekHigh: calculatePercentOf52WeekHigh(latest, high52Week),
+    position52Week: calculate52WeekPosition(latest, low52Week, high52Week),
     drawdown52Week: calculate52WeekDrawdown(latest, high52Week),
-    trend: calculateTrendBadge({ latest, distance50, distance200, thirtyDayReturn: thirtyDay }),
+    recentDrawdown30: calculateRecentDrawdown(clean, latest, 30),
+    trend: calculateTrendBadge({ latest, distance20, distance50, distance200, thirtyDayReturn: thirtyDay }),
     isOversold: rsi14 != null && rsi14 < 35,
     isOverbought: rsi14 != null && rsi14 > 70,
   };
