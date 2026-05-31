@@ -119,7 +119,7 @@ function percentColor(value: number | null | undefined): string {
 }
 
 interface PositionHealth {
-  label: 'Healthy' | 'Monitor' | 'Risky' | 'Threatened' | 'Unknown';
+  label: 'Healthy' | 'Monitor' | 'Elevated' | 'Risky' | 'Threatened' | 'Unknown';
   color: string;
   bg: string;
   border: string;
@@ -134,6 +134,11 @@ function getPositionHealth(trade: PortfolioTrade): PositionHealth {
   const delta = trade.latestMarketData?.delta ?? null;
   const dte = calculateRemainingDte(trade);
   const absDelta = isFiniteNumber(delta) ? Math.abs(delta) : null;
+  const triggerContext = [
+    isFiniteNumber(distanceToStrike) ? `${formatPctValue(distanceToStrike)} above strike` : null,
+    isFiniteNumber(absDelta) ? `${absDelta.toFixed(2)} abs delta` : null,
+    isFiniteNumber(dte) ? formatDteValue(dte) : null,
+  ].filter(Boolean).join(', ');
   const context = [
     isFiniteNumber(distanceToStrike) ? `${formatPctValue(distanceToStrike)} above strike` : null,
     isFiniteNumber(delta) ? `delta ${formatDelta(delta)}` : null,
@@ -156,7 +161,7 @@ function getPositionHealth(trade: PortfolioTrade): PositionHealth {
       color: 'var(--red)',
       bg: 'rgba(239,68,68,0.10)',
       border: 'rgba(239,68,68,0.28)',
-      title: `Threatened: underlying ${formatCurrency(underlying)} vs breakeven ${formatCurrency(breakeven)}${context ? ` (${context})` : ''}`,
+      title: `Threatened: underlying ${formatCurrency(underlying)} vs breakeven ${formatCurrency(breakeven)}${triggerContext ? ` (${triggerContext})` : ''}`,
     };
   }
   if ((isFiniteNumber(distanceToStrike) && distanceToStrike <= 0.10) || (isFiniteNumber(absDelta) && absDelta >= 0.30)) {
@@ -165,12 +170,24 @@ function getPositionHealth(trade: PortfolioTrade): PositionHealth {
       color: 'var(--orange)',
       bg: 'rgba(251,146,60,0.10)',
       border: 'rgba(251,146,60,0.28)',
-      title: `Risky: close to strike or elevated delta${context ? ` (${context})` : ''}`,
+      title: `Risky: close to strike or high delta${triggerContext ? ` (${triggerContext})` : ''}`,
     };
   }
   if (
     (isFiniteNumber(distanceToStrike) && distanceToStrike <= 0.20) ||
-    (isFiniteNumber(absDelta) && absDelta >= 0.20) ||
+    (isFiniteNumber(absDelta) && absDelta > 0.20)
+  ) {
+    return {
+      label: 'Elevated',
+      color: 'var(--orange)',
+      bg: 'rgba(251,146,60,0.10)',
+      border: 'rgba(251,146,60,0.28)',
+      title: `Elevated: closer to strike or delta rising${triggerContext ? ` (${triggerContext})` : ''}`,
+    };
+  }
+  if (
+    (isFiniteNumber(distanceToStrike) && distanceToStrike <= 0.25) ||
+    (isFiniteNumber(absDelta) && absDelta > 0.15) ||
     (isFiniteNumber(dte) && dte <= 14 && isFiniteNumber(distanceToStrike) && distanceToStrike <= 0.25)
   ) {
     return {
@@ -178,7 +195,7 @@ function getPositionHealth(trade: PortfolioTrade): PositionHealth {
       color: 'var(--yellow)',
       bg: 'rgba(250,204,21,0.10)',
       border: 'rgba(250,204,21,0.25)',
-      title: `Monitor: watch distance, delta, or near-expiry risk${context ? ` (${context})` : ''}`,
+      title: `Monitor: watch distance, delta, or near-expiry risk${triggerContext ? ` (${triggerContext})` : ''}`,
     };
   }
   return {
