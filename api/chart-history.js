@@ -42,6 +42,12 @@ const TIMEFRAME_CONFIG = {
     maxPoints: 800,
     cacheControl: 'public, s-maxage=7200, stale-while-revalidate=21600',
   },
+  '2Y': {
+    range: '2y',
+    interval: '1d',
+    maxPoints: 800,
+    cacheControl: 'public, s-maxage=3600, stale-while-revalidate=21600',
+  },
   '3Y': {
     range: '3y',
     interval: '1wk',

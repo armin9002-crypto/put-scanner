@@ -1,6 +1,6 @@
 import { cachedRequest, makeCacheKey } from './dataCache';
 
-export type ChartTimeframe = '1D' | '5D' | '30D' | 'YTD' | '3M' | '6M' | '1Y' | '3Y' | '5Y' | 'All';
+export type ChartTimeframe = '1D' | '5D' | '30D' | 'YTD' | '3M' | '6M' | '1Y' | '2Y' | '3Y' | '5Y' | 'All';
 
 export interface ChartPoint {
   timestamp: number;
@@ -31,6 +31,7 @@ const CHART_TTLS: Record<ChartTimeframe, number> = {
   '3M': 2 * 60 * 60 * 1000,
   '6M': 4 * 60 * 60 * 1000,
   '1Y': 6 * 60 * 60 * 1000,
+  '2Y': 6 * 60 * 60 * 1000,
   '3Y': 12 * 60 * 60 * 1000,
   '5Y': 12 * 60 * 60 * 1000,
   All: 24 * 60 * 60 * 1000,
