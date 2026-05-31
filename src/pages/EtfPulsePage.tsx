@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Activity, AlertTriangle, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { buildEtfPulseRows, getEtfPulseUniverse, type EtfPulseLoadResult, type EtfPulseProgress } from '../lib/etfPulseData';
@@ -146,15 +146,6 @@ function matchesTrend(row: EtfPulseRow, filter: TrendFilter): boolean {
   return row.trend === filter;
 }
 
-function MiniSummary({ label, value, color }: { label: string; value: string; color?: string }) {
-  return (
-    <div className="rounded-lg p-2 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-      <div className="text-[9px] uppercase tracking-wider mb-0.5 truncate" style={{ color: 'var(--text-dim)' }}>{label}</div>
-      <div className="text-sm font-mono font-semibold truncate" title={value} style={{ color: color ?? 'var(--text)' }}>{value}</div>
-    </div>
-  );
-}
-
 function Badge({ children }: { children: string }) {
   return (
     <span className="inline-flex rounded px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>{children}</span>
@@ -163,12 +154,10 @@ function Badge({ children }: { children: string }) {
 
 export default function EtfPulsePage() {
   const navigate = useNavigate();
-  const stickyControlsRef = useRef<HTMLDivElement | null>(null);
   const [result, setResult] = useState<EtfPulseLoadResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [progress, setProgress] = useState<EtfPulseProgress>({ loaded: 0, total: getEtfPulseUniverse().length });
-  const [stickyControlsHeight, setStickyControlsHeight] = useState(0);
   const [search, setSearch] = useState('');
   const [leverageFilter, setLeverageFilter] = useState('All');
   const [typeFilter, setTypeFilter] = useState('All');
@@ -197,20 +186,6 @@ export default function EtfPulsePage() {
     void loadRows(false);
   }, []);
 
-  useEffect(() => {
-    const element = stickyControlsRef.current;
-    if (!element) return;
-    const updateHeight = () => setStickyControlsHeight(element.getBoundingClientRect().height);
-    updateHeight();
-    if (typeof ResizeObserver === 'undefined') {
-      window.addEventListener('resize', updateHeight);
-      return () => window.removeEventListener('resize', updateHeight);
-    }
-    const observer = new ResizeObserver(updateHeight);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
-
   const rows = useMemo(() => result?.rows ?? [], [result]);
   const leverageOptions = useMemo(() => ['All', ...new Set(getEtfPulseUniverse().map(etf => etf.leverage))], []);
   const typeOptions = useMemo(() => ['All', ...new Set(getEtfPulseUniverse().map(etf => etf.type))], []);
@@ -234,20 +209,8 @@ export default function EtfPulsePage() {
     });
   }, [leverageFilter, rows, search, sort, trendFilter, typeFilter]);
 
-  const summary = useMemo(() => {
-    const strongCount = rows.filter(row => row.trend === 'Strong Uptrend').length;
-    const below200 = rows.filter(row => isFiniteNumber(row.distance200) && row.distance200 < 0).length;
-    const oversold = rows.filter(row => row.isOversold).length;
-    const biggestDrawdown = rows.reduce<EtfPulseRow | null>((worst, row) => {
-      if (!isFiniteNumber(row.returns.thirtyDay)) return worst;
-      if (!worst || (row.returns.thirtyDay ?? 0) < (worst.returns.thirtyDay ?? 0)) return row;
-      return worst;
-    }, null);
-    return { strongCount, below200, oversold, biggestDrawdown };
-  }, [rows]);
-
   const sortButton = (field: PulseSortField, label: string, align = 'text-right', title = label) => (
-    <th className={`px-2 py-2 text-[11px] font-medium whitespace-nowrap ${align}`} style={{ color: 'var(--text-muted)' }}>
+    <th className={`px-2 py-2 text-[11px] font-medium whitespace-nowrap ${align}`} style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }}>
       <button
         type="button"
         title={title}
@@ -260,18 +223,9 @@ export default function EtfPulsePage() {
   );
 
   return (
-    <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>
-      <div className="max-w-[1800px] mx-auto px-2 sm:px-4 lg:px-6 py-4 sm:py-6">
-        <div
-          ref={stickyControlsRef}
-          className="sticky top-11 z-40 -mx-2 sm:-mx-4 lg:-mx-6 px-2 sm:px-4 lg:px-6 pt-2 pb-2 mb-3"
-          style={{
-            backgroundColor: 'color-mix(in srgb, var(--bg) 94%, transparent)',
-            backdropFilter: 'blur(10px)',
-            borderBottom: '1px solid var(--border)',
-            boxShadow: '0 10px 24px rgba(0,0,0,0.18)',
-          }}
-        >
+    <div className="h-[calc(100vh-2.75rem)] overflow-hidden" style={{ backgroundColor: 'var(--bg)' }}>
+      <div className="max-w-[1800px] mx-auto h-full min-h-0 px-2 sm:px-4 lg:px-6 py-2 sm:py-3 flex flex-col">
+        <div className="flex-shrink-0 -mx-2 sm:-mx-4 lg:-mx-6 px-2 sm:px-4 lg:px-6 pb-2 mb-2" style={{ backgroundColor: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
           <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-2 mb-2">
             <div className="min-w-0">
               <h1 className="text-xl sm:text-2xl font-bold tracking-tight flex items-center gap-2" style={{ color: 'var(--text)' }}>
@@ -307,17 +261,6 @@ export default function EtfPulsePage() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5 mb-2">
-            <MiniSummary label="Strong Uptrend" value={String(summary.strongCount)} color="var(--green)" />
-            <MiniSummary label="Below 200D" value={String(summary.below200)} color={summary.below200 > 0 ? 'var(--orange)' : undefined} />
-            <MiniSummary label="Oversold" value={String(summary.oversold)} color="var(--accent-light)" />
-            <MiniSummary
-              label="Biggest 30D Drawdown"
-              value={summary.biggestDrawdown ? `${summary.biggestDrawdown.ticker} ${formatPct(summary.biggestDrawdown.returns.thirtyDay)}` : DASH}
-              color="var(--red)"
-            />
-          </div>
-
           <div className="rounded-lg p-2" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(180px,1fr)_160px_180px_190px] gap-2">
               <input
@@ -334,10 +277,10 @@ export default function EtfPulsePage() {
           </div>
         </div>
 
-        <div className="rounded-lg overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-          <div className="overflow-x-auto max-w-full overscroll-contain">
+        <div className="rounded-lg overflow-hidden flex-1 min-h-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+          <div className="h-full max-w-full overflow-auto overscroll-contain">
             <table className="min-w-[1740px] w-full text-[11px]">
-              <thead className="sticky z-30" style={{ top: `calc(2.75rem + ${stickyControlsHeight}px)` }}>
+              <thead className="sticky top-0 z-30">
                 <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
                   {sortButton('ticker', 'Ticker', 'text-left sticky left-0 z-20')}
                   {sortButton('name', 'Name', 'text-left')}
@@ -411,7 +354,7 @@ export default function EtfPulsePage() {
           </div>
         </div>
 
-        <div className="mt-3 text-[10px]" style={{ color: 'var(--text-dim)' }}>
+        <div className="mt-2 flex-shrink-0 text-[10px]" style={{ color: 'var(--text-dim)' }}>
           Filters and sorting are client-side. Refresh loads one cached 2Y daily series per ETF with limited concurrency.
         </div>
       </div>
