@@ -955,18 +955,18 @@ export default function PortfolioPage() {
               {openTrades.length === 0 ? (
                 <section className="rounded-lg p-3 text-sm" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>No open positions for analytics.</section>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-12 gap-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-12 auto-rows-auto items-stretch gap-2">
                   <div className="md:col-span-1 xl:col-span-8">
                     <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openTrades, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." />
                   </div>
                   <div className="md:col-span-1 xl:col-span-4">
-                    <CloseCandidatesCard candidates={buildCloseCandidates(openTrades, markBasis).slice(0, 5)} onTickerClick={ticker => navigate(`/options/${ticker.trim().toUpperCase()}`)} />
+                    <NeedsAttentionList items={buildNeedsAttention(openTrades).slice(0, 5)} onTickerClick={ticker => navigate(`/options/${ticker.trim().toUpperCase()}`)} onDetailsClick={openDrawer} />
                   </div>
                   <div className="md:col-span-1 xl:col-span-8">
                     <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openTrades, markBasis)} totalGrossRisk={sumValues(openTrades.map(calculateEquityAtRisk))} maxItems={8} />
                   </div>
                   <div className="md:col-span-1 xl:col-span-4">
-                    <NeedsAttentionList items={buildNeedsAttention(openTrades).slice(0, 5)} onTickerClick={ticker => navigate(`/options/${ticker.trim().toUpperCase()}`)} onDetailsClick={openDrawer} />
+                    <CloseCandidatesCard candidates={buildCloseCandidates(openTrades, markBasis).slice(0, 5)} onTickerClick={ticker => navigate(`/options/${ticker.trim().toUpperCase()}`)} />
                   </div>
                 </div>
               )}
