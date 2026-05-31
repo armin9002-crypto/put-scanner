@@ -3,8 +3,6 @@ import { Activity, AlertTriangle, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { buildEtfPulseRows, getEtfPulseUniverse, type EtfPulseLoadResult, type EtfPulseProgress } from '../lib/etfPulseData';
 import type { EtfPulseRow, EtfPulseTrend } from '../lib/etfPulseMetrics';
-import { fetchProxyValuations, getUniqueValuationProxies, type ProxyValuationMap } from '../lib/etfValuationData';
-import { getValuationProxyForTicker } from '../lib/etfValuationProxies';
 import { formatCurrency, formatPercent } from '../lib/format';
 import { isFiniteNumber } from '../lib/optionMetrics';
 
@@ -33,8 +31,6 @@ type PulseSortField =
   | 'percentOf52WeekHigh'
   | 'position52Week'
   | 'drawdown52Week'
-  | 'proxy'
-  | 'proxyForwardPe'
   | 'trend';
 
 type SortDirection = 'asc' | 'desc';
@@ -125,13 +121,7 @@ function trendStyle(row: EtfPulseRow): { label: string; color: string; bg: strin
   return { label: 'Neutral', color: 'var(--text-muted)', bg: 'var(--surface-alt)', border: 'var(--border)' };
 }
 
-function formatPe(value: number | null | undefined): string {
-  return isFiniteNumber(value) ? `${value.toFixed(1)}x` : DASH;
-}
-
-function sortValue(row: EtfPulseRow, field: PulseSortField, valuations: ProxyValuationMap): number | string | null {
-  const proxy = getValuationProxyForTicker(row.ticker);
-  const proxyTicker = proxy.meaningful && proxy.proxyTicker ? proxy.proxyTicker.toUpperCase() : null;
+function sortValue(row: EtfPulseRow, field: PulseSortField): number | string | null {
   switch (field) {
     case 'ticker': return row.ticker;
     case 'name': return row.name;
@@ -155,8 +145,6 @@ function sortValue(row: EtfPulseRow, field: PulseSortField, valuations: ProxyVal
     case 'percentOf52WeekHigh': return row.percentOf52WeekHigh;
     case 'position52Week': return row.position52Week;
     case 'drawdown52Week': return row.drawdown52Week;
-    case 'proxy': return proxyTicker ?? 'N/A';
-    case 'proxyForwardPe': return proxyTicker ? valuations[proxyTicker]?.forwardPe ?? null : null;
     case 'trend': return trendStyle(row).label;
     default: return row.ticker;
   }
@@ -180,8 +168,6 @@ export default function EtfPulsePage() {
   const [result, setResult] = useState<EtfPulseLoadResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [valuationError, setValuationError] = useState('');
-  const [valuations, setValuations] = useState<ProxyValuationMap>({});
   const [progress, setProgress] = useState<EtfPulseProgress>({ loaded: 0, total: getEtfPulseUniverse().length });
   const [search, setSearch] = useState('');
   const [leverageFilter, setLeverageFilter] = useState('All');
@@ -200,18 +186,6 @@ export default function EtfPulsePage() {
       });
       setResult(next);
       setProgress({ loaded: next.loaded + next.failed, total: next.total });
-      const proxyTickers = getUniqueValuationProxies(next.rows);
-      if (proxyTickers.length > 0) {
-        try {
-          setValuationError('');
-          setValuations(await fetchProxyValuations(proxyTickers, { forceRefresh }));
-        } catch (valuationErr) {
-          setValuationError(valuationErr instanceof Error ? valuationErr.message : 'Proxy valuation data could not be loaded.');
-          setValuations({});
-        }
-      } else {
-        setValuations({});
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'ETF Pulse data could not be loaded.');
     } finally {
@@ -238,8 +212,8 @@ export default function EtfPulsePage() {
         matchesTrend(row, trendFilter);
     });
     return [...filtered].sort((a, b) => {
-      const aValue = sortValue(a, sort.field, valuations);
-      const bValue = sortValue(b, sort.field, valuations);
+      const aValue = sortValue(a, sort.field);
+      const bValue = sortValue(b, sort.field);
       const direction = sort.direction === 'asc' ? 1 : -1;
       if (aValue == null && bValue == null) return 0;
       if (aValue == null) return 1;
@@ -247,7 +221,7 @@ export default function EtfPulsePage() {
       if (typeof aValue === 'string' || typeof bValue === 'string') return String(aValue).localeCompare(String(bValue)) * direction;
       return (aValue - bValue) * direction;
     });
-  }, [leverageFilter, rows, search, sort, trendFilter, typeFilter, valuations]);
+  }, [leverageFilter, rows, search, sort, trendFilter, typeFilter]);
 
   const columns = useMemo<PulseColumn[]>(() => [
     {
@@ -381,34 +355,7 @@ export default function EtfPulsePage() {
         );
       },
     },
-    {
-      key: 'proxy',
-      label: 'Proxy',
-      width: 74,
-      align: 'center',
-      sortField: 'proxy',
-      title: 'Valuation proxy for underlying exposure. Not true look-through ETF valuation.',
-      render: row => {
-        const proxy = getValuationProxyForTicker(row.ticker);
-        const proxyTicker = proxy.meaningful && proxy.proxyTicker ? proxy.proxyTicker.toUpperCase() : null;
-        return <span title={`${proxy.reason} Valuation proxy for underlying exposure; not true look-through ETF valuation.`}>{proxyTicker ?? 'N/A'}</span>;
-      },
-    },
-    {
-      key: 'proxyForwardPe',
-      label: 'Proxy Fwd P/E',
-      width: 106,
-      align: 'right',
-      sortField: 'proxyForwardPe',
-      title: 'Uses mapped underlying proxy where available, e.g. TQQQ -> QQQ or SSO -> SPY. This is valuation context, not a true look-through ETF P/E.',
-      render: row => {
-        const proxy = getValuationProxyForTicker(row.ticker);
-        const proxyTicker = proxy.meaningful && proxy.proxyTicker ? proxy.proxyTicker.toUpperCase() : null;
-        const proxyValuation = proxyTicker ? valuations[proxyTicker] : null;
-        return <span title={`${proxy.reason} Valuation proxy for underlying exposure; not true look-through ETF valuation.`}>{proxyTicker ? formatPe(proxyValuation?.forwardPe) : 'N/A'}</span>;
-      },
-    },
-  ], [navigate, valuations]);
+  ], [navigate]);
 
   const tableMinWidth = useMemo(() => columns.reduce((sum, column) => sum + column.width, 0), [columns]);
 
@@ -544,7 +491,6 @@ export default function EtfPulsePage() {
 
         <div className="mt-2 flex-shrink-0 text-[10px]" style={{ color: 'var(--text-dim)' }}>
           Filters and sorting are client-side. Refresh loads one cached 2Y daily series per ETF with limited concurrency.
-          {valuationError ? <span style={{ color: 'var(--yellow)' }}> Some proxy valuation data unavailable.</span> : null}
         </div>
       </div>
     </div>
