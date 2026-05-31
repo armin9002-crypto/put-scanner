@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, AlertTriangle, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { buildEtfPulseRows, getEtfPulseUniverse, type EtfPulseLoadResult, type EtfPulseProgress } from '../lib/etfPulseData';
@@ -19,6 +19,7 @@ type PulseSortField =
   | 'thirtyDay'
   | 'threeMonth'
   | 'sixMonth'
+  | 'yearToDate'
   | 'oneYear'
   | 'rsi14'
   | 'distance50'
@@ -95,6 +96,7 @@ function sortValue(row: EtfPulseRow, field: PulseSortField): number | string {
     case 'thirtyDay': return row.returns.thirtyDay ?? Number.NEGATIVE_INFINITY;
     case 'threeMonth': return row.returns.threeMonth ?? Number.NEGATIVE_INFINITY;
     case 'sixMonth': return row.returns.sixMonth ?? Number.NEGATIVE_INFINITY;
+    case 'yearToDate': return row.returns.yearToDate ?? Number.NEGATIVE_INFINITY;
     case 'oneYear': return row.returns.oneYear ?? Number.NEGATIVE_INFINITY;
     case 'rsi14': return row.rsi14 ?? Number.NEGATIVE_INFINITY;
     case 'distance50': return row.distance50 ?? Number.NEGATIVE_INFINITY;
@@ -131,10 +133,12 @@ function Badge({ children }: { children: string }) {
 
 export default function EtfPulsePage() {
   const navigate = useNavigate();
+  const stickyControlsRef = useRef<HTMLDivElement | null>(null);
   const [result, setResult] = useState<EtfPulseLoadResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [progress, setProgress] = useState<EtfPulseProgress>({ loaded: 0, total: getEtfPulseUniverse().length });
+  const [stickyControlsHeight, setStickyControlsHeight] = useState(0);
   const [search, setSearch] = useState('');
   const [leverageFilter, setLeverageFilter] = useState('All');
   const [typeFilter, setTypeFilter] = useState('All');
@@ -161,6 +165,20 @@ export default function EtfPulsePage() {
 
   useEffect(() => {
     void loadRows(false);
+  }, []);
+
+  useEffect(() => {
+    const element = stickyControlsRef.current;
+    if (!element) return;
+    const updateHeight = () => setStickyControlsHeight(element.getBoundingClientRect().height);
+    updateHeight();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateHeight);
+      return () => window.removeEventListener('resize', updateHeight);
+    }
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(element);
+    return () => observer.disconnect();
   }, []);
 
   const rows = useMemo(() => result?.rows ?? [], [result]);
@@ -205,7 +223,7 @@ export default function EtfPulsePage() {
         onClick={() => setSort(current => current.field === field ? { field, direction: current.direction === 'asc' ? 'desc' : 'asc' } : { field, direction: 'asc' })}
         className="hover:opacity-80"
       >
-        {label}{sort.field === field ? sort.direction === 'asc' ? ' ↑' : ' ↓' : ''}
+        {label}{sort.field === field ? sort.direction === 'asc' ? ' ^' : ' v' : ''}
       </button>
     </th>
   );
@@ -213,71 +231,82 @@ export default function EtfPulsePage() {
   return (
     <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>
       <div className="max-w-[1800px] mx-auto px-2 sm:px-4 lg:px-6 py-4 sm:py-6">
-        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3 mb-3">
-          <div className="min-w-0">
-            <h1 className="text-xl sm:text-2xl font-bold tracking-tight flex items-center gap-2" style={{ color: 'var(--text)' }}>
-              <Activity className="w-5 h-5" style={{ color: 'var(--accent-light)' }} /> ETF Pulse
-            </h1>
-            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Underlying momentum, trend, and drawdown map across the scanner universe.</p>
-            <p className="text-[10px] mt-1" style={{ color: 'var(--text-dim)' }}>Daily price history only. Indicators are calculated from cached daily closes.</p>
+        <div
+          ref={stickyControlsRef}
+          className="sticky top-11 z-40 -mx-2 sm:-mx-4 lg:-mx-6 px-2 sm:px-4 lg:px-6 pt-2 pb-2 mb-3"
+          style={{
+            backgroundColor: 'color-mix(in srgb, var(--bg) 94%, transparent)',
+            backdropFilter: 'blur(10px)',
+            borderBottom: '1px solid var(--border)',
+            boxShadow: '0 10px 24px rgba(0,0,0,0.18)',
+          }}
+        >
+          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-2 mb-2">
+            <div className="min-w-0">
+              <h1 className="text-xl sm:text-2xl font-bold tracking-tight flex items-center gap-2" style={{ color: 'var(--text)' }}>
+                <Activity className="w-5 h-5" style={{ color: 'var(--accent-light)' }} /> ETF Pulse
+              </h1>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Underlying momentum, trend, and drawdown map across the scanner universe.</p>
+              <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-dim)' }}>Daily price history only. Indicators are calculated from cached daily closes.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+              <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>
+                {result ? `Last updated: ${new Date(result.fetchedAt).toLocaleString()}` : loading ? `Loading ${progress.loaded} / ${progress.total} ETFs...` : 'Not loaded yet'}
+              </span>
+              <button
+                type="button"
+                onClick={() => void loadRows(true)}
+                disabled={loading}
+                className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium min-h-[38px] disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
+              </button>
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-            <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>
-              {result ? `Last updated: ${new Date(result.fetchedAt).toLocaleString()}` : loading ? `Loading ${progress.loaded} / ${progress.total} ETFs...` : 'Not loaded yet'}
-            </span>
-            <button
-              type="button"
-              onClick={() => void loadRows(true)}
-              disabled={loading}
-              className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium min-h-[40px] disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
-            </button>
-          </div>
-        </div>
 
-        {error && (
-          <div className="flex items-center gap-2 rounded-lg px-3 py-2 mb-3 text-xs" style={{ backgroundColor: 'rgba(239,68,68,0.10)', color: 'var(--red)', border: '1px solid rgba(239,68,68,0.24)' }}>
-            <AlertTriangle className="w-3.5 h-3.5" /> {error}
-          </div>
-        )}
-        {result && result.failed > 0 && (
-          <div className="flex items-center gap-2 rounded-lg px-3 py-2 mb-3 text-xs" style={{ backgroundColor: 'rgba(250,204,21,0.10)', color: 'var(--yellow)', border: '1px solid rgba(250,204,21,0.22)' }}>
-            <AlertTriangle className="w-3.5 h-3.5" /> Loaded {result.loaded} of {result.total} ETFs. {result.failed} failed.
-          </div>
-        )}
+          {error && (
+            <div className="flex items-center gap-2 rounded-lg px-3 py-2 mb-2 text-xs" style={{ backgroundColor: 'rgba(239,68,68,0.10)', color: 'var(--red)', border: '1px solid rgba(239,68,68,0.24)' }}>
+              <AlertTriangle className="w-3.5 h-3.5" /> {error}
+            </div>
+          )}
+          {result && result.failed > 0 && (
+            <div className="flex items-center gap-2 rounded-lg px-3 py-2 mb-2 text-xs" style={{ backgroundColor: 'rgba(250,204,21,0.10)', color: 'var(--yellow)', border: '1px solid rgba(250,204,21,0.22)' }}>
+              <AlertTriangle className="w-3.5 h-3.5" /> Loaded {result.loaded} of {result.total} ETFs. {result.failed} failed.
+            </div>
+          )}
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5 mb-3">
-          <MiniSummary label="Strong Uptrend" value={String(summary.strongCount)} color="var(--green)" />
-          <MiniSummary label="Below 200D" value={String(summary.below200)} color={summary.below200 > 0 ? 'var(--orange)' : undefined} />
-          <MiniSummary label="Oversold" value={String(summary.oversold)} color="var(--accent-light)" />
-          <MiniSummary
-            label="Biggest 30D Drawdown"
-            value={summary.biggestDrawdown ? `${summary.biggestDrawdown.ticker} ${formatPct(summary.biggestDrawdown.returns.thirtyDay)}` : DASH}
-            color="var(--red)"
-          />
-        </div>
-
-        <div className="rounded-lg p-2 mb-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(180px,1fr)_160px_180px_190px] gap-2">
-            <input
-              value={search}
-              onChange={event => setSearch(event.target.value)}
-              placeholder="Search ticker, name, or theme"
-              className="rounded-lg px-3 py-2 text-sm outline-none min-h-[40px]"
-              style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5 mb-2">
+            <MiniSummary label="Strong Uptrend" value={String(summary.strongCount)} color="var(--green)" />
+            <MiniSummary label="Below 200D" value={String(summary.below200)} color={summary.below200 > 0 ? 'var(--orange)' : undefined} />
+            <MiniSummary label="Oversold" value={String(summary.oversold)} color="var(--accent-light)" />
+            <MiniSummary
+              label="Biggest 30D Drawdown"
+              value={summary.biggestDrawdown ? `${summary.biggestDrawdown.ticker} ${formatPct(summary.biggestDrawdown.returns.thirtyDay)}` : DASH}
+              color="var(--red)"
             />
-            <Select label="Lev" value={leverageFilter} options={leverageOptions} onChange={setLeverageFilter} />
-            <Select label="Type" value={typeFilter} options={typeOptions} onChange={setTypeFilter} />
-            <Select label="Trend" value={trendFilter} options={trendOptions} onChange={value => setTrendFilter(value as TrendFilter)} />
+          </div>
+
+          <div className="rounded-lg p-2" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(180px,1fr)_160px_180px_190px] gap-2">
+              <input
+                value={search}
+                onChange={event => setSearch(event.target.value)}
+                placeholder="Search ticker, name, or theme"
+                className="rounded-lg px-3 py-2 text-sm outline-none min-h-[38px]"
+                style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
+              />
+              <Select label="Lev" value={leverageFilter} options={leverageOptions} onChange={setLeverageFilter} />
+              <Select label="Type" value={typeFilter} options={typeOptions} onChange={setTypeFilter} />
+              <Select label="Trend" value={trendFilter} options={trendOptions} onChange={value => setTrendFilter(value as TrendFilter)} />
+            </div>
           </div>
         </div>
 
         <div className="rounded-lg overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
           <div className="overflow-x-auto max-w-full overscroll-contain">
-            <table className="min-w-[1420px] w-full text-[11px]">
-              <thead className="sticky top-0 z-10">
+            <table className="min-w-[1480px] w-full text-[11px]">
+              <thead className="sticky z-30" style={{ top: `calc(2.75rem + ${stickyControlsHeight}px)` }}>
                 <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
                   {sortButton('ticker', 'Ticker', 'text-left sticky left-0 z-20')}
                   {sortButton('name', 'Name', 'text-left')}
@@ -289,6 +318,7 @@ export default function EtfPulsePage() {
                   {sortButton('thirtyDay', '30D')}
                   {sortButton('threeMonth', '3M')}
                   {sortButton('sixMonth', '6M')}
+                  {sortButton('yearToDate', 'YTD')}
                   {sortButton('oneYear', '1Y')}
                   {sortButton('rsi14', 'RSI')}
                   {sortButton('distance50', 'vs 50D')}
@@ -301,9 +331,9 @@ export default function EtfPulsePage() {
               </thead>
               <tbody>
                 {loading && rows.length === 0 ? (
-                  <tr><td colSpan={18} className="px-3 py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>Loading {progress.loaded} / {progress.total} ETFs...</td></tr>
+                  <tr><td colSpan={19} className="px-3 py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>Loading {progress.loaded} / {progress.total} ETFs...</td></tr>
                 ) : filteredRows.length === 0 ? (
-                  <tr><td colSpan={18} className="px-3 py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No ETFs match these filters.</td></tr>
+                  <tr><td colSpan={19} className="px-3 py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No ETFs match these filters.</td></tr>
                 ) : filteredRows.map((row, index) => {
                   const trend = trendStyle(row);
                   return (
@@ -323,6 +353,7 @@ export default function EtfPulsePage() {
                       <ReturnCell value={row.returns.thirtyDay} />
                       <ReturnCell value={row.returns.threeMonth} />
                       <ReturnCell value={row.returns.sixMonth} />
+                      <ReturnCell value={row.returns.yearToDate} />
                       <ReturnCell value={row.returns.oneYear} />
                       <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: rsiColor(row.rsi14) }}>{isFiniteNumber(row.rsi14) ? row.rsi14.toFixed(1) : DASH}</td>
                       <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: valueColor(row.distance50) }}>{formatPct(row.distance50)}</td>
@@ -342,7 +373,7 @@ export default function EtfPulsePage() {
         </div>
 
         <div className="mt-3 text-[10px]" style={{ color: 'var(--text-dim)' }}>
-          Filters and sorting are client-side. Refresh loads one cached 1Y daily series per ETF with limited concurrency.
+          Filters and sorting are client-side. Refresh loads one cached 2Y daily series per ETF with limited concurrency.
         </div>
       </div>
     </div>

@@ -16,6 +16,7 @@ export interface EtfPulseRow {
     thirtyDay: number | null;
     threeMonth: number | null;
     sixMonth: number | null;
+    yearToDate: number | null;
     oneYear: number | null;
   };
   rsi14: number | null;
@@ -51,6 +52,17 @@ export function calculateReturn(points: ChartPoint[], lookbackTradingDays: numbe
   const latest = clean[clean.length - 1]?.price;
   const prior = clean[clean.length - 1 - lookbackTradingDays]?.price;
   const ratio = safeRatio(finite(latest), finite(prior));
+  return ratio == null ? null : ratio - 1;
+}
+
+export function calculateYtdReturn(points: ChartPoint[], year = new Date().getFullYear()): number | null {
+  const clean = cleanPoints(points);
+  const latest = finite(clean[clean.length - 1]?.price);
+  const firstOfYear = clean.find(point => {
+    const pointYear = point.date ? Number(point.date.slice(0, 4)) : new Date(point.timestamp * 1000).getFullYear();
+    return pointYear === year;
+  });
+  const ratio = safeRatio(latest, finite(firstOfYear?.price));
   return ratio == null ? null : ratio - 1;
 }
 
@@ -137,6 +149,7 @@ export function buildEtfPulseRow(etf: ETFInfo, points: ChartPoint[], latestPrice
       thirtyDay,
       threeMonth: calculateReturn(clean, 63),
       sixMonth: calculateReturn(clean, 126),
+      yearToDate: calculateYtdReturn(clean),
       oneYear: calculateReturn(clean, 252),
     },
     rsi14,
