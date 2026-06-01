@@ -53,12 +53,12 @@ function MiniBadge({ label }: { label: string }) {
   return <span className="inline-flex rounded px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap" style={{ color: style.color, backgroundColor: style.bg, border: `1px solid ${style.border}` }}>{label}</span>;
 }
 
-function defaultCriteria(postureMaxDelta = 0.2, postureDistance = 0.25): ScanCriteria {
+function defaultCriteria(postureMaxDelta = 0.15, postureDistance = 0.25): ScanCriteria {
   return {
     tradeStyle: 'Balanced',
     universeMode: 'All ETF universe',
-    minDte: 14,
-    maxDte: 90,
+    minDte: 60,
+    maxDte: 150,
     maxDelta: postureMaxDelta,
     minDistanceToStrike: Math.max(0.3, postureDistance),
     minOpenInterest: 20,
@@ -188,12 +188,9 @@ export default function TradeCockpitPage() {
   useEffect(() => {
     setCriteria(current => ({
       ...current,
-      maxDelta: posture.maxDelta,
       minDistanceToStrike: Math.max(0.3, posture.minDistanceToStrike),
-      minDte: Math.min(current.minDte, posture.dteMin),
-      maxDte: Math.max(current.maxDte, posture.dteMax),
     }));
-  }, [posture.maxDelta, posture.minDistanceToStrike, posture.dteMin, posture.dteMax]);
+  }, [posture.minDistanceToStrike]);
 
   const selectedTickers = useMemo(() => selectScanUniverse(criteria, pulseRows, portfolioTrades, watchlist), [criteria, portfolioTrades, pulseRows, watchlist]);
   const estimatedRequests = estimateOptionRequests(selectedTickers, criteria);
