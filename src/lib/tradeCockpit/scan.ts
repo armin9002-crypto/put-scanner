@@ -70,7 +70,13 @@ function selectExpirations(expirations: ExpirationDate[], criteria: ScanCriteria
 }
 
 export function estimateOptionRequests(tickers: string[], criteria: ScanCriteria): number {
-  return tickers.length * (1 + Math.max(0, criteria.maxExpirationsPerTicker));
+  const initialLookupPerTicker = 1;
+  const initialChainLikelyUsable = criteria.minDte <= 30;
+  const additionalDatedChains = Math.max(
+    0,
+    criteria.maxExpirationsPerTicker - (initialChainLikelyUsable ? 1 : 0)
+  );
+  return tickers.length * (initialLookupPerTicker + additionalDatedChains);
 }
 
 export async function runTradeScan({

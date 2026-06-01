@@ -1,6 +1,20 @@
 export default async function handler(req, res) {
-  const ticker = req.query.ticker;
-  const date = req.query.date;
+  res.setHeader('Access-Control-Allow-Origin', '*');
+
+  const rawTicker = Array.isArray(req.query.ticker) ? req.query.ticker[0] : req.query.ticker;
+  const ticker = String(rawTicker || '').trim().toUpperCase();
+  if (!ticker) {
+    return res.status(400).json({ error: 'Missing ticker parameter' });
+  }
+  if (!/^[A-Z0-9.^-]{1,12}$/.test(ticker)) {
+    return res.status(400).json({ error: 'Invalid ticker parameter' });
+  }
+
+  const rawDate = Array.isArray(req.query.date) ? req.query.date[0] : req.query.date;
+  const date = rawDate == null || rawDate === '' ? null : Number(rawDate);
+  if (rawDate != null && rawDate !== '' && (!Number.isInteger(date) || date <= 0)) {
+    return res.status(400).json({ error: 'Invalid date parameter' });
+  }
 
   const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
@@ -17,6 +31,9 @@ export default async function handler(req, res) {
       },
       redirect: 'follow'
     });
+    if (!pageRes.ok) {
+      return res.status(pageRes.status).json({ error: `Yahoo quote page failed for ${ticker}` });
+    }
 
     // Extract cookies
     const rawCookies = pageRes.headers.get('set-cookie') || '';
@@ -25,14 +42,16 @@ export default async function handler(req, res) {
     // Extract crumb from HTML
     const html = await pageRes.text();
     const crumbMatch = html.match(/"crumb":"([^"\\]+)"/);
-    const crumb = crumbMatch ? crumbMatch[1].replace(/\\u002F/g, '/') : null;
+    let crumb = crumbMatch ? crumbMatch[1].replace(/\\u002F/g, '/') : null;
 
     if (!crumb) {
       // Fallback: try getcrumb endpoint with page cookies
       const crumbRes = await fetch('https://query1.finance.yahoo.com/v1/test/getcrumb', {
         headers: { 'User-Agent': userAgent, 'Cookie': cookieStr }
       });
-      await crumbRes.text();
+      if (crumbRes.ok) {
+        crumb = await crumbRes.text();
+      }
     }
 
     const finalCrumb = crumb || '';
@@ -46,13 +65,19 @@ export default async function handler(req, res) {
         'Cookie': cookieStr
       }
     });
+    if (!optRes.ok) {
+      return res.status(optRes.status).json({ error: `Yahoo options request failed for ${ticker}` });
+    }
     const data = await optRes.json();
 
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cache-Control', 'public, s-maxage=120, stale-while-revalidate=300');
+    res.setHeader(
+      'Cache-Control',
+      date
+        ? 'public, s-maxage=600, stale-while-revalidate=1800'
+        : 'public, s-maxage=300, stale-while-revalidate=900'
+    );
     return res.status(200).json(data);
   } catch(e) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
     return res.status(500).json({ error: e.message });
   }
 }

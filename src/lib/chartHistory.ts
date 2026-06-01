@@ -92,6 +92,8 @@ export async function getChartHistory(
     {
       bypassCache: options.forceRefresh,
       validator: (data) => isValidChartHistory(data, timeframe) && isFresh(data, timeframe),
+      diagnosticsEndpoint: 'chart-history',
+      diagnosticsSource: `getChartHistory:${timeframe}`,
     }
   );
 }

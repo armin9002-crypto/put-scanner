@@ -1,3 +1,5 @@
+import { recordRequestDiagnostic, type RequestEndpoint } from './requestDiagnostics';
+
 interface CacheEntry<T> {
   data: T;
   fetchedAt: number;
@@ -101,15 +103,28 @@ export async function cachedRequest<T>(
     bypassCache?: boolean;
     storage?: 'local' | 'session';
     validator?: (data: T) => boolean;
+    diagnosticsEndpoint?: RequestEndpoint;
+    diagnosticsSource?: string;
   } = {}
 ): Promise<T> {
+  if (options.diagnosticsEndpoint) {
+    recordRequestDiagnostic(options.diagnosticsEndpoint, 'attempted', options.diagnosticsSource);
+  }
   if (!options.bypassCache) {
     const cached = getCachedData<T>(key, ttlMs, options);
-    if (cached !== null) return cached;
+    if (cached !== null) {
+      if (options.diagnosticsEndpoint) {
+        recordRequestDiagnostic(options.diagnosticsEndpoint, 'cacheHit', options.diagnosticsSource);
+      }
+      return cached;
+    }
   }
 
   return dedupeRequest(key, async () => {
     const data = await request();
+    if (options.diagnosticsEndpoint) {
+      recordRequestDiagnostic(options.diagnosticsEndpoint, 'network', options.diagnosticsSource);
+    }
     if (!options.validator || options.validator(data)) {
       setCachedData(key, data, options);
     }

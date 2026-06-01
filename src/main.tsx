@@ -17,8 +17,9 @@ try {
           if (!data || typeof data !== 'object' || Object.keys(data).length === 0) {
             keysToRemove.push(key);
           } else {
-            const hasValidPrice = Object.values(data).some(
-              (v: any) => v && v.price != null && v.price > 0
+            const values = Object.values(data as Record<string, { price?: number | null }>);
+            const hasValidPrice = values.some(
+              value => value && value.price != null && value.price > 0
             );
             if (!hasValidPrice) keysToRemove.push(key);
           }

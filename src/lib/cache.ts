@@ -1,5 +1,6 @@
 import { getMemCache, setMemCache, clearMemCache } from './memoryCache';
 import { dedupeRequest } from './dataCache';
+import { recordRequestDiagnostic, type RequestEndpoint } from './requestDiagnostics';
 
 const TEN_MIN = 10 * 60 * 1000;
 const FIFTEEN_MIN = 15 * 60 * 1000;
@@ -54,8 +55,12 @@ export function threeLayerCache<T>(
   lsTtl: number,
   fetcher: () => Promise<T>,
   validator?: (data: T) => boolean,
-  options: { bypassCache?: boolean } = {}
+  options: { bypassCache?: boolean; diagnosticsEndpoint?: RequestEndpoint; diagnosticsSource?: string } = {}
 ): Promise<T> {
+  if (options.diagnosticsEndpoint) {
+    recordRequestDiagnostic(options.diagnosticsEndpoint, 'attempted', options.diagnosticsSource);
+  }
+
   if (options.bypassCache) {
     clearMemCache(key);
     clearLsCache(key);
@@ -65,6 +70,9 @@ export function threeLayerCache<T>(
   const memHit = options.bypassCache ? null : getMemCache(key, memTtl);
   if (memHit !== null) {
     if (!validator || validator(memHit as T)) {
+      if (options.diagnosticsEndpoint) {
+        recordRequestDiagnostic(options.diagnosticsEndpoint, 'cacheHit', options.diagnosticsSource);
+      }
       return Promise.resolve(memHit as T);
     }
     // Invalid cached data — clear and continue
@@ -76,6 +84,9 @@ export function threeLayerCache<T>(
   if (lsHit !== null) {
     if (!validator || validator(lsHit)) {
       setMemCache(key, lsHit);
+      if (options.diagnosticsEndpoint) {
+        recordRequestDiagnostic(options.diagnosticsEndpoint, 'cacheHit', options.diagnosticsSource);
+      }
       return Promise.resolve(lsHit);
     }
     // Invalid cached data — clear and continue
@@ -84,6 +95,9 @@ export function threeLayerCache<T>(
 
   // Layer 3: fetch with in-flight request deduping
   return dedupeRequest(key, fetcher, options.bypassCache).then(data => {
+    if (options.diagnosticsEndpoint) {
+      recordRequestDiagnostic(options.diagnosticsEndpoint, 'network', options.diagnosticsSource);
+    }
     if (!validator || validator(data)) {
       setMemCache(key, data);
       setCache(key, data);

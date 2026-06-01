@@ -242,7 +242,7 @@ export default function OptionsPage() {
     try {
       const [initialOpts, ext] = await Promise.all([
         fetchOptions(ticker, expDate, { bypassCache }),
-        fetchExtendedPrice(ticker),
+        fetchExtendedPrice(ticker, { includeSparkline: true }),
       ]);
       const preferredExp = expDate
         ? { date: expDate, fromScanner: false }
@@ -259,8 +259,8 @@ export default function OptionsPage() {
       }
       setShowScannerPreselectBadge(preferredExp.fromScanner);
       setLastUpdated(new Date());
-    } catch (err: any) {
-      setError(err.message || 'Failed to load options data');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load options data');
     } finally {
       setLoading(false);
     }
@@ -282,8 +282,8 @@ export default function OptionsPage() {
       const opts = await fetchOptions(ticker, expDate, { bypassCache });
       setOptionsData(opts);
       setLastUpdated(new Date());
-    } catch (err: any) {
-      setError(err.message || 'Failed to load expiration data');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load expiration data');
     } finally {
       setLoading(false);
     }

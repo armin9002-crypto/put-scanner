@@ -193,14 +193,14 @@ export default function HomePage() {
       if (!data || Object.keys(data).length === 0) {
         setPricesError('Price data unavailable');
       } else {
-        const validCount = Object.values(data).filter((v: any) => v?.price != null && v.price > 0).length;
+        const validCount = Object.values(data).filter(value => value?.price != null && value.price > 0).length;
         if (validCount < 10) {
           setPricesError('Partial data received — some prices unavailable');
         }
         setPrices(data);
       }
-    } catch (err: any) {
-      setPricesError(err.message || 'Price data unavailable');
+    } catch (err: unknown) {
+      setPricesError(err instanceof Error ? err.message : 'Price data unavailable');
     } finally {
       if (skeletonTimerRef.current) {
         clearTimeout(skeletonTimerRef.current);

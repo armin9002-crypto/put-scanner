@@ -1,7 +1,13 @@
 export default async function handler(req, res) {
-  const ticker = req.query.ticker;
+  res.setHeader('Access-Control-Allow-Origin', '*');
+
+  const rawTicker = Array.isArray(req.query.ticker) ? req.query.ticker[0] : req.query.ticker;
+  const ticker = String(rawTicker || '').trim().toUpperCase();
   if (!ticker) {
     return res.status(400).json({ error: 'Missing ticker parameter' });
+  }
+  if (!/^[A-Z0-9.^-]{1,12}$/.test(ticker)) {
+    return res.status(400).json({ error: 'Invalid ticker parameter' });
   }
 
   const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -18,23 +24,37 @@ export default async function handler(req, res) {
       },
       redirect: 'follow'
     });
+    if (!pageRes.ok) {
+      return res.status(pageRes.status).json({ error: `Yahoo quote page failed for ${ticker}` });
+    }
 
     const rawCookies = pageRes.headers.get('set-cookie') || '';
     const cookieStr = rawCookies.split(',').map(c => c.split(';')[0]).join('; ');
     const html = await pageRes.text();
     const crumbMatch = html.match(/"crumb":"([^"\\]+)"/);
-    const crumb = crumbMatch ? crumbMatch[1].replace(/\\u002F/g, '/') : '';
+    let crumb = crumbMatch ? crumbMatch[1].replace(/\\u002F/g, '/') : '';
+    if (!crumb) {
+      const crumbRes = await fetch('https://query1.finance.yahoo.com/v1/test/getcrumb', {
+        headers: { 'User-Agent': userAgent, 'Cookie': cookieStr }
+      });
+      if (crumbRes.ok) {
+        crumb = await crumbRes.text();
+      }
+    }
 
     // Step 2: Get current ATM IV from nearest expiry options chain
     const optUrl = `https://query2.finance.yahoo.com/v7/finance/options/${ticker}?crumb=${encodeURIComponent(crumb)}`;
     const optRes = await fetch(optUrl, {
       headers: { 'User-Agent': userAgent, 'Accept': 'application/json', 'Cookie': cookieStr }
     });
+    if (!optRes.ok) {
+      return res.status(optRes.status).json({ error: `Yahoo options request failed for ${ticker}` });
+    }
     const optData = await optRes.json();
 
     const result = optData?.optionChain?.result?.[0];
     if (!result) {
-      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'public, s-maxage=3600, stale-while-revalidate=21600');
       return res.status(200).json({ currentIV: null, ivRank: null, ivPercentile: null });
     }
 
@@ -55,7 +75,7 @@ export default async function handler(req, res) {
     }
 
     if (atmIV == null) {
-      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'public, s-maxage=3600, stale-while-revalidate=21600');
       return res.status(200).json({ currentIV: null, ivRank: null, ivPercentile: null });
     }
 
@@ -65,13 +85,16 @@ export default async function handler(req, res) {
     const chartRes = await fetch(chartUrl, {
       headers: { 'User-Agent': userAgent, 'Accept': 'application/json', 'Cookie': cookieStr }
     });
+    if (!chartRes.ok) {
+      return res.status(chartRes.status).json({ error: `Yahoo chart request failed for ${ticker}` });
+    }
     const chartData = await chartRes.json();
 
     const closes = chartData?.chart?.result?.[0]?.indicators?.quote?.[0]?.close || [];
     const validCloses = closes.filter(c => c != null);
 
     if (validCloses.length < 20) {
-      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'public, s-maxage=3600, stale-while-revalidate=21600');
       return res.status(200).json({ currentIV: atmIV, ivRank: null, ivPercentile: null });
     }
 
@@ -94,7 +117,7 @@ export default async function handler(req, res) {
     }
 
     if (weeklyVols.length < 5) {
-      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'public, s-maxage=3600, stale-while-revalidate=21600');
       return res.status(200).json({ currentIV: atmIV, ivRank: null, ivPercentile: null });
     }
 
@@ -109,14 +132,13 @@ export default async function handler(req, res) {
     // IV Rank: (current - low) / (high - low) * 100
     const ivRank = ivRange > 0 ? ((atmIV - ivLow) / ivRange) * 100 : 50;
 
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'public, s-maxage=3600, stale-while-revalidate=21600');
     return res.status(200).json({
       currentIV: Math.round(atmIV * 100) / 100,
       ivRank: Math.round(Math.max(0, Math.min(100, ivRank)) * 10) / 10,
       ivPercentile: Math.round(ivPercentile * 10) / 10,
     });
   } catch(e) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
     return res.status(500).json({ error: e.message });
   }
 }

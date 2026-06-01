@@ -8,6 +8,27 @@ const API_BASE = '/api';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+interface YahooOptionContract {
+  strike?: number | null;
+  lastPrice?: number | null;
+  lastTradeDate?: number | null;
+  bid?: number | null;
+  ask?: number | null;
+  delta?: number | null;
+  gamma?: number | null;
+  theta?: number | null;
+  vega?: number | null;
+  greeks?: {
+    delta?: number | null;
+    gamma?: number | null;
+    theta?: number | null;
+    vega?: number | null;
+  };
+  impliedVolatility?: number | null;
+  volume?: number | null;
+  openInterest?: number | null;
+}
+
 function calculateDTE(expirationTimestamp: number): number {
   const now = new Date();
   const todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
@@ -31,6 +52,7 @@ function formatExpirationLabel(timestamp: number, currentUtcYear: number): strin
 }
 
 export async function fetchBatchPrices(tickers: string[]): Promise<BatchPriceData> {
+  const normalizedTickers = [...new Set(tickers.map(ticker => ticker.trim().toUpperCase()).filter(Boolean))];
   return threeLayerCache<BatchPriceData>(
     BATCH_PRICE_KEY,
     BATCH_PRICE_MEM_TTL,
@@ -39,7 +61,7 @@ export async function fetchBatchPrices(tickers: string[]): Promise<BatchPriceDat
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 10000);
       try {
-        const res = await fetch(`${API_BASE}/prices?tickers=${encodeURIComponent(tickers.join(','))}`, {
+        const res = await fetch(`${API_BASE}/prices?tickers=${encodeURIComponent(normalizedTickers.join(','))}`, {
           signal: controller.signal,
         });
         if (!res.ok) throw new Error('Failed to fetch batch prices');
@@ -50,7 +72,11 @@ export async function fetchBatchPrices(tickers: string[]): Promise<BatchPriceDat
         clearTimeout(timeout);
       }
     },
-    isValidBatchPriceData
+    isValidBatchPriceData,
+    {
+      diagnosticsEndpoint: 'prices',
+      diagnosticsSource: 'fetchBatchPrices',
+    }
   );
 }
 
@@ -79,7 +105,7 @@ export async function fetchOptions(ticker: string, date?: number, options: { byp
 
       const currentPrice = result.quote?.regularMarketPrice ?? 0;
       const expDates: number[] = result.expirationDates || [];
-      const putsRaw = result.options?.[0]?.puts ?? [];
+      const putsRaw: YahooOptionContract[] = result.options?.[0]?.puts ?? [];
 
       const currentYear = new Date().getUTCFullYear();
 
@@ -94,8 +120,8 @@ export async function fetchOptions(ticker: string, date?: number, options: { byp
       }
 
       const puts: OptionContract[] = putsRaw
-        .filter((p: any) => p.strike != null)
-        .map((p: any) => {
+        .filter((p): p is YahooOptionContract & { strike: number } => p.strike != null)
+        .map((p) => {
           const yahooDelta = p.greeks?.delta ?? p.delta ?? null;
           const delta = yahooDelta != null && yahooDelta !== 0
             ? (yahooDelta > 0 ? -yahooDelta : yahooDelta)
@@ -126,7 +152,11 @@ export async function fetchOptions(ticker: string, date?: number, options: { byp
       return { expirations, puts, currentPrice };
     },
     undefined,
-    { bypassCache: options.bypassCache }
+    {
+      bypassCache: options.bypassCache,
+      diagnosticsEndpoint: 'options',
+      diagnosticsSource: 'fetchOptions',
+    }
   );
 }
 
@@ -201,6 +231,11 @@ export async function fetchSparkline(ticker: string): Promise<SparklineData> {
         previousClose: data.previousClose ?? null,
         sparkline: data.sparkline || [],
       };
+    },
+    undefined,
+    {
+      diagnosticsEndpoint: 'price',
+      diagnosticsSource: 'fetchSparkline',
     }
   );
 }
@@ -217,14 +252,15 @@ export interface ExtendedPriceData {
   sparkline: number[];
 }
 
-export async function fetchExtendedPrice(ticker: string): Promise<ExtendedPriceData> {
-  const cacheKey = `extended_price_${ticker}`;
+export async function fetchExtendedPrice(ticker: string, options: { includeSparkline?: boolean } = {}): Promise<ExtendedPriceData> {
+  const includeSparkline = options.includeSparkline === true;
+  const cacheKey = `extended_price_${ticker}_${includeSparkline ? 'spark' : 'daily'}`;
   return threeLayerCache<ExtendedPriceData>(
     cacheKey,
     EXTENDED_PRICE_MEM_TTL,
     EXTENDED_PRICE_LS_TTL,
     async () => {
-      const res = await fetch(`${API_BASE}/price?ticker=${encodeURIComponent(ticker)}&extended=true`);
+      const res = await fetch(`${API_BASE}/price?ticker=${encodeURIComponent(ticker)}&extended=true&includeSparkline=${includeSparkline ? 'true' : 'false'}`);
       if (!res.ok) throw new Error(`Failed to fetch extended price for ${ticker}`);
       const data = await res.json();
       if (data.error) throw new Error(data.error);
@@ -239,6 +275,11 @@ export async function fetchExtendedPrice(ticker: string): Promise<ExtendedPriceD
         previousClose: data.previousClose ?? null,
         sparkline: data.sparkline || [],
       };
+    },
+    undefined,
+    {
+      diagnosticsEndpoint: 'price',
+      diagnosticsSource: includeSparkline ? 'fetchExtendedPrice:sparkline' : 'fetchExtendedPrice:daily',
     }
   );
 }
@@ -271,6 +312,8 @@ export async function fetchIVRank(ticker: string): Promise<IVRankData> {
         typeof data === 'object' &&
         ('ivRank' in data || 'currentIV' in data || 'ivPercentile' in data)
       ),
+      diagnosticsEndpoint: 'ivrank',
+      diagnosticsSource: 'fetchIVRank',
     }
   );
 }

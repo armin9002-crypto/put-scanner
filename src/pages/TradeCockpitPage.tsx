@@ -239,7 +239,7 @@ export default function TradeCockpitPage() {
 
   const handleRunScan = async () => {
     if (selectedTickers.length === 0) return;
-    if (estimatedRequests > 50 && !window.confirm(`Estimated option-chain requests: ${estimatedRequests}. Cached chains may reduce this. Continue?`)) return;
+    if (estimatedRequests > 50 && !window.confirm(`Estimated max option-chain requests: ${estimatedRequests}. Cached chains may reduce this. Continue?`)) return;
     if (estimatedRequests > 75 && !window.confirm('This scan is above the normal hard cap. Continue anyway?')) return;
     setScanning(true);
     setScanProgress({ completed: 0, total: selectedTickers.length });
@@ -378,7 +378,7 @@ export default function TradeCockpitPage() {
               Scanning {selectedTickers.length} ETFs: {selectedTickers.slice(0, 16).join(', ')}{selectedTickers.length > 16 ? '...' : ''}
             </div>
             <div style={{ color: estimatedRequests > 30 ? 'var(--yellow)' : 'var(--text-muted)' }}>
-              Estimated option-chain requests: {estimatedRequests}. Cached chains may reduce this.
+              Estimated max requests: {estimatedRequests}. Cached chains may reduce this.
             </div>
           </div>
           {currentResultsStale && <div className="mt-2 text-xs" style={{ color: 'var(--yellow)' }}>Results were scanned using previous criteria. Re-run scan for a fresh candidate set.</div>}

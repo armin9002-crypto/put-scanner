@@ -1,16 +1,22 @@
 export default async function handler(req, res) {
-  const tickers = req.query.tickers;
-  if (!tickers) return res.status(400).send('Missing tickers param');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+
+  const rawTickers = Array.isArray(req.query.tickers) ? req.query.tickers[0] : req.query.tickers;
+  if (!rawTickers) return res.status(400).json({ error: 'Missing tickers parameter' });
+
+  const symbols = [...new Set(String(rawTickers)
+    .split(',')
+    .map(symbol => symbol.trim().toUpperCase())
+    .filter(symbol => /^[A-Z0-9.^-]{1,12}$/.test(symbol)))];
+
+  if (symbols.length === 0) {
+    return res.status(400).json({ error: 'No valid ticker symbols' });
+  }
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000);
 
   try {
-    const symbols = tickers
-      .split(',')
-      .map(symbol => symbol.trim())
-      .filter(Boolean);
-
     const chunks = [];
     for (let i = 0; i < symbols.length; i += 20) {
       chunks.push(symbols.slice(i, i + 20));
@@ -23,19 +29,24 @@ export default async function handler(req, res) {
     };
 
     const sparkResults = [];
+    const errors = [];
     for (const chunk of chunks) {
-      const url = `https://query1.finance.yahoo.com/v7/finance/spark?symbols=${encodeURIComponent(chunk.join(','))}&range=1d&interval=1d`;
-      const yahooRes = await fetch(url, { headers, signal: controller.signal });
-      const rawText = await yahooRes.text();
+      try {
+        const url = `https://query1.finance.yahoo.com/v7/finance/spark?symbols=${encodeURIComponent(chunk.join(','))}&range=1d&interval=1d`;
+        const yahooRes = await fetch(url, { headers, signal: controller.signal });
+        if (!yahooRes.ok) throw new Error(`1d spark failed (${yahooRes.status})`);
+        const rawText = await yahooRes.text();
 
-      const data = JSON.parse(rawText);
-      if (data?.spark?.result?.length) {
-        sparkResults.push(...data.spark.result);
+        const data = JSON.parse(rawText);
+        if (data?.spark?.result?.length) {
+          sparkResults.push(...data.spark.result);
+        }
+      } catch (error) {
+        errors.push({ symbols: chunk, error: error.message });
       }
     }
     if (sparkResults.length === 0) {
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      return res.status(500).json({ error: 'No results from Yahoo' });
+      return res.status(502).json({ error: 'No results from Yahoo', errors });
     }
 
     const prices = {};
@@ -70,17 +81,21 @@ export default async function handler(req, res) {
 
     const historicalResults = [];
     for (const chunk of chunks) {
-      const url = `https://query2.finance.yahoo.com/v7/finance/spark?symbols=${encodeURIComponent(chunk.join(','))}&range=3mo&interval=1d`;
-      const yahooRes = await fetch(url, { headers, signal: controller.signal });
-      const rawText = await yahooRes.text();
+      try {
+        const url = `https://query2.finance.yahoo.com/v7/finance/spark?symbols=${encodeURIComponent(chunk.join(','))}&range=3mo&interval=1d`;
+        const yahooRes = await fetch(url, { headers, signal: controller.signal });
+        if (!yahooRes.ok) throw new Error(`3mo spark failed (${yahooRes.status})`);
+        const rawText = await yahooRes.text();
 
-      const data = JSON.parse(rawText);
-      if (data?.spark?.result?.length) {
-        historicalResults.push(...data.spark.result);
+        const data = JSON.parse(rawText);
+        if (data?.spark?.result?.length) {
+          historicalResults.push(...data.spark.result);
+        }
+      } catch (error) {
+        errors.push({ symbols: chunk, error: error.message });
       }
     }
 
-    res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=900');
     for (const item of historicalResults) {
       const symbol = item.symbol;
@@ -109,7 +124,6 @@ export default async function handler(req, res) {
     return res.status(200).json(prices);
 
   } catch(e) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
     return res.status(500).json({ error: e.message });
   } finally {
     clearTimeout(timeout);

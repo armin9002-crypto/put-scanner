@@ -1,8 +1,19 @@
 export default async function handler(req, res) {
-  const ticker = req.query.ticker;
+  res.setHeader('Access-Control-Allow-Origin', '*');
+
+  const rawTicker = Array.isArray(req.query.ticker) ? req.query.ticker[0] : req.query.ticker;
+  const ticker = String(rawTicker || '').trim().toUpperCase();
+  if (!ticker) {
+    return res.status(400).json({ error: 'Missing ticker parameter' });
+  }
+  if (!/^[A-Z0-9.^-]{1,12}$/.test(ticker)) {
+    return res.status(400).json({ error: 'Invalid ticker parameter' });
+  }
+
   const range = req.query.range || '1d';
   const interval = req.query.interval || '1d';
   const extended = req.query.extended === 'true';
+  const includeSparkline = req.query.includeSparkline === 'true';
 
   try {
     let url;
@@ -15,8 +26,14 @@ export default async function handler(req, res) {
     const yahooRes = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }
     });
+    if (!yahooRes.ok) {
+      return res.status(yahooRes.status).json({ error: `Yahoo chart request failed for ${ticker}` });
+    }
     const data = await yahooRes.json();
-    const result = data.chart.result[0];
+    const result = data.chart?.result?.[0];
+    if (!result) {
+      return res.status(502).json({ error: `No chart result for ${ticker}` });
+    }
     const meta = result.meta;
     const price = meta.regularMarketPrice;
     const prev = meta.chartPreviousClose;
@@ -31,7 +48,7 @@ export default async function handler(req, res) {
       response.sparkline = closes.filter(v => v != null);
     }
 
-    // If extended data requested, include performance metrics and intraday sparkline
+    // If extended data requested, include performance metrics. Intraday sparkline is opt-in.
     if (extended) {
       const dailyCloses = result.indicators?.quote?.[0]?.close || [];
       const filtered = dailyCloses.filter(v => v != null);
@@ -70,23 +87,25 @@ export default async function handler(req, res) {
       response.threeMonth = threeMonth;
       response.fiftyTwoWeekHighPct = fiftyTwoWeekHighPct;
 
-      // Also fetch intraday sparkline for extended requests
-      try {
-        const intradayUrl = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1m&range=1d`;
-        const intradayRes = await fetch(intradayUrl, {
-          headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }
-        });
-        const intradayData = await intradayRes.json();
-        const intradayResult = intradayData.chart?.result?.[0];
-        const intradayCloses = intradayResult?.indicators?.quote?.[0]?.close || [];
-        response.sparkline = intradayCloses.filter(v => v != null);
-        response.previousClose = intradayResult?.meta?.chartPreviousClose ?? response.previousClose;
-      } catch {
+      if (includeSparkline) {
+        try {
+          const intradayUrl = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1m&range=1d`;
+          const intradayRes = await fetch(intradayUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }
+          });
+          const intradayData = await intradayRes.json();
+          const intradayResult = intradayData.chart?.result?.[0];
+          const intradayCloses = intradayResult?.indicators?.quote?.[0]?.close || [];
+          response.sparkline = intradayCloses.filter(v => v != null);
+          response.previousClose = intradayResult?.meta?.chartPreviousClose ?? response.previousClose;
+        } catch {
+          response.sparkline = [];
+        }
+      } else {
         response.sparkline = [];
       }
     }
 
-    res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cache-Control', extended
       ? 'public, s-maxage=300, stale-while-revalidate=900'
       : 'public, s-maxage=120, stale-while-revalidate=300');
