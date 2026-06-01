@@ -1,18 +1,22 @@
 import type { EtfPulseRow } from '../etfPulseMetrics';
 import type { PortfolioTrade } from '../portfolioStorage';
 
-export type RegimeLabel = 'Risk-On' | 'Healthy Pullback' | 'Choppy / Elevated Vol' | 'Risk-Off' | 'Oversold Panic' | 'Mixed / No Edge';
+export type RegimeLabel = 'Complacent Risk-On' | 'Healthy Risk-On' | 'Healthy Pullback' | 'Choppy / Elevated Vol' | 'Risk-Off' | 'Oversold Panic' | 'Mixed / No Edge';
 export type RegimeConfidence = 'Low' | 'Medium' | 'High';
-export type PostureLabel = 'Balanced' | 'Defensive' | 'Very Defensive' | 'Opportunistic';
+export type PostureLabel = 'Selective / Patient' | 'Balanced' | 'Defensive' | 'Very Defensive' | 'Opportunistic';
 export type TradeStyle = 'Conservative' | 'Balanced' | 'Aggressive' | 'Speculative';
 export type UniverseMode = 'Regime-filtered' | 'Watchlist only' | 'Portfolio tickers only' | 'All ETF universe';
 export type CandidateLabel = 'Clean' | 'Healthy Pullback' | 'High Yield / High Risk' | 'Speculative' | 'Avoid' | 'Already Exposed' | 'Illiquid';
-export type CandidateBucket = 'Best Clean Setups' | 'Healthy Pullbacks' | 'High Yield / High Risk' | 'Avoid / Falling Knives' | 'Already Exposed';
+export type CandidateBucket = 'Best Clean Setups' | 'Healthy Pullbacks' | 'High Yield / High Risk' | 'Avoid / Falling Knives' | 'Already Exposed' | 'Near Misses';
 
 export interface RegimeAnalysis {
   label: RegimeLabel;
   confidence: RegimeConfidence;
   explanation: string;
+  marketRead: string;
+  putSellingImplication: string;
+  favor: string[];
+  avoid: string[];
   drivers: string[];
   warnings: string[];
   stats: {
@@ -22,8 +26,17 @@ export interface RegimeAnalysis {
     breadthAbove200: number | null;
     downtrendCount: number;
     oversoldCount: number;
+    overboughtCount: number;
     medianThirtyDayReturn: number | null;
     medianRealizedVolatility20: number | null;
+    spyRsi: number | null;
+    qqqRsi: number | null;
+    spyPosition52Week: number | null;
+    qqqPosition52Week: number | null;
+    vixTrend: string | null;
+    vxnTrend: string | null;
+    biggestThirtyDayWinners: Array<{ ticker: string; value: number }>;
+    biggestThirtyDayLosers: Array<{ ticker: string; value: number }>;
   };
   fetchedAt: number | null;
 }
@@ -89,8 +102,27 @@ export interface TradeCandidate {
   bucket: CandidateBucket;
   reason: string;
   warnings: string[];
+  failedFilters?: string[];
   watchlisted: boolean;
   alreadyExposed: boolean;
+}
+
+export interface ScanDiagnostics {
+  tickersSelected: number;
+  expirationsSelected: number;
+  optionChainsRequested: number;
+  chainsLoadedFromCache: number;
+  chainsFetchedFromNetwork: number;
+  rawPutContracts: number;
+  otmPuts: number;
+  passedDte: number;
+  passedBid: number;
+  passedDelta: number;
+  passedCushion: number;
+  passedOpenInterest: number;
+  passedSpread: number;
+  finalCandidates: number;
+  exclusionReasons: Record<string, number>;
 }
 
 export interface ScanUsage {
@@ -106,6 +138,8 @@ export interface TradeScanResult {
   criteria: ScanCriteria;
   scannedTickers: string[];
   candidates: TradeCandidate[];
+  nearMisses: TradeCandidate[];
+  diagnostics: ScanDiagnostics;
   usage: ScanUsage;
   fetchedAt: number;
 }

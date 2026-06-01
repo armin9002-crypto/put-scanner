@@ -6,7 +6,7 @@ import type { PortfolioTrade } from '../portfolioStorage';
 import type { ExpirationDate, OptionsChainData } from '../types';
 import { getWatchlist } from '../watchlist';
 import { scoreCandidate, sortCandidates, styleAllowsMissingDelta } from './scoring';
-import type { ScanCriteria, TradeCandidate, TradeScanResult } from './types';
+import type { ScanCriteria, ScanDiagnostics, TradeCandidate, TradeScanResult } from './types';
 
 const OPTIONS_LS_TTL = 15 * 60 * 1000;
 
@@ -20,6 +20,28 @@ function optionCacheKey(ticker: string, date?: number): string {
 
 function hasCachedOptionChain(ticker: string, date?: number): boolean {
   return getCached<OptionsChainData>(optionCacheKey(ticker, date), OPTIONS_LS_TTL) != null;
+}
+
+export function normalizePercentInput(value: number | null | undefined): number | null {
+  if (!isFiniteNumber(value)) return null;
+  return value > 1 ? value / 100 : value;
+}
+
+export function safeAbsDelta(value: number | null | undefined): number | null {
+  return isFiniteNumber(value) ? Math.abs(value) : null;
+}
+
+export function getDistanceToStrikeDecimal(underlying: number | null | undefined, strike: number | null | undefined): number | null {
+  if (!isFiniteNumber(underlying) || underlying <= 0 || !isFiniteNumber(strike)) return null;
+  return (underlying - strike) / underlying;
+}
+
+export function getBidAskSpreadDecimal(bid: number | null | undefined, ask: number | null | undefined): number | null {
+  return calculateBidAskSpreadPercent(bid, ask);
+}
+
+function increment(map: Record<string, number>, key: string): void {
+  map[key] = (map[key] ?? 0) + 1;
 }
 
 async function runWithConcurrency<T>(tasks: Array<() => Promise<T>>, limit: number): Promise<T[]> {
@@ -74,6 +96,27 @@ export async function runTradeScan({
   let requestsMade = 0;
   let cacheHits = 0;
   let expirationsScanned = 0;
+  const nearMisses: TradeCandidate[] = [];
+  const diagnostics: ScanDiagnostics = {
+    tickersSelected: normalizedTickers.length,
+    expirationsSelected: 0,
+    optionChainsRequested: 0,
+    chainsLoadedFromCache: 0,
+    chainsFetchedFromNetwork: 0,
+    rawPutContracts: 0,
+    otmPuts: 0,
+    passedDte: 0,
+    passedBid: 0,
+    passedDelta: 0,
+    passedCushion: 0,
+    passedOpenInterest: 0,
+    passedSpread: 0,
+    finalCandidates: 0,
+    exclusionReasons: {},
+  };
+  const maxDelta = normalizePercentInput(criteria.maxDelta) ?? 0.2;
+  const minCushion = normalizePercentInput(criteria.minDistanceToStrike) ?? 0.2;
+  const maxSpread = normalizePercentInput(criteria.maxSpreadPercent) ?? 0.35;
 
   const tickerTasks = normalizedTickers.map(ticker => async () => {
     try {
@@ -84,6 +127,7 @@ export async function runTradeScan({
 
       const selectedExpirations = selectExpirations(initial.expirations, criteria);
       expirationsScanned += selectedExpirations.length;
+      diagnostics.expirationsSelected += selectedExpirations.length;
       total += Math.max(0, selectedExpirations.length - 1);
       const chains: Array<{ exp: ExpirationDate; data: OptionsChainData }> = [];
 
@@ -107,22 +151,42 @@ export async function runTradeScan({
       chains.forEach(({ exp, data }) => {
         const currentPrice = data.currentPrice || pulseRow?.price || null;
         data.puts.forEach(put => {
-          if (!isFiniteNumber(put.bid) || put.bid <= 0) return;
-          if (!isFiniteNumber(currentPrice) || put.strike >= currentPrice) return;
-          const absDelta = put.delta != null ? Math.abs(put.delta) : null;
-          if (absDelta == null && !styleAllowsMissingDelta(criteria.tradeStyle)) return;
-          if (absDelta != null && absDelta > criteria.maxDelta) return;
+          diagnostics.rawPutContracts += 1;
+          const failedFilters: string[] = [];
+          const bid = isFiniteNumber(put.bid) ? put.bid : null;
+          const absDelta = safeAbsDelta(put.delta);
+          const distanceToStrike = getDistanceToStrikeDecimal(currentPrice, put.strike);
+          const spreadPercent = getBidAskSpreadDecimal(bid, put.ask);
+          const bidOk = bid != null && bid > 0;
+          const dteOk = exp.dte >= criteria.minDte && exp.dte <= criteria.maxDte;
+          const otmOk = isFiniteNumber(currentPrice) && put.strike < currentPrice;
+          const deltaOk = absDelta == null ? styleAllowsMissingDelta(criteria.tradeStyle) : absDelta <= maxDelta;
+          const cushionOk = distanceToStrike != null && distanceToStrike >= minCushion;
+          const oiOk = (put.openInterest ?? 0) >= criteria.minOpenInterest;
+          const spreadOk = spreadPercent == null || spreadPercent <= maxSpread;
 
-          const distanceToStrike = currentPrice > 0 ? (currentPrice - put.strike) / currentPrice : null;
-          if (distanceToStrike == null || distanceToStrike < criteria.minDistanceToStrike) return;
-          if ((put.openInterest ?? 0) < criteria.minOpenInterest) return;
+          if (otmOk) diagnostics.otmPuts += 1;
+          else failedFilters.push('not OTM');
+          if (dteOk) diagnostics.passedDte += 1;
+          else failedFilters.push(`DTE ${exp.dte} outside ${criteria.minDte}-${criteria.maxDte}`);
+          if (bidOk) diagnostics.passedBid += 1;
+          else failedFilters.push('no bid');
+          if (deltaOk) diagnostics.passedDelta += 1;
+          else failedFilters.push(absDelta == null ? 'missing delta' : `delta ${absDelta.toFixed(2)} above ${maxDelta.toFixed(2)}`);
+          if (cushionOk) diagnostics.passedCushion += 1;
+          else failedFilters.push(distanceToStrike == null ? 'missing cushion' : `cushion ${(distanceToStrike * 100).toFixed(1)}% below ${(minCushion * 100).toFixed(1)}%`);
+          if (oiOk) diagnostics.passedOpenInterest += 1;
+          else failedFilters.push(`OI ${put.openInterest ?? 0} below ${criteria.minOpenInterest}`);
+          if (spreadOk) diagnostics.passedSpread += 1;
+          else failedFilters.push(`spread ${spreadPercent == null ? 'missing' : `${(spreadPercent * 100).toFixed(1)}%`} above ${(maxSpread * 100).toFixed(1)}%`);
 
-          const spreadPercent = calculateBidAskSpreadPercent(put.bid, put.ask);
-          if (spreadPercent != null && spreadPercent > criteria.maxSpreadPercent) return;
-          const breakeven = calculateBreakeven(put.strike, put.bid);
+          failedFilters.forEach(reason => increment(diagnostics.exclusionReasons, reason.split(' below ')[0].split(' above ')[0]));
+          if (!bidOk || !otmOk || !dteOk) return;
+
+          const breakeven = calculateBreakeven(put.strike, bid);
           const breakevenCushion = calculateDownsideCushion(currentPrice, breakeven);
-          const annualizedYieldBid = calculateAnnualizedYield(put.bid, put.strike, exp.dte);
-          const nominalYieldBid = calculateNominalYield(put.bid, put.strike);
+          const annualizedYieldBid = calculateAnnualizedYield(bid, put.strike, exp.dte);
+          const nominalYieldBid = calculateNominalYield(bid, put.strike);
 
           const base: Omit<TradeCandidate, 'opportunityScore' | 'riskScore' | 'fitScore' | 'score' | 'label' | 'bucket' | 'reason' | 'warnings' | 'alreadyExposed'> = {
             id: `${ticker}|${exp.date}|${put.strike}`,
@@ -132,7 +196,7 @@ export async function runTradeScan({
             expiryLabel: exp.label,
             dte: exp.dte,
             strike: put.strike,
-            bid: put.bid,
+            bid,
             ask: put.ask,
             last: put.last,
             delta: put.delta,
@@ -153,7 +217,18 @@ export async function runTradeScan({
             realizedVolatility20: pulseRow?.realizedVolatility20 ?? null,
             watchlisted: watchlistTickers.has(ticker),
           };
-          perTickerCandidates.push(scoreCandidate({ base, pulseRow, criteria, portfolioTrades }));
+          const scored = scoreCandidate({ base, pulseRow, criteria: { ...criteria, maxDelta, minDistanceToStrike: minCushion, maxSpreadPercent: maxSpread }, portfolioTrades });
+          if (failedFilters.length === 0) {
+            perTickerCandidates.push(scored);
+          } else if (failedFilters.length <= 2) {
+            nearMisses.push({
+              ...scored,
+              label: 'Avoid',
+              bucket: 'Near Misses',
+              failedFilters,
+              reason: `Near miss: ${failedFilters.join('; ')}.`,
+            });
+          }
         });
       });
 
@@ -167,11 +242,17 @@ export async function runTradeScan({
   });
 
   await runWithConcurrency(tickerTasks, 4);
+  diagnostics.optionChainsRequested = requestsMade + cacheHits;
+  diagnostics.chainsLoadedFromCache = cacheHits;
+  diagnostics.chainsFetchedFromNetwork = requestsMade;
+  diagnostics.finalCandidates = candidates.length;
 
   return {
     criteria,
     scannedTickers: normalizedTickers,
     candidates: sortCandidates(candidates),
+    nearMisses: sortCandidates(nearMisses).slice(0, 25),
+    diagnostics,
     usage: {
       tickersScanned: normalizedTickers.length,
       expirationsScanned,

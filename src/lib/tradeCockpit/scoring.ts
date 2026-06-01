@@ -14,6 +14,12 @@ function portfolioHasTicker(ticker: string, trades: PortfolioTrade[]): boolean {
   return trades.some(trade => trade.status === 'open' && trade.ticker.toUpperCase() === ticker.toUpperCase());
 }
 
+function portfolioTickerGrossRisk(ticker: string, trades: PortfolioTrade[]): number {
+  return trades
+    .filter(trade => trade.status === 'open' && trade.ticker.toUpperCase() === ticker.toUpperCase())
+    .reduce((sum, trade) => sum + (trade.strike * 100 * trade.contracts), 0);
+}
+
 export function scoreCandidate(input: {
   base: Omit<TradeCandidate, 'opportunityScore' | 'riskScore' | 'fitScore' | 'score' | 'label' | 'bucket' | 'reason' | 'warnings' | 'alreadyExposed'>;
   pulseRow: EtfPulseRow | null;
@@ -27,6 +33,7 @@ export function scoreCandidate(input: {
   const distance = base.distanceToStrike;
   const absDelta = finite(base.delta) ? Math.abs(base.delta) : null;
   const alreadyExposed = portfolioHasTicker(base.ticker, portfolioTrades);
+  const tickerGrossRisk = portfolioTickerGrossRisk(base.ticker, portfolioTrades);
 
   if (base.delta == null) warnings.push('Missing delta; scored with cushion and trend context.');
   if (spread == null) warnings.push('Missing spread data.');
@@ -82,16 +89,16 @@ export function scoreCandidate(input: {
   }
 
   const reason = label === 'Already Exposed'
-    ? 'Portfolio already has open exposure to this ticker.'
+    ? `Good setup may exist, but portfolio already has ${tickerGrossRisk.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })} gross risk in ${base.ticker}.`
     : label === 'Illiquid'
       ? 'Liquidity or spread is weaker than the current scan settings.'
       : label === 'Healthy Pullback'
-        ? 'Pullback profile with long-term trend context still intact.'
+        ? `Pulled back with long-term trend context intact; ${finite(distance) ? `${(distance * 100).toFixed(1)}% cushion` : 'cushion unavailable'}.`
         : label === 'High Yield / High Risk' || label === 'Speculative'
-          ? 'Premium is attractive, but trend, volatility, or drawdown risk is elevated.'
+          ? `High bid-side yield, but ${pulseRow?.trend ?? 'trend'} and volatility/drawdown risk deserve caution.`
           : label === 'Avoid'
             ? 'Technical setup or liquidity makes this a poor fit for the current posture.'
-            : 'Good cushion, acceptable liquidity, and supportive ETF context.';
+            : `${pulseRow?.trend ?? 'Supportive trend'}, ${finite(distance) ? `${(distance * 100).toFixed(1)}% cushion` : 'cushion ok'}, acceptable spread and liquidity.`;
 
   return {
     ...base,

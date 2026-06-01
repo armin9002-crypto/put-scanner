@@ -2,7 +2,19 @@ import type { RegimeAnalysis, TradePosture, TradeStyle } from './types';
 
 export function postureFromRegime(regime: RegimeAnalysis): TradePosture {
   switch (regime.label) {
-    case 'Risk-On':
+    case 'Complacent Risk-On':
+      return {
+        label: 'Selective / Patient',
+        styleRecommendation: 'Favor patience, wider cushions, and healthy pullbacks over chasing thin premium.',
+        maxDelta: 0.18,
+        minDistanceToStrike: 0.25,
+        minDistanceToBreakeven: 0.28,
+        dteMin: 21,
+        dteMax: 60,
+        liquidityGuidance: 'Use smaller size if premium is not compelling; do not pay yourself too little for tail risk.',
+        explanation: 'Strong trends lower assignment odds, but extended markets can make put premium unattractive.',
+      };
+    case 'Healthy Risk-On':
       return {
         label: 'Balanced',
         styleRecommendation: 'Favor liquid OTM puts on leaders with clean trend support.',
@@ -67,8 +79,8 @@ export function postureFromRegime(regime: RegimeAnalysis): TradePosture {
 }
 
 export function criteriaAdjustmentsForStyle(style: TradeStyle): Pick<TradePosture, 'maxDelta' | 'minDistanceToStrike' | 'dteMin' | 'dteMax'> {
-  if (style === 'Conservative') return { maxDelta: 0.15, minDistanceToStrike: 0.35, dteMin: 21, dteMax: 60 };
+  if (style === 'Conservative') return { maxDelta: 0.15, minDistanceToStrike: 0.28, dteMin: 21, dteMax: 60 };
   if (style === 'Aggressive') return { maxDelta: 0.25, minDistanceToStrike: 0.2, dteMin: 14, dteMax: 90 };
   if (style === 'Speculative') return { maxDelta: 0.35, minDistanceToStrike: 0.12, dteMin: 7, dteMax: 90 };
-  return { maxDelta: 0.2, minDistanceToStrike: 0.25, dteMin: 14, dteMax: 90 };
+  return { maxDelta: 0.2, minDistanceToStrike: 0.22, dteMin: 14, dteMax: 90 };
 }

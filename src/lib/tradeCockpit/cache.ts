@@ -22,7 +22,12 @@ export function loadCachedTradeScan(): TradeScanResult | null {
     const raw = storage.getItem(SCAN_CACHE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (!isRecord(parsed) || typeof parsed.fetchedAt !== 'number' || !Array.isArray(parsed.candidates)) return null;
+    if (!isRecord(parsed) ||
+      typeof parsed.fetchedAt !== 'number' ||
+      !Array.isArray(parsed.candidates) ||
+      !Array.isArray(parsed.nearMisses) ||
+      !isRecord(parsed.diagnostics)
+    ) return null;
     if (Date.now() - parsed.fetchedAt > SCAN_CACHE_TTL) return null;
     return parsed as unknown as TradeScanResult;
   } catch {
