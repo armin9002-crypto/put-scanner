@@ -12,3 +12,4 @@
 - Trade Cockpit defaults are bounded by max tickers and expirations per ticker, with request estimates shown before scanning.
 - Sorting, filtering, visual period toggles, and hover interactions are client-side only.
 - Refresh buttons and manual scan buttons are the intended network refresh points.
+- Run `npm run build` followed by `npm run build:report` to inspect the largest built JS/CSS assets.

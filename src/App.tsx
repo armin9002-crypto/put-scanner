@@ -1,16 +1,17 @@
-import { useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
 import { ShieldCheck, ScanLine, BarChart3, Moon, Sun, BookOpen, Star, Square, Briefcase, Activity, Gauge } from 'lucide-react';
 import { ThemeProvider, useTheme } from './lib/theme';
-import HomePage from './pages/HomePage';
-import OptionsPage from './pages/OptionsPage';
-import ScreenerPage from './pages/ScreenerPage';
-import WatchlistPage from './pages/WatchlistPage';
-import PortfolioPage from './pages/PortfolioPage';
-import EtfPulsePage from './pages/EtfPulsePage';
-import TradeCockpitPage from './pages/TradeCockpitPage';
 import ErrorBoundary from './components/ErrorBoundary';
 import { getRequestDiagnosticsSnapshot, isRequestDiagnosticsEnabled, type RequestDiagnosticsSnapshot } from './lib/requestDiagnostics';
+
+const HomePage = lazy(() => import('./pages/HomePage'));
+const OptionsPage = lazy(() => import('./pages/OptionsPage'));
+const ScreenerPage = lazy(() => import('./pages/ScreenerPage'));
+const WatchlistPage = lazy(() => import('./pages/WatchlistPage'));
+const PortfolioPage = lazy(() => import('./pages/PortfolioPage'));
+const EtfPulsePage = lazy(() => import('./pages/EtfPulsePage'));
+const TradeCockpitPage = lazy(() => import('./pages/TradeCockpitPage'));
 
 function ThemeToggle() {
   const { theme, cycleTheme } = useTheme();
@@ -146,18 +147,30 @@ function AppContent() {
     <BrowserRouter>
       <NavBar />
       <ErrorBoundary title="Page unavailable" message="This page could not render. Refresh and try again.">
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/screener" element={<ScreenerPage />} />
-          <Route path="/watchlist" element={<WatchlistPage />} />
-          <Route path="/portfolio" element={<PortfolioPage />} />
-          <Route path="/pulse" element={<EtfPulsePage />} />
-          <Route path="/cockpit" element={<TradeCockpitPage />} />
-          <Route path="/options/:ticker" element={<OptionsPage />} />
-        </Routes>
+        <Suspense fallback={<RouteLoadingFallback />}>
+          <Routes>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/screener" element={<ScreenerPage />} />
+            <Route path="/watchlist" element={<WatchlistPage />} />
+            <Route path="/portfolio" element={<PortfolioPage />} />
+            <Route path="/pulse" element={<EtfPulsePage />} />
+            <Route path="/cockpit" element={<TradeCockpitPage />} />
+            <Route path="/options/:ticker" element={<OptionsPage />} />
+          </Routes>
+        </Suspense>
       </ErrorBoundary>
       <NetworkDiagnosticsPanel />
     </BrowserRouter>
+  );
+}
+
+function RouteLoadingFallback() {
+  return (
+    <div className="min-h-[calc(100vh-44px)] flex items-center justify-center px-4" style={{ backgroundColor: 'var(--bg)', color: 'var(--text-muted)' }}>
+      <div className="rounded-lg border px-4 py-3 text-sm font-medium" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
+        Loading...
+      </div>
+    </div>
   );
 }
 

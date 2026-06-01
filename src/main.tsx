@@ -2,9 +2,11 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
+import { pruneExpiredAppCaches } from './lib/cacheMaintenance';
 
 // Clear stale price cache on app load to prevent skeleton loader stuck state
 try {
+  pruneExpiredAppCaches();
   const keysToRemove: string[] = [];
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);

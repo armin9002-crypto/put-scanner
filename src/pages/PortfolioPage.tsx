@@ -45,9 +45,9 @@ import {
 } from '../lib/portfolioMetrics';
 import type { OptionDetail } from '../components/OptionDetailDrawer';
 import ErrorBoundary from '../components/ErrorBoundary';
-import PortfolioScreenshotImportModal from '../components/PortfolioScreenshotImportModal';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
+const PortfolioScreenshotImportModal = lazy(() => import('../components/PortfolioScreenshotImportModal'));
 const DASH = '\u2014';
 const PORTFOLIO_MARK_BASIS_KEY = 'put_scanner_portfolio_mark_basis';
 const MARK_BASIS_OPTIONS: MarkBasis[] = ['bid', 'ask', 'last'];
@@ -1302,14 +1302,16 @@ export default function PortfolioPage() {
       )}
 
       {showImportModal && (
-        <PortfolioScreenshotImportModal
-          trades={trades}
-          onClose={() => setShowImportModal(false)}
-          onApply={nextTrades => {
-            persistTrades(nextTrades);
-            setShowImportModal(false);
-          }}
-        />
+        <Suspense fallback={<div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.72)' }}><div className="rounded-lg border px-4 py-3 text-sm" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', color: 'var(--text)' }}>Loading import tools...</div></div>}>
+          <PortfolioScreenshotImportModal
+            trades={trades}
+            onClose={() => setShowImportModal(false)}
+            onApply={nextTrades => {
+              persistTrades(nextTrades);
+              setShowImportModal(false);
+            }}
+          />
+        </Suspense>
       )}
     </div>
   );
