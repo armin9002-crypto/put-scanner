@@ -11,7 +11,7 @@ import { loadCachedTradeScan, saveTradeScan } from '../lib/tradeCockpit/cache';
 import { postureFromRegime, criteriaAdjustmentsForStyle } from '../lib/tradeCockpit/posture';
 import { analyzeRegime } from '../lib/tradeCockpit/regime';
 import { estimateOptionRequests, runTradeScan } from '../lib/tradeCockpit/scan';
-import type { CandidateBucket, ScanCriteria, TradeCandidate, TradeScanResult, TradeStyle, UniverseMode } from '../lib/tradeCockpit/types';
+import type { CandidateBucket, ScanCriteria, TradeCandidate, TradeScanResult, TradeStyle } from '../lib/tradeCockpit/types';
 
 const DASH = '\u2014';
 const BUCKETS: CandidateBucket[] = ['Best Clean Setups', 'Healthy Pullbacks', 'High Yield / High Risk', 'Already Exposed', 'Avoid / Falling Knives', 'Near Misses'];
@@ -56,17 +56,26 @@ function MiniBadge({ label }: { label: string }) {
 function defaultCriteria(postureMaxDelta = 0.2, postureDistance = 0.25): ScanCriteria {
   return {
     tradeStyle: 'Balanced',
-    universeMode: 'Regime-filtered',
+    universeMode: 'All ETF universe',
     minDte: 14,
     maxDte: 90,
     maxDelta: postureMaxDelta,
-    minDistanceToStrike: postureDistance,
-    minOpenInterest: 50,
-    maxSpreadPercent: 0.35,
-    maxTickers: 8,
+    minDistanceToStrike: Math.max(0.3, postureDistance),
+    minOpenInterest: 20,
+    maxSpreadPercent: 0.3,
+    maxTickers: 5,
     maxExpirationsPerTicker: 2,
-    maxCandidatesPerTicker: 5,
+    maxCandidatesPerTicker: 4,
   };
+}
+
+function clampPercentInput(value: number, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(0, Math.min(100, value));
+}
+
+function percentInputValue(decimal: number): number {
+  return Number.isFinite(decimal) ? Math.round(decimal * 1000) / 10 : 0;
 }
 
 function grossRisk(trade: PortfolioTrade): number {
@@ -112,15 +121,7 @@ function selectScanUniverse(criteria: ScanCriteria, rows: EtfPulseRow[], portfol
     rsi14: null,
   } as EtfPulseRow));
 
-  const filtered = criteria.universeMode === 'All ETF universe'
-    ? baseRows
-    : baseRows.filter(row => {
-      if (criteria.tradeStyle === 'Speculative') return true;
-      if (criteria.tradeStyle === 'Aggressive') return row.trend !== 'Downtrend' || (row.rsi14 ?? 99) < 35;
-      return (row.distance200 ?? 0) >= 0 && row.trend !== 'Downtrend' && (row.recentDrawdown30 ?? 0) > -0.18;
-    });
-
-  return filtered
+  return baseRows
     .sort((a, b) => {
       const aScore = (a.trend === 'Strong Uptrend' ? 3 : a.trend === 'Uptrend' ? 2 : a.trend === 'Weakening' ? 1 : 0) + ((a.realizedVolatility20 ?? 0) * 0.5);
       const bScore = (b.trend === 'Strong Uptrend' ? 3 : b.trend === 'Uptrend' ? 2 : b.trend === 'Weakening' ? 1 : 0) + ((b.realizedVolatility20 ?? 0) * 0.5);
@@ -188,7 +189,7 @@ export default function TradeCockpitPage() {
     setCriteria(current => ({
       ...current,
       maxDelta: posture.maxDelta,
-      minDistanceToStrike: posture.minDistanceToStrike,
+      minDistanceToStrike: Math.max(0.3, posture.minDistanceToStrike),
       minDte: Math.min(current.minDte, posture.dteMin),
       maxDte: Math.max(current.maxDte, posture.dteMax),
     }));
@@ -224,7 +225,7 @@ export default function TradeCockpitPage() {
       ...current,
       tradeStyle: style,
       maxDelta: adjustment.maxDelta,
-      minDistanceToStrike: adjustment.minDistanceToStrike,
+      minDistanceToStrike: Math.max(0.3, adjustment.minDistanceToStrike),
       minDte: adjustment.dteMin,
       maxDte: adjustment.dteMax,
     }));
@@ -364,13 +365,12 @@ export default function TradeCockpitPage() {
 
           <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-2">
             <SelectControl label="Style" value={criteria.tradeStyle} options={['Conservative', 'Balanced', 'Aggressive', 'Speculative']} onChange={value => applyStyle(value as TradeStyle)} />
-            <SelectControl label="Universe" value={criteria.universeMode} options={['Regime-filtered', 'Watchlist only', 'Portfolio tickers only', 'All ETF universe']} onChange={value => updateCriteria('universeMode', value as UniverseMode)} />
             <NumberControl label="Min DTE" value={criteria.minDte} onChange={value => updateCriteria('minDte', value)} />
             <NumberControl label="Max DTE" value={criteria.maxDte} onChange={value => updateCriteria('maxDte', value)} />
             <NumberControl label="Max Delta" value={criteria.maxDelta} step={0.01} onChange={value => updateCriteria('maxDelta', value)} />
-            <NumberControl label="Min Cushion" value={criteria.minDistanceToStrike} step={0.01} onChange={value => updateCriteria('minDistanceToStrike', value)} />
+            <PercentControl label="Min Cushion" value={percentInputValue(criteria.minDistanceToStrike)} onChange={value => updateCriteria('minDistanceToStrike', clampPercentInput(value, 30) / 100)} />
             <NumberControl label="Min OI" value={criteria.minOpenInterest} onChange={value => updateCriteria('minOpenInterest', value)} />
-            <NumberControl label="Max Spread" value={criteria.maxSpreadPercent} step={0.01} onChange={value => updateCriteria('maxSpreadPercent', value)} />
+            <PercentControl label="Max Bid/Ask Spread" value={percentInputValue(criteria.maxSpreadPercent)} onChange={value => updateCriteria('maxSpreadPercent', clampPercentInput(value, 30) / 100)} />
             <NumberControl label="Max Tickers" value={criteria.maxTickers} onChange={value => updateCriteria('maxTickers', value)} />
             <NumberControl label="Exps/Ticker" value={criteria.maxExpirationsPerTicker} onChange={value => updateCriteria('maxExpirationsPerTicker', value)} />
             <NumberControl label="Cands/Ticker" value={criteria.maxCandidatesPerTicker} onChange={value => updateCriteria('maxCandidatesPerTicker', value)} />
@@ -511,6 +511,30 @@ function NumberControl({ label, value, step = 1, onChange }: { label: string; va
     <label className="min-w-0">
       <span className="block text-[10px] mb-1" style={{ color: 'var(--text-dim)' }}>{label}</span>
       <input type="number" value={value} step={step} onChange={event => onChange(Number(event.target.value))} className="w-full rounded px-2 py-1.5 text-xs outline-none" style={{ color: 'var(--text)', backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)' }} />
+    </label>
+  );
+}
+
+function PercentControl({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
+  return (
+    <label className="min-w-0">
+      <span className="block text-[10px] mb-1" style={{ color: 'var(--text-dim)' }}>{label}</span>
+      <div className="relative">
+        <input
+          type="number"
+          value={Number.isFinite(value) ? value : ''}
+          min={0}
+          max={100}
+          step={1}
+          onChange={event => {
+            const next = event.target.value === '' ? Number.NaN : Number(event.target.value);
+            onChange(next);
+          }}
+          className="w-full rounded px-2 py-1.5 pr-6 text-xs outline-none"
+          style={{ color: 'var(--text)', backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)' }}
+        />
+        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px]" style={{ color: 'var(--text-dim)' }}>%</span>
+      </div>
     </label>
   );
 }
