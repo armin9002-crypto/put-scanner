@@ -9,6 +9,7 @@
     "build:report": "node scripts/build-report.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
+    "selfcheck": "node scripts/selfcheck.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.app.json"
   },
   "dependencies": {

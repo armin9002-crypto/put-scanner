@@ -137,12 +137,12 @@ export function calculatePercentOf52WeekHigh(latest: number | null, high: number
 export function calculate52WeekPosition(latest: number | null, low: number | null, high: number | null): number | null {
   if (latest == null || low == null || high == null || high <= low) return null;
   const position = (latest - low) / (high - low);
-  return Number.isFinite(position) ? position : null;
+  return Number.isFinite(position) ? Math.max(0, Math.min(1, position)) : null;
 }
 
 export function calculate52WeekDrawdown(latest: number | null, high: number | null): number | null {
   const percent = calculatePercentOf52WeekHigh(latest, high);
-  return percent == null ? null : percent - 1;
+  return percent == null ? null : Math.min(0, percent - 1);
 }
 
 export function calculateRecentDrawdown(points: ChartPoint[], latest: number | null, period = 30): number | null {

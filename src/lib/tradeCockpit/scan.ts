@@ -71,11 +71,10 @@ function selectExpirations(expirations: ExpirationDate[], criteria: ScanCriteria
 
 export function estimateOptionRequests(tickers: string[], criteria: ScanCriteria): number {
   const initialLookupPerTicker = 1;
-  const initialChainLikelyUsable = criteria.minDte <= 30;
-  const additionalDatedChains = Math.max(
-    0,
-    criteria.maxExpirationsPerTicker - (initialChainLikelyUsable ? 1 : 0)
-  );
+  const initialChainLikelyUsable = criteria.minDte <= 45;
+  const additionalDatedChains = initialChainLikelyUsable
+    ? Math.max(0, criteria.maxExpirationsPerTicker - 1)
+    : criteria.maxExpirationsPerTicker;
   return tickers.length * (initialLookupPerTicker + additionalDatedChains);
 }
 
