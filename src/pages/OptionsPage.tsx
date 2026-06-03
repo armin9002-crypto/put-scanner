@@ -223,7 +223,7 @@ function MobileOptionCard({
           onSelect();
         }
       }}
-      className="w-full rounded-xl p-3 text-left transition-all active:scale-[0.99]"
+      className="mobile-option-card w-full rounded-xl p-3 text-left transition-all active:scale-[0.99]"
       style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
     >
       <div className="flex items-start justify-between gap-2 min-w-0">
@@ -259,18 +259,18 @@ function MobileOptionCard({
         </button>
       </div>
 
-      <div className="mt-3 grid grid-cols-3 gap-2">
+      <div className="mobile-option-card-grid mt-3 grid grid-cols-3 gap-2">
         <MobileStat label="Bid" value={formatPrice(put.bid)} color="var(--green)" />
         <MobileStat label="Ask" value={formatPrice(put.ask)} />
         <MobileStat label="AY Bid" value={put.annYieldBid != null ? formatYield(put.annYieldBid) : '—'} color={put.annYieldBid != null ? yieldColor(put.annYieldBid) : 'var(--text-dim)'} />
       </div>
-      <div className="mt-2 grid grid-cols-3 gap-2">
+      <div className="mobile-secondary-grid mt-2 grid grid-cols-3 gap-2">
         <MobileStat label="Delta" value={put.delta.toFixed(2)} color={deltaColor(put.delta)} />
         <MobileStat label="IV" value={put.impliedVolatility != null ? `${put.impliedVolatility.toFixed(1)}%` : '—'} color={ivColor(put.impliedVolatility)} />
         <MobileStat label="Last" value={formatPrice(put.last)} />
       </div>
       {showVolOI && (
-        <div className="mt-2 grid grid-cols-3 gap-2 border-t pt-2" style={{ borderColor: 'var(--border)' }}>
+        <div className="mobile-secondary-grid mt-2 grid grid-cols-3 gap-2 border-t pt-2" style={{ borderColor: 'var(--border)' }}>
           <MobileStat label="Volume" value={formatNumber(put.volume)} />
           <MobileStat label="OI" value={formatNumber(put.openInterest)} />
           <MobileStat label="Vol/OI" value={put.volOI != null ? put.volOI.toFixed(2) : '—'} />
@@ -705,9 +705,9 @@ export default function OptionsPage() {
 
   return (
     <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>
-      <div className="max-w-[1400px] mx-auto px-3 sm:px-5 lg:px-8 py-4 sm:py-6">
+      <div className="option-page-shell max-w-[1400px] mx-auto px-3 sm:px-5 lg:px-8 py-4 sm:py-6">
         {/* Header */}
-        <div className="flex items-center gap-2 sm:gap-4 mb-4 sm:mb-6 min-w-0">
+        <div className="option-page-title-row flex items-center gap-2 sm:gap-4 mb-4 sm:mb-6 min-w-0">
           <button
             onClick={() => navigate('/')}
             className="p-2 rounded-lg transition-all min-h-[44px] min-w-[44px] flex items-center justify-center"
@@ -726,7 +726,7 @@ export default function OptionsPage() {
         {/* Price bar */}
         <div
           data-layout="price-header"
-          className="sticky-stack mobile-static-sticky z-30 rounded-xl p-3 sm:p-5 mb-3 sm:mb-6 bg-[#12121a] border-b border-[#1e1e2e]"
+          className="option-price-header sticky-stack mobile-static-sticky z-30 rounded-xl p-3 sm:p-5 mb-3 sm:mb-6 bg-[#12121a] border-b border-[#1e1e2e]"
           style={{
             top: PRICE_HEADER_TOP,
             zIndex: 30,
@@ -752,7 +752,7 @@ export default function OptionsPage() {
             </div>
 
             {/* Sparkline chart - hidden on mobile */}
-            <div className="hidden sm:block flex-shrink-0 min-w-0">
+            <div className="phone-landscape-hide hidden sm:block flex-shrink-0 min-w-0">
               {loading && !extendedPrice ? (
                 <div className="flex items-center justify-center" style={{ width: 220, height: 55 }}>
                   <div className="h-3.5 w-20 rounded animate-pulse" style={{ backgroundColor: 'var(--border)' }} />
@@ -779,7 +779,7 @@ export default function OptionsPage() {
             </div>
 
             {/* Performance metrics - hidden on mobile */}
-            <div className="hidden sm:block flex-shrink-0 min-w-[140px] lg:min-w-[160px]">
+            <div className="phone-landscape-hide hidden sm:block flex-shrink-0 min-w-[140px] lg:min-w-[160px]">
               {loading && !extendedPrice ? (
                 <PerfSkeleton />
               ) : extendedPrice ? (
@@ -816,7 +816,7 @@ export default function OptionsPage() {
             )}
 
             {/* Right side: last updated + refresh + vol/OI toggle */}
-            <div className="flex w-full flex-wrap items-center gap-2 text-xs sm:ml-auto sm:w-auto sm:gap-3 min-w-0" style={{ color: 'var(--text-muted)' }}>
+            <div data-mobile-controls className="flex w-full flex-wrap items-center gap-2 text-xs sm:ml-auto sm:w-auto sm:gap-3 min-w-0" style={{ color: 'var(--text-muted)' }}>
               <label className="flex items-center gap-1.5 text-xs cursor-pointer min-h-[40px] sm:min-h-0" style={{ color: 'var(--text-muted)' }}>
                 <input
                   type="checkbox"
@@ -846,7 +846,7 @@ export default function OptionsPage() {
         {optionsData && optionsData.expirations.length > 0 && (
           <div
             data-layout="expiry-row"
-            className="sticky-stack mobile-static-sticky touch-scroll z-20 flex gap-2 mb-3 sm:mb-6 overflow-x-auto pt-2 pb-2 -mx-3 px-3 sm:mx-0 sm:px-0 sm:flex-wrap bg-[#0a0a0f]"
+            className="option-expiry-row sticky-stack mobile-static-sticky touch-scroll z-20 flex gap-2 mb-3 sm:mb-6 overflow-x-auto pt-2 pb-2 -mx-3 px-3 sm:mx-0 sm:px-0 sm:flex-wrap bg-[#0a0a0f]"
             style={{
               top: EXPIRY_ROW_TOP,
               zIndex: 20,
@@ -924,9 +924,9 @@ export default function OptionsPage() {
           <OptionsEmptyState type="empty" onRefresh={handleRefresh} loading={loading} />
         ) : (
           <>
-          <div className="sm:hidden space-y-3">
+          <div className="option-mobile-chain space-y-3">
             <div
-              className="rounded-xl p-3"
+              className="option-chain-sort rounded-xl p-3"
               style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
             >
               <div className="flex items-center justify-between gap-2 mb-2">
@@ -1031,7 +1031,7 @@ export default function OptionsPage() {
             )}
           </div>
 
-          <div className="hidden sm:block rounded-xl max-w-full overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+          <div className="option-desktop-chain rounded-xl max-w-full overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
             <div className="max-h-[calc(100vh-230px)] min-h-[260px] max-w-full overflow-auto overscroll-contain sm:max-h-[calc(100vh-250px)]">
               <table className="min-w-[520px] md:min-w-[980px] lg:min-w-[1180px] xl:min-w-0 w-full table-fixed text-xs">
                 <thead
