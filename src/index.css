@@ -109,8 +109,18 @@
 }
 
 * {
+  box-sizing: border-box;
   scrollbar-width: thin;
   scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  max-width: 100%;
+  min-height: 100%;
+  overflow-x: hidden;
 }
 
 *::-webkit-scrollbar {
@@ -143,6 +153,8 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+  touch-action: manipulation;
 }
 
 input, select, textarea {
@@ -159,6 +171,16 @@ input, select, textarea, button {
   textarea {
     font-size: 16px;
   }
+
+  .mobile-static-sticky {
+    position: static !important;
+    top: auto !important;
+  }
+}
+
+.touch-scroll {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
 }
 
 .font-mono {

@@ -171,6 +171,115 @@ function ivRankColor(rank: number): string {
   return 'var(--green)';
 }
 
+function MobileStat({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>{label}</div>
+      <div className="text-xs font-mono font-semibold tabular-nums truncate" style={{ color: color ?? 'var(--text)' }}>{value}</div>
+    </div>
+  );
+}
+
+function MobileOptionCard({
+  put,
+  moneyness,
+  watched,
+  showVolOI,
+  onToggleWatchlist,
+  onSelect,
+}: {
+  put: EnrichedPut;
+  moneyness: 'itm' | 'otm' | 'atm';
+  watched: boolean;
+  showVolOI: boolean;
+  onToggleWatchlist: () => void;
+  onSelect: () => void;
+}) {
+  const statusColor = moneyness === 'itm'
+    ? 'var(--green)'
+    : moneyness === 'atm'
+      ? 'var(--yellow)'
+      : 'var(--red)';
+  const statusBg = moneyness === 'itm'
+    ? 'rgba(34,197,94,0.14)'
+    : moneyness === 'atm'
+      ? 'rgba(234,179,8,0.14)'
+      : 'rgba(239,68,68,0.14)';
+  const statusBorder = moneyness === 'itm'
+    ? 'rgba(34,197,94,0.26)'
+    : moneyness === 'atm'
+      ? 'rgba(234,179,8,0.26)'
+      : 'rgba(239,68,68,0.26)';
+  const statusLabel = moneyness.toUpperCase();
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onSelect}
+      onKeyDown={event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
+      className="w-full rounded-xl p-3 text-left transition-all active:scale-[0.99]"
+      style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
+    >
+      <div className="flex items-start justify-between gap-2 min-w-0">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-base font-mono font-bold tabular-nums" style={{ color: 'var(--text)' }}>
+              ${formatPrice(put.strike)} Put
+            </span>
+            <span
+              className="rounded px-1.5 py-0.5 text-[10px] font-bold"
+              style={{ backgroundColor: statusBg, color: statusColor, border: `1px solid ${statusBorder}` }}
+            >
+              {statusLabel}
+            </span>
+          </div>
+          {put.otmItmLabel && (
+            <div className="mt-0.5 text-xs font-mono tabular-nums" style={{ color: put.otmItmColor }}>
+              {put.otmItmLabel}
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={event => {
+            event.stopPropagation();
+            onToggleWatchlist();
+          }}
+          aria-label={watched ? 'Remove from watchlist' : 'Add to watchlist'}
+          className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg"
+          style={{ color: watched ? 'var(--accent-light)' : 'var(--text-dim)' }}
+        >
+          <Star className={`h-4 w-4 ${watched ? 'fill-current' : ''}`} />
+        </button>
+      </div>
+
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        <MobileStat label="Bid" value={formatPrice(put.bid)} color="var(--green)" />
+        <MobileStat label="Ask" value={formatPrice(put.ask)} />
+        <MobileStat label="AY Bid" value={put.annYieldBid != null ? formatYield(put.annYieldBid) : '—'} color={put.annYieldBid != null ? yieldColor(put.annYieldBid) : 'var(--text-dim)'} />
+      </div>
+      <div className="mt-2 grid grid-cols-3 gap-2">
+        <MobileStat label="Delta" value={put.delta.toFixed(2)} color={deltaColor(put.delta)} />
+        <MobileStat label="IV" value={put.impliedVolatility != null ? `${put.impliedVolatility.toFixed(1)}%` : '—'} color={ivColor(put.impliedVolatility)} />
+        <MobileStat label="Last" value={formatPrice(put.last)} />
+      </div>
+      {showVolOI && (
+        <div className="mt-2 grid grid-cols-3 gap-2 border-t pt-2" style={{ borderColor: 'var(--border)' }}>
+          <MobileStat label="Volume" value={formatNumber(put.volume)} />
+          <MobileStat label="OI" value={formatNumber(put.openInterest)} />
+          <MobileStat label="Vol/OI" value={put.volOI != null ? put.volOI.toFixed(2) : '—'} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 const PRICE_HEADER_TOP = 56;
 const EXPIRY_ROW_TOP = 144;
 
@@ -569,6 +678,16 @@ export default function OptionsPage() {
     else loadData(undefined, true, true);
   }, [loadData, loadExpiration, selectedExp]);
 
+  const mobileSortOptions: Array<{ field: SortField; label: string }> = [
+    { field: 'strike', label: 'Strike' },
+    { field: 'bid', label: 'Bid' },
+    { field: 'ask', label: 'Ask' },
+    { field: 'delta', label: 'Delta' },
+    { field: 'annYieldBid', label: 'AY Bid' },
+    { field: 'iv', label: 'IV' },
+    { field: 'otmItm', label: 'Moneyness' },
+  ];
+
   // Sparkline data
   const sparklineData = extendedPrice?.sparkline ?? [];
   const sparklineColor = changePositive ? 'var(--green)' : 'var(--red)';
@@ -607,7 +726,7 @@ export default function OptionsPage() {
         {/* Price bar */}
         <div
           data-layout="price-header"
-          className="sticky-stack z-30 rounded-xl p-2.5 sm:p-5 mb-3 sm:mb-6 bg-[#12121a] border-b border-[#1e1e2e]"
+          className="sticky-stack mobile-static-sticky z-30 rounded-xl p-3 sm:p-5 mb-3 sm:mb-6 bg-[#12121a] border-b border-[#1e1e2e]"
           style={{
             top: PRICE_HEADER_TOP,
             zIndex: 30,
@@ -617,7 +736,7 @@ export default function OptionsPage() {
             border: '1px solid var(--border)',
           }}
         >
-          <div className="flex flex-wrap items-center gap-2 sm:gap-4 lg:gap-6 min-w-0">
+          <div className="flex flex-wrap items-start sm:items-center gap-2 sm:gap-4 lg:gap-6 min-w-0">
             {/* Price + change */}
             <div className="flex-shrink-0 min-w-0">
               <span className="text-xl sm:text-3xl font-bold font-mono" style={{ color: 'var(--text)' }}>
@@ -697,7 +816,7 @@ export default function OptionsPage() {
             )}
 
             {/* Right side: last updated + refresh + vol/OI toggle */}
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs sm:ml-auto min-w-0" style={{ color: 'var(--text-muted)' }}>
+            <div className="flex w-full flex-wrap items-center gap-2 text-xs sm:ml-auto sm:w-auto sm:gap-3 min-w-0" style={{ color: 'var(--text-muted)' }}>
               <label className="flex items-center gap-1.5 text-xs cursor-pointer min-h-[40px] sm:min-h-0" style={{ color: 'var(--text-muted)' }}>
                 <input
                   type="checkbox"
@@ -713,7 +832,7 @@ export default function OptionsPage() {
               <button
                 onClick={handleRefresh}
                 disabled={loading}
-                className="flex items-center gap-1.5 px-3 py-2 sm:py-2 rounded-lg disabled:opacity-50 transition-all min-h-[40px] sm:min-h-0"
+                className="ml-auto sm:ml-0 flex items-center gap-1.5 px-3 py-2 sm:py-2 rounded-lg disabled:opacity-50 transition-all min-h-[40px] sm:min-h-0"
                 style={{ backgroundColor: 'var(--border)', color: 'var(--text)' }}
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -727,7 +846,7 @@ export default function OptionsPage() {
         {optionsData && optionsData.expirations.length > 0 && (
           <div
             data-layout="expiry-row"
-            className="sticky-stack z-20 flex gap-2 mb-3 sm:mb-6 overflow-x-auto pt-2 pb-2 -mx-3 px-3 sm:mx-0 sm:px-0 sm:flex-wrap bg-[#0a0a0f]"
+            className="sticky-stack mobile-static-sticky touch-scroll z-20 flex gap-2 mb-3 sm:mb-6 overflow-x-auto pt-2 pb-2 -mx-3 px-3 sm:mx-0 sm:px-0 sm:flex-wrap bg-[#0a0a0f]"
             style={{
               top: EXPIRY_ROW_TOP,
               zIndex: 20,
@@ -804,7 +923,115 @@ export default function OptionsPage() {
         ) : hasEmptyOptions ? (
           <OptionsEmptyState type="empty" onRefresh={handleRefresh} loading={loading} />
         ) : (
-          <div className="rounded-xl max-w-full overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+          <>
+          <div className="sm:hidden space-y-3">
+            <div
+              className="rounded-xl p-3"
+              style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
+            >
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                  Option Chain
+                </div>
+                <div className="text-xs font-mono tabular-nums" style={{ color: 'var(--text-dim)' }}>
+                  {sortedPuts.length} puts
+                </div>
+              </div>
+              <div className="grid grid-cols-[1fr_auto] gap-2">
+                <label className="min-w-0">
+                  <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-dim)' }}>Sort by</span>
+                  <select
+                    value={sortField}
+                    onChange={event => setSortField(event.target.value as SortField)}
+                    className="w-full rounded-lg px-3 py-2 text-base font-medium outline-none min-h-[44px]"
+                    style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
+                  >
+                    {mobileSortOptions.map(option => (
+                      <option key={option.field} value={option.field}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="min-w-[104px]">
+                  <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-dim)' }}>Direction</span>
+                  <select
+                    value={sortDir}
+                    onChange={event => setSortDir(event.target.value as SortDirection)}
+                    className="w-full rounded-lg px-3 py-2 text-base font-medium outline-none min-h-[44px]"
+                    style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
+                  >
+                    <option value="asc">Asc</option>
+                    <option value="desc">Desc</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+            {loading ? (
+              Array.from({ length: 5 }).map((_, index) => (
+                <div
+                  key={index}
+                  className="h-28 rounded-xl animate-pulse"
+                  style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
+                />
+              ))
+            ) : (
+              (() => {
+                const cards: JSX.Element[] = [];
+                let dividerInserted = false;
+                const showCurrentPriceDivider = sortField === 'strike' && currentPrice > 0;
+
+                sortedPuts.forEach(put => {
+                  const shouldInsertDivider = showCurrentPriceDivider && !dividerInserted && (
+                    sortDir === 'asc'
+                      ? put.strike >= currentPrice
+                      : put.strike <= currentPrice
+                  );
+                  if (shouldInsertDivider) {
+                    cards.push(
+                      <div
+                        key="mobile-current-price-divider"
+                        className="rounded-lg px-3 py-2 text-xs font-medium"
+                        style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)', border: '1px solid var(--accent-border)' }}
+                      >
+                        Current price: ${currentPrice.toFixed(2)}
+                      </div>
+                    );
+                    dividerInserted = true;
+                  }
+
+                  const expForId = optionsData?.expirations.find(e => e.date === selectedExp);
+                  const expiryIso = expForId ? new Date(expForId.date * 1000).toISOString().split('T')[0] : '';
+                  const wlId = makeWatchlistId(ticker ?? '', expiryIso, put.strike);
+                  cards.push(
+                    <MobileOptionCard
+                      key={put.strike}
+                      put={put}
+                      moneyness={getMoneyness(put.strike)}
+                      watched={watchlistIds.has(wlId)}
+                      showVolOI={showVolOI}
+                      onToggleWatchlist={() => toggleWatchlist(put)}
+                      onSelect={() => setSelectedOption(put)}
+                    />
+                  );
+                });
+
+                if (showCurrentPriceDivider && !dividerInserted && sortedPuts.length > 0) {
+                  cards.push(
+                    <div
+                      key="mobile-current-price-divider-end"
+                      className="rounded-lg px-3 py-2 text-xs font-medium"
+                      style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)', border: '1px solid var(--accent-border)' }}
+                    >
+                      Current price: ${currentPrice.toFixed(2)}
+                    </div>
+                  );
+                }
+
+                return cards;
+              })()
+            )}
+          </div>
+
+          <div className="hidden sm:block rounded-xl max-w-full overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
             <div className="max-h-[calc(100vh-230px)] min-h-[260px] max-w-full overflow-auto overscroll-contain sm:max-h-[calc(100vh-250px)]">
               <table className="min-w-[520px] md:min-w-[980px] lg:min-w-[1180px] xl:min-w-0 w-full table-fixed text-xs">
                 <thead
@@ -980,6 +1207,7 @@ export default function OptionsPage() {
               <div className="py-12 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No put options data available for this expiration.</div>
             )}
           </div>
+          </>
         )}
 
         <footer className="mt-8 pb-6 text-center">

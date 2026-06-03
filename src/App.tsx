@@ -43,7 +43,7 @@ function ThemeToggle() {
 function NavBar() {
   return (
     <nav className="sticky top-0 z-50" style={{ backgroundColor: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
-      <div className="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 flex items-center gap-1 md:gap-2 min-h-11 overflow-x-auto">
+      <div className="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 flex items-center gap-1 md:gap-2 min-h-11 max-w-full overflow-x-auto touch-scroll" style={{ paddingLeft: 'max(0.5rem, env(safe-area-inset-left))', paddingRight: 'max(0.5rem, env(safe-area-inset-right))' }}>
         <div className="flex items-center gap-2 mr-1 md:mr-4 flex-shrink-0">
           <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'var(--accent-bg)' }}>
             <ShieldCheck className="w-4 h-4" style={{ color: 'var(--accent)' }} />
@@ -53,12 +53,12 @@ function NavBar() {
             <span className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>Leveraged ETFs</span>
           </span>
         </div>
-        <div className="flex items-center gap-1 min-w-0 flex-1 md:flex-none">
+        <div className="flex items-center gap-1 min-w-max md:min-w-0 flex-1 md:flex-none">
           <NavLink
             to="/"
             end
             className={() =>
-              `flex items-center justify-center gap-1 md:gap-1.5 px-2 md:px-3 py-2 md:py-1.5 rounded-lg text-[11px] md:text-xs font-medium transition-all min-h-[40px] md:min-h-0 flex-1 md:flex-none whitespace-nowrap`
+              `flex items-center justify-center gap-1 md:gap-1.5 px-2 md:px-3 py-2 md:py-1.5 rounded-lg text-[11px] md:text-xs font-medium transition-all min-h-[40px] md:min-h-0 flex-none whitespace-nowrap`
             }
             style={({ isActive }) => ({
               backgroundColor: isActive ? 'var(--accent-bg)' : 'transparent',
@@ -71,7 +71,7 @@ function NavBar() {
           <NavLink
             to="/screener"
             className={() =>
-              `flex items-center justify-center gap-1 md:gap-1.5 px-2 md:px-3 py-2 md:py-1.5 rounded-lg text-[11px] md:text-xs font-medium transition-all min-h-[40px] md:min-h-0 flex-1 md:flex-none whitespace-nowrap`
+              `flex items-center justify-center gap-1 md:gap-1.5 px-2 md:px-3 py-2 md:py-1.5 rounded-lg text-[11px] md:text-xs font-medium transition-all min-h-[40px] md:min-h-0 flex-none whitespace-nowrap`
             }
             style={({ isActive }) => ({
               backgroundColor: isActive ? 'var(--accent-bg)' : 'transparent',
@@ -84,7 +84,7 @@ function NavBar() {
           <NavLink
             to="/watchlist"
             className={() =>
-              `flex items-center justify-center gap-1 md:gap-1.5 px-2 md:px-3 py-2 md:py-1.5 rounded-lg text-[11px] md:text-xs font-medium transition-all min-h-[40px] md:min-h-0 flex-1 md:flex-none whitespace-nowrap`
+              `flex items-center justify-center gap-1 md:gap-1.5 px-2 md:px-3 py-2 md:py-1.5 rounded-lg text-[11px] md:text-xs font-medium transition-all min-h-[40px] md:min-h-0 flex-none whitespace-nowrap`
             }
             style={({ isActive }) => ({
               backgroundColor: isActive ? 'var(--accent-bg)' : 'transparent',
@@ -97,7 +97,7 @@ function NavBar() {
           <NavLink
             to="/portfolio"
             className={() =>
-              `flex items-center justify-center gap-1 md:gap-1.5 px-2 md:px-3 py-2 md:py-1.5 rounded-lg text-[11px] md:text-xs font-medium transition-all min-h-[40px] md:min-h-0 flex-1 md:flex-none whitespace-nowrap`
+              `flex items-center justify-center gap-1 md:gap-1.5 px-2 md:px-3 py-2 md:py-1.5 rounded-lg text-[11px] md:text-xs font-medium transition-all min-h-[40px] md:min-h-0 flex-none whitespace-nowrap`
             }
             style={({ isActive }) => ({
               backgroundColor: isActive ? 'var(--accent-bg)' : 'transparent',
@@ -110,7 +110,7 @@ function NavBar() {
           <NavLink
             to="/pulse"
             className={() =>
-              `flex items-center justify-center gap-1 md:gap-1.5 px-2 md:px-3 py-2 md:py-1.5 rounded-lg text-[11px] md:text-xs font-medium transition-all min-h-[40px] md:min-h-0 flex-1 md:flex-none whitespace-nowrap`
+              `flex items-center justify-center gap-1 md:gap-1.5 px-2 md:px-3 py-2 md:py-1.5 rounded-lg text-[11px] md:text-xs font-medium transition-all min-h-[40px] md:min-h-0 flex-none whitespace-nowrap`
             }
             style={({ isActive }) => ({
               backgroundColor: isActive ? 'var(--accent-bg)' : 'transparent',
@@ -123,7 +123,7 @@ function NavBar() {
           <NavLink
             to="/cockpit"
             className={() =>
-              `flex items-center justify-center gap-1 md:gap-1.5 px-2 md:px-3 py-2 md:py-1.5 rounded-lg text-[11px] md:text-xs font-medium transition-all min-h-[40px] md:min-h-0 flex-1 md:flex-none whitespace-nowrap`
+              `flex items-center justify-center gap-1 md:gap-1.5 px-2 md:px-3 py-2 md:py-1.5 rounded-lg text-[11px] md:text-xs font-medium transition-all min-h-[40px] md:min-h-0 flex-none whitespace-nowrap`
             }
             style={({ isActive }) => ({
               backgroundColor: isActive ? 'var(--accent-bg)' : 'transparent',
