@@ -7,6 +7,7 @@
 - Trade Cockpit makes option-chain requests only after Run Trade Scan.
 - ETF Pulse uses cached daily history on reload and refreshes only from the Refresh button.
 - Portfolio Refresh Open Trades makes only expected quote/chain requests.
+- ETF option-page Refresh uses a fresh selected-chain request and normal navigation remains cached.
 
 ## Portfolio
 
@@ -40,6 +41,15 @@
 - Yield filters use bid-based annualized yield where shown.
 - Changing filters does not auto-run new network scans unless the user triggers a scan.
 - Sorted rows continue to reflect the current filters.
+
+## Option Chain Freshness
+
+- Open `/options/HIBL`, select Aug 21, 2026 (`1787270400`), and click Refresh.
+- Network shows `/api/options?ticker=HIBL&date=1787270400&fresh=1` or equivalent.
+- Chain diagnostics show source Fresh, put strike count, and put strike range.
+- Compare app rows to Yahoo Finance Puts for the same expiration, not Yahoo Calls.
+- Zero-bid, zero-OI, and missing-delta puts still appear on the ETF detail page.
+- Sorting, strike clicks, and Show Volume / OI create zero additional requests.
 
 ## Watchlist
 

@@ -1,8 +1,9 @@
 import type { OptionsChainData, ExpirationDate, OptionContract } from './types';
-import { threeLayerCache, clearLsCache, BATCH_PRICE_KEY, BATCH_PRICE_MEM_TTL, BATCH_PRICE_LS_TTL, SPARKLINE_MEM_TTL, SPARKLINE_LS_TTL, OPTIONS_MEM_TTL, OPTIONS_LS_TTL, EXTENDED_PRICE_MEM_TTL, EXTENDED_PRICE_LS_TTL } from './cache';
+import { threeLayerCache, getCached, setCache, clearLsCache, BATCH_PRICE_KEY, BATCH_PRICE_MEM_TTL, BATCH_PRICE_LS_TTL, SPARKLINE_MEM_TTL, SPARKLINE_LS_TTL, OPTIONS_MEM_TTL, OPTIONS_LS_TTL, EXTENDED_PRICE_MEM_TTL, EXTENDED_PRICE_LS_TTL } from './cache';
 import type { BatchPriceData } from './cache';
-import { clearMemCache, isValidBatchPriceData } from './memoryCache';
-import { cachedRequest, makeCacheKey } from './dataCache';
+import { clearMemCache, getMemCache, setMemCache, isValidBatchPriceData } from './memoryCache';
+import { cachedRequest, dedupeRequest, makeCacheKey } from './dataCache';
+import { recordRequestDiagnostic } from './requestDiagnostics';
 
 const API_BASE = '/api';
 
@@ -28,6 +29,14 @@ interface YahooOptionContract {
   volume?: number | null;
   openInterest?: number | null;
 }
+
+interface FetchOptionsOptions {
+  bypassCache?: boolean;
+  fresh?: boolean;
+  source?: string;
+}
+
+type OptionChainSource = NonNullable<OptionsChainData['chainMeta']>['source'];
 
 function calculateDTE(expirationTimestamp: number): number {
   const now = new Date();
@@ -85,79 +94,216 @@ export function clearBatchPriceCache(): void {
   clearLsCache(BATCH_PRICE_KEY);
 }
 
-export async function fetchOptions(ticker: string, date?: number, options: { bypassCache?: boolean } = {}): Promise<OptionsChainData> {
-  const cacheKey = `options_v2_${ticker}_${date ?? 'initial'}`;
-  return threeLayerCache<OptionsChainData>(
-    cacheKey,
-    OPTIONS_MEM_TTL,
-    OPTIONS_LS_TTL,
-    async () => {
-      let url = `${API_BASE}/options?ticker=${encodeURIComponent(ticker)}`;
-      if (date) url += `&date=${date}`;
+function getOptionsCacheKey(ticker: string, date?: number): string {
+  return `options_v2_${ticker.trim().toUpperCase()}_${date ?? 'initial'}`;
+}
 
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`Failed to fetch options for ${ticker}`);
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
+export function clearOptionChainCache(ticker: string, date?: number): void {
+  const normalizedTicker = ticker.trim().toUpperCase();
+  const keys = date == null
+    ? [getOptionsCacheKey(normalizedTicker), getOptionsCacheKey(normalizedTicker, undefined)]
+    : [getOptionsCacheKey(normalizedTicker, date)];
+  keys.forEach(key => {
+    clearMemCache(key);
+    clearLsCache(key);
+  });
+}
 
-      const result = data?.optionChain?.result?.[0];
-      if (!result) return { expirations: [], puts: [], currentPrice: 0 };
+function strikeRange(contracts: YahooOptionContract[]): { min: number | null; max: number | null } {
+  const strikes = contracts
+    .map(contract => contract.strike)
+    .filter((strike): strike is number => Number.isFinite(strike));
+  if (strikes.length === 0) return { min: null, max: null };
+  return { min: Math.min(...strikes), max: Math.max(...strikes) };
+}
 
-      const currentPrice = result.quote?.regularMarketPrice ?? 0;
-      const expDates: number[] = result.expirationDates || [];
-      const putsRaw: YahooOptionContract[] = result.options?.[0]?.puts ?? [];
+function preferContract(existing: OptionContract, incoming: OptionContract): OptionContract {
+  const existingHasMarket = existing.bid != null || existing.ask != null || existing.last != null;
+  const incomingHasMarket = incoming.bid != null || incoming.ask != null || incoming.last != null;
+  if (incomingHasMarket && !existingHasMarket) return incoming;
+  const existingTrade = existing.lastTradeDate ?? 0;
+  const incomingTrade = incoming.lastTradeDate ?? 0;
+  return incomingTrade > existingTrade ? incoming : existing;
+}
 
-      const currentYear = new Date().getUTCFullYear();
+function mapYahooPut(p: YahooOptionContract & { strike: number }): OptionContract {
+  const yahooDelta = p.greeks?.delta ?? p.delta ?? null;
+  const delta = yahooDelta != null && yahooDelta !== 0
+    ? (yahooDelta > 0 ? -yahooDelta : yahooDelta)
+    : null;
 
-      const expirations: ExpirationDate[] = expDates.map((ts: number) => {
-        const dte = calculateDTE(ts);
-        const label = formatExpirationLabel(ts, currentYear);
-        return { date: ts, label, dte };
-      });
+  let iv: number | null = null;
+  const rawIv = p.impliedVolatility;
+  if (rawIv != null && rawIv !== 0) {
+    iv = rawIv > 5 ? rawIv : rawIv * 100;
+  }
 
-      if (expirations.length === 0 || putsRaw.length === 0) {
-        return { expirations, puts: [], currentPrice };
-      }
+  return {
+    strike: p.strike,
+    last: p.lastPrice ?? null,
+    lastTradeDate: p.lastTradeDate ?? null,
+    bid: p.bid ?? null,
+    ask: p.ask ?? null,
+    delta,
+    gamma: p.greeks?.gamma ?? p.gamma ?? null,
+    theta: p.greeks?.theta ?? p.theta ?? null,
+    vega: p.greeks?.vega ?? p.vega ?? null,
+    impliedVolatility: iv,
+    volume: p.volume ?? null,
+    openInterest: p.openInterest ?? null,
+  };
+}
 
-      const puts: OptionContract[] = putsRaw
-        .filter((p): p is YahooOptionContract & { strike: number } => p.strike != null)
-        .map((p) => {
-          const yahooDelta = p.greeks?.delta ?? p.delta ?? null;
-          const delta = yahooDelta != null && yahooDelta !== 0
-            ? (yahooDelta > 0 ? -yahooDelta : yahooDelta)
-            : null;
+function normalizeOptionChainData(
+  data: unknown,
+  ticker: string,
+  date: number | undefined,
+  cacheKey: string,
+  source: OptionChainSource,
+  previousCachedPutCount: number | null
+): OptionsChainData {
+  const result = (data as { optionChain?: { result?: unknown[] } })?.optionChain?.result?.[0] as {
+    quote?: { regularMarketPrice?: number | null };
+    expirationDates?: number[];
+    options?: Array<{ puts?: YahooOptionContract[]; calls?: YahooOptionContract[]; expirationDate?: number }>;
+  } | undefined;
+  const fetchedAt = Date.now();
+  if (!result) {
+    return {
+      expirations: [],
+      puts: [],
+      currentPrice: 0,
+      chainMeta: {
+        ticker,
+        expirationDate: date ?? null,
+        fetchedAt,
+        source,
+        cacheKey,
+        putCount: 0,
+        callCount: 0,
+        putStrikeMin: null,
+        putStrikeMax: null,
+        callStrikeMin: null,
+        callStrikeMax: null,
+        yahooExpirationDatesCount: 0,
+        previousCachedPutCount,
+      },
+    };
+  }
 
-          let iv: number | null = null;
-          const rawIv = p.impliedVolatility;
-          if (rawIv != null && rawIv !== 0) {
-            iv = rawIv > 5 ? rawIv : rawIv * 100;
-          }
+  const currentPrice = result.quote?.regularMarketPrice ?? 0;
+  const expDates: number[] = result.expirationDates || [];
+  const chain = result.options?.[0];
+  const chainExpiration = chain?.expirationDate ?? date ?? null;
+  const putsRaw: YahooOptionContract[] = chain?.puts ?? [];
+  const callsRaw: YahooOptionContract[] = chain?.calls ?? [];
+  const putRange = strikeRange(putsRaw);
+  const callRange = strikeRange(callsRaw);
+  const currentYear = new Date().getUTCFullYear();
 
-          return {
-            strike: p.strike,
-            last: p.lastPrice ?? null,
-            lastTradeDate: p.lastTradeDate ?? null,
-            bid: p.bid ?? null,
-            ask: p.ask ?? null,
-            delta,
-            gamma: p.greeks?.gamma ?? p.gamma ?? null,
-            theta: p.greeks?.theta ?? p.theta ?? null,
-            vega: p.greeks?.vega ?? p.vega ?? null,
-            impliedVolatility: iv,
-            volume: p.volume ?? null,
-            openInterest: p.openInterest ?? null,
-          };
-        });
+  const expirations: ExpirationDate[] = expDates.map((ts: number) => {
+    const dte = calculateDTE(ts);
+    const label = formatExpirationLabel(ts, currentYear);
+    return { date: ts, label, dte };
+  });
 
-      return { expirations, puts, currentPrice };
+  const putsByStrike = new Map<number, OptionContract>();
+  putsRaw
+    .filter((p): p is YahooOptionContract & { strike: number } => Number.isFinite(p.strike))
+    .forEach(p => {
+      const put = mapYahooPut(p);
+      const existing = putsByStrike.get(put.strike);
+      putsByStrike.set(put.strike, existing ? preferContract(existing, put) : put);
+    });
+
+  const puts = [...putsByStrike.values()].sort((a, b) => a.strike - b.strike);
+
+  return {
+    expirations,
+    puts,
+    currentPrice,
+    chainMeta: {
+      ticker,
+      expirationDate: chainExpiration,
+      fetchedAt,
+      source,
+      cacheKey,
+      putCount: puts.length,
+      callCount: callsRaw.length,
+      putStrikeMin: putRange.min,
+      putStrikeMax: putRange.max,
+      callStrikeMin: callRange.min,
+      callStrikeMax: callRange.max,
+      yahooExpirationDatesCount: expDates.length,
+      previousCachedPutCount,
     },
-    undefined,
-    {
-      bypassCache: options.bypassCache,
-      diagnosticsEndpoint: 'options',
-      diagnosticsSource: 'fetchOptions',
-    }
-  );
+  };
+}
+
+function withCacheSource(data: OptionsChainData, cacheKey: string): OptionsChainData {
+  const fetchedAt = data.chainMeta?.fetchedAt ?? Date.now();
+  return {
+    ...data,
+    chainMeta: {
+      ticker: data.chainMeta?.ticker ?? cacheKey.split('_')[2] ?? '',
+      expirationDate: data.chainMeta?.expirationDate ?? null,
+      fetchedAt,
+      source: 'cache',
+      cacheKey: data.chainMeta?.cacheKey ?? cacheKey,
+      putCount: data.puts.length,
+      callCount: data.chainMeta?.callCount,
+      putStrikeMin: data.chainMeta?.putStrikeMin ?? (data.puts.length ? Math.min(...data.puts.map(put => put.strike)) : null),
+      putStrikeMax: data.chainMeta?.putStrikeMax ?? (data.puts.length ? Math.max(...data.puts.map(put => put.strike)) : null),
+      callStrikeMin: data.chainMeta?.callStrikeMin,
+      callStrikeMax: data.chainMeta?.callStrikeMax,
+      yahooExpirationDatesCount: data.chainMeta?.yahooExpirationDatesCount,
+      previousCachedPutCount: data.chainMeta?.previousCachedPutCount ?? null,
+    },
+  };
+}
+
+export async function fetchOptions(ticker: string, date?: number, options: FetchOptionsOptions = {}): Promise<OptionsChainData> {
+  const normalizedTicker = ticker.trim().toUpperCase();
+  const cacheKey = getOptionsCacheKey(normalizedTicker, date);
+  const source = options.source ?? 'fetchOptions';
+  const fresh = options.fresh === true;
+  const bypassCache = options.bypassCache === true || fresh;
+  recordRequestDiagnostic('options', 'attempted', source);
+
+  const previousCached = getMemCache<OptionsChainData>(cacheKey, OPTIONS_MEM_TTL)
+    ?? getCached<OptionsChainData>(cacheKey, OPTIONS_LS_TTL);
+  const previousCachedPutCount = previousCached?.puts?.length ?? null;
+
+  if (bypassCache) {
+    clearOptionChainCache(normalizedTicker, date);
+  } else if (previousCached) {
+    recordRequestDiagnostic('options', 'cacheHit', source);
+    return withCacheSource(previousCached, cacheKey);
+  }
+
+  return dedupeRequest(cacheKey, async () => {
+    let url = `${API_BASE}/options?ticker=${encodeURIComponent(normalizedTicker)}`;
+    if (date) url += `&date=${date}`;
+    if (fresh) url += `&fresh=1&_=${Date.now()}`;
+
+    const res = await fetch(url, fresh ? { cache: 'no-store' } : undefined);
+    if (!res.ok) throw new Error(`Failed to fetch options for ${normalizedTicker}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    recordRequestDiagnostic('options', 'network', source);
+    const normalized = normalizeOptionChainData(
+      data,
+      normalizedTicker,
+      date,
+      cacheKey,
+      fresh ? 'fresh' : 'network',
+      previousCachedPutCount
+    );
+    setMemCache(cacheKey, normalized);
+    setCache(cacheKey, normalized);
+    return normalized;
+  }, bypassCache);
 }
 
 function normalCDF(x: number): number {

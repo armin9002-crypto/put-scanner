@@ -228,27 +228,26 @@ export default function OptionsPage() {
   const [selectedOption, setSelectedOption] = useState<EnrichedPut | null>(null);
   const [showPriceChart, setShowPriceChart] = useState(false);
 
-  // Ref guard to prevent duplicate fetches
-  const fetchKeyRef = useRef<string>('');
+  const inFlightFetchKeyRef = useRef<string>('');
 
-  const loadData = useCallback(async (expDate?: number, bypassCache = false) => {
+  const loadData = useCallback(async (expDate?: number, bypassCache = false, fresh = false) => {
     if (!ticker) return;
-    const key = `${ticker}:${expDate ?? 'default'}`;
-    if (fetchKeyRef.current === key && optionsData) return;
-    fetchKeyRef.current = key;
+    const key = `${ticker}:${expDate ?? 'default'}:${fresh ? 'fresh' : bypassCache ? 'bypass' : 'cached'}`;
+    if (inFlightFetchKeyRef.current === key) return;
+    inFlightFetchKeyRef.current = key;
 
     setLoading(true);
     setError(null);
     try {
       const [initialOpts, ext] = await Promise.all([
-        fetchOptions(ticker, expDate, { bypassCache }),
+        fetchOptions(ticker, expDate, { bypassCache, fresh, source: fresh ? 'OptionsPage:refresh' : 'OptionsPage:load' }),
         fetchExtendedPrice(ticker, { includeSparkline: true }),
       ]);
       const preferredExp = expDate
         ? { date: expDate, fromScanner: false }
         : resolvePreferredExpiration(initialOpts.expirations, expiryParam);
       const opts = !expDate && preferredExp.date && preferredExp.date !== initialOpts.expirations[0]?.date
-        ? await fetchOptions(ticker, preferredExp.date, { bypassCache })
+        ? await fetchOptions(ticker, preferredExp.date, { bypassCache, fresh, source: fresh ? 'OptionsPage:refresh:selected' : 'OptionsPage:load:selected' })
         : initialOpts;
       setOptionsData(opts);
       setExtendedPrice(ext);
@@ -262,15 +261,16 @@ export default function OptionsPage() {
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to load options data');
     } finally {
+      inFlightFetchKeyRef.current = '';
       setLoading(false);
     }
   }, [ticker, expiryParam]);
 
-  const loadExpiration = useCallback(async (expDate: number, bypassCache = false) => {
+  const loadExpiration = useCallback(async (expDate: number, bypassCache = false, fresh = false) => {
     if (!ticker) return;
-    const key = `${ticker}:${expDate}`;
-    if (fetchKeyRef.current === key) return;
-    fetchKeyRef.current = key;
+    const key = `${ticker}:${expDate}:${fresh ? 'fresh' : bypassCache ? 'bypass' : 'cached'}`;
+    if (inFlightFetchKeyRef.current === key) return;
+    inFlightFetchKeyRef.current = key;
 
     setShowScannerPreselectBadge(false);
     setSelectedOption(null);
@@ -279,18 +279,19 @@ export default function OptionsPage() {
     setError(null);
     try {
       // Only fetch options — preserve existing price state (Opt 5)
-      const opts = await fetchOptions(ticker, expDate, { bypassCache });
+      const opts = await fetchOptions(ticker, expDate, { bypassCache, fresh, source: fresh ? 'OptionsPage:refreshExpiration' : 'OptionsPage:loadExpiration' });
       setOptionsData(opts);
       setLastUpdated(new Date());
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to load expiration data');
     } finally {
+      inFlightFetchKeyRef.current = '';
       setLoading(false);
     }
   }, [ticker]);
 
   useEffect(() => {
-    fetchKeyRef.current = '';
+    inFlightFetchKeyRef.current = '';
     setSelectedOption(null);
     loadData();
   }, [ticker, expiryParam, loadData]);
@@ -507,11 +508,65 @@ export default function OptionsPage() {
     optionsData.expirations.length === 0 || optionsData.puts.length === 0
   );
   const selectedExpiration = optionsData?.expirations.find(exp => exp.date === selectedExp) ?? null;
+  const chainMeta = optionsData?.chainMeta ?? null;
+  const chainAgeMs = chainMeta ? Date.now() - chainMeta.fetchedAt : null;
+  const staleCachedChain = chainMeta?.source === 'cache' && chainAgeMs != null && chainAgeMs > 10 * 60 * 1000;
+  const chainSourceLabel = chainMeta?.source === 'fresh'
+    ? 'Fresh chain'
+    : chainMeta?.source === 'cache'
+      ? 'Cached chain'
+      : 'Network chain';
+  const putRangeLabel = chainMeta?.putStrikeMin != null && chainMeta.putStrikeMax != null
+    ? `$${formatPrice(chainMeta.putStrikeMin)}-$${formatPrice(chainMeta.putStrikeMax)}`
+    : 'no put range';
+  const chainWarnings = useMemo(() => {
+    if (!chainMeta) return [];
+    const warnings: string[] = [];
+    if (chainMeta.putCount === 0 && (chainMeta.callCount ?? 0) > 0) {
+      warnings.push('Yahoo returned call contracts but no put contracts for this expiration.');
+    } else if (chainMeta.putCount === 0) {
+      warnings.push('Yahoo returned no put contracts for this expiration.');
+    } else if (chainMeta.putCount < 3) {
+      warnings.push('Very few put strikes returned. Refresh or verify on Yahoo.');
+    }
+    if (staleCachedChain) {
+      warnings.push('This chain is from local cache and is older than 10 minutes. Click Refresh for a fresh Yahoo chain.');
+    }
+    if (
+      chainMeta.source === 'fresh' &&
+      chainMeta.previousCachedPutCount != null &&
+      chainMeta.previousCachedPutCount !== chainMeta.putCount
+    ) {
+      warnings.push(`Fresh refresh updated put strike count from ${chainMeta.previousCachedPutCount} to ${chainMeta.putCount}.`);
+    }
+    return warnings;
+  }, [chainMeta, staleCachedChain]);
+  const chainDebug = useMemo(() => ({
+    ticker: chainMeta?.ticker ?? ticker ?? null,
+    selectedExpirationDate: selectedExp,
+    selectedExpirationLabel: selectedExpiration?.label ?? null,
+    cacheKey: chainMeta?.cacheKey ?? null,
+    fetchedAt: chainMeta?.fetchedAt ? new Date(chainMeta.fetchedAt).toISOString() : null,
+    source: chainMeta?.source ?? null,
+    currentPrice,
+    putCount: chainMeta?.putCount ?? optionsData?.puts.length ?? 0,
+    putStrikeRange: {
+      min: chainMeta?.putStrikeMin ?? null,
+      max: chainMeta?.putStrikeMax ?? null,
+    },
+    putStrikes: optionsData?.puts.map(put => put.strike) ?? [],
+    callCount: chainMeta?.callCount ?? null,
+    callStrikeRange: {
+      min: chainMeta?.callStrikeMin ?? null,
+      max: chainMeta?.callStrikeMax ?? null,
+    },
+    yahooExpirationDatesCount: chainMeta?.yahooExpirationDatesCount ?? null,
+  }), [chainMeta, currentPrice, optionsData, selectedExp, selectedExpiration, ticker]);
 
   const handleRefresh = useCallback(() => {
-    fetchKeyRef.current = '';
-    if (selectedExp) loadExpiration(selectedExp, true);
-    else loadData(undefined, true);
+    inFlightFetchKeyRef.current = '';
+    if (selectedExp) loadExpiration(selectedExp, true, true);
+    else loadData(undefined, true, true);
   }, [loadData, loadExpiration, selectedExp]);
 
   // Sparkline data
@@ -703,6 +758,43 @@ export default function OptionsPage() {
                 Pre-selected from Scanner
               </span>
             )}
+          </div>
+        )}
+
+        {chainMeta && (
+          <div
+            className="mb-3 rounded-lg px-3 py-2 text-xs"
+            style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}
+          >
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span>
+                {chainSourceLabel} loaded {new Date(chainMeta.fetchedAt).toLocaleTimeString()}
+              </span>
+              <span>{chainMeta.putCount} put strikes</span>
+              <span>{putRangeLabel}</span>
+              {selectedExp && <span>Exp {selectedExp}</span>}
+              {staleCachedChain && (
+                <span style={{ color: 'var(--yellow)' }}>Cached &gt;10m</span>
+              )}
+            </div>
+            {chainWarnings.length > 0 && (
+              <div className="mt-1 flex flex-col gap-0.5" style={{ color: 'var(--yellow)' }}>
+                {chainWarnings.map(warning => (
+                  <span key={warning}>{warning}</span>
+                ))}
+              </div>
+            )}
+            <details className="mt-1">
+              <summary className="cursor-pointer select-none" style={{ color: 'var(--text-dim)' }}>
+                Show chain diagnostics
+              </summary>
+              <pre
+                className="mt-2 max-h-44 overflow-auto rounded-md p-2 text-[10px]"
+                style={{ backgroundColor: 'var(--bg)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+              >
+                {JSON.stringify(chainDebug, null, 2)}
+              </pre>
+            </details>
           </div>
         )}
 

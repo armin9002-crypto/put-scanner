@@ -39,6 +39,21 @@ export interface OptionsChainData {
   expirations: ExpirationDate[];
   puts: OptionContract[];
   currentPrice: number;
+  chainMeta?: {
+    ticker: string;
+    expirationDate: number | null;
+    fetchedAt: number;
+    source: 'cache' | 'network' | 'fresh';
+    cacheKey: string;
+    putCount: number;
+    callCount?: number;
+    putStrikeMin?: number | null;
+    putStrikeMax?: number | null;
+    callStrikeMin?: number | null;
+    callStrikeMax?: number | null;
+    yahooExpirationDatesCount?: number;
+    previousCachedPutCount?: number | null;
+  };
 }
 
 export type SortField = 'strike' | 'last' | 'bid' | 'ask' | 'delta' | 'otmItm' | 'iv' | 'volume' | 'openInterest' | 'volOI' | 'nomYieldBid' | 'annYieldBid' | 'nomYieldAsk' | 'annYieldAsk' | 'nomYieldLast' | 'annYieldLast';

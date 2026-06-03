@@ -15,6 +15,8 @@ export default async function handler(req, res) {
   if (rawDate != null && rawDate !== '' && (!Number.isInteger(date) || date <= 0)) {
     return res.status(400).json({ error: 'Invalid date parameter' });
   }
+  const rawFresh = Array.isArray(req.query.fresh) ? req.query.fresh[0] : req.query.fresh;
+  const fresh = rawFresh === '1' || rawFresh === 'true';
 
   const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
@@ -57,6 +59,7 @@ export default async function handler(req, res) {
     const finalCrumb = crumb || '';
     let url = `https://query2.finance.yahoo.com/v7/finance/options/${ticker}?crumb=${encodeURIComponent(finalCrumb)}`;
     if (date) url += `&date=${date}`;
+    if (fresh) url += `&_=${Date.now()}`;
 
     const optRes = await fetch(url, {
       headers: {
@@ -72,9 +75,11 @@ export default async function handler(req, res) {
 
     res.setHeader(
       'Cache-Control',
-      date
-        ? 'public, s-maxage=600, stale-while-revalidate=1800'
-        : 'public, s-maxage=300, stale-while-revalidate=900'
+      fresh
+        ? 'no-store'
+        : date
+          ? 'public, s-maxage=600, stale-while-revalidate=1800'
+          : 'public, s-maxage=300, stale-while-revalidate=900'
     );
     return res.status(200).json(data);
   } catch(e) {
