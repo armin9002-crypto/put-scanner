@@ -96,3 +96,56 @@
 - Rotating or resizing the viewport creates zero API calls.
 - Phone landscape option pages use mobile-safe option cards, not the desktop table.
 - Modals and drawers keep close buttons visible and scroll internally only when content exceeds available height.
+
+## Responsive / Orientation QA
+
+Use these viewports when touching layout: iPhone SE portrait `375 x 667`, iPhone SE landscape `667 x 375`, iPhone 14 portrait `390 x 844`, iPhone 14 landscape `844 x 390`, iPhone Pro Max portrait `430 x 932`, iPhone Pro Max landscape `932 x 430`, iPad portrait `768 x 1024`, iPad landscape `1024 x 768`, desktop `1440 x 900`.
+
+Debug helpers:
+
+- Enable layout badge with `localStorage.setItem('put_scanner_debug_layout', 'true')` and reload.
+- Enable network badge with `localStorage.setItem('put_scanner_debug_network', 'true')` and reload.
+- Run `npm run responsive:check` to print the manual viewport matrix and overflow snippet.
+
+ETF option pages:
+
+- iPhone portrait uses mobile option cards.
+- iPhone landscape uses mobile-safe option cards, not the desktop table.
+- iPad landscape table fits inside its table wrapper.
+- Option detail drawer fits portrait and landscape; close button remains visible.
+- Underlying Holdings modal fits portrait and landscape without unnecessary scroll.
+- Expiration pills are horizontally scrollable and tappable.
+- No page-level horizontal overflow.
+- Mobile sort controls work.
+- Refresh only fetches after the user clicks Refresh.
+
+Portfolio:
+
+- Summary cards wrap cleanly.
+- Analytics cards stack or grid without clipping.
+- Schedule table/cards remain usable.
+- Add Trade, Import Screenshot, and Refresh buttons remain accessible.
+- Add/edit/import modals fit portrait and landscape.
+
+ETF Pulse:
+
+- Table scroll is contained inside the table card.
+- Heatmap tiles fit phone portrait and landscape.
+- Momentum quadrant does not overflow the page.
+- Sticky/frozen controls do not consume too much mobile screen height.
+- Visual period toggles update from loaded rows and create zero fetches.
+
+Trade Cockpit:
+
+- Market read remains readable on phone portrait and landscape.
+- Trade scan controls stack without clipped inputs.
+- Candidate buckets and table are usable.
+- Page load does not run a trade scan.
+
+Screener / Watchlist / Scanner:
+
+- Filters wrap cleanly.
+- Tables or cards remain usable without clipped columns.
+- Scanner ETF cards remain tappable and charts do not overflow.
+- Watchlist note editing does not create row-height explosions.
+- Sorting and resizing create zero accidental fetches.

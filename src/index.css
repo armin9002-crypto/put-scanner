@@ -186,6 +186,14 @@ input, select, textarea, button {
   overscroll-behavior-x: contain;
 }
 
+/*
+  Responsive layout conventions:
+  - Treat phone landscape as mobile, even when viewport width crosses tablet breakpoints.
+  - iPad landscape may use table/desktop layouts only when content fits inside contained scroll wrappers.
+  - Wide tables belong inside explicit overflow-x/overflow-auto containers; never rely on page-level horizontal scroll.
+  - Modal and drawer heights should use dvh/max-height, not fixed heights or 100vh.
+  - Flex/grid children that can shrink must use min-w-0 so text, badges, and tables do not force overflow.
+*/
 .app-nav-scroll {
   scroll-snap-type: x proximity;
   scrollbar-width: none;
@@ -233,6 +241,7 @@ td {
 }
 
 @media (orientation: landscape) and (max-height: 520px) and (max-width: 950px) {
+  /* Phone landscape is intentionally mobile-safe. Do not let desktop tables activate here. */
   .phone-landscape-hide {
     display: none !important;
   }

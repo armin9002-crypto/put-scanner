@@ -164,6 +164,7 @@ function AppContent() {
         </Suspense>
       </ErrorBoundary>
       <NetworkDiagnosticsPanel />
+      <LayoutDiagnosticsPanel />
     </BrowserRouter>
   );
 }
@@ -218,6 +219,47 @@ function NetworkDiagnosticsPanel() {
         Enable in production with localStorage key put_scanner_debug_network=true.
       </div>
     </details>
+  );
+}
+
+function isLayoutDiagnosticsEnabled(): boolean {
+  try {
+    return typeof localStorage !== 'undefined' && localStorage.getItem('put_scanner_debug_layout') === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function LayoutDiagnosticsPanel() {
+  const mode = useResponsiveMode();
+  const [enabled, setEnabled] = useState(false);
+
+  useEffect(() => {
+    setEnabled(isLayoutDiagnosticsEnabled());
+  }, []);
+
+  if (!enabled) return null;
+
+  const orientation = mode.viewportWidth >= mode.viewportHeight ? 'landscape' : 'portrait';
+  const label = mode.isDesktop
+    ? 'desktop'
+    : mode.isTabletLandscape
+      ? 'tablet-landscape'
+      : mode.isTablet
+        ? 'tablet'
+        : mode.isPhoneLandscape
+          ? 'phone-landscape'
+          : 'phone';
+
+  return (
+    <div
+      className="fixed bottom-3 left-3 z-[80] max-w-[calc(100vw-1.5rem)] rounded-lg border px-2.5 py-2 text-[10px] shadow-lg font-mono tabular-nums"
+      style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}
+    >
+      <div style={{ color: 'var(--text)' }}>{label}</div>
+      <div>{mode.viewportWidth} x {mode.viewportHeight} · {orientation}</div>
+      <div>phoneLandscape: {String(mode.isPhoneLandscape)}</div>
+    </div>
   );
 }
 
