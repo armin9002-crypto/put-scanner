@@ -8,15 +8,17 @@ import { addToWatchlist, removeFromWatchlist, isInWatchlist, makeWatchlistId } f
 import type { WatchlistItem } from '../lib/watchlist';
 import { addPortfolioTrade } from '../lib/portfolioStorage';
 import { calculateMoneyness, calculateYieldPercent } from '../lib/optionMetrics';
+import { getUnderlyingHoldingsProxy } from '../lib/underlyingHoldingsProxies';
 import SparklineChart from '../components/SparklineChart';
 import ErrorBoundary from '../components/ErrorBoundary';
 import {
   ArrowLeft, RefreshCw, TrendingUp, TrendingDown, AlertCircle,
-  ChevronUp, ChevronDown, ChevronsUpDown, Star, BarChart3
+  ChevronUp, ChevronDown, ChevronsUpDown, Star, BarChart3, Layers
 } from 'lucide-react';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 const InteractivePriceChartModal = lazy(() => import('../components/InteractivePriceChartModal'));
+const UnderlyingHoldingsModal = lazy(() => import('../components/UnderlyingHoldingsModal'));
 
 interface EnrichedPut {
   strike: number;
@@ -348,6 +350,7 @@ export default function OptionsPage() {
   const [showScannerPreselectBadge, setShowScannerPreselectBadge] = useState(false);
   const [selectedOption, setSelectedOption] = useState<EnrichedPut | null>(null);
   const [showPriceChart, setShowPriceChart] = useState(false);
+  const [showUnderlyingHoldings, setShowUnderlyingHoldings] = useState(false);
   const [debugOptionsEnabled] = useState(() => {
     try {
       return typeof localStorage !== 'undefined' && localStorage.getItem('put_scanner_debug_options') === 'true';
@@ -442,6 +445,7 @@ export default function OptionsPage() {
 
   const currentPrice = extendedPrice?.price ?? optionsData?.currentPrice ?? 0;
   const changePositive = extendedPrice ? extendedPrice.changePercent >= 0 : true;
+  const holdingsProxy = useMemo(() => getUnderlyingHoldingsProxy(ticker ?? ''), [ticker]);
 
   const toggleWatchlist = useCallback((put: EnrichedPut) => {
     if (!ticker || !selectedExp) return;
@@ -884,6 +888,25 @@ export default function OptionsPage() {
                 </div>
               </div>
             )}
+
+            <button
+              type="button"
+              onClick={() => setShowUnderlyingHoldings(true)}
+              className="flex-shrink-0 rounded-lg px-3 py-1.5 text-center transition-all hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-indigo-500/60"
+              style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}
+              title={holdingsProxy.meaningful && holdingsProxy.proxyTicker
+                ? `${holdingsProxy.proxyTicker} holdings used as the underlying exposure proxy for ${holdingsProxy.sourceTicker}.`
+                : holdingsProxy.reason}
+              aria-label={`Open underlying holdings for ${holdingsProxy.sourceTicker}`}
+            >
+              <div className="flex items-center justify-center gap-1 text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>
+                <Layers className="h-3 w-3" />
+                Holdings
+              </div>
+              <div className="text-sm font-mono font-bold" style={{ color: holdingsProxy.meaningful ? 'var(--accent-light)' : 'var(--text-dim)' }}>
+                {holdingsProxy.meaningful && holdingsProxy.proxyTicker ? holdingsProxy.proxyTicker : 'N/A'}
+              </div>
+            </button>
 
             {/* Right side: last updated + refresh + vol/OI toggle */}
             <div data-mobile-controls className="flex w-full flex-wrap items-center gap-2 text-xs sm:ml-auto sm:w-auto sm:gap-3 min-w-0" style={{ color: 'var(--text-muted)' }}>
@@ -1337,6 +1360,17 @@ export default function OptionsPage() {
                 setSelectedOption(null);
               }}
               onClose={() => setSelectedOption(null)}
+            />
+          </Suspense>
+        </ErrorBoundary>
+      )}
+
+      {showUnderlyingHoldings && (
+        <ErrorBoundary title="Underlying holdings unavailable" message="The holdings popup could not render. Close it and try again.">
+          <Suspense fallback={null}>
+            <UnderlyingHoldingsModal
+              proxy={holdingsProxy}
+              onClose={() => setShowUnderlyingHoldings(false)}
             />
           </Suspense>
         </ErrorBoundary>

@@ -58,6 +58,19 @@
 - Decimal strikes display exactly and are not rounded.
 - Sorting, strike clicks, and Show Volume / OI create zero additional requests.
 
+## Underlying Holdings
+
+- Open `/options/TQQQ` and confirm no `/api/holdings` request happens on page load.
+- Click Underlying Holdings and confirm QQQ holdings load on demand.
+- Close and reopen the popup; cached QQQ holdings should show without a new request inside the TTL.
+- Open QLD and confirm QQQ holdings are reused from cache.
+- Open SSO and confirm SPY holdings load on demand.
+- Open SOXL and confirm SOXX holdings load on demand.
+- Open AGQ and confirm no holdings request is made; the popup says holdings are not meaningful.
+- Option-chain Refresh should not refresh holdings.
+- Holdings Refresh should refresh only the current proxy ticker.
+- Modal works on desktop, iPhone portrait, iPhone landscape, and iPad without page-level horizontal overflow.
+
 ## Watchlist
 
 - Starred contracts persist across reloads.
