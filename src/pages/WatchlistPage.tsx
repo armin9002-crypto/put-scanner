@@ -282,7 +282,7 @@ export default function WatchlistPage() {
     const optionResults = await Promise.allSettled(
       requestKeys.map(async key => {
         const [ticker, timestamp] = key.split('|');
-        return { key, data: await fetchOptions(ticker, Number(timestamp), { bypassCache: true }) };
+        return { key, data: await fetchOptions(ticker, Number(timestamp), { source: 'Watchlist:refreshAll' }) };
       })
     );
 

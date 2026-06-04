@@ -31,6 +31,14 @@ interface EnrichedPut {
   impliedVolatility: number | null;
   volume: number | null;
   openInterest: number | null;
+  contractSymbol?: string | null;
+  rawLastPrice?: number | null;
+  rawBid?: number | null;
+  rawAsk?: number | null;
+  rawImpliedVolatility?: number | null;
+  rawOpenInterest?: number | null;
+  rawVolume?: number | null;
+  rawLastTradeDate?: number | null;
   volOI: number | null;
   nomYieldBid: number | null;
   annYieldBid: number | null;
@@ -59,13 +67,17 @@ function OptionsEmptyState({
   type,
   onRefresh,
   loading,
+  title: customTitle,
+  subtitle: customSubtitle,
 }: {
   type: 'empty' | 'error';
   onRefresh: () => void;
   loading: boolean;
+  title?: string;
+  subtitle?: string;
 }) {
   const Icon = type === 'empty' ? BarChart3 : AlertCircle;
-  const title = type === 'empty' ? 'No options data available' : 'Failed to load options data';
+  const title = customTitle ?? (type === 'empty' ? 'No options data available' : 'Failed to load options data');
   const subtitle = type === 'empty'
     ? 'This ETF may have illiquid options or Yahoo Finance returned no data. Try refreshing or check back during market hours.'
     : 'Failed to load options data — click Refresh to try again.';
@@ -77,7 +89,7 @@ function OptionsEmptyState({
     >
       <Icon className="w-10 h-10 mx-auto mb-4" style={{ color: 'var(--text-dim)' }} />
       <h2 className="text-lg font-semibold mb-2" style={{ color: 'var(--text)' }}>{title}</h2>
-      <p className="text-sm max-w-md mx-auto mb-6" style={{ color: 'var(--text-muted)' }}>{subtitle}</p>
+      <p className="text-sm max-w-md mx-auto mb-6" style={{ color: 'var(--text-muted)' }}>{customSubtitle ?? subtitle}</p>
       <button
         onClick={onRefresh}
         disabled={loading}
@@ -336,6 +348,13 @@ export default function OptionsPage() {
   const [showScannerPreselectBadge, setShowScannerPreselectBadge] = useState(false);
   const [selectedOption, setSelectedOption] = useState<EnrichedPut | null>(null);
   const [showPriceChart, setShowPriceChart] = useState(false);
+  const [debugOptionsEnabled] = useState(() => {
+    try {
+      return typeof localStorage !== 'undefined' && localStorage.getItem('put_scanner_debug_options') === 'true';
+    } catch {
+      return false;
+    }
+  });
 
   const inFlightFetchKeyRef = useRef<string>('');
 
@@ -504,6 +523,14 @@ export default function OptionsPage() {
         strike: p.strike, last: p.last, lastTradeDate: p.lastTradeDate, bid: p.bid, ask: p.ask, delta,
         gamma: p.gamma ?? null, theta: p.theta ?? null, vega: p.vega ?? null,
         impliedVolatility: p.impliedVolatility, volume: p.volume, openInterest: p.openInterest, volOI,
+        contractSymbol: p.contractSymbol,
+        rawLastPrice: p.rawLastPrice,
+        rawBid: p.rawBid,
+        rawAsk: p.rawAsk,
+        rawImpliedVolatility: p.rawImpliedVolatility,
+        rawOpenInterest: p.rawOpenInterest,
+        rawVolume: p.rawVolume,
+        rawLastTradeDate: p.rawLastTradeDate,
         nomYieldBid: bidYield.nominal,
         annYieldBid: bidYield.annualized,
         nomYieldAsk: askYield.nominal,
@@ -620,14 +647,15 @@ export default function OptionsPage() {
   const chainMeta = optionsData?.chainMeta ?? null;
   const chainAgeMs = chainMeta ? Date.now() - chainMeta.fetchedAt : null;
   const staleCachedChain = chainMeta?.source === 'cache' && chainAgeMs != null && chainAgeMs > 10 * 60 * 1000;
-  const chainSourceLabel = chainMeta?.source === 'fresh'
-    ? 'Fresh chain'
-    : chainMeta?.source === 'cache'
-      ? 'Cached chain'
-      : 'Network chain';
-  const putRangeLabel = chainMeta?.putStrikeMin != null && chainMeta.putStrikeMax != null
-    ? `$${formatPrice(chainMeta.putStrikeMin)}-$${formatPrice(chainMeta.putStrikeMax)}`
-    : 'no put range';
+  const freshnessLabel = staleCachedChain
+    ? 'Cached - refresh for latest'
+    : chainMeta?.source === 'fresh'
+      ? 'Fresh'
+      : chainMeta?.source === 'cache'
+        ? 'Cached'
+        : chainMeta?.source === 'network'
+          ? 'Updated'
+          : null;
   const chainWarnings = useMemo(() => {
     if (!chainMeta) return [];
     const warnings: string[] = [];
@@ -638,7 +666,7 @@ export default function OptionsPage() {
     } else if (chainMeta.putCount < 3) {
       warnings.push('Very few put strikes returned. Refresh or verify on Yahoo.');
     }
-    if (staleCachedChain) {
+    if (staleCachedChain && debugOptionsEnabled) {
       warnings.push('This chain is from local cache and is older than 10 minutes. Click Refresh for a fresh Yahoo chain.');
     }
     if (
@@ -648,17 +676,30 @@ export default function OptionsPage() {
     ) {
       warnings.push(`Fresh refresh updated put strike count from ${chainMeta.previousCachedPutCount} to ${chainMeta.putCount}.`);
     }
+    if (
+      chainMeta.requestedExpiration != null &&
+      chainMeta.returnedExpiration != null &&
+      chainMeta.requestedExpiration !== chainMeta.returnedExpiration
+    ) {
+      warnings.push(`Requested expiration ${chainMeta.requestedExpiration} but Yahoo returned ${chainMeta.returnedExpiration}.`);
+    }
+    chainMeta.validationWarnings?.forEach(warning => warnings.push(warning));
     return warnings;
-  }, [chainMeta, staleCachedChain]);
+  }, [chainMeta, debugOptionsEnabled, staleCachedChain]);
   const chainDebug = useMemo(() => ({
     ticker: chainMeta?.ticker ?? ticker ?? null,
-    selectedExpirationDate: selectedExp,
     selectedExpirationLabel: selectedExpiration?.label ?? null,
+    selectedExpirationDate: selectedExp,
+    requestedExpiration: chainMeta?.requestedExpiration ?? null,
+    returnedExpiration: chainMeta?.returnedExpiration ?? null,
+    expirationDate: chainMeta?.expirationDate ?? null,
     cacheKey: chainMeta?.cacheKey ?? null,
     fetchedAt: chainMeta?.fetchedAt ? new Date(chainMeta.fetchedAt).toISOString() : null,
     source: chainMeta?.source ?? null,
+    fresh: chainMeta?.fresh ?? false,
     currentPrice,
     putCount: chainMeta?.putCount ?? optionsData?.puts.length ?? 0,
+    displayedRowCount: enrichedPuts.length,
     putStrikeRange: {
       min: chainMeta?.putStrikeMin ?? null,
       max: chainMeta?.putStrikeMax ?? null,
@@ -670,7 +711,36 @@ export default function OptionsPage() {
       max: chainMeta?.callStrikeMax ?? null,
     },
     yahooExpirationDatesCount: chainMeta?.yahooExpirationDatesCount ?? null,
-  }), [chainMeta, currentPrice, optionsData, selectedExp, selectedExpiration, ticker]);
+    previousCachedPutCount: chainMeta?.previousCachedPutCount ?? null,
+    warnings: chainWarnings,
+    displayedRows: enrichedPuts.map(put => ({
+      strike: put.strike,
+      contractSymbol: put.contractSymbol ?? null,
+      last: put.last,
+      bid: put.bid,
+      ask: put.ask,
+      delta: put.delta,
+      impliedVolatility: put.impliedVolatility,
+      volume: put.volume,
+      openInterest: put.openInterest,
+      lastTradeDate: put.lastTradeDate,
+      rawLastPrice: put.rawLastPrice ?? null,
+      rawBid: put.rawBid ?? null,
+      rawAsk: put.rawAsk ?? null,
+      rawImpliedVolatility: put.rawImpliedVolatility ?? null,
+      rawVolume: put.rawVolume ?? null,
+      rawOpenInterest: put.rawOpenInterest ?? null,
+      rawLastTradeDate: put.rawLastTradeDate ?? null,
+    })),
+    validationWarnings: chainMeta?.validationWarnings ?? [],
+  }), [chainMeta, chainWarnings, currentPrice, enrichedPuts, optionsData, selectedExp, selectedExpiration, ticker]);
+
+  const copyChainDiagnostics = useCallback(() => {
+    const text = JSON.stringify(chainDebug, null, 2);
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).catch(() => {});
+    }
+  }, [chainDebug]);
 
   const handleRefresh = useCallback(() => {
     inFlightFetchKeyRef.current = '';
@@ -829,6 +899,11 @@ export default function OptionsPage() {
               {lastUpdated && (
                 <span className="hidden sm:inline">Last updated: {lastUpdated.toLocaleTimeString()}</span>
               )}
+              {freshnessLabel && (
+                <span className="text-[11px]" style={{ color: staleCachedChain ? 'var(--yellow)' : 'var(--text-dim)' }}>
+                  {freshnessLabel}
+                </span>
+              )}
               <button
                 onClick={handleRefresh}
                 disabled={loading}
@@ -880,33 +955,38 @@ export default function OptionsPage() {
           </div>
         )}
 
-        {chainMeta && (
+        {debugOptionsEnabled && chainMeta && (
           <div
             className="mb-3 rounded-lg px-3 py-2 text-xs"
             style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}
           >
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <span>
-                {chainSourceLabel} loaded {new Date(chainMeta.fetchedAt).toLocaleTimeString()}
-              </span>
-              <span>{chainMeta.putCount} put strikes</span>
-              <span>{putRangeLabel}</span>
-              {selectedExp && <span>Exp {selectedExp}</span>}
-              {staleCachedChain && (
-                <span style={{ color: 'var(--yellow)' }}>Cached &gt;10m</span>
-              )}
-            </div>
-            {chainWarnings.length > 0 && (
-              <div className="mt-1 flex flex-col gap-0.5" style={{ color: 'var(--yellow)' }}>
-                {chainWarnings.map(warning => (
-                  <span key={warning}>{warning}</span>
-                ))}
-              </div>
-            )}
-            <details className="mt-1">
+            <details>
               <summary className="cursor-pointer select-none" style={{ color: 'var(--text-dim)' }}>
-                Show chain diagnostics
+                Option chain diagnostics
               </summary>
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span>Source: {chainMeta.source}</span>
+                <span>Fetched: {new Date(chainMeta.fetchedAt).toLocaleTimeString()}</span>
+                <span>Puts: {chainMeta.putCount}</span>
+                <span>Calls: {chainMeta.callCount ?? '—'}</span>
+                <span>Req exp: {chainMeta.requestedExpiration ?? 'initial'}</span>
+                <span>Returned exp: {chainMeta.returnedExpiration ?? '—'}</span>
+              </div>
+              {chainWarnings.length > 0 && (
+                <div className="mt-2 flex flex-col gap-0.5" style={{ color: 'var(--yellow)' }}>
+                  {chainWarnings.map(warning => (
+                    <span key={warning}>{warning}</span>
+                  ))}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={copyChainDiagnostics}
+                className="mt-2 rounded-lg px-3 py-1.5 text-xs font-medium"
+                style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)', border: '1px solid var(--accent-border)' }}
+              >
+                Copy diagnostics JSON
+              </button>
               <pre
                 className="mt-2 max-h-44 overflow-auto rounded-md p-2 text-[10px]"
                 style={{ backgroundColor: 'var(--bg)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
@@ -921,7 +1001,15 @@ export default function OptionsPage() {
         {error ? (
           <OptionsEmptyState type="error" onRefresh={handleRefresh} loading={loading} />
         ) : hasEmptyOptions ? (
-          <OptionsEmptyState type="empty" onRefresh={handleRefresh} loading={loading} />
+          <OptionsEmptyState
+            type="empty"
+            onRefresh={handleRefresh}
+            loading={loading}
+            title="No put contracts returned"
+            subtitle={(chainMeta?.callCount ?? 0) > 0
+              ? 'Yahoo returned calls but no puts for this expiration. Compare the app only against Yahoo’s Puts tab.'
+              : 'Yahoo returned no put contracts for this expiration. Try Refresh or verify the selected expiration on Yahoo’s Puts tab.'}
+          />
         ) : (
           <>
           <div className="option-mobile-chain space-y-3">

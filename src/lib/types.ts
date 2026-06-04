@@ -27,6 +27,14 @@ export interface OptionContract {
   impliedVolatility: number | null;
   volume: number | null;
   openInterest: number | null;
+  contractSymbol?: string | null;
+  rawLastPrice?: number | null;
+  rawBid?: number | null;
+  rawAsk?: number | null;
+  rawImpliedVolatility?: number | null;
+  rawOpenInterest?: number | null;
+  rawVolume?: number | null;
+  rawLastTradeDate?: number | null;
 }
 
 export interface ExpirationDate {
@@ -35,25 +43,33 @@ export interface ExpirationDate {
   dte: number;
 }
 
+export type OptionChainSource = 'cache' | 'network' | 'fresh';
+
+export interface OptionChainMeta {
+  ticker: string;
+  requestedExpiration: number | null;
+  returnedExpiration: number | null;
+  expirationDate: number | null;
+  fetchedAt: number;
+  source: OptionChainSource;
+  fresh?: boolean;
+  cacheKey?: string;
+  putCount: number;
+  callCount?: number;
+  putStrikeMin?: number | null;
+  putStrikeMax?: number | null;
+  callStrikeMin?: number | null;
+  callStrikeMax?: number | null;
+  yahooExpirationDatesCount?: number;
+  previousCachedPutCount?: number | null;
+  validationWarnings?: string[];
+}
+
 export interface OptionsChainData {
   expirations: ExpirationDate[];
   puts: OptionContract[];
   currentPrice: number;
-  chainMeta?: {
-    ticker: string;
-    expirationDate: number | null;
-    fetchedAt: number;
-    source: 'cache' | 'network' | 'fresh';
-    cacheKey: string;
-    putCount: number;
-    callCount?: number;
-    putStrikeMin?: number | null;
-    putStrikeMax?: number | null;
-    callStrikeMin?: number | null;
-    callStrikeMax?: number | null;
-    yahooExpirationDatesCount?: number;
-    previousCachedPutCount?: number | null;
-  };
+  chainMeta?: OptionChainMeta;
 }
 
 export type SortField = 'strike' | 'last' | 'bid' | 'ask' | 'delta' | 'otmItm' | 'iv' | 'volume' | 'openInterest' | 'volOI' | 'nomYieldBid' | 'annYieldBid' | 'nomYieldAsk' | 'annYieldAsk' | 'nomYieldLast' | 'annYieldLast';

@@ -46,9 +46,16 @@
 
 - Open `/options/HIBL`, select Aug 21, 2026 (`1787270400`), and click Refresh.
 - Network shows `/api/options?ticker=HIBL&date=1787270400&fresh=1` or equivalent.
-- Chain diagnostics show source Fresh, put strike count, and put strike range.
+- Chain diagnostics are hidden by default in normal UI.
+- Enable debug mode with `localStorage.setItem('put_scanner_debug_options', 'true')`, reload, and refresh again.
+- Debug diagnostics show source Fresh, requested expiration, returned expiration, put strike count, and put strike range.
+- Requested expiration and returned expiration match for the selected HIBL chain.
+- Copy diagnostics JSON includes displayed rows with strike, contractSymbol, bid, ask, last, IV, OI, volume, and last trade date.
 - Compare app rows to Yahoo Finance Puts for the same expiration, not Yahoo Calls.
+- Displayed put count equals Yahoo raw puts count for the same expiration.
+- Bid, ask, last, IV, OI, volume, and last trade date match Yahoo raw put JSON.
 - Zero-bid, zero-OI, and missing-delta puts still appear on the ETF detail page.
+- Decimal strikes display exactly and are not rounded.
 - Sorting, strike clicks, and Show Volume / OI create zero additional requests.
 
 ## Watchlist

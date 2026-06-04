@@ -1,4 +1,4 @@
-import type { OptionsChainData, ExpirationDate, OptionContract } from './types';
+import type { OptionsChainData, ExpirationDate, OptionContract, OptionChainSource } from './types';
 import { threeLayerCache, getCached, setCache, clearLsCache, BATCH_PRICE_KEY, BATCH_PRICE_MEM_TTL, BATCH_PRICE_LS_TTL, SPARKLINE_MEM_TTL, SPARKLINE_LS_TTL, OPTIONS_MEM_TTL, OPTIONS_LS_TTL, EXTENDED_PRICE_MEM_TTL, EXTENDED_PRICE_LS_TTL } from './cache';
 import type { BatchPriceData } from './cache';
 import { clearMemCache, getMemCache, setMemCache, isValidBatchPriceData } from './memoryCache';
@@ -10,6 +10,10 @@ const API_BASE = '/api';
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 interface YahooOptionContract {
+  contractSymbol?: string | null;
+  contractSize?: string | null;
+  currency?: string | null;
+  inTheMoney?: boolean | null;
   strike?: number | null;
   lastPrice?: number | null;
   lastTradeDate?: number | null;
@@ -35,8 +39,6 @@ interface FetchOptionsOptions {
   fresh?: boolean;
   source?: string;
 }
-
-type OptionChainSource = NonNullable<OptionsChainData['chainMeta']>['source'];
 
 function calculateDTE(expirationTimestamp: number): number {
   const now = new Date();
@@ -151,7 +153,59 @@ function mapYahooPut(p: YahooOptionContract & { strike: number }): OptionContrac
     impliedVolatility: iv,
     volume: p.volume ?? null,
     openInterest: p.openInterest ?? null,
+    contractSymbol: p.contractSymbol ?? null,
+    rawLastPrice: p.lastPrice ?? null,
+    rawBid: p.bid ?? null,
+    rawAsk: p.ask ?? null,
+    rawImpliedVolatility: p.impliedVolatility ?? null,
+    rawOpenInterest: p.openInterest ?? null,
+    rawVolume: p.volume ?? null,
+    rawLastTradeDate: p.lastTradeDate ?? null,
   };
+}
+
+function parseYahooOptionSymbol(symbol: string | null | undefined): { expiration: number | null; type: 'C' | 'P' | null; strike: number | null } {
+  if (!symbol) return { expiration: null, type: null, strike: null };
+  const match = symbol.match(/(\d{6})([CP])(\d{8})$/);
+  if (!match) return { expiration: null, type: null, strike: null };
+  const [, yymmdd, type, strikeRaw] = match;
+  const year = 2000 + Number(yymmdd.slice(0, 2));
+  const month = Number(yymmdd.slice(2, 4));
+  const day = Number(yymmdd.slice(4, 6));
+  const expiration = Math.floor(Date.UTC(year, month - 1, day) / 1000);
+  const strike = Number(strikeRaw) / 1000;
+  return {
+    expiration: Number.isFinite(expiration) ? expiration : null,
+    type: type === 'P' || type === 'C' ? type : null,
+    strike: Number.isFinite(strike) ? strike : null,
+  };
+}
+
+function validateYahooPutContract(contract: YahooOptionContract, requestedExpiration: number | null, returnedExpiration: number | null): string[] {
+  const warnings: string[] = [];
+  if (!Number.isFinite(contract.strike)) warnings.push('Invalid or missing strike.');
+  ([
+    ['lastPrice', contract.lastPrice],
+    ['bid', contract.bid],
+    ['ask', contract.ask],
+    ['impliedVolatility', contract.impliedVolatility],
+    ['openInterest', contract.openInterest],
+    ['volume', contract.volume],
+    ['lastTradeDate', contract.lastTradeDate],
+  ] as const).forEach(([label, value]) => {
+    if (value != null && !Number.isFinite(value)) warnings.push(`${label} is not finite.`);
+  });
+
+  const parsed = parseYahooOptionSymbol(contract.contractSymbol);
+  if (parsed.type && parsed.type !== 'P') warnings.push(`Contract symbol appears to be a ${parsed.type === 'C' ? 'call' : parsed.type}.`);
+  const expectedExpiration = requestedExpiration ?? returnedExpiration;
+  if (parsed.expiration != null && expectedExpiration != null && parsed.expiration !== expectedExpiration) {
+    warnings.push(`Contract symbol expiration ${parsed.expiration} does not match expected ${expectedExpiration}.`);
+  }
+  if (parsed.strike != null && Number.isFinite(contract.strike) && Math.abs(parsed.strike - Number(contract.strike)) > 0.001) {
+    warnings.push(`Contract symbol strike ${parsed.strike} does not match Yahoo strike ${contract.strike}.`);
+  }
+  return warnings;
 }
 
 function normalizeOptionChainData(
@@ -175,9 +229,12 @@ function normalizeOptionChainData(
       currentPrice: 0,
       chainMeta: {
         ticker,
-        expirationDate: date ?? null,
+        requestedExpiration: date ?? null,
+        returnedExpiration: null,
+        expirationDate: null,
         fetchedAt,
         source,
+        fresh: source === 'fresh',
         cacheKey,
         putCount: 0,
         callCount: 0,
@@ -195,6 +252,11 @@ function normalizeOptionChainData(
   const expDates: number[] = result.expirationDates || [];
   const chain = result.options?.[0];
   const chainExpiration = chain?.expirationDate ?? date ?? null;
+  const requestedExpiration = date ?? null;
+  const validationWarnings: string[] = [];
+  if (requestedExpiration != null && chainExpiration != null && requestedExpiration !== chainExpiration) {
+    validationWarnings.push(`Requested expiration ${requestedExpiration} but Yahoo returned ${chainExpiration}.`);
+  }
   const putsRaw: YahooOptionContract[] = chain?.puts ?? [];
   const callsRaw: YahooOptionContract[] = chain?.calls ?? [];
   const putRange = strikeRange(putsRaw);
@@ -209,7 +271,12 @@ function normalizeOptionChainData(
 
   const putsByStrike = new Map<number, OptionContract>();
   putsRaw
-    .filter((p): p is YahooOptionContract & { strike: number } => Number.isFinite(p.strike))
+    .filter((p): p is YahooOptionContract & { strike: number } => {
+      const warnings = validateYahooPutContract(p, requestedExpiration, chainExpiration);
+      warnings.forEach(warning => validationWarnings.push(`${p.contractSymbol ?? `strike ${p.strike ?? 'unknown'}`}: ${warning}`));
+      const parsed = parseYahooOptionSymbol(p.contractSymbol);
+      return Number.isFinite(p.strike) && parsed.type !== 'C';
+    })
     .forEach(p => {
       const put = mapYahooPut(p);
       const existing = putsByStrike.get(put.strike);
@@ -224,9 +291,12 @@ function normalizeOptionChainData(
     currentPrice,
     chainMeta: {
       ticker,
+      requestedExpiration,
+      returnedExpiration: chainExpiration,
       expirationDate: chainExpiration,
       fetchedAt,
       source,
+      fresh: source === 'fresh',
       cacheKey,
       putCount: puts.length,
       callCount: callsRaw.length,
@@ -236,6 +306,7 @@ function normalizeOptionChainData(
       callStrikeMax: callRange.max,
       yahooExpirationDatesCount: expDates.length,
       previousCachedPutCount,
+      validationWarnings,
     },
   };
 }
@@ -246,9 +317,12 @@ function withCacheSource(data: OptionsChainData, cacheKey: string): OptionsChain
     ...data,
     chainMeta: {
       ticker: data.chainMeta?.ticker ?? cacheKey.split('_')[2] ?? '',
+      requestedExpiration: data.chainMeta?.requestedExpiration ?? null,
+      returnedExpiration: data.chainMeta?.returnedExpiration ?? data.chainMeta?.expirationDate ?? null,
       expirationDate: data.chainMeta?.expirationDate ?? null,
       fetchedAt,
       source: 'cache',
+      fresh: false,
       cacheKey: data.chainMeta?.cacheKey ?? cacheKey,
       putCount: data.puts.length,
       callCount: data.chainMeta?.callCount,
@@ -258,6 +332,7 @@ function withCacheSource(data: OptionsChainData, cacheKey: string): OptionsChain
       callStrikeMax: data.chainMeta?.callStrikeMax,
       yahooExpirationDatesCount: data.chainMeta?.yahooExpirationDatesCount,
       previousCachedPutCount: data.chainMeta?.previousCachedPutCount ?? null,
+      validationWarnings: data.chainMeta?.validationWarnings ?? [],
     },
   };
 }

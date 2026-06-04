@@ -843,7 +843,7 @@ export default function PortfolioPage() {
 
     const optionResults = await Promise.allSettled(requestKeys.map(async key => {
       const [ticker, timestamp] = key.split('|');
-      return { key, data: await fetchOptions(ticker, Number(timestamp), { bypassCache: true }) };
+      return { key, data: await fetchOptions(ticker, Number(timestamp), { source: 'Portfolio:refreshOpenTrades' }) };
     }));
     const optionsByKey = new Map(optionResults.map((result, index) => [
       requestKeys[index],
