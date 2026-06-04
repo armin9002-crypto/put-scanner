@@ -120,6 +120,7 @@ body,
   width: 100%;
   max-width: 100%;
   min-height: 100%;
+  min-height: 100dvh;
   overflow-x: hidden;
 }
 
@@ -155,6 +156,8 @@ body {
   overflow-x: hidden;
   -webkit-text-size-adjust: 100%;
   touch-action: manipulation;
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
 }
 
 input, select, textarea {
@@ -181,6 +184,34 @@ input, select, textarea, button {
 .touch-scroll {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-x: contain;
+}
+
+.app-nav-scroll {
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+
+.app-nav-scroll > * {
+  scroll-snap-align: start;
+}
+
+.app-nav-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.overflow-x-auto,
+.overflow-auto,
+.overflow-y-auto {
+  -webkit-overflow-scrolling: touch;
+}
+
+table {
+  border-spacing: 0;
+}
+
+th,
+td {
+  min-width: 0;
 }
 
 .option-mobile-chain {
@@ -273,6 +304,67 @@ input, select, textarea, button {
     padding-right: max(0.5rem, env(safe-area-inset-right)) !important;
     padding-bottom: max(0.5rem, env(safe-area-inset-bottom)) !important;
     border-left: 0 !important;
+  }
+
+  .app-nav-scroll {
+    min-height: 2.25rem !important;
+    gap: 0.125rem !important;
+  }
+
+  .app-nav-scroll a,
+  .app-nav-scroll button {
+    min-height: 2.25rem !important;
+    padding-top: 0.375rem !important;
+    padding-bottom: 0.375rem !important;
+  }
+
+  .etf-pulse-page {
+    height: auto !important;
+    min-height: calc(100dvh - 2.75rem) !important;
+    overflow-x: hidden !important;
+    overflow-y: visible !important;
+  }
+
+  .etf-pulse-page > div {
+    height: auto !important;
+    min-height: 0 !important;
+  }
+
+  .etf-pulse-controls {
+    position: static !important;
+    padding-bottom: 0.375rem !important;
+    margin-bottom: 0.375rem !important;
+  }
+
+  .etf-pulse-scroll {
+    overflow-y: visible !important;
+    padding-right: 0 !important;
+  }
+
+  .etf-pulse-table-card {
+    height: min(46dvh, 360px) !important;
+    min-height: 220px !important;
+  }
+
+  .option-detail-drawer section,
+  .option-detail-drawer .rounded-lg {
+    scroll-margin-top: 0.5rem;
+  }
+}
+
+@media (max-width: 767px) {
+  .app-nav-scroll {
+    padding-top: max(0rem, env(safe-area-inset-top)) !important;
+  }
+
+  .etf-pulse-table-card {
+    height: min(52dvh, 460px) !important;
+    min-height: 260px !important;
+  }
+
+  .option-detail-drawer {
+    max-height: 94dvh !important;
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom)) !important;
   }
 }
 

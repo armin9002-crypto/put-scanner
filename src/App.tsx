@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
 import { ShieldCheck, ScanLine, BarChart3, Moon, Sun, BookOpen, Star, Square, Briefcase, Activity, Gauge } from 'lucide-react';
 import { ThemeProvider, useTheme } from './lib/theme';
+import { useResponsiveMode } from './lib/responsive';
 import ErrorBoundary from './components/ErrorBoundary';
 import { getRequestDiagnosticsSnapshot, isRequestDiagnosticsEnabled, type RequestDiagnosticsSnapshot } from './lib/requestDiagnostics';
 
@@ -41,9 +42,12 @@ function ThemeToggle() {
 }
 
 function NavBar() {
+  const { isPhoneLandscape } = useResponsiveMode();
+  const pulseLabel = isPhoneLandscape ? 'Pulse' : 'ETF Pulse';
+
   return (
     <nav className="sticky top-0 z-50" style={{ backgroundColor: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
-      <div className="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 flex items-center gap-1 md:gap-2 min-h-11 max-w-full overflow-x-auto touch-scroll" style={{ paddingLeft: 'max(0.5rem, env(safe-area-inset-left))', paddingRight: 'max(0.5rem, env(safe-area-inset-right))' }}>
+      <div className="app-nav-scroll max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 flex items-center gap-1 md:gap-2 min-h-11 max-w-full overflow-x-auto touch-scroll" style={{ paddingLeft: 'max(0.5rem, env(safe-area-inset-left))', paddingRight: 'max(0.5rem, env(safe-area-inset-right))' }}>
         <div className="flex items-center gap-2 mr-1 md:mr-4 flex-shrink-0">
           <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'var(--accent-bg)' }}>
             <ShieldCheck className="w-4 h-4" style={{ color: 'var(--accent)' }} />
@@ -118,7 +122,7 @@ function NavBar() {
             })}
           >
             <Activity className="w-3.5 h-3.5" />
-            <span className="sm:inline">ETF Pulse</span>
+            <span className="sm:inline">{pulseLabel}</span>
           </NavLink>
           <NavLink
             to="/cockpit"
@@ -166,7 +170,7 @@ function AppContent() {
 
 function RouteLoadingFallback() {
   return (
-    <div className="min-h-[calc(100vh-44px)] flex items-center justify-center px-4" style={{ backgroundColor: 'var(--bg)', color: 'var(--text-muted)' }}>
+    <div className="min-h-[calc(100dvh-44px)] flex items-center justify-center px-4" style={{ backgroundColor: 'var(--bg)', color: 'var(--text-muted)' }}>
       <div className="rounded-lg border px-4 py-3 text-sm font-medium" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
         Loading...
       </div>

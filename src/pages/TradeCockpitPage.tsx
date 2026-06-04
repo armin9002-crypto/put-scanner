@@ -259,7 +259,7 @@ export default function TradeCockpitPage() {
   };
 
   return (
-    <div className="min-h-[calc(100vh-2.75rem)] px-3 sm:px-4 lg:px-6 py-4" style={{ backgroundColor: 'var(--bg)' }}>
+    <div className="min-h-[calc(100dvh-2.75rem)] overflow-x-hidden px-3 sm:px-4 lg:px-6 py-4" style={{ backgroundColor: 'var(--bg)' }}>
       <div className="max-w-[1800px] mx-auto space-y-4">
         <header className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
           <div>

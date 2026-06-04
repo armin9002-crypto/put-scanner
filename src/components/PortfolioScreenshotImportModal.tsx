@@ -162,7 +162,7 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
   return (
     <div className="fixed inset-0 z-[85]">
       <button type="button" aria-label="Close import modal" onClick={onClose} className="absolute inset-0 bg-black/55" />
-      <div className="absolute inset-x-2 top-3 bottom-3 md:inset-x-4 md:top-4 md:bottom-4 xl:inset-x-1/2 xl:top-[4vh] xl:bottom-auto xl:w-[min(96vw,1600px)] xl:h-[min(92vh,1000px)] xl:-translate-x-1/2 rounded-lg overflow-hidden p-3 sm:p-4 shadow-2xl flex flex-col" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
+      <div className="absolute inset-x-2 top-2 bottom-2 md:inset-x-4 md:top-4 md:bottom-4 xl:inset-x-1/2 xl:top-[4dvh] xl:bottom-auto xl:w-[min(96vw,1600px)] xl:h-[min(92dvh,1000px)] xl:-translate-x-1/2 rounded-lg overflow-hidden p-2 sm:p-4 shadow-2xl flex flex-col" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
         <div className="flex items-start justify-between gap-3 mb-3 flex-shrink-0">
           <div className="min-w-0">
             <h2 className="text-lg font-bold" style={{ color: 'var(--text)' }}>Import Screenshot</h2>

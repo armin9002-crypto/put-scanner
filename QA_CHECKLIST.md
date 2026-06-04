@@ -92,3 +92,7 @@
 - Wide tables scroll inside their wrappers without page-level horizontal overflow.
 - Portfolio analytics, ETF Pulse visuals, and Trade Cockpit cards stack cleanly.
 - Inputs, tooltips, and warning popovers remain usable on touch devices.
+- Test iPhone portrait and landscape, iPad portrait and landscape, and desktop for `/`, `/options/TQQQ`, `/options/HIBL`, `/screener`, `/watchlist`, `/portfolio`, `/pulse`, and `/cockpit`.
+- Rotating or resizing the viewport creates zero API calls.
+- Phone landscape option pages use mobile-safe option cards, not the desktop table.
+- Modals and drawers keep close buttons visible and scroll internally only when content exceeds available height.

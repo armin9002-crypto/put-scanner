@@ -1143,7 +1143,7 @@ export default function OptionsPage() {
           </div>
 
           <div className="option-desktop-chain rounded-xl max-w-full overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-            <div className="max-h-[calc(100vh-230px)] min-h-[260px] max-w-full overflow-auto overscroll-contain sm:max-h-[calc(100vh-250px)]">
+            <div className="max-h-[calc(100dvh-230px)] min-h-[260px] max-w-full overflow-auto overscroll-contain sm:max-h-[calc(100dvh-250px)]">
               <table className="min-w-[520px] md:min-w-[980px] lg:min-w-[1180px] xl:min-w-0 w-full table-fixed text-xs">
                 <thead
                   className="bg-[#12121a]"

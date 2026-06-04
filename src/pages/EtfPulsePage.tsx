@@ -635,9 +635,9 @@ export default function EtfPulsePage() {
   };
 
   return (
-    <div className="h-[calc(100vh-2.75rem)] overflow-hidden" style={{ backgroundColor: 'var(--bg)' }}>
+    <div className="etf-pulse-page h-[calc(100dvh-2.75rem)] overflow-hidden" style={{ backgroundColor: 'var(--bg)' }}>
       <div className="max-w-[1800px] mx-auto h-full min-h-0 px-2 sm:px-4 lg:px-6 py-2 sm:py-3 flex flex-col">
-        <div className="flex-shrink-0 -mx-2 sm:-mx-4 lg:-mx-6 px-2 sm:px-4 lg:px-6 pb-2 mb-2" style={{ backgroundColor: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
+        <div className="etf-pulse-controls flex-shrink-0 -mx-2 sm:-mx-4 lg:-mx-6 px-2 sm:px-4 lg:px-6 pb-2 mb-2" style={{ backgroundColor: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
           <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-2 mb-2">
             <div className="min-w-0">
               <h1 className="text-xl sm:text-2xl font-bold tracking-tight flex items-center gap-2" style={{ color: 'var(--text)' }}>
@@ -688,8 +688,8 @@ export default function EtfPulsePage() {
           </div>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pr-1">
-          <div className="rounded-lg overflow-hidden h-[min(56vh,620px)] min-h-[320px]" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+        <div className="etf-pulse-scroll flex-1 min-h-0 overflow-y-auto overscroll-contain pr-1">
+          <div className="etf-pulse-table-card rounded-lg overflow-hidden h-[min(56dvh,620px)] min-h-[320px]" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
             <div className="h-full max-w-full overflow-auto overscroll-contain">
               <table className="w-full table-fixed text-[11px]" style={{ minWidth: tableMinWidth }}>
                 <colgroup>

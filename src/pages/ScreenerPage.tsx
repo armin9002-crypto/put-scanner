@@ -1055,8 +1055,8 @@ export default function ScreenerPage() {
 
         {/* Confirmation dialog */}
         {showConfirm && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-            <div className="rounded-xl p-6 max-w-sm mx-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+            <div className="max-h-[85dvh] w-full max-w-sm overflow-y-auto rounded-xl p-4 sm:p-6" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
               <h3 className="text-sm font-semibold mb-2" style={{ color: 'var(--text)' }}>Scan All ETFs?</h3>
               <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
                 Scanning all ETFs will make approximately 40-80 API calls. Proceed?

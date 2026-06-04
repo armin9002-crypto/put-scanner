@@ -654,7 +654,7 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
   return (
     <div className="fixed inset-0 z-[80]">
       <button type="button" aria-label="Close add trade modal" onClick={onClose} className="absolute inset-0 bg-black/55" />
-      <div className="absolute inset-x-2 top-3 bottom-3 sm:inset-x-1/2 sm:top-8 sm:bottom-8 sm:w-[720px] sm:-translate-x-1/2 rounded-lg overflow-y-auto p-4 sm:p-5 shadow-2xl" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
+      <div className="absolute inset-x-2 top-2 bottom-2 sm:inset-x-1/2 sm:top-8 sm:bottom-8 sm:w-[720px] sm:-translate-x-1/2 rounded-lg overflow-y-auto p-3 sm:p-5 shadow-2xl" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
         <div className="flex items-start justify-between gap-3 mb-4">
           <div>
             <h2 className="text-lg font-bold" style={{ color: 'var(--text)' }}>{trade ? 'Edit Sold Put' : 'Add Sold Put'}</h2>

@@ -210,7 +210,7 @@ export default function OptionDetailDrawer({
         className="absolute inset-0 bg-black/50"
       />
       <aside
-        className="option-detail-drawer absolute inset-x-0 bottom-0 max-h-[94vh] w-full overflow-y-auto rounded-t-2xl p-3 shadow-2xl sm:inset-y-0 sm:left-auto sm:right-0 sm:h-full sm:max-h-none sm:w-[480px] md:w-[520px] lg:w-[560px] sm:rounded-none sm:p-5"
+        className="option-detail-drawer absolute inset-x-0 bottom-0 max-h-[94dvh] w-full overflow-y-auto rounded-t-2xl p-3 shadow-2xl sm:inset-y-0 sm:left-auto sm:right-0 sm:h-full sm:max-h-none sm:w-[480px] md:w-[520px] lg:w-[560px] sm:rounded-none sm:p-5"
         style={{ backgroundColor: 'var(--bg)', borderLeft: '1px solid var(--border)' }}
       >
         <div className="flex items-start justify-between gap-3 mb-4 min-w-0">
