@@ -292,11 +292,7 @@ function formatShortDate(iso: string): string {
 }
 
 function formatCompactCurrency(value: number | null | undefined): string {
-  if (!isFiniteNumber(value)) return DASH;
-  const abs = Math.abs(value);
-  if (abs >= 1_000_000) return `${value < 0 ? '-' : ''}$${(abs / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `${value < 0 ? '-' : ''}$${Math.round(abs / 1_000).toLocaleString('en-US')}K`;
-  return formatCurrency(value, 0);
+  return isFiniteNumber(value) ? formatCurrency(value, 0) : DASH;
 }
 
 function formatExposurePercent(value: number, total: number): string {
@@ -1045,8 +1041,8 @@ export default function PortfolioPage() {
               <SummaryCard label="Net Capital at Risk" value={formatCurrency(summary.totalNetCapitalAtRisk, 0)} />
               <SummaryCard label="Total Gain/Loss" value={formatCurrency(markSummary.totalGainLoss, 0)} color={pnlColor(markSummary.totalGainLoss)} />
               <SummaryCard label="% Captured" value={formatPctValue(markSummary.percentCaptured)} color={pnlColor(markSummary.percentCaptured)} />
-              <SummaryCard label="Original AY" value={formatPctValue(markSummary.portfolioOriginalAnnualizedYield)} color="var(--accent-light)" />
-              <SummaryCard label="Current AY" value={formatPctValue(markSummary.portfolioCurrentAnnualizedYield)} color="var(--accent-light)" />
+              <SummaryCard label="Weighted Avg Entry AY" value={formatPctValue(markSummary.portfolioOriginalAnnualizedYield)} color="var(--accent-light)" />
+              <SummaryCard label="Weighted Avg Current AY" value={formatPctValue(markSummary.portfolioCurrentAnnualizedYield)} color="var(--accent-light)" />
               <SummaryCard label="Weighted Avg Delta" value={formatDelta(markSummary.weightedAverageDelta)} color={pnlColor(markSummary.weightedAverageDelta)} />
               <SummaryCard label="Weighted Avg DTE" value={isFiniteNumber(summary.weightedAverageRemainingDte) ? `${Math.round(summary.weightedAverageRemainingDte)} DTE` : DASH} />
             </div>
@@ -1134,7 +1130,7 @@ export default function PortfolioPage() {
 
             <div className="hidden md:block rounded-lg overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
               <div className="overflow-x-auto max-w-full overscroll-contain">
-                <table className="min-w-max w-full text-[11px]">
+                <table className="min-w-max w-full text-[12px] leading-none">
                   <thead className="sticky top-0 z-10">
                     <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
                       {sortButton('ticker', 'Ticker', 'text-left')}
