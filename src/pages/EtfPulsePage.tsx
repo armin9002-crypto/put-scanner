@@ -249,7 +249,7 @@ function UniverseHeatmap({ rows, period, onOpenTicker }: { rows: EtfPulseRow[]; 
             type="button"
             onClick={() => onOpenTicker(row.ticker)}
             aria-label={`Open ${row.ticker} ETF detail`}
-            className="rounded-md p-2 min-h-[64px] overflow-hidden text-left cursor-pointer transition duration-150 hover:-translate-y-0.5 hover:shadow-[0_0_0_1px_rgba(96,165,250,0.28)] focus:outline-none focus:ring-2 focus:ring-blue-400/40"
+            className="rounded-md p-2 min-h-[64px] overflow-hidden text-left cursor-pointer transition duration-150 hover:-translate-y-0.5 hover:shadow-[0_0_0_1px_rgba(96,165,250,0.28)] focus:outline-none focus:ring-2 focus:ring-blue-400/40 flex flex-col justify-between"
             title={`${row.ticker} - ${row.name}\n${period}: ${formatPct(value)}\nRSI: ${isFiniteNumber(row.rsi14) ? row.rsi14.toFixed(1) : DASH}\nTrend: ${trend.label}\n20D RV: ${formatPct(row.realizedVolatility20)}\nRecent DD: ${formatPct(row.recentDrawdown30)}\nvs 50D: ${formatPct(row.distance50)}\nvs 200D: ${formatPct(row.distance200)}\n52W Pos: ${formatPct(row.position52Week)}\n52W DD: ${formatPct(row.drawdown52Week)}`}
             style={{ backgroundColor: style.backgroundColor, border: `1px solid ${style.borderColor}` }}
           >
@@ -257,7 +257,10 @@ function UniverseHeatmap({ rows, period, onOpenTicker }: { rows: EtfPulseRow[]; 
               <div className="font-mono text-xs font-bold truncate" style={{ color: 'var(--text)' }}>{row.ticker}</div>
               <div className="font-mono text-xs font-semibold whitespace-nowrap" style={{ color: style.color }}>{formatPct(value)}</div>
             </div>
-            <div className="mt-2 truncate text-[10px]" style={{ color: trend.color }}>{trend.label}</div>
+            <div className="mt-2 flex items-end justify-between gap-2 min-w-0">
+              <div className="truncate text-[10px]" style={{ color: trend.color }}>{trend.label}</div>
+              <div className="font-mono text-[10px] tabular-nums whitespace-nowrap flex-shrink-0" style={{ color: 'var(--text-muted)' }}>{formatPrice(row.price)}</div>
+            </div>
           </button>
         );
       })}
@@ -635,8 +638,8 @@ export default function EtfPulsePage() {
   };
 
   return (
-    <div className="etf-pulse-page h-[calc(100dvh-2.75rem)] overflow-hidden" style={{ backgroundColor: 'var(--bg)' }}>
-      <div className="max-w-[1800px] mx-auto h-full min-h-0 px-2 sm:px-4 lg:px-6 py-2 sm:py-3 flex flex-col">
+    <div className="etf-pulse-page min-h-[calc(100dvh-2.75rem)]" style={{ backgroundColor: 'var(--bg)' }}>
+      <div className="max-w-[1800px] mx-auto px-2 sm:px-4 lg:px-6 py-2 sm:py-3">
         <div className="etf-pulse-controls flex-shrink-0 -mx-2 sm:-mx-4 lg:-mx-6 px-2 sm:px-4 lg:px-6 pb-2 mb-2" style={{ backgroundColor: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
           <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-2 mb-2">
             <div className="min-w-0">
@@ -688,7 +691,7 @@ export default function EtfPulsePage() {
           </div>
         </div>
 
-        <div className="etf-pulse-scroll flex-1 min-h-0 overflow-y-auto overscroll-contain pr-1">
+        <div className="etf-pulse-content min-w-0">
           <div className="etf-pulse-table-card rounded-lg overflow-hidden h-[min(56dvh,620px)] min-h-[320px]" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
             <div className="h-full max-w-full overflow-auto overscroll-contain">
               <table className="w-full table-fixed text-[11px]" style={{ minWidth: tableMinWidth }}>
