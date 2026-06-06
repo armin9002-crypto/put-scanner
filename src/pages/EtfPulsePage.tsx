@@ -5,9 +5,9 @@ import { buildEtfPulseRows, getEtfPulseUniverse, type EtfPulseLoadResult, type E
 import type { EtfPulseRow, EtfPulseTrend } from '../lib/etfPulseMetrics';
 import { formatCurrency, formatPercent } from '../lib/format';
 import { isFiniteNumber } from '../lib/optionMetrics';
-import { postureFromRegime } from '../lib/tradeCockpit/posture';
-import { analyzeRegime } from '../lib/tradeCockpit/regime';
-import type { RegimeAnalysis, TradePosture } from '../lib/tradeCockpit/types';
+import { postureFromRegime } from '../lib/marketRead/posture';
+import { analyzeRegime } from '../lib/marketRead/regime';
+import type { RegimeAnalysis, TradePosture } from '../lib/marketRead/types';
 
 const DASH = '\u2014';
 

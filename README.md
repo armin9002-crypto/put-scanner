@@ -8,8 +8,7 @@
 - Vercel `/api` routes are the canonical serverless surface for market data.
 - ETF Pulse stores computed rows in a 6-hour client cache and reuses cached daily history.
 - Option chains use memory, localStorage, in-flight request deduping, and Vercel CDN cache headers.
-- Trade Cockpit loads without option-chain calls and only scans when `Run Trade Scan` is clicked.
-- Trade Cockpit defaults are bounded by max tickers and expirations per ticker, with request estimates shown before scanning.
-- Sorting, filtering, visual period toggles, and hover interactions are client-side only.
-- Refresh buttons and manual scan buttons are the intended network refresh points.
+- ETF Pulse Market Read reuses already-loaded ETF Pulse rows and does not fetch option chains.
+- Sorting, filtering, visual period toggles, Market Read details, and hover interactions are client-side only.
+- Refresh buttons are the intended market-data refresh points.
 - Run `npm run build` followed by `npm run build:report` to inspect the largest built JS/CSS assets.

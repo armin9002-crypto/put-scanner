@@ -2,12 +2,13 @@
 
 ## Network / Usage
 
-- Opening Scanner, Portfolio, ETF Pulse, and Trade Cockpit does not create request loops.
+- Opening Scanner, Portfolio, and ETF Pulse does not create request loops.
 - Sorting, filtering, scrolling, hovering, and visual-period changes create zero API calls.
-- Trade Cockpit makes option-chain requests only after Run Trade Scan.
+- ETF Pulse Market Read and details use loaded rows and create zero API calls.
 - ETF Pulse uses cached daily history on reload and refreshes only from the Refresh button.
 - Portfolio Refresh Open Trades makes only expected quote/chain requests.
 - ETF option-page Refresh uses a fresh selected-chain request and normal navigation remains cached.
+- Visiting `/cockpit` redirects to `/pulse`.
 
 ## Portfolio
 
@@ -24,15 +25,6 @@
 - Search, leverage, type, and trend filters affect the table, heatmap, and quadrant consistently.
 - 52W DD and Recent DD are zero or negative; 52W Pos is clamped to 0-100%.
 - RSI is 0-100, 20D RV is positive when present, and missing values show dashes.
-
-## Trade Cockpit
-
-- Page load makes zero option-chain calls.
-- Default scan inputs are conservative: 60-150 DTE, max delta 0.15, 30% cushion, 20 OI, 30% spread.
-- Scan estimates reflect max tickers and expirations per ticker.
-- Diagnostics explain where candidates were filtered out.
-- Near misses exclude no-bid, non-OTM, and outside-DTE contracts unless explicitly labeled.
-- Candidate sorting and bucket classification are client-side after a scan.
 
 ## Screener
 
@@ -90,9 +82,9 @@
 
 - Navigation works at mobile widths.
 - Wide tables scroll inside their wrappers without page-level horizontal overflow.
-- Portfolio analytics, ETF Pulse visuals, and Trade Cockpit cards stack cleanly.
+- Portfolio analytics and ETF Pulse visuals stack cleanly.
 - Inputs, tooltips, and warning popovers remain usable on touch devices.
-- Test iPhone portrait and landscape, iPad portrait and landscape, and desktop for `/`, `/options/TQQQ`, `/options/HIBL`, `/screener`, `/watchlist`, `/portfolio`, `/pulse`, and `/cockpit`.
+- Test iPhone portrait and landscape, iPad portrait and landscape, and desktop for `/`, `/options/TQQQ`, `/options/HIBL`, `/screener`, `/watchlist`, `/portfolio`, and `/pulse`.
 - Rotating or resizing the viewport creates zero API calls.
 - Phone landscape option pages use mobile-safe option cards, not the desktop table.
 - Modals and drawers keep close buttons visible and scroll internally only when content exceeds available height.
@@ -130,17 +122,11 @@ Portfolio:
 ETF Pulse:
 
 - Table scroll is contained inside the table card.
+- Market Read ribbon stays compact and details open without network requests.
 - Heatmap tiles fit phone portrait and landscape.
 - Momentum quadrant does not overflow the page.
 - Sticky/frozen controls do not consume too much mobile screen height.
 - Visual period toggles update from loaded rows and create zero fetches.
-
-Trade Cockpit:
-
-- Market read remains readable on phone portrait and landscape.
-- Trade scan controls stack without clipped inputs.
-- Candidate buckets and table are usable.
-- Page load does not run a trade scan.
 
 Screener / Watchlist / Scanner:
 

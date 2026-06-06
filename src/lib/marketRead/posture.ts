@@ -1,4 +1,4 @@
-import type { RegimeAnalysis, TradePosture, TradeStyle } from './types';
+import type { RegimeAnalysis, TradePosture } from './types';
 
 export function postureFromRegime(regime: RegimeAnalysis): TradePosture {
   switch (regime.label) {
@@ -24,7 +24,7 @@ export function postureFromRegime(regime: RegimeAnalysis): TradePosture {
         dteMin: 21,
         dteMax: 75,
         liquidityGuidance: 'Avoid extremely wide spreads even in strong trends.',
-        explanation: 'Supportive trend and breadth allow balanced put selling, but the cockpit still prioritizes cushion and bid-side yield.',
+        explanation: 'Supportive trend and breadth allow balanced put selling, but cushion and bid-side yield still matter.',
       };
     case 'Healthy Pullback':
       return {
@@ -76,11 +76,4 @@ export function postureFromRegime(regime: RegimeAnalysis): TradePosture {
         explanation: 'When the edge is unclear, the default posture should protect against overtrading.',
       };
   }
-}
-
-export function criteriaAdjustmentsForStyle(style: TradeStyle): Pick<TradePosture, 'maxDelta' | 'minDistanceToStrike' | 'dteMin' | 'dteMax'> {
-  if (style === 'Conservative') return { maxDelta: 0.15, minDistanceToStrike: 0.28, dteMin: 21, dteMax: 60 };
-  if (style === 'Aggressive') return { maxDelta: 0.25, minDistanceToStrike: 0.2, dteMin: 14, dteMax: 90 };
-  if (style === 'Speculative') return { maxDelta: 0.35, minDistanceToStrike: 0.12, dteMin: 7, dteMax: 90 };
-  return { maxDelta: 0.2, minDistanceToStrike: 0.22, dteMin: 14, dteMax: 90 };
 }

@@ -11,12 +11,13 @@ const CACHE_RULES: CacheRule[] = [
   { prefix: 'options_v2_', ttlMs: 2 * HOUR, timestampPaths: [['timestamp'], ['fetchedAt']] },
   { prefix: 'chart_history', ttlMs: 2 * DAY, timestampPaths: [['fetchedAt'], ['timestamp']] },
   { prefix: 'etf_pulse_rows', ttlMs: 12 * HOUR, timestampPaths: [['fetchedAt']] },
-  { prefix: 'trade_cockpit_scan_results', ttlMs: 2 * HOUR, timestampPaths: [['fetchedAt']] },
   { prefix: 'sparkline_', ttlMs: 2 * HOUR, timestampPaths: [['timestamp'], ['fetchedAt'], ['data', 'cachedAt']] },
   { prefix: 'extended_price_', ttlMs: 2 * HOUR, timestampPaths: [['timestamp'], ['fetchedAt']] },
   { prefix: 'price_cache', ttlMs: 2 * HOUR, timestampPaths: [['timestamp'], ['fetchedAt']] },
   { prefix: 'batch_prices', ttlMs: 2 * HOUR, timestampPaths: [['timestamp'], ['fetchedAt']] },
 ];
+
+const LEGACY_CACHE_PREFIXES = ['trade_cockpit_scan_results'];
 
 const LAST_CLEANUP_KEY = 'put_scanner_cache_cleanup_at';
 const CLEANUP_INTERVAL_MS = 6 * HOUR;
@@ -59,6 +60,12 @@ export function pruneExpiredAppCaches(now = Date.now()): number {
   let removed = 0;
 
   keys.forEach(key => {
+    if (LEGACY_CACHE_PREFIXES.some(prefix => key.startsWith(prefix))) {
+      storage.removeItem(key);
+      removed += 1;
+      return;
+    }
+
     const rule = CACHE_RULES.find(candidate => key.startsWith(candidate.prefix));
     if (!rule) return;
 
