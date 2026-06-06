@@ -342,8 +342,8 @@ export default function InteractivePriceChartModal({
         </div>
 
         <div className="overflow-y-auto p-3 sm:p-5">
-          <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap lg:min-w-0">
+          <div className="mb-3 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap lg:min-w-0 lg:pb-0">
               {timeframes.map(option => (
                 <button
                   type="button"
@@ -361,50 +361,52 @@ export default function InteractivePriceChartModal({
               ))}
             </div>
             <div
-              className="rounded-lg border px-3 py-2 text-xs lg:w-[340px] lg:flex-shrink-0"
+              className="min-w-0 rounded-lg border px-2.5 py-1.5 text-xs leading-tight lg:max-w-[520px] lg:flex-shrink-0"
               style={{ backgroundColor: 'var(--surface-alt)', borderColor: 'var(--border)' }}
               title="True Leverage compares the ETF's actual return to the proxy ETF's return over the same period. Because leveraged ETFs rebalance daily, realized leverage can differ materially over longer periods."
             >
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>True Leverage</span>
-                {proxy.meaningful && normalizedProxyTicker && (
-                  <span className="font-mono text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                    {titleTicker} vs {normalizedProxyTicker}
-                  </span>
-                )}
-              </div>
               {!proxy.meaningful ? (
-                <div className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Not meaningful for this exposure.</div>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 whitespace-nowrap">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>True Leverage</span>
+                  <span style={{ color: 'var(--text-muted)' }}>N/A</span>
+                </div>
               ) : normalizedProxyTicker === requestedTicker ? (
-                <div className="mt-1 flex items-baseline justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 whitespace-nowrap">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>True Leverage</span>
+                  <span className="font-mono text-[11px]" style={{ color: 'var(--text-muted)' }}>{titleTicker}</span>
                   <span style={{ color: 'var(--text-muted)' }}>Base proxy ETF</span>
                   <span className="font-mono text-sm font-semibold tabular-nums" style={{ color: 'var(--accent-light)' }}>1.00x</span>
                 </div>
               ) : proxyLoading && !activeProxyData ? (
-                <div className="mt-1 flex items-center gap-2" style={{ color: 'var(--text-muted)' }}>
+                <div className="flex items-center gap-2 whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
+                  <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>True Leverage</span>
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   Loading proxy...
                 </div>
               ) : proxyError ? (
-                <div className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Proxy data unavailable.</div>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 whitespace-nowrap">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>True Leverage</span>
+                  <span style={{ color: 'var(--text-muted)' }}>Proxy data unavailable</span>
+                </div>
               ) : periodTrueLeverage.etfReturn == null || periodTrueLeverage.proxyReturn == null ? (
-                <div className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Not enough overlapping proxy data.</div>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 whitespace-nowrap">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>True Leverage</span>
+                  <span className="font-mono text-[11px]" style={{ color: 'var(--text-muted)' }}>{titleTicker} vs {normalizedProxyTicker}</span>
+                  <span style={{ color: 'var(--text-muted)' }}>N/A</span>
+                </div>
               ) : (
-                <>
-                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[11px] tabular-nums">
-                    <span style={{ color: chartColor(periodTrueLeverage.etfReturn * 100) }}>ETF {formatDecimalPercent(periodTrueLeverage.etfReturn)}</span>
-                    <span style={{ color: chartColor(periodTrueLeverage.proxyReturn * 100) }}>Proxy {formatDecimalPercent(periodTrueLeverage.proxyReturn)}</span>
-                  </div>
-                  <div className="mt-0.5 flex items-baseline justify-between gap-3">
-                    <span style={{ color: 'var(--text-muted)' }}>Realized multiple over {timeframe}</span>
-                    <span className="font-mono text-sm font-semibold tabular-nums" style={{ color: leverageColor(periodTrueLeverage) }}>
-                      {formatLeverage(periodTrueLeverage.leverage)}
-                    </span>
-                  </div>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 whitespace-nowrap">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>True Leverage</span>
+                  <span className="font-mono text-[11px]" style={{ color: 'var(--text-muted)' }}>{titleTicker} vs {normalizedProxyTicker}</span>
+                  <span className="font-mono text-[11px] tabular-nums" style={{ color: chartColor(periodTrueLeverage.etfReturn * 100) }}>ETF {formatDecimalPercent(periodTrueLeverage.etfReturn)}</span>
+                  <span className="font-mono text-[11px] tabular-nums" style={{ color: chartColor(periodTrueLeverage.proxyReturn * 100) }}>Proxy {formatDecimalPercent(periodTrueLeverage.proxyReturn)}</span>
+                  <span className="font-mono text-sm font-semibold tabular-nums" style={{ color: leverageColor(periodTrueLeverage) }}>
+                    {formatLeverage(periodTrueLeverage.leverage)}
+                  </span>
                   {periodTrueLeverage.directionDiverged && (
-                    <div className="mt-0.5 text-[11px]" style={{ color: 'var(--yellow)' }}>Direction diverged.</div>
+                    <span className="text-[11px]" style={{ color: 'var(--yellow)' }}>Direction diverged</span>
                   )}
-                </>
+                </div>
               )}
             </div>
           </div>
