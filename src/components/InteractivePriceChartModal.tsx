@@ -6,6 +6,8 @@ import { calculateAnnualizedReturn, calculateSimpleReturn } from '../lib/chartRe
 import { formatChartYAxisTick, getNiceYAxisScale } from '../lib/chartScale';
 import { getOrderedChartTimeframes } from '../lib/chartTimeframes';
 import { getInstrumentName, isVolatilityInstrument, normalizeDisplayTicker } from '../lib/instrumentNames';
+import { getUnderlyingHoldingsProxy } from '../lib/underlyingHoldingsProxies';
+import { getTrueLeverageForPeriod, getTrueLeverageForRange, type TrueLeverageResult } from '../lib/trueLeverage';
 
 const CHART_WIDTH = 900;
 const CHART_HEIGHT = 360;
@@ -56,6 +58,16 @@ function formatPercent(value: number | null | undefined): string {
   return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
 }
 
+function formatDecimalPercent(value: number | null | undefined): string {
+  if (!isFiniteNumber(value)) return '--';
+  return `${value >= 0 ? '+' : ''}${(value * 100).toFixed(2)}%`;
+}
+
+function formatLeverage(value: number | null | undefined): string {
+  if (!isFiniteNumber(value)) return 'N/A';
+  return `${value.toFixed(2)}x`;
+}
+
 function formatDateTime(point: ChartPoint | null | undefined, timeframe: ChartTimeframe): string {
   if (!point) return '--';
   const date = new Date(point.timestamp * 1000);
@@ -79,6 +91,12 @@ function buildPath(points: ScaledPoint[]): string {
   return `M${points.map(point => `${point.x},${point.y}`).join(' L')}`;
 }
 
+function leverageColor(result: TrueLeverageResult): string {
+  if (!isFiniteNumber(result.leverage)) return 'var(--text-muted)';
+  if (result.directionDiverged) return 'var(--yellow)';
+  return result.leverage >= 0 ? 'var(--accent-light)' : 'var(--red)';
+}
+
 export default function InteractivePriceChartModal({
   isOpen,
   ticker,
@@ -87,6 +105,9 @@ export default function InteractivePriceChartModal({
 }: InteractivePriceChartModalProps) {
   const [timeframe, setTimeframe] = useState<ChartTimeframe>('1D');
   const [data, setData] = useState<ChartHistoryResponse | null>(null);
+  const [proxyData, setProxyData] = useState<ChartHistoryResponse | null>(null);
+  const [proxyLoading, setProxyLoading] = useState(false);
+  const [proxyError, setProxyError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
@@ -99,6 +120,9 @@ export default function InteractivePriceChartModal({
   const titleTicker = normalizeDisplayTicker(displayTicker || activeData?.displayTicker || requestedTicker);
   const instrumentName = getInstrumentName(requestedTicker, titleTicker);
   const isVolatility = isVolatilityInstrument(requestedTicker, titleTicker);
+  const proxy = useMemo(() => getUnderlyingHoldingsProxy(requestedTicker), [requestedTicker]);
+  const normalizedProxyTicker = proxy.proxyTicker?.trim().toUpperCase() ?? null;
+  const shouldFetchProxy = Boolean(proxy.meaningful && normalizedProxyTicker && normalizedProxyTicker !== requestedTicker);
 
   const loadChart = useCallback(async (forceRefresh = false) => {
     if (!requestedTicker) return;
@@ -123,6 +147,37 @@ export default function InteractivePriceChartModal({
 
   useEffect(() => {
     if (!isOpen) return;
+    setProxyError(null);
+
+    if (!shouldFetchProxy || !normalizedProxyTicker) {
+      setProxyData(null);
+      setProxyLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setProxyLoading(true);
+    getChartHistory(normalizedProxyTicker, timeframe)
+      .then(history => {
+        if (cancelled) return;
+        setProxyData(history);
+      })
+      .catch(err => {
+        if (cancelled) return;
+        setProxyError(err instanceof Error ? err.message : 'Proxy chart data unavailable');
+        setProxyData(null);
+      })
+      .finally(() => {
+        if (!cancelled) setProxyLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, normalizedProxyTicker, shouldFetchProxy, timeframe]);
+
+  useEffect(() => {
+    if (!isOpen) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     const handleKey = (event: KeyboardEvent) => {
@@ -136,6 +191,12 @@ export default function InteractivePriceChartModal({
   }, [isOpen, onClose]);
 
   const points = useMemo(() => activeData?.points ?? [], [activeData]);
+  const activeProxyData = useMemo(() => {
+    if (!proxy.meaningful || !normalizedProxyTicker) return null;
+    if (normalizedProxyTicker === requestedTicker) return activeData;
+    return proxyData && proxyData.timeframe === timeframe && proxyData.ticker.toUpperCase() === normalizedProxyTicker ? proxyData : null;
+  }, [activeData, normalizedProxyTicker, proxy.meaningful, proxyData, requestedTicker, timeframe]);
+  const proxyPoints = useMemo(() => activeProxyData?.points ?? [], [activeProxyData]);
   const latestPoint = points[points.length - 1] ?? null;
   const latestPrice = isFiniteNumber(activeData?.latestPrice) ? activeData?.latestPrice ?? null : latestPoint?.price ?? null;
   const baseline = timeframe === '1D'
@@ -159,6 +220,15 @@ export default function InteractivePriceChartModal({
   const rangeAnnualizedReturn = selectedPoint && rangeEndPoint
     ? calculateAnnualizedReturn(selectedPoint.price, rangeEndPoint.price, selectedPoint.timestamp, rangeEndPoint.timestamp)
     : null;
+  const periodTrueLeverage = useMemo(() => getTrueLeverageForPeriod(points, proxyPoints), [points, proxyPoints]);
+  const activeTrueLeverage = useMemo(() => {
+    if (!activeBaselinePoint || !activePoint) return null;
+    return getTrueLeverageForRange(points, proxyPoints, activeBaselinePoint.timestamp, activePoint.timestamp);
+  }, [activeBaselinePoint, activePoint, points, proxyPoints]);
+  const rangeTrueLeverage = useMemo(() => {
+    if (!selectedPoint || !rangeEndPoint) return null;
+    return getTrueLeverageForRange(points, proxyPoints, selectedPoint.timestamp, rangeEndPoint.timestamp);
+  }, [points, proxyPoints, rangeEndPoint, selectedPoint]);
 
   const chart = useMemo(() => {
     if (points.length < 2) {
@@ -272,22 +342,71 @@ export default function InteractivePriceChartModal({
         </div>
 
         <div className="overflow-y-auto p-3 sm:p-5">
-          <div className="mb-4 flex gap-2 overflow-x-auto pb-1 sm:flex-wrap">
-            {timeframes.map(option => (
-              <button
-                type="button"
-                key={option}
-                onClick={() => setTimeframe(option)}
-                className="min-h-[40px] flex-shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition-all"
-                style={{
-                  backgroundColor: timeframe === option ? 'var(--accent)' : 'var(--surface-alt)',
-                  color: timeframe === option ? 'white' : 'var(--text-muted)',
-                  border: timeframe === option ? '1px solid var(--accent)' : '1px solid var(--border)',
-                }}
-              >
-                {option}
-              </button>
-            ))}
+          <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap lg:min-w-0">
+              {timeframes.map(option => (
+                <button
+                  type="button"
+                  key={option}
+                  onClick={() => setTimeframe(option)}
+                  className="min-h-[40px] flex-shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition-all"
+                  style={{
+                    backgroundColor: timeframe === option ? 'var(--accent)' : 'var(--surface-alt)',
+                    color: timeframe === option ? 'white' : 'var(--text-muted)',
+                    border: timeframe === option ? '1px solid var(--accent)' : '1px solid var(--border)',
+                  }}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+            <div
+              className="rounded-lg border px-3 py-2 text-xs lg:w-[340px] lg:flex-shrink-0"
+              style={{ backgroundColor: 'var(--surface-alt)', borderColor: 'var(--border)' }}
+              title="True Leverage compares the ETF's actual return to the proxy ETF's return over the same period. Because leveraged ETFs rebalance daily, realized leverage can differ materially over longer periods."
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>True Leverage</span>
+                {proxy.meaningful && normalizedProxyTicker && (
+                  <span className="font-mono text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                    {titleTicker} vs {normalizedProxyTicker}
+                  </span>
+                )}
+              </div>
+              {!proxy.meaningful ? (
+                <div className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Not meaningful for this exposure.</div>
+              ) : normalizedProxyTicker === requestedTicker ? (
+                <div className="mt-1 flex items-baseline justify-between gap-3">
+                  <span style={{ color: 'var(--text-muted)' }}>Base proxy ETF</span>
+                  <span className="font-mono text-sm font-semibold tabular-nums" style={{ color: 'var(--accent-light)' }}>1.00x</span>
+                </div>
+              ) : proxyLoading && !activeProxyData ? (
+                <div className="mt-1 flex items-center gap-2" style={{ color: 'var(--text-muted)' }}>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Loading proxy...
+                </div>
+              ) : proxyError ? (
+                <div className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Proxy data unavailable.</div>
+              ) : periodTrueLeverage.etfReturn == null || periodTrueLeverage.proxyReturn == null ? (
+                <div className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Not enough overlapping proxy data.</div>
+              ) : (
+                <>
+                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[11px] tabular-nums">
+                    <span style={{ color: chartColor(periodTrueLeverage.etfReturn * 100) }}>ETF {formatDecimalPercent(periodTrueLeverage.etfReturn)}</span>
+                    <span style={{ color: chartColor(periodTrueLeverage.proxyReturn * 100) }}>Proxy {formatDecimalPercent(periodTrueLeverage.proxyReturn)}</span>
+                  </div>
+                  <div className="mt-0.5 flex items-baseline justify-between gap-3">
+                    <span style={{ color: 'var(--text-muted)' }}>Realized multiple over {timeframe}</span>
+                    <span className="font-mono text-sm font-semibold tabular-nums" style={{ color: leverageColor(periodTrueLeverage) }}>
+                      {formatLeverage(periodTrueLeverage.leverage)}
+                    </span>
+                  </div>
+                  {periodTrueLeverage.directionDiverged && (
+                    <div className="mt-0.5 text-[11px]" style={{ color: 'var(--yellow)' }}>Direction diverged.</div>
+                  )}
+                </>
+              )}
+            </div>
           </div>
 
           {error ? (
@@ -335,6 +454,11 @@ export default function InteractivePriceChartModal({
                         Ann. Return: {formatPercent(activeAnnualizedReturn)}
                       </div>
                     )}
+                    {activeTrueLeverage && proxy.meaningful && normalizedProxyTicker !== requestedTicker && (
+                      <div className="text-xs font-mono tabular-nums" style={{ color: leverageColor(activeTrueLeverage) }}>
+                        True Lev: {formatLeverage(activeTrueLeverage.leverage)}
+                      </div>
+                    )}
                     <div className="text-xs" style={{ color: 'var(--text-muted)' }}>From baseline</div>
                   </div>
                   <div className="rounded-lg p-3" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
@@ -347,6 +471,14 @@ export default function InteractivePriceChartModal({
                         {isFiniteNumber(rangeAnnualizedReturn) && (
                           <div className="text-xs font-mono tabular-nums" style={{ color: chartColor(rangeAnnualizedReturn) }}>
                             Ann. Return: {formatPercent(rangeAnnualizedReturn)}
+                          </div>
+                        )}
+                        {rangeTrueLeverage && proxy.meaningful && normalizedProxyTicker !== requestedTicker && (
+                          <div className="text-xs font-mono tabular-nums" style={{ color: leverageColor(rangeTrueLeverage) }}>
+                            True Lev: {formatLeverage(rangeTrueLeverage.leverage)}
+                            <span className="ml-2" style={{ color: chartColor((rangeTrueLeverage.proxyReturn ?? 0) * 100) }}>
+                              Proxy {formatDecimalPercent(rangeTrueLeverage.proxyReturn)}
+                            </span>
                           </div>
                         )}
                         <div className="truncate text-xs" style={{ color: 'var(--text-muted)' }}>
