@@ -295,6 +295,11 @@ function formatCompactCurrency(value: number | null | undefined): string {
   return isFiniteNumber(value) ? formatCurrency(value, 0) : DASH;
 }
 
+function formatGroupPercentCaptured(group: Pick<PortfolioExposureGroup, 'premiumCollected' | 'totalGainLoss'>): string {
+  if (!isFiniteNumber(group.premiumCollected) || group.premiumCollected <= 0 || !isFiniteNumber(group.totalGainLoss)) return DASH;
+  return formatPercent(group.totalGainLoss / group.premiumCollected, 1);
+}
+
 function formatExposurePercent(value: number, total: number): string {
   return total > 0 ? formatPercent(value / total) : DASH;
 }
@@ -332,6 +337,7 @@ function CompactExposureBars({
               `Original AY: ${formatPctValue(group.originalAY)}`,
               `Weighted Avg Delta: ${formatDelta(group.weightedAverageDelta)}`,
               `Current AY: ${formatPctValue(group.currentAY)}`,
+              `% Captured: ${formatGroupPercentCaptured(group)}`,
             ].join('\n');
             return (
               <div key={group.key} title={tooltip}>
@@ -346,7 +352,7 @@ function CompactExposureBars({
                 </div>
                 <div className="flex justify-between gap-2 mt-1 text-[11px] leading-none" style={{ color: 'var(--text-dim)' }}>
                   <span>{group.tradeCount} trade{group.tradeCount === 1 ? '' : 's'}</span>
-                  <span className="truncate tabular-nums">Prem {formatCompactCurrency(group.premiumCollected)} · Net {formatCompactCurrency(group.netCapitalAtRisk)} · Δ {formatDelta(group.weightedAverageDelta)} · Cur AY {formatPctValue(group.currentAY)}</span>
+                  <span className="truncate tabular-nums">Prem {formatCompactCurrency(group.premiumCollected)} · Captured {formatGroupPercentCaptured(group)} · Δ {formatDelta(group.weightedAverageDelta)} · Cur AY {formatPctValue(group.currentAY)}</span>
                 </div>
               </div>
             );
@@ -472,7 +478,7 @@ function ConcentrationBars({
                 </div>
                 <div className="flex justify-between gap-2 mt-1 text-[11px] leading-none" style={{ color: 'var(--text-dim)' }}>
                   <span>{formatPctValue(percentOfTotal(group.grossRisk, totalGrossRisk))}</span>
-                  <span className="truncate tabular-nums">{group.tradeCount} trades - Net {formatCompactCurrency(group.netCapitalAtRisk)} · Δ {formatDelta(group.weightedAverageDelta)} · Cur AY {formatPctValue(group.currentAY)}</span>
+                  <span className="truncate tabular-nums">{group.tradeCount} trades · Captured {formatGroupPercentCaptured(group)} · Δ {formatDelta(group.weightedAverageDelta)} · Cur AY {formatPctValue(group.currentAY)}</span>
                 </div>
               </div>
             );
@@ -565,6 +571,7 @@ function groupTooltip(group: PortfolioExposureGroup): string {
     `Underlying Eq.: ${formatCurrency(group.underlyingEquivalentExposure, 0)}`,
     `Weighted Avg Delta: ${formatDelta(group.weightedAverageDelta)}`,
     `Current AY: ${formatPctValue(group.currentAY)}`,
+    `% Captured: ${formatGroupPercentCaptured(group)}`,
     `Trades: ${group.tradeCount}`,
   ].join('\n');
 }
