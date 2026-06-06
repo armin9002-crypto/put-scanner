@@ -88,39 +88,59 @@ export function analyzeRegime(rows: EtfPulseRow[], fetchedAt: number | null): Re
   ];
 
   const marketRead = label === 'Complacent Risk-On'
-    ? 'SPY and QQQ are in strong uptrends, breadth is healthy, and major benchmarks are extended toward the upper part of their 52-week ranges. That supports risk assets, but it can also compress put premium unless volatility is elevated.'
+    ? 'Risk assets are trending well, but extension and low volatility can make put premiums less attractive.'
     : label === 'Healthy Risk-On'
-      ? 'Trend and breadth are supportive without an obvious panic or extension signal. This is a constructive environment, but bid quality and cushion still determine whether a put is worth selling.'
+      ? 'Trend and breadth are supportive, with no obvious stress signal.'
       : label === 'Healthy Pullback'
-        ? 'The long-term trend is still intact, but short-term weakness has reset some names. This is often a better setup than chasing fully extended strength, provided the pullback is controlled.'
+        ? 'Trend remains intact while short-term weakness has reset some premium and entry levels.'
         : label === 'Choppy / Elevated Vol'
-          ? 'The tape is mixed and realized volatility is elevated. Premiums may be better, but the chance of fast adverse moves is higher.'
+          ? 'Trend is mixed and realized volatility is elevated. Premiums may improve, but adverse moves can happen quickly.'
           : label === 'Risk-Off'
-            ? 'Trend damage is broad enough that new short puts should be treated defensively. Yield may be rising because risk is rising.'
+            ? 'Breadth and trend are weak. High yields are likely compensation for real drawdown risk.'
             : label === 'Oversold Panic'
-              ? 'Many names are oversold with elevated volatility. Premium can look attractive, but assignment and gap risk are unusually high.'
-              : 'The cached technical picture is mixed. There is no obvious market-wide put-selling edge.';
+              ? 'Oversold conditions can improve premiums, but assignment and gap risk are elevated.'
+              : 'Signals are not decisive. The environment does not offer a clear broad-market edge.';
 
   const putSellingImplication = label === 'Complacent Risk-On'
-    ? 'Do not chase low-premium puts just because the trend is strong. Favor wider cushions, smaller size, and pullbacks with still-healthy long-term trend support.'
+    ? 'Be selective. Do not sell low-premium puts just because the tape is strong.'
     : label === 'Healthy Risk-On'
-      ? 'Balanced put selling can make sense, especially in liquid underlyings with clean trend support and enough bid-side yield.'
+      ? 'Balanced put-selling environment, but still require cushion and liquidity.'
       : label === 'Healthy Pullback'
-        ? 'Favor above-200D names where RSI has reset and premium improved. Avoid assuming every dip is automatically safe.'
+        ? 'This can be a better put-selling setup if the underlying remains above key trend levels.'
         : label === 'Choppy / Elevated Vol'
-          ? 'Require extra cushion, smaller size, tighter spreads, and avoid weak underlyings below their 200D average.'
+          ? 'Use smaller size, wider cushions, and stricter liquidity filters.'
           : label === 'Risk-Off'
-            ? 'Prioritize portfolio defense over new premium. Only consider very wide, liquid, small-size trades or explicitly speculative setups.'
+            ? 'Prioritize defense over new premium. Only sell puts with very wide cushions or clear tactical intent.'
             : label === 'Oversold Panic'
-              ? 'Rich premiums are compensation for real downside risk. Treat new trades as tactical and size accordingly.'
-              : 'Use tighter rules, demand clear compensation, and wait when setups are marginal.';
+              ? 'Premiums can be rich, but treat new trades as tactical and size for gap risk.'
+              : 'Be selective and let individual ETF setup quality drive decisions.';
 
   const favor = label === 'Complacent Risk-On'
-    ? ['strong trend plus modest pullback', 'above 200D with RSI not extreme', 'liquid chains with real bid', 'wider cushion over headline yield']
-    : ['above 200D underlyings', 'acceptable spreads and OI', 'bid-based annualized yield with real cushion', 'portfolio diversification'];
+    ? ['healthy pullbacks', 'strong trends', 'wider cushions', 'liquid chains']
+    : label === 'Choppy / Elevated Vol'
+      ? ['above-200D setups', 'RSI resets', 'tight spreads', 'lower delta']
+      : label === 'Risk-Off'
+        ? ['cash', 'smaller size', 'very low delta', 'strongest underlyings']
+        : label === 'Healthy Pullback'
+          ? ['RSI 35-55', 'above 200D', 'reasonable spread', '25-35% cushion']
+          : label === 'Healthy Risk-On'
+            ? ['clean trends', 'moderate deltas', 'liquid expirations', 'portfolio diversification']
+            : label === 'Oversold Panic'
+              ? ['small tactical size', 'very wide cushion', 'liquid chains', 'clear assignment plan']
+              : ['clean single-name setups', 'high liquidity', 'wider cushions', 'patient entries'];
   const avoid = label === 'Complacent Risk-On'
-    ? ['low-premium puts with poor compensation', 'extended ETFs near highs with compressed vol', 'falling knives with high headline yield', 'already concentrated exposures']
-    : ['wide spreads', 'no-bid contracts', 'broken downtrends unless speculative', 'adding to concentrated ticker risk'];
+    ? ['chasing extended ETFs', 'low-yield contracts', 'crowded portfolio exposures', 'thin compensation']
+    : label === 'Choppy / Elevated Vol'
+      ? ['weak underlyings below 200D', 'wide spreads', 'high-yield falling knives', 'oversized trades']
+      : label === 'Risk-Off'
+        ? ['broken trends', 'high-beta leverage', 'near-the-money puts', 'headline yield traps']
+        : label === 'Healthy Pullback'
+          ? ['breaks below 200D', 'severe drawdown acceleration', 'illiquid strikes', 'assuming every dip is safe']
+          : label === 'Healthy Risk-On'
+            ? ['overconcentration', 'low premium', 'illiquid strikes', 'poor cushion']
+            : label === 'Oversold Panic'
+              ? ['near-the-money puts', 'oversized risk', 'unplanned assignment', 'illiquid panic premium']
+              : ['forcing trades', 'weak liquidity', 'unclear technicals', 'marginal compensation'];
 
   return {
     label,

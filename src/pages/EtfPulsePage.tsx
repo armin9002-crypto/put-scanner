@@ -192,17 +192,71 @@ function Badge({ children }: { children: string }) {
   );
 }
 
-function marketBadgeStyle(label: string): { color: string; bg: string; border: string } {
-  if (label.includes('Risk-On') || label === 'Balanced') return { color: 'var(--green)', bg: 'rgba(34,197,94,0.10)', border: 'rgba(34,197,94,0.25)' };
-  if (label.includes('Healthy') || label === 'Opportunistic') return { color: 'var(--accent-light)', bg: 'var(--accent-bg)', border: 'var(--accent-border)' };
-  if (label.includes('Choppy') || label.includes('Pullback') || label === 'Defensive') return { color: 'var(--yellow)', bg: 'rgba(250,204,21,0.10)', border: 'rgba(250,204,21,0.25)' };
-  if (label.includes('Risk') || label.includes('Panic') || label === 'Very Defensive') return { color: 'var(--red)', bg: 'rgba(239,68,68,0.10)', border: 'rgba(239,68,68,0.25)' };
+function marketBadgeStyle(label: string, tone: 'regime' | 'confidence' | 'posture' = 'regime'): { color: string; bg: string; border: string } {
+  if (tone === 'confidence') return { color: 'var(--text-muted)', bg: 'var(--surface-alt)', border: 'var(--border)' };
+  if (tone === 'posture') {
+    if (label === 'Balanced') return { color: 'var(--accent-light)', bg: 'var(--accent-bg)', border: 'var(--accent-border)' };
+    if (label === 'Selective / Patient') return { color: 'var(--yellow)', bg: 'rgba(250,204,21,0.10)', border: 'rgba(250,204,21,0.25)' };
+    if (label === 'Defensive') return { color: 'var(--orange)', bg: 'rgba(251,146,60,0.10)', border: 'rgba(251,146,60,0.25)' };
+    if (label === 'Very Defensive') return { color: 'var(--red)', bg: 'rgba(239,68,68,0.10)', border: 'rgba(239,68,68,0.25)' };
+    if (label === 'Opportunistic') return { color: 'var(--green)', bg: 'rgba(34,197,94,0.10)', border: 'rgba(34,197,94,0.25)' };
+  }
+  if (label.includes('Risk-On')) return { color: 'var(--green)', bg: 'rgba(34,197,94,0.10)', border: 'rgba(34,197,94,0.22)' };
+  if (label.includes('Healthy')) return { color: 'var(--accent-light)', bg: 'var(--accent-bg)', border: 'var(--accent-border)' };
+  if (label.includes('Choppy') || label.includes('Pullback')) return { color: 'var(--yellow)', bg: 'rgba(250,204,21,0.10)', border: 'rgba(250,204,21,0.22)' };
+  if (label.includes('Risk') || label.includes('Panic')) return { color: 'var(--red)', bg: 'rgba(239,68,68,0.10)', border: 'rgba(239,68,68,0.24)' };
   return { color: 'var(--text-muted)', bg: 'var(--surface-alt)', border: 'var(--border)' };
 }
 
-function MarketBadge({ label }: { label: string }) {
-  const style = marketBadgeStyle(label);
+function MarketBadge({ label, tone = 'regime' }: { label: string; tone?: 'regime' | 'confidence' | 'posture' }) {
+  const style = marketBadgeStyle(label, tone);
   return <span className="inline-flex rounded px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap" style={{ color: style.color, backgroundColor: style.bg, border: `1px solid ${style.border}` }}>{label}</span>;
+}
+
+function pctText(value: number | null | undefined, decimals = 0): string {
+  return isFiniteNumber(value) ? formatPercent(value, decimals) : DASH;
+}
+
+function buildMarketReadRibbonCopy(regime: RegimeAnalysis, posture: TradePosture): { read: string; bias: string } {
+  const stats = regime.stats;
+  const elevatedRv = (stats.medianRealizedVolatility20 ?? 0) >= 0.55;
+  const weakBreadth = (stats.breadthAbove200 ?? 1) < 0.5;
+  const extended = (stats.qqqPosition52Week ?? 0) >= 0.9 || stats.overboughtCount >= 5;
+  const oversold = stats.oversoldCount >= 5;
+
+  const read = regime.label === 'Complacent Risk-On'
+    ? extended
+      ? 'Trend strong, but extension and lower margin of safety argue against chasing thin premium.'
+      : 'Breadth is supportive, but avoid chasing strong ETFs unless bid yield justifies the risk.'
+    : regime.label === 'Choppy / Elevated Vol'
+      ? elevatedRv
+        ? 'Mixed tape and elevated RV argue for wider strikes, smaller size, and cleaner liquidity.'
+        : 'Mixed tape makes ETF selection more important than broad-market direction.'
+      : regime.label === 'Risk-Off'
+        ? weakBreadth
+          ? 'Weak breadth means high yields may reflect real downside risk, not free premium.'
+          : 'Trend damage keeps assignment quality more important than headline yield.'
+        : regime.label === 'Oversold Panic'
+          ? oversold
+            ? 'Oversold conditions can lift premium, but assignment and gap risk are elevated.'
+            : 'Panic-like volatility can make bids look attractive; size and cushion matter first.'
+          : regime.label === 'Healthy Pullback'
+            ? 'Trend remains intact while short-term weakness may improve entry premium.'
+            : regime.label === 'Healthy Risk-On'
+              ? 'Breadth and trend are supportive; still require liquidity, cushion, and fair bid yield.'
+              : 'Signals are mixed; let individual ETF setup quality drive decisions.';
+
+  const bias = posture.label === 'Selective / Patient'
+    ? 'Bias: patience · wider cushions · healthy pullbacks'
+    : posture.label === 'Balanced'
+      ? 'Bias: clean trends · moderate delta · liquid strikes'
+      : posture.label === 'Opportunistic'
+        ? 'Bias: RSI resets · above 200D · controlled pullbacks'
+        : posture.label === 'Very Defensive'
+          ? 'Bias: very low delta · small size · strongest underlyings'
+          : 'Bias: smaller size · wider strikes · avoid weak 200D trends';
+
+  return { read, bias };
 }
 
 function MarketReadStrip({
@@ -219,31 +273,39 @@ function MarketReadStrip({
   if (unavailable || !regime || !posture) {
     return (
       <div className="rounded-lg px-3 py-2 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-        <div className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Market Read</div>
-        <div className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>Unavailable - load ETF Pulse data.</div>
+        <div className="flex items-center gap-2">
+          <div className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Market Read</div>
+          <div className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>Unavailable - load ETF Pulse data.</div>
+        </div>
       </div>
     );
   }
 
+  const copy = buildMarketReadRibbonCopy(regime, posture);
+
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="rounded-lg px-3 py-2 min-w-0 text-left transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-400/40"
-      style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
-    >
-      <div className="flex items-center gap-1.5 min-w-0">
-        <span className="text-[10px] font-semibold uppercase tracking-wider flex-shrink-0" style={{ color: 'var(--text-dim)' }}>Market Read</span>
-        <div className="flex items-center gap-1 overflow-hidden">
-          <MarketBadge label={regime.label} />
-          <MarketBadge label={`${regime.confidence} confidence`} />
-          <MarketBadge label={posture.label} />
+    <div className="rounded-lg px-3 py-2 min-w-0" style={{ backgroundColor: 'rgba(15,23,42,0.18)', border: '1px solid var(--border)' }}>
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(230px,auto)_minmax(0,1fr)_minmax(230px,auto)_auto] gap-2 lg:items-center">
+        <div className="min-w-0">
+          <div className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--text-dim)' }}>Market Read</div>
+          <div className="flex flex-wrap items-center gap-1">
+            <MarketBadge label={regime.label} />
+            <MarketBadge label={`${regime.confidence} confidence`} tone="confidence" />
+            <MarketBadge label={posture.label} tone="posture" />
+          </div>
         </div>
+        <p className="text-xs leading-5 min-w-0 lg:truncate" style={{ color: 'var(--text-secondary)' }}>{copy.read}</p>
+        <p className="text-[11px] leading-5 min-w-0 lg:text-right lg:truncate" style={{ color: 'var(--text-muted)' }}>{copy.bias}</p>
+        <button
+          type="button"
+          onClick={onOpen}
+          className="justify-self-start lg:justify-self-end rounded px-2 py-1 text-[11px] font-semibold min-h-[30px] transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-400/40"
+          style={{ backgroundColor: 'var(--surface)', color: 'var(--accent-light)', border: '1px solid var(--border)' }}
+        >
+          Details
+        </button>
       </div>
-      <p className="mt-1 text-[11px] leading-4 truncate" style={{ color: 'var(--text-muted)' }}>
-        {regime.putSellingImplication}
-      </p>
-    </button>
+    </div>
   );
 }
 
@@ -257,8 +319,8 @@ function MarketReadModal({ regime, posture, onClose }: { regime: RegimeAnalysis;
             <div className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--text-dim)' }}>Market Read</div>
             <div className="flex flex-wrap items-center gap-1.5">
               <MarketBadge label={regime.label} />
-              <MarketBadge label={`${regime.confidence} confidence`} />
-              <MarketBadge label={posture.label} />
+              <MarketBadge label={`${regime.confidence} confidence`} tone="confidence" />
+              <MarketBadge label={posture.label} tone="posture" />
             </div>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg p-2 min-h-[40px] min-w-[40px] inline-flex items-center justify-center" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
@@ -273,6 +335,18 @@ function MarketReadModal({ regime, posture, onClose }: { regime: RegimeAnalysis;
           <section>
             <h3 className="text-xs font-semibold mb-1" style={{ color: 'var(--text)' }}>What this means for selling puts</h3>
             <p className="leading-6" style={{ color: 'var(--text-secondary)' }}>{regime.putSellingImplication}</p>
+          </section>
+          <section className="rounded-lg p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+            <h3 className="text-xs font-semibold mb-2" style={{ color: 'var(--text)' }}>Key drivers</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>
+              <div>SPY: {regime.stats.spyTrend}</div>
+              <div>QQQ: {regime.stats.qqqTrend}</div>
+              <div>Above 200D: {pctText(regime.stats.breadthAbove200)}</div>
+              <div>Oversold: {regime.stats.oversoldCount}</div>
+              <div>Median 30D: {pctText(regime.stats.medianThirtyDayReturn, 1)}</div>
+              <div>Median 20D RV: {pctText(regime.stats.medianRealizedVolatility20, 1)}</div>
+              {(regime.stats.vixTrend || regime.stats.vxnTrend) && <div className="sm:col-span-2">Vol proxies: VIX {regime.stats.vixTrend ?? DASH} · VXN {regime.stats.vxnTrend ?? DASH}</div>}
+            </div>
           </section>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <MarketReadList title="Favor" items={regime.favor} />
@@ -750,7 +824,7 @@ export default function EtfPulsePage() {
     <div className="etf-pulse-page min-h-[calc(100dvh-2.75rem)]" style={{ backgroundColor: 'var(--bg)' }}>
       <div className="max-w-[1800px] mx-auto px-2 sm:px-4 lg:px-6 py-2 sm:py-3">
         <div className="etf-pulse-controls flex-shrink-0 -mx-2 sm:-mx-4 lg:-mx-6 px-2 sm:px-4 lg:px-6 pb-2 mb-2" style={{ backgroundColor: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
-          <div className="grid grid-cols-1 xl:grid-cols-[minmax(260px,0.8fr)_minmax(320px,1.35fr)_auto] xl:items-start gap-2 mb-2">
+          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-2 mb-2">
             <div className="min-w-0">
               <h1 className="text-xl sm:text-2xl font-bold tracking-tight flex items-center gap-2" style={{ color: 'var(--text)' }}>
                 <Activity className="w-5 h-5" style={{ color: 'var(--accent-light)' }} /> ETF Pulse
@@ -758,8 +832,7 @@ export default function EtfPulsePage() {
               <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Underlying momentum, trend, and drawdown map across the scanner universe.</p>
               <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-dim)' }}>Daily price history only. Indicators are calculated from cached daily closes.</p>
             </div>
-            <MarketReadStrip regime={regime} posture={posture} unavailable={rows.length === 0} onOpen={() => setShowMarketRead(true)} />
-            <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+            <div className="flex flex-wrap items-center gap-2 lg:justify-end">
               <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>
                 {result ? `Last updated: ${new Date(result.fetchedAt).toLocaleString()}` : loading ? `Loading ${progress.loaded} / ${progress.total} ETFs...` : 'Not loaded yet'}
               </span>
@@ -773,6 +846,9 @@ export default function EtfPulsePage() {
                 <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
               </button>
             </div>
+          </div>
+          <div className="mb-2">
+            <MarketReadStrip regime={regime} posture={posture} unavailable={rows.length === 0} onOpen={() => setShowMarketRead(true)} />
           </div>
 
           {error && (
