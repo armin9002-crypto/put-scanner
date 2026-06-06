@@ -330,10 +330,12 @@ function CompactExposureBars({
               `Premium: ${formatCurrency(group.premiumCollected, 0)}`,
               `Trades: ${group.tradeCount}`,
               `Original AY: ${formatPctValue(group.originalAY)}`,
+              `Weighted Avg Delta: ${formatDelta(group.weightedAverageDelta)}`,
+              `Current AY: ${formatPctValue(group.currentAY)}`,
             ].join('\n');
             return (
               <div key={group.key} title={tooltip}>
-                <div className="flex items-center justify-between gap-2 text-[11px] mb-1">
+                <div className="flex items-center justify-between gap-2 text-[12px] leading-none mb-1">
                   <span className="font-medium truncate" style={{ color: 'var(--text)' }}>{labelFormatter(group.label)}</span>
                   <span className="font-mono tabular-nums flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>
                     {formatCompactCurrency(group.grossRisk)} <span style={{ color: 'var(--text-dim)' }}>{formatExposurePercent(group.grossRisk, totalGrossRisk)}</span>
@@ -342,9 +344,9 @@ function CompactExposureBars({
                 <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--surface-alt)' }}>
                   <div className="h-full rounded-full" style={{ width: `${width}%`, backgroundColor: 'var(--accent)' }} />
                 </div>
-                <div className="flex justify-between gap-2 mt-1 text-[10px]" style={{ color: 'var(--text-dim)' }}>
+                <div className="flex justify-between gap-2 mt-1 text-[11px] leading-none" style={{ color: 'var(--text-dim)' }}>
                   <span>{group.tradeCount} trade{group.tradeCount === 1 ? '' : 's'}</span>
-                  <span className="truncate">Prem {formatCompactCurrency(group.premiumCollected)} · Net {formatCompactCurrency(group.netCapitalAtRisk)}</span>
+                  <span className="truncate tabular-nums">Prem {formatCompactCurrency(group.premiumCollected)} · Net {formatCompactCurrency(group.netCapitalAtRisk)} · Δ {formatDelta(group.weightedAverageDelta)} · Cur AY {formatPctValue(group.currentAY)}</span>
                 </div>
               </div>
             );
@@ -381,12 +383,12 @@ function NeedsAttentionList({
               <div key={trade.id} className="grid grid-cols-[minmax(88px,1fr)_auto] gap-2 rounded px-2 py-1.5" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <button onClick={() => onTickerClick(trade.ticker)} className="font-mono text-xs font-bold truncate underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</button>
-                    <button onClick={() => onDetailsClick(trade)} className="font-mono text-xs truncate underline-offset-2 hover:underline" style={{ color: 'var(--text)' }}>{formatCurrency(trade.strike, 0)} Put</button>
+                    <button onClick={() => onTickerClick(trade.ticker)} className="font-mono text-[13px] leading-none font-bold truncate underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</button>
+                    <button onClick={() => onDetailsClick(trade)} className="font-mono text-[13px] leading-none truncate underline-offset-2 hover:underline" style={{ color: 'var(--text)' }}>{formatCurrency(trade.strike, 0)} Put</button>
                   </div>
-                  <div className="text-[10px] truncate" style={{ color: 'var(--text-dim)' }}>{expiryLabel(trade.expiration)} · {formatDteValue(calculateRemainingDte(trade))}</div>
+                  <div className="text-[11px] leading-none truncate mt-1" style={{ color: 'var(--text-dim)' }}>{expiryLabel(trade.expiration)} · {formatDteValue(calculateRemainingDte(trade))}</div>
                 </div>
-                <div className="text-right font-mono text-[10px] tabular-nums">
+                <div className="text-right font-mono text-[11px] leading-none tabular-nums space-y-0.5">
                   <div style={{ color: percentColor(beDistance) }}>BE {formatPctValue(beDistance)}</div>
                   <div style={{ color: percentColor(strikeDistance) }}>Strike {formatPctValue(strikeDistance)}</div>
                   <div style={{ color: 'var(--text-muted)' }}>{formatCompactCurrency(getTradeGrossRisk(trade))}</div>
@@ -417,11 +419,11 @@ function CloseCandidatesCard({ candidates, onTickerClick }: { candidates: CloseC
           {candidates.map(candidate => (
             <div key={candidate.trade.id} className="rounded px-2 py-1.5" title={candidate.reasons.join(', ')} style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
               <div className="grid grid-cols-[minmax(88px,1fr)_auto_auto] gap-2 items-baseline">
-                <button onClick={() => onTickerClick(candidate.trade.ticker)} className="text-left font-mono text-xs font-bold truncate underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{candidate.trade.ticker}</button>
-                <span className="font-mono text-[11px] tabular-nums" style={{ color: pnlColor(candidate.percentCaptured) }}>{formatPctValue(candidate.percentCaptured)}</span>
-                <span className="font-mono text-[11px] tabular-nums" style={{ color: 'var(--text-secondary)' }}>{formatCurrency(candidate.remainingPremium, 0)}</span>
+                <button onClick={() => onTickerClick(candidate.trade.ticker)} className="text-left font-mono text-[13px] leading-none font-bold truncate underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{candidate.trade.ticker}</button>
+                <span className="font-mono text-[12px] leading-none tabular-nums" style={{ color: pnlColor(candidate.percentCaptured) }}>{formatPctValue(candidate.percentCaptured)}</span>
+                <span className="font-mono text-[12px] leading-none tabular-nums" style={{ color: 'var(--text-secondary)' }}>{formatCurrency(candidate.remainingPremium, 0)}</span>
               </div>
-              <div className="grid grid-cols-[minmax(88px,1fr)_auto_auto] gap-2 text-[10px] mt-0.5" style={{ color: 'var(--text-dim)' }}>
+              <div className="grid grid-cols-[minmax(88px,1fr)_auto_auto] gap-2 text-[11px] leading-none mt-1" style={{ color: 'var(--text-dim)' }}>
                 <span className="truncate">{expiryLabel(candidate.trade.expiration)} {formatCurrency(candidate.trade.strike, 0)} Put</span>
                 <span className="font-mono tabular-nums">{formatPctValue(candidate.currentAnnualizedYield)} AY</span>
                 <span className="font-mono tabular-nums">{formatDteValue(candidate.dte)}</span>
@@ -461,16 +463,16 @@ function ConcentrationBars({
             const width = max > 0 ? Math.max(4, group.grossRisk / max * 100) : 0;
             return (
               <div key={group.key} title={groupTooltip(group)}>
-                <div className="flex items-center justify-between gap-2 text-[11px] mb-1">
+                <div className="flex items-center justify-between gap-2 text-[12px] leading-none mb-1">
                   <span className="font-medium truncate" style={{ color: 'var(--text)' }}>{group.label}</span>
                   <span className="font-mono tabular-nums flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>{formatCompactCurrency(group.grossRisk)}</span>
                 </div>
                 <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--surface-alt)' }}>
                   <div className="h-full rounded-full" style={{ width: `${width}%`, backgroundColor: 'var(--accent)' }} />
                 </div>
-                <div className="flex justify-between gap-2 mt-1 text-[10px]" style={{ color: 'var(--text-dim)' }}>
+                <div className="flex justify-between gap-2 mt-1 text-[11px] leading-none" style={{ color: 'var(--text-dim)' }}>
                   <span>{formatPctValue(percentOfTotal(group.grossRisk, totalGrossRisk))}</span>
-                  <span className="truncate">{group.tradeCount} trades - Net {formatCompactCurrency(group.netCapitalAtRisk)}</span>
+                  <span className="truncate tabular-nums">{group.tradeCount} trades - Net {formatCompactCurrency(group.netCapitalAtRisk)} · Δ {formatDelta(group.weightedAverageDelta)} · Cur AY {formatPctValue(group.currentAY)}</span>
                 </div>
               </div>
             );
@@ -561,6 +563,8 @@ function groupTooltip(group: PortfolioExposureGroup): string {
     `Total Gain/Loss: ${formatCurrency(group.totalGainLoss, 0)}`,
     `Delta Exposure: ${formatSignedNumber(group.deltaExposure)}`,
     `Underlying Eq.: ${formatCurrency(group.underlyingEquivalentExposure, 0)}`,
+    `Weighted Avg Delta: ${formatDelta(group.weightedAverageDelta)}`,
+    `Current AY: ${formatPctValue(group.currentAY)}`,
     `Trades: ${group.tradeCount}`,
   ].join('\n');
 }
