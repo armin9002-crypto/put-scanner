@@ -272,7 +272,7 @@ function MarketReadStrip({
 }) {
   if (unavailable || !regime || !posture) {
     return (
-      <div className="rounded-lg px-3 py-2 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <div className="rounded-lg px-2.5 py-1.5 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
         <div className="flex items-center gap-2">
           <div className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Market Read</div>
           <div className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>Unavailable - load ETF Pulse data.</div>
@@ -284,22 +284,22 @@ function MarketReadStrip({
   const copy = buildMarketReadRibbonCopy(regime, posture);
 
   return (
-    <div className="rounded-lg px-3 py-2 min-w-0" style={{ backgroundColor: 'rgba(15,23,42,0.18)', border: '1px solid var(--border)' }}>
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(230px,auto)_minmax(0,1fr)_minmax(230px,auto)_auto] gap-2 lg:items-center">
-        <div className="min-w-0">
-          <div className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--text-dim)' }}>Market Read</div>
-          <div className="flex flex-wrap items-center gap-1">
+    <div className="rounded-lg px-2.5 py-1.5 min-w-0" style={{ backgroundColor: 'rgba(15,23,42,0.18)', border: '1px solid var(--border)' }}>
+      <div className="grid grid-cols-1 lg:grid-cols-[auto_minmax(0,1fr)_minmax(210px,auto)_auto] gap-x-3 gap-y-1 lg:items-center">
+        <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+          <span className="text-[10px] font-semibold uppercase tracking-wider flex-shrink-0" style={{ color: 'var(--text-dim)' }}>Market Read</span>
+          <div className="flex flex-wrap items-center gap-1 min-w-0">
             <MarketBadge label={regime.label} />
             <MarketBadge label={`${regime.confidence} confidence`} tone="confidence" />
             <MarketBadge label={posture.label} tone="posture" />
           </div>
         </div>
-        <p className="text-xs leading-5 min-w-0 lg:truncate" style={{ color: 'var(--text-secondary)' }}>{copy.read}</p>
-        <p className="text-[11px] leading-5 min-w-0 lg:text-right lg:truncate" style={{ color: 'var(--text-muted)' }}>{copy.bias}</p>
+        <p className="text-xs leading-4 min-w-0 lg:truncate" style={{ color: 'var(--text-secondary)' }}>{copy.read}</p>
+        <p className="text-[11px] leading-4 min-w-0 lg:text-right lg:truncate" style={{ color: 'var(--text-muted)' }}>{copy.bias}</p>
         <button
           type="button"
           onClick={onOpen}
-          className="justify-self-start lg:justify-self-end rounded px-2 py-1 text-[11px] font-semibold min-h-[30px] transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-400/40"
+          className="justify-self-start lg:justify-self-end rounded px-2 py-0.5 text-[11px] font-semibold min-h-[26px] transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-400/40"
           style={{ backgroundColor: 'var(--surface)', color: 'var(--accent-light)', border: '1px solid var(--border)' }}
         >
           Details
@@ -822,17 +822,17 @@ export default function EtfPulsePage() {
 
   return (
     <div className="etf-pulse-page min-h-[calc(100dvh-2.75rem)]" style={{ backgroundColor: 'var(--bg)' }}>
-      <div className="max-w-[1800px] mx-auto px-2 sm:px-4 lg:px-6 py-2 sm:py-3">
-        <div className="etf-pulse-controls flex-shrink-0 -mx-2 sm:-mx-4 lg:-mx-6 px-2 sm:px-4 lg:px-6 pb-2 mb-2" style={{ backgroundColor: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
-          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-2 mb-2">
+      <div className="max-w-[1800px] mx-auto px-2 sm:px-4 lg:px-6 py-1.5 sm:py-2">
+        <div className="etf-pulse-controls flex-shrink-0 -mx-2 sm:-mx-4 lg:-mx-6 px-2 sm:px-4 lg:px-6 pb-1.5 mb-2" style={{ backgroundColor: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
+          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-1.5 mb-1.5">
             <div className="min-w-0">
-              <h1 className="text-xl sm:text-2xl font-bold tracking-tight flex items-center gap-2" style={{ color: 'var(--text)' }}>
+              <h1 className="text-xl sm:text-2xl font-bold tracking-tight leading-none flex items-center gap-2" style={{ color: 'var(--text)' }}>
                 <Activity className="w-5 h-5" style={{ color: 'var(--accent-light)' }} /> ETF Pulse
               </h1>
-              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Underlying momentum, trend, and drawdown map across the scanner universe.</p>
-              <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-dim)' }}>Daily price history only. Indicators are calculated from cached daily closes.</p>
+              <p className="text-xs mt-1 leading-none" style={{ color: 'var(--text-muted)' }}>Underlying momentum, trend, and drawdown map across the scanner universe.</p>
+              <p className="text-[10px] mt-1 leading-none" style={{ color: 'var(--text-dim)' }}>Daily price history only. Indicators are calculated from cached daily closes.</p>
             </div>
-            <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+            <div className="flex flex-wrap items-center gap-1.5 lg:justify-end">
               <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>
                 {result ? `Last updated: ${new Date(result.fetchedAt).toLocaleString()}` : loading ? `Loading ${progress.loaded} / ${progress.total} ETFs...` : 'Not loaded yet'}
               </span>
@@ -847,7 +847,7 @@ export default function EtfPulsePage() {
               </button>
             </div>
           </div>
-          <div className="mb-2">
+          <div className="mb-1.5">
             <MarketReadStrip regime={regime} posture={posture} unavailable={rows.length === 0} onOpen={() => setShowMarketRead(true)} />
           </div>
 
@@ -861,8 +861,8 @@ export default function EtfPulsePage() {
               <AlertTriangle className="w-3.5 h-3.5" /> Loaded {result.loaded} of {result.total} ETFs. {result.failed} failed.
             </div>
           )}
-          <div className="rounded-lg p-2" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(180px,1fr)_160px_180px_190px] gap-2">
+          <div className="rounded-lg p-1.5" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(180px,1fr)_160px_180px_190px] gap-1.5">
               <input
                 value={search}
                 onChange={event => setSearch(event.target.value)}
