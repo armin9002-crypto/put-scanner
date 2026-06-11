@@ -81,6 +81,10 @@ function getDefaultSoldPrice(option: OptionDetail): number | null {
   return null;
 }
 
+function isUsableLastPrice(value: number | null | undefined): value is number {
+  return isFiniteNumber(value) && value > 0;
+}
+
 function calendarDayDiff(timestamp: number, now = Date.now()): number {
   const tradeDate = new Date(timestamp);
   const currentDate = new Date(now);
@@ -93,6 +97,14 @@ function formatTradeTime(timestamp: number): string {
   return new Date(timestamp).toLocaleTimeString('en-US', {
     hour: 'numeric',
     minute: '2-digit',
+  });
+}
+
+function formatTradeDate(timestamp: number): string {
+  return new Date(timestamp).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
   });
 }
 
@@ -114,6 +126,28 @@ function getLastTradeInfo(value: number | null | undefined): { trade: string; ag
     return { trade: `${dayDiff}d ago`, age: `${dayDiff}d ago - Stale`, color: 'var(--yellow)' };
   }
   return { trade: `${dayDiff}d ago`, age: `${dayDiff}d ago - Very Stale`, color: 'var(--red)' };
+}
+
+function getLastTradeDetail(value: number | null | undefined): { trade: string; date: string; age: string; warning: string | null; color?: string } {
+  const timestamp = normalizeTimestampMs(value);
+  if (timestamp == null) return { trade: '\u2014', date: '\u2014', age: '\u2014', warning: null };
+
+  const legacyInfo = getLastTradeInfo(value);
+  const dayDiff = calendarDayDiff(timestamp);
+  const date = formatTradeDate(timestamp);
+  if (dayDiff === 0) {
+    return { trade: legacyInfo.trade, date, age: 'Today', warning: null, color: 'var(--green)' };
+  }
+  if (dayDiff === 1) {
+    return { trade: legacyInfo.trade, date, age: 'Yesterday', warning: null, color: 'var(--text-muted)' };
+  }
+  if (dayDiff <= 2) {
+    return { trade: legacyInfo.trade, date, age: `${dayDiff}d ago`, warning: null, color: 'var(--text-muted)' };
+  }
+  if (dayDiff <= 7) {
+    return { trade: legacyInfo.trade, date, age: `${dayDiff}d ago - Stale`, warning: 'Last may be stale; check Last Trade Date.', color: 'var(--yellow)' };
+  }
+  return { trade: legacyInfo.trade, date, age: `${dayDiff}d ago - Very Stale`, warning: 'Last trade is very stale; use bid/ask with extra care.', color: 'var(--red)' };
 }
 
 function MetricCard({ label, value, color = 'var(--text)' }: { label: string; value: string; color?: string }) {
@@ -177,7 +211,8 @@ export default function OptionDetailDrawer({
   const mid = getMidPrice(option);
   const spread = calculateBidAskSpread(bid, ask);
   const spreadPct = calculateBidAskSpreadPercent(bid, ask);
-  const lastTradeInfo = getLastTradeInfo(option.lastTradeDate);
+  const lastTradeInfo = getLastTradeDetail(option.lastTradeDate);
+  const usableLast = isUsableLastPrice(option.last) ? option.last : null;
 
   const parsedSoldPrice = soldPrice.trim() === '' ? null : Number(soldPrice);
   const validSoldPrice = isFiniteNumber(parsedSoldPrice) && parsedSoldPrice >= 0 ? parsedSoldPrice : null;
@@ -287,6 +322,7 @@ export default function OptionDetailDrawer({
                 ['Bid', bid],
                 ['Mid', mid],
                 ['Ask', ask],
+                ['Last', usableLast],
               ].map(([label, value]) => (
                 <button
                   key={label as string}
@@ -299,6 +335,9 @@ export default function OptionDetailDrawer({
                 </button>
               ))}
             </div>
+            <p className="mb-3 text-[11px] leading-4" style={{ color: lastTradeInfo.warning ? lastTradeInfo.color : 'var(--text-dim)' }}>
+              Last may be stale; check Last Trade Date{lastTradeInfo.warning ? ` - ${lastTradeInfo.warning}` : '.'}
+            </p>
             {onAddToPortfolio && (
               <button
                 type="button"
@@ -332,7 +371,8 @@ export default function OptionDetailDrawer({
             <DetailRow label="Ask" value={formatCurrency(ask)} />
             <DetailRow label="Mid" value={formatCurrency(mid)} />
             <DetailRow label="Last" value={formatCurrency(option.last)} />
-            <DetailRow label="Last Trade" value={lastTradeInfo.trade} />
+            <DetailRow label="Last Trade Date" value={lastTradeInfo.date} color={lastTradeInfo.color} />
+            <DetailRow label="Last Trade" value={lastTradeInfo.trade} color={lastTradeInfo.color} />
             <DetailRow label="Last Trade Age" value={lastTradeInfo.age} color={lastTradeInfo.color} />
             <DetailRow label="Bid/Ask Spread" value={formatCurrency(spread)} />
             <DetailRow label="Bid/Ask Spread %" value={formatPercent(spreadPct)} />

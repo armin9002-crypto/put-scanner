@@ -46,6 +46,43 @@ function changeColor(value: number | null): string {
   return value == null ? 'var(--text-dim)' : value >= 0 ? 'var(--green)' : 'var(--red)';
 }
 
+function formatCurrency(value: number | null | undefined): string {
+  return value == null ? '--' : `$${value.toFixed(2)}`;
+}
+
+function formatSignedCurrency(value: number | null | undefined): string {
+  if (value == null) return '--';
+  const sign = value >= 0 ? '+' : '-';
+  return `${sign}$${Math.abs(value).toFixed(2)}`;
+}
+
+function ScannerCardTooltip({ etf, priceData, ivStatus }: { etf: ETFInfo; priceData: ETFCardProps['priceData']; ivStatus: string | null }) {
+  const dayChange = priceData?.change != null && priceData.changePct != null
+    ? `${formatSignedCurrency(priceData.change)} (${formatSignedPct(priceData.changePct)})`
+    : '--';
+
+  return (
+    <div
+      className="pointer-events-none absolute left-3 right-3 top-3 z-30 hidden rounded-lg px-3 py-2 text-xs opacity-0 shadow-xl transition-opacity group-hover:block group-hover:opacity-100 group-focus-visible:block group-focus-visible:opacity-100 sm:block sm:translate-y-[-105%]"
+      style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', boxShadow: 'var(--shadow)' }}
+    >
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <span className="font-mono text-sm font-bold">{etf.ticker}</span>
+        <span className="rounded px-1.5 py-0.5 text-[10px]" style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)', border: '1px solid var(--accent-border)' }}>{etf.leverage}</span>
+      </div>
+      <div className="mb-1 leading-4" style={{ color: 'var(--text-secondary)' }}>{etf.name}</div>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1 font-mono text-[11px] tabular-nums">
+        <span style={{ color: 'var(--text-muted)' }}>Theme</span><span className="text-right truncate" style={{ color: 'var(--text)' }}>{etf.underlying}</span>
+        <span style={{ color: 'var(--text-muted)' }}>Price</span><span className="text-right" style={{ color: 'var(--text)' }}>{formatCurrency(priceData?.price)}</span>
+        <span style={{ color: 'var(--text-muted)' }}>Day</span><span className="text-right" style={{ color: changeColor(priceData?.changePct ?? null) }}>{dayChange}</span>
+        <span style={{ color: 'var(--text-muted)' }}>5D / 1M / 3M</span>
+        <span className="text-right" style={{ color: 'var(--text)' }}>{formatSignedPct(priceData?.fiveDay ?? null)} / {formatSignedPct(priceData?.oneMonth ?? null)} / {formatSignedPct(priceData?.threeMonth ?? null)}</span>
+        <span style={{ color: 'var(--text-muted)' }}>IV status</span><span className="text-right" style={{ color: 'var(--text)' }}>{ivStatus ?? '--'}</span>
+      </div>
+    </div>
+  );
+}
+
 function MetricCell({ label, value, formatter = formatSignedPct, color }: { label: string; value: number | null; formatter?: (value: number | null) => string; color?: string }) {
   const resolvedColor = color ?? changeColor(value);
   return (
@@ -116,6 +153,7 @@ export default function ETFCard({
   return (
     <button
       onClick={onClick}
+      title={`${etf.ticker} - ${etf.name}`}
       className="group rounded-xl p-3 text-left transition-all duration-200 w-full relative min-w-0"
       style={{
         backgroundColor: ivEnv ? ivEnv.bgTint : 'var(--surface)',
@@ -188,6 +226,7 @@ export default function ETFCard({
           {ivEnv.badge}
         </span>
       )}
+      <ScannerCardTooltip etf={etf} priceData={priceData ?? null} ivStatus={ivEnv?.badge ?? null} />
     </button>
   );
 }
