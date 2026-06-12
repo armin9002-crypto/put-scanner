@@ -1,8 +1,8 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AlertTriangle, Briefcase, Edit2, FileImage, Loader2, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { calculatePutDelta, fetchBatchPrices, fetchOptions } from '../lib/api';
-import { formatCurrency, formatDate, formatOptionPrice, formatPercent, formatPercentPoints } from '../lib/format';
+import { formatCurrency, formatDate, formatOptionPrice, formatPercent, formatPercentPoints, normalizeTimestampMs } from '../lib/format';
 import { calculateDte, calculateMoneyness, calculateYieldPercent, isFiniteNumber } from '../lib/optionMetrics';
 import {
   getTradeDistanceToBreakeven,
@@ -92,6 +92,164 @@ function isoToUnixSeconds(iso: string): number | null {
 function formatDteValue(value: number | null | undefined): string {
   if (!isFiniteNumber(value)) return DASH;
   return value <= 0 ? 'Expired' : `${value} DTE`;
+}
+
+function formatDays(value: number | null | undefined): string {
+  if (!isFiniteNumber(value)) return DASH;
+  return value === 1 ? '1 day' : `${value} days`;
+}
+
+function parseDateOnly(value: string | null | undefined): Date | null {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatFullDate(value: string | number | null | undefined): string {
+  if (typeof value === 'number') {
+    const timestamp = normalizeTimestampMs(value);
+    return timestamp == null ? DASH : new Date(timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+  const date = parseDateOnly(value) ?? (value ? new Date(value) : null);
+  return date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : DASH;
+}
+
+function calendarDaysSince(value: string | null | undefined, now = new Date()): number | null {
+  const date = parseDateOnly(value);
+  if (!date) return null;
+  const start = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const days = Math.max(0, Math.floor((end - start) / 86400000));
+  return Number.isFinite(days) ? days : null;
+}
+
+function formatDaysAgo(value: string | null | undefined): string {
+  const days = calendarDaysSince(value);
+  if (days == null) return DASH;
+  if (days === 0) return 'Today';
+  return `${days} ${days === 1 ? 'day' : 'days'} ago`;
+}
+
+function formatMarkBasis(value: MarkBasis): string {
+  if (value === 'bid') return 'Bid';
+  if (value === 'ask') return 'Ask';
+  if (value === 'last') return 'Last';
+  return 'Mid';
+}
+
+function getPortfolioMidMark(trade: PortfolioTrade): number | null {
+  const explicitMid = trade.latestMarketData?.optionMid;
+  if (isFiniteNumber(explicitMid)) return explicitMid;
+  const bid = trade.latestMarketData?.optionBid;
+  const ask = trade.latestMarketData?.optionAsk;
+  return isFiniteNumber(bid) && isFiniteNumber(ask) && ask >= bid ? (bid + ask) / 2 : null;
+}
+
+function getLastTradeStaleness(value: string | number | null | undefined): { label: string | null; color: string } {
+  const timestamp = typeof value === 'number' ? normalizeTimestampMs(value) : value ? new Date(value).getTime() : null;
+  if (timestamp == null || Number.isNaN(timestamp)) return { label: null, color: 'var(--text-muted)' };
+  const tradeDate = new Date(timestamp);
+  const now = new Date();
+  const tradeMidnight = new Date(tradeDate.getFullYear(), tradeDate.getMonth(), tradeDate.getDate()).getTime();
+  const nowMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const ageDays = Math.max(0, Math.floor((nowMidnight - tradeMidnight) / 86400000));
+  if (ageDays > 7) return { label: 'Very stale', color: 'var(--red)' };
+  if (ageDays > 2) return { label: 'Stale', color: 'var(--yellow)' };
+  return { label: null, color: 'var(--text-muted)' };
+}
+
+function TooltipRows({ rows }: { rows: Array<{ label: string; value: string; color?: string }> }) {
+  return (
+    <div className="mt-1 grid gap-1">
+      {rows.map(row => (
+        <div key={row.label} className="grid grid-cols-[1fr_auto] gap-4 font-mono text-[11px] tabular-nums">
+          <span style={{ color: 'var(--text-muted)' }}>{row.label}</span>
+          <span className="text-right" style={{ color: row.color ?? 'var(--text)' }}>{row.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function HoverTooltip({ children, content, ariaLabel }: { children: ReactNode; content: ReactNode; ariaLabel: string }) {
+  const [position, setPosition] = useState<{ left: number; top: number; above: boolean } | null>(null);
+  const show = (target: HTMLElement) => {
+    const width = 270;
+    const height = 190;
+    const rect = target.getBoundingClientRect();
+    const left = Math.max(12, Math.min(window.innerWidth - width - 12, rect.right - width));
+    const belowTop = rect.bottom + 6;
+    const above = belowTop + height > window.innerHeight - 12;
+    setPosition({ left, top: above ? rect.top - 6 : belowTop, above });
+  };
+
+  return (
+    <span
+      tabIndex={0}
+      aria-label={ariaLabel}
+      onMouseEnter={event => show(event.currentTarget)}
+      onFocus={event => show(event.currentTarget)}
+      onMouseLeave={() => setPosition(null)}
+      onBlur={() => setPosition(null)}
+      className="inline-flex cursor-help items-center border-b border-dotted outline-none focus:ring-2 focus:ring-blue-400/30"
+      style={{ borderColor: 'var(--text-dim)' }}
+    >
+      {children}
+      {position && (
+        <span
+          className="fixed z-[100] w-[270px] rounded-lg px-3 py-2 text-left text-xs shadow-xl"
+          style={{
+            left: position.left,
+            top: position.top,
+            transform: position.above ? 'translateY(-100%)' : undefined,
+            backgroundColor: 'var(--surface)',
+            border: '1px solid var(--border)',
+            color: 'var(--text)',
+            boxShadow: 'var(--shadow)',
+          }}
+        >
+          {content}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function CurrentMarkTooltipContent({ trade, markBasis }: { trade: PortfolioTrade; markBasis: MarkBasis }) {
+  const stale = getLastTradeStaleness(trade.latestMarketData?.lastTradeDate);
+  return (
+    <div>
+      <div className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text)' }}>Current Mark Details</div>
+      <TooltipRows rows={[
+        { label: 'Mark Basis', value: formatMarkBasis(markBasis) },
+        { label: 'Bid', value: formatOptionPrice(trade.latestMarketData?.optionBid) },
+        { label: 'Ask', value: formatOptionPrice(trade.latestMarketData?.optionAsk) },
+        { label: 'Mid', value: formatOptionPrice(getPortfolioMidMark(trade)) },
+        { label: 'Last', value: formatOptionPrice(trade.latestMarketData?.optionLast) },
+        {
+          label: 'Last Trade Date',
+          value: `${formatFullDate(trade.latestMarketData?.lastTradeDate)}${stale.label ? ` · ${stale.label}` : ''}`,
+          color: stale.label ? stale.color : undefined,
+        },
+      ]} />
+    </div>
+  );
+}
+
+function DteTooltipContent({ trade }: { trade: PortfolioTrade }) {
+  const dte = calculateRemainingDte(trade);
+  return (
+    <div>
+      <div className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text)' }}>Position Timing</div>
+      <TooltipRows rows={[
+        { label: 'Expiration', value: formatFullDate(trade.expiration) },
+        { label: 'DTE', value: isFiniteNumber(dte) ? formatDays(dte) : DASH },
+        { label: 'Written', value: formatFullDate(trade.soldDate) },
+        { label: 'Days Since Written', value: formatDaysAgo(trade.soldDate) },
+      ]} />
+    </div>
+  );
 }
 
 function formatPctValue(value: number | null | undefined): string {
@@ -1186,7 +1344,11 @@ export default function PortfolioPage() {
                             <button onClick={() => navigate(`/options/${trade.ticker.trim().toUpperCase()}`)} className="underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</button>
                           </td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{expiryLabel(trade.expiration)}</td>
-                          <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatDteValue(calculateRemainingDte(trade))}</td>
+                          <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">
+                            <HoverTooltip content={<DteTooltipContent trade={trade} />} ariaLabel={`${trade.ticker} position timing details`}>
+                              {formatDteValue(calculateRemainingDte(trade))}
+                            </HoverTooltip>
+                          </td>
                           <td className="px-2 py-1 text-left whitespace-nowrap">
                             <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold leading-none" title={health.title} style={{ color: health.color, backgroundColor: health.bg, border: `1px solid ${health.border}` }}>{health.label}</span>
                           </td>
@@ -1198,7 +1360,11 @@ export default function PortfolioPage() {
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(calculatePremiumCollected(trade), 0)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(calculateEquityAtRisk(trade), 0)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(calculateNetCapitalAtRisk(trade), 0)}</td>
-                          <td className="px-2 py-1 text-right font-mono tabular-nums">{formatOptionPrice(currentMark)}</td>
+                          <td className="px-2 py-1 text-right font-mono tabular-nums">
+                            <HoverTooltip content={<CurrentMarkTooltipContent trade={trade} markBasis={markBasis} />} ariaLabel={`${trade.ticker} current mark details`}>
+                              {formatOptionPrice(currentMark)}
+                            </HoverTooltip>
+                          </td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(currentValue, 0)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(totalGainLoss) }}>{formatCurrency(totalGainLoss, 0)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(calculatePercentCaptured(trade, markBasis)) }}>{formatPctValue(calculatePercentCaptured(trade, markBasis))}</td>
