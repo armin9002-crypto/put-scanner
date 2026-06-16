@@ -91,10 +91,28 @@ function displayTickerFor(ticker) {
   return ticker;
 }
 
+function parseDateOnly(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const timestamp = Date.parse(`${value}T00:00:00Z`);
+  return Number.isFinite(timestamp) ? Math.floor(timestamp / 1000) : null;
+}
+
 export default async function handler(req, res) {
   const ticker = typeof req.query.ticker === 'string' ? req.query.ticker.trim().toUpperCase() : '';
   const timeframe = typeof req.query.timeframe === 'string' ? req.query.timeframe : '1D';
-  const config = TIMEFRAME_CONFIG[timeframe];
+  const start = parseDateOnly(req.query.start);
+  const end = parseDateOnly(req.query.end);
+  const hasDateRange = start != null && end != null && end > start;
+  const config = hasDateRange
+    ? {
+      interval: '1d',
+      maxPoints: 32,
+      cacheControl: 'public, s-maxage=86400, stale-while-revalidate=604800',
+      period1: start,
+      period2: end,
+      rangeLabel: `${req.query.start}:${req.query.end}`,
+    }
+    : TIMEFRAME_CONFIG[timeframe];
 
   res.setHeader('Access-Control-Allow-Origin', '*');
 
@@ -107,7 +125,10 @@ export default async function handler(req, res) {
   }
 
   try {
-    const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=${config.interval}&range=${config.range}`;
+    const rangeParams = hasDateRange
+      ? `period1=${config.period1}&period2=${config.period2}`
+      : `range=${config.range}`;
+    const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=${config.interval}&${rangeParams}`;
     const yahooRes = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' },
     });
@@ -154,13 +175,13 @@ export default async function handler(req, res) {
     return res.status(200).json({
       ticker,
       displayTicker: displayTickerFor(ticker),
-      timeframe,
+      timeframe: hasDateRange ? 'custom' : timeframe,
       points,
       previousClose,
       latestPrice,
       fetchedAt: Date.now(),
       metadata: {
-        range: config.range,
+        range: hasDateRange ? config.rangeLabel : config.range,
         interval: config.interval,
         filter: config.filterYtd ? 'year-to-date' : undefined,
         sourcePoints: rawPoints.length,

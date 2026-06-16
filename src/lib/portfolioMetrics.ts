@@ -234,6 +234,7 @@ export function calculateDistanceToBreakeven(trade: PortfolioTrade): number | nu
 }
 
 export function calculateRealizedPnl(trade: PortfolioTrade): number | null {
+  if (isFiniteNumber(trade.realizedPnl)) return trade.realizedPnl;
   if (trade.status === 'assigned') return null;
   const premium = positive(trade.soldPrice, true);
   const contracts = validContracts(trade);
@@ -244,7 +245,7 @@ export function calculateRealizedPnl(trade: PortfolioTrade): number | null {
 
 export function calculatePortfolioSummary(trades: PortfolioTrade[]): PortfolioSummaryMetrics {
   const openTrades = trades.filter(isOpenTrade);
-  const closedTrades = trades.filter(trade => trade.status === 'closed');
+  const closedTrades = trades.filter(trade => trade.status !== 'open');
 
   const totalPremiumCollected = sum(openTrades.map(calculatePremiumCollected));
   const totalEquityAtRisk = sum(openTrades.map(calculateEquityAtRisk));

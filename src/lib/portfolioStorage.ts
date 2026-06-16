@@ -1,4 +1,6 @@
-export type PortfolioTradeStatus = 'open' | 'closed' | 'expired' | 'assigned';
+export type PortfolioTradeStatus = 'open' | 'closed' | 'expired' | 'assigned' | 'expired_price_pending';
+export type PortfolioResolutionType = 'expired_worthless' | 'expired_itm' | 'expired_price_pending';
+export type PortfolioResolutionSource = 'expiration_close' | 'manual_expiration_close';
 export type PortfolioAvailabilityStatus = 'live' | 'expired' | 'unavailable' | 'refresh_failed' | 'stale' | 'imported_snapshot';
 
 export interface PortfolioTradeSnapshot {
@@ -53,6 +55,17 @@ export interface PortfolioTrade {
   notes?: string;
   closePrice?: number;
   closeDate?: string;
+  resolvedDate?: string;
+  resolutionType?: PortfolioResolutionType;
+  expirationClosePrice?: number;
+  expirationCloseDate?: string;
+  finalOptionValue?: number;
+  realizedPnl?: number;
+  percentCaptured?: number;
+  premiumCollected?: number;
+  daysHeld?: number;
+  resolutionSource?: PortfolioResolutionSource;
+  resolutionWarning?: string;
   createdAt: string;
   updatedAt: string;
   entrySnapshot?: PortfolioTradeSnapshot;
@@ -68,7 +81,9 @@ export type PortfolioTradeInput = Omit<PortfolioTrade, 'id' | 'createdAt' | 'upd
 
 export const PORTFOLIO_STORAGE_KEY = 'put_scanner_portfolio_trades';
 
-const VALID_STATUSES: PortfolioTradeStatus[] = ['open', 'closed', 'expired', 'assigned'];
+const VALID_STATUSES: PortfolioTradeStatus[] = ['open', 'closed', 'expired', 'assigned', 'expired_price_pending'];
+const VALID_RESOLUTION_TYPES: PortfolioResolutionType[] = ['expired_worthless', 'expired_itm', 'expired_price_pending'];
+const VALID_RESOLUTION_SOURCES: PortfolioResolutionSource[] = ['expiration_close', 'manual_expiration_close'];
 const VALID_AVAILABILITY: PortfolioAvailabilityStatus[] = ['live', 'expired', 'unavailable', 'refresh_failed', 'stale', 'imported_snapshot'];
 
 function getStorage(): Storage | null {
@@ -220,6 +235,20 @@ export function normalizePortfolioTrade(raw: unknown): PortfolioTrade | null {
     : createdAt;
   const closePrice = nonNegativeNumber(raw.closePrice);
   const closeDate = normalizeIsoDate(raw.closeDate);
+  const resolvedDate = normalizeIsoDate(raw.resolvedDate);
+  const expirationClosePrice = nonNegativeNumber(raw.expirationClosePrice);
+  const expirationCloseDate = normalizeIsoDate(raw.expirationCloseDate);
+  const finalOptionValue = nonNegativeNumber(raw.finalOptionValue);
+  const realizedPnl = finiteNumber(raw.realizedPnl);
+  const percentCaptured = finiteNumber(raw.percentCaptured);
+  const premiumCollected = nonNegativeNumber(raw.premiumCollected);
+  const daysHeld = nonNegativeNumber(raw.daysHeld);
+  const resolutionType = typeof raw.resolutionType === 'string' && VALID_RESOLUTION_TYPES.includes(raw.resolutionType as PortfolioResolutionType)
+    ? raw.resolutionType as PortfolioResolutionType
+    : undefined;
+  const resolutionSource = typeof raw.resolutionSource === 'string' && VALID_RESOLUTION_SOURCES.includes(raw.resolutionSource as PortfolioResolutionSource)
+    ? raw.resolutionSource as PortfolioResolutionSource
+    : undefined;
 
   return {
     id: typeof raw.id === 'string' && raw.id.trim() ? raw.id : makePortfolioTradeId(),
@@ -234,6 +263,17 @@ export function normalizePortfolioTrade(raw: unknown): PortfolioTrade | null {
     notes: typeof raw.notes === 'string' ? raw.notes : typeof raw.note === 'string' ? raw.note : '',
     closePrice: closePrice ?? undefined,
     closeDate: closeDate ?? undefined,
+    resolvedDate: resolvedDate ?? undefined,
+    resolutionType,
+    expirationClosePrice: expirationClosePrice ?? undefined,
+    expirationCloseDate: expirationCloseDate ?? undefined,
+    finalOptionValue: finalOptionValue ?? undefined,
+    realizedPnl: realizedPnl ?? undefined,
+    percentCaptured: percentCaptured ?? undefined,
+    premiumCollected: premiumCollected ?? undefined,
+    daysHeld: daysHeld ?? undefined,
+    resolutionSource,
+    resolutionWarning: typeof raw.resolutionWarning === 'string' ? raw.resolutionWarning : undefined,
     createdAt,
     updatedAt,
     entrySnapshot: normalizeSnapshot(raw.entrySnapshot),

@@ -5,6 +5,12 @@ import { calculatePutDelta, fetchBatchPrices, fetchOptions } from '../lib/api';
 import { formatCurrency, formatDate, formatOptionPrice, formatPercent, formatPercentPoints, normalizeTimestampMs } from '../lib/format';
 import { calculateDte, calculateMoneyness, calculateYieldPercent, isFiniteNumber } from '../lib/optionMetrics';
 import {
+  archiveExpiredOpenTrades,
+  getExpirationClosePrice,
+  isArchivedTrade,
+  resolveExpiredTradeWithClose,
+} from '../lib/portfolioExpirationArchive';
+import {
   getTradeDistanceToBreakeven,
   getTradeDistanceToStrike,
   getTradeGrossRisk,
@@ -734,6 +740,72 @@ function groupTooltip(group: PortfolioExposureGroup): string {
   ].join('\n');
 }
 
+function getArchiveOutcomeLabel(trade: PortfolioTrade): string {
+  if (trade.status === 'closed') return 'Closed Manually';
+  if (trade.status === 'expired_price_pending' || trade.resolutionType === 'expired_price_pending') return 'Expiration Price Pending';
+  if (trade.resolutionType === 'expired_itm') return 'Expired ITM / Assignment Likely';
+  if (trade.resolutionType === 'expired_worthless' || trade.status === 'expired') return 'Expired Worthless';
+  if (trade.status === 'assigned') return 'Assigned';
+  return DASH;
+}
+
+function getArchiveOutcomeColor(trade: PortfolioTrade): string {
+  if (trade.status === 'expired_price_pending' || trade.resolutionType === 'expired_price_pending') return 'var(--yellow)';
+  if (trade.resolutionType === 'expired_itm') return 'var(--red)';
+  if (trade.resolutionType === 'expired_worthless' || trade.status === 'expired') return 'var(--green)';
+  return 'var(--text-muted)';
+}
+
+function getTradeDaysHeld(trade: PortfolioTrade): number | null {
+  if (isFiniteNumber(trade.daysHeld)) return trade.daysHeld;
+  const start = parseDateOnly(trade.soldDate);
+  const end = parseDateOnly(trade.closeDate ?? trade.expiration);
+  if (!start || !end) return null;
+  const startMs = Date.UTC(start.getFullYear(), start.getMonth(), start.getDate());
+  const endMs = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());
+  return Math.max(0, Math.round((endMs - startMs) / 86400000));
+}
+
+function getArchivedFinalValue(trade: PortfolioTrade): number | null {
+  if (isFiniteNumber(trade.finalOptionValue)) return trade.finalOptionValue;
+  if (trade.status === 'closed' && isFiniteNumber(trade.closePrice)) return trade.closePrice * trade.contracts * 100;
+  return null;
+}
+
+function getArchivedPremium(trade: PortfolioTrade): number | null {
+  return isFiniteNumber(trade.premiumCollected) ? trade.premiumCollected : calculatePremiumCollected(trade);
+}
+
+function getArchivedRealizedPnl(trade: PortfolioTrade): number | null {
+  if (isFiniteNumber(trade.realizedPnl)) return trade.realizedPnl;
+  if (trade.status !== 'closed' || !isFiniteNumber(trade.closePrice)) return null;
+  return (trade.soldPrice - trade.closePrice) * trade.contracts * 100;
+}
+
+function getArchivedPercentCaptured(trade: PortfolioTrade): number | null {
+  if (isFiniteNumber(trade.percentCaptured)) return trade.percentCaptured;
+  const premium = getArchivedPremium(trade);
+  const pnl = getArchivedRealizedPnl(trade);
+  return isFiniteNumber(premium) && premium > 0 && isFiniteNumber(pnl) ? pnl / premium : null;
+}
+
+function buildArchiveSummary(archivedTrades: PortfolioTrade[]) {
+  const realizedValues = archivedTrades.map(getArchivedRealizedPnl).filter(isFiniteNumber);
+  const premiums = archivedTrades.map(getArchivedPremium).filter(isFiniteNumber);
+  const pctItems = archivedTrades
+    .map(trade => ({ value: getArchivedPercentCaptured(trade), weight: getArchivedPremium(trade) }))
+    .filter(item => isFiniteNumber(item.value) && isFiniteNumber(item.weight) && item.weight > 0);
+  const totalWeight = sumValues(pctItems.map(item => item.weight));
+  return {
+    archivedTrades: archivedTrades.length,
+    realizedPnl: realizedValues.length > 0 ? sumValues(realizedValues) : null,
+    premiumCollected: premiums.length > 0 ? sumValues(premiums) : null,
+    avgPercentCaptured: totalWeight > 0 ? sumValues(pctItems.map(item => (item.value as number) * (item.weight as number))) / totalWeight : null,
+    expiredWorthless: archivedTrades.filter(trade => trade.resolutionType === 'expired_worthless').length,
+    expiredItm: archivedTrades.filter(trade => trade.resolutionType === 'expired_itm').length,
+  };
+}
+
 function parseNumber(value: string): number | null {
   if (value.trim() === '') return null;
   const numeric = Number(value);
@@ -865,6 +937,7 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
               <option value="open">Open</option>
               <option value="closed">Closed</option>
               <option value="expired">Expired</option>
+              <option value="expired_price_pending">Expiration Price Pending</option>
               <option value="assigned">Assigned</option>
             </select>
           </label>
@@ -928,16 +1001,28 @@ export default function PortfolioPage() {
   const [showNotesErrors, setShowNotesErrors] = useState(false);
   const [sortField, setSortField] = useState<SortField>('expiration');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const [resolvingArchiveIds, setResolvingArchiveIds] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
+    let active = true;
     const stored = loadPortfolioTrades();
     setTrades(stored);
     const latest = Math.max(...stored.map(trade => trade.latestMarketData?.refreshedAt ? new Date(trade.latestMarketData.refreshedAt).getTime() : 0));
     if (latest > 0) setLastRefreshed(new Date(latest));
+    archiveExpiredOpenTrades(stored).then(result => {
+      if (!active || !result.changed) return;
+      savePortfolioTrades(result.trades);
+      setTrades(result.trades);
+    });
+    return () => {
+      active = false;
+    };
   }, []);
 
   const summary = useMemo(() => calculatePortfolioSummary(trades), [trades]);
   const openTrades = useMemo(() => trades.filter(trade => trade.status === 'open'), [trades]);
+  const archivedTrades = useMemo(() => trades.filter(isArchivedTrade).sort((a, b) => b.expiration.localeCompare(a.expiration)), [trades]);
+  const archiveSummary = useMemo(() => buildArchiveSummary(archivedTrades), [archivedTrades]);
   const markSummary = useMemo(() => calculatePortfolioMarkSummary(openTrades, markBasis), [openTrades, markBasis]);
 
   const scheduleTotals = useMemo(() => buildScheduleTotals(openTrades, markBasis), [openTrades, markBasis]);
@@ -977,9 +1062,11 @@ export default function PortfolioPage() {
     setTrades(next);
   }, []);
 
-  const handleSaveTrade = useCallback((input: PortfolioTradeInput, id?: string) => {
+  const handleSaveTrade = useCallback(async (input: PortfolioTradeInput, id?: string) => {
     const next = id ? updatePortfolioTrade(id, input as Partial<PortfolioTrade>) : addPortfolioTrade(input);
-    setTrades(next);
+    const archived = await archiveExpiredOpenTrades(next);
+    if (archived.changed) savePortfolioTrades(archived.trades);
+    setTrades(archived.trades);
     setShowAddModal(false);
     setEditingTrade(null);
   }, []);
@@ -992,8 +1079,11 @@ export default function PortfolioPage() {
 
   const handleRefreshOpenTrades = useCallback(async () => {
     const current = loadPortfolioTrades();
-    const open = current.filter(trade => trade.status === 'open');
-    setTrades(current);
+    const archived = await archiveExpiredOpenTrades(current);
+    if (archived.changed) savePortfolioTrades(archived.trades);
+    const sweepTrades = archived.trades;
+    const open = sweepTrades.filter(trade => trade.status === 'open');
+    setTrades(sweepTrades);
     if (open.length === 0) return;
 
     setRefreshing(true);
@@ -1016,7 +1106,7 @@ export default function PortfolioPage() {
     ]));
     const failedKeys = new Set(optionResults.flatMap((result, index) => result.status === 'rejected' ? [requestKeys[index]] : []));
 
-    const refreshed = current.map(trade => {
+    const refreshed = sweepTrades.map(trade => {
       if (trade.status !== 'open') return trade;
       const remainingDte = calculateDte(trade.expiration);
       if (isFiniteNumber(remainingDte) && remainingDte < 0) {
@@ -1104,6 +1194,47 @@ export default function PortfolioPage() {
     persistTrades(refreshed);
     setLastRefreshed(new Date());
     setRefreshing(false);
+  }, [persistTrades]);
+
+  const handleRetryResolve = useCallback(async (trade: PortfolioTrade) => {
+    setResolvingArchiveIds(previous => new Set(previous).add(trade.id));
+    try {
+      const result = await getExpirationClosePrice(trade.ticker, trade.expiration, { forceRefresh: true }).catch(() => null);
+      const next = loadPortfolioTrades().map(current => {
+        if (current.id !== trade.id) return current;
+        return result
+          ? resolveExpiredTradeWithClose(current, result.closePrice, result.closeDate, 'expiration_close', result.warning)
+          : {
+            ...current,
+            status: 'expired_price_pending' as const,
+            resolutionType: 'expired_price_pending' as const,
+            resolutionWarning: 'Expiration close unavailable',
+            updatedAt: new Date().toISOString(),
+          };
+      });
+      persistTrades(next);
+    } finally {
+      setResolvingArchiveIds(previous => {
+        const next = new Set(previous);
+        next.delete(trade.id);
+        return next;
+      });
+    }
+  }, [persistTrades]);
+
+  const handleManualExpirationClose = useCallback((trade: PortfolioTrade) => {
+    if (trade.status === 'closed') return;
+    const raw = window.prompt(`Set ${trade.ticker} expiration close for ${formatFullDate(trade.expiration)}`, trade.expirationClosePrice != null ? String(trade.expirationClosePrice) : '');
+    if (raw == null) return;
+    const close = parseNumber(raw.replace(/[$,]/g, ''));
+    if (!isFiniteNumber(close) || close < 0) {
+      window.alert('Enter a valid non-negative expiration close.');
+      return;
+    }
+    const next = loadPortfolioTrades().map(current => current.id === trade.id
+      ? resolveExpiredTradeWithClose(current, close, trade.expiration, 'manual_expiration_close')
+      : current);
+    persistTrades(next);
   }, [persistTrades]);
 
   const openDrawer = useCallback((trade: PortfolioTrade) => {
@@ -1439,6 +1570,16 @@ export default function PortfolioPage() {
               Closed trades: {summary.totalClosedTrades} · Current mark-dependent metrics use the selected {markBasis.toUpperCase()} basis and show {DASH} when that mark is unavailable.
             </div>
 
+            <ArchiveHistorySection
+              trades={archivedTrades}
+              summary={archiveSummary}
+              resolvingIds={resolvingArchiveIds}
+              onRetryResolve={handleRetryResolve}
+              onManualExpirationClose={handleManualExpirationClose}
+              onEdit={setEditingTrade}
+              onDelete={handleDeleteTrade}
+            />
+
           </>
         )}
 
@@ -1479,8 +1620,9 @@ export default function PortfolioPage() {
           <PortfolioScreenshotImportModal
             trades={trades}
             onClose={() => setShowImportModal(false)}
-            onApply={nextTrades => {
-              persistTrades(nextTrades);
+            onApply={async nextTrades => {
+              const archived = await archiveExpiredOpenTrades(nextTrades);
+              persistTrades(archived.trades);
               setShowImportModal(false);
             }}
           />
@@ -1496,6 +1638,100 @@ function Metric({ label, value, color }: { label: string; value: string; color?:
       <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>{label}</div>
       <div className="font-mono tabular-nums" style={{ color: color ?? 'var(--text)' }}>{value}</div>
     </div>
+  );
+}
+
+function ArchiveHistorySection({
+  trades,
+  summary,
+  resolvingIds,
+  onRetryResolve,
+  onManualExpirationClose,
+  onEdit,
+  onDelete,
+}: {
+  trades: PortfolioTrade[];
+  summary: ReturnType<typeof buildArchiveSummary>;
+  resolvingIds: Set<string>;
+  onRetryResolve: (trade: PortfolioTrade) => void;
+  onManualExpirationClose: (trade: PortfolioTrade) => void;
+  onEdit: (trade: PortfolioTrade) => void;
+  onDelete: (id: string) => void;
+}) {
+  if (trades.length === 0) return null;
+
+  return (
+    <section className="mt-5">
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--text-muted)' }}>Expired / Closed History</h2>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-1.5 mb-2">
+        <SummaryCard label="Archived Trades" value={String(summary.archivedTrades)} />
+        <SummaryCard label="Realized P&L" value={formatCurrency(summary.realizedPnl)} color={pnlColor(summary.realizedPnl)} />
+        <SummaryCard label="Premium Collected" value={formatCurrency(summary.premiumCollected)} color="var(--green)" />
+        <SummaryCard label="Avg % Captured" value={formatPctValue(summary.avgPercentCaptured)} color={pnlColor(summary.avgPercentCaptured)} />
+        <SummaryCard label="Expired Worthless" value={String(summary.expiredWorthless)} color="var(--green)" />
+        <SummaryCard label="Expired ITM" value={String(summary.expiredItm)} color={summary.expiredItm > 0 ? 'var(--red)' : undefined} />
+      </div>
+      <div className="rounded-lg overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+        <div className="overflow-x-auto max-w-full overscroll-contain">
+          <table className="min-w-max w-full text-[12px] leading-none">
+            <thead>
+              <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
+                {['Ticker', 'Expiration', 'Strike', 'Contracts', 'Written Date', 'Days Held', 'Sold Price', 'Expiration Close', 'Final Value', 'Premium Collected', 'Realized P&L', '% Captured', 'Outcome', 'Actions'].map((label, index) => (
+                  <th key={label} className={`px-2 py-2 text-[11px] font-medium whitespace-nowrap ${index === 0 || label === 'Outcome' || label === 'Actions' ? 'text-left' : 'text-right'}`} style={{ color: 'var(--text-muted)' }}>{label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {trades.map((trade, index) => {
+                const pending = trade.status === 'expired_price_pending' || trade.resolutionType === 'expired_price_pending';
+                const canSetExpirationClose = trade.status === 'expired' || trade.status === 'expired_price_pending';
+                const resolving = resolvingIds.has(trade.id);
+                const realizedPnl = getArchivedRealizedPnl(trade);
+                const percentCaptured = getArchivedPercentCaptured(trade);
+                return (
+                  <tr key={trade.id} style={{ borderBottom: '1px solid var(--border)', backgroundColor: index % 2 ? 'var(--row-alt)' : 'transparent' }}>
+                    <td className="px-2 py-1 text-left font-mono font-bold whitespace-nowrap" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</td>
+                    <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatFullDate(trade.expiration)}</td>
+                    <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatCurrency(trade.strike)}</td>
+                    <td className="px-2 py-1 text-right font-mono tabular-nums">{trade.contracts}</td>
+                    <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatFullDate(trade.soldDate)}</td>
+                    <td className="px-2 py-1 text-right font-mono tabular-nums">{formatDays(getTradeDaysHeld(trade))}</td>
+                    <td className="px-2 py-1 text-right font-mono tabular-nums">{formatOptionPrice(trade.soldPrice)}</td>
+                    <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(trade.expirationClosePrice)}</td>
+                    <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(getArchivedFinalValue(trade))}</td>
+                    <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(getArchivedPremium(trade))}</td>
+                    <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(realizedPnl) }}>{formatCurrency(realizedPnl)}</td>
+                    <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(percentCaptured) }}>{formatPctValue(percentCaptured)}</td>
+                    <td className="px-2 py-1 text-left whitespace-nowrap">
+                      <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold leading-none" title={trade.resolutionWarning ?? getArchiveOutcomeLabel(trade)} style={{ color: getArchiveOutcomeColor(trade), backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
+                        {getArchiveOutcomeLabel(trade)}
+                      </span>
+                      {trade.resolutionWarning && <div className="mt-1 max-w-[260px] truncate text-[10px]" style={{ color: 'var(--text-dim)' }}>{trade.resolutionWarning}</div>}
+                    </td>
+                    <td className="px-2 py-1 whitespace-nowrap">
+                      <div className="flex items-center gap-1">
+                        {pending && (
+                          <button onClick={() => onRetryResolve(trade)} disabled={resolving} className="px-2 py-1.5 rounded text-[11px] disabled:opacity-50" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>
+                            {resolving ? 'Resolving...' : 'Retry Resolve'}
+                          </button>
+                        )}
+                        {canSetExpirationClose && (
+                          <button onClick={() => onManualExpirationClose(trade)} className="px-2 py-1.5 rounded text-[11px]" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Set Expiration Close</button>
+                        )}
+                        <button onClick={() => onEdit(trade)} className="p-1.5 rounded" title="Edit" style={{ color: 'var(--text-muted)' }}><Edit2 className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => onDelete(trade.id)} className="p-1.5 rounded" title="Delete" style={{ color: 'var(--red)' }}><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
   );
 }
 
