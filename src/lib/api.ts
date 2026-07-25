@@ -4,6 +4,7 @@ import type { BatchPriceData } from './cache';
 import { clearMemCache, getMemCache, setMemCache, isValidBatchPriceData } from './memoryCache';
 import { cachedRequest, dedupeRequest, makeCacheKey } from './dataCache';
 import { recordRequestDiagnostic } from './requestDiagnostics';
+import { cacheScannerOptionChain } from './scannerOptionSnapshot';
 
 const API_BASE = '/api';
 
@@ -353,7 +354,9 @@ export async function fetchOptions(ticker: string, date?: number, options: Fetch
     clearOptionChainCache(normalizedTicker, date);
   } else if (previousCached) {
     recordRequestDiagnostic('options', 'cacheHit', source);
-    return withCacheSource(previousCached, cacheKey);
+    const cached = withCacheSource(previousCached, cacheKey);
+    cacheScannerOptionChain(normalizedTicker, cached);
+    return cached;
   }
 
   return dedupeRequest(cacheKey, async () => {
@@ -377,6 +380,7 @@ export async function fetchOptions(ticker: string, date?: number, options: Fetch
     );
     setMemCache(cacheKey, normalized);
     setCache(cacheKey, normalized);
+    cacheScannerOptionChain(normalizedTicker, normalized);
     return normalized;
   }, bypassCache);
 }

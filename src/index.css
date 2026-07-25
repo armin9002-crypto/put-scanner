@@ -2,6 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+.scanner-snapshot-tooltip {
+  display: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .scanner-snapshot-tooltip {
+    display: block;
+  }
+}
+
 :root,
 [data-theme="dark"],
 [data-theme="grey"] {

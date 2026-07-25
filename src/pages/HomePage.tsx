@@ -8,6 +8,13 @@ import ExpirationFilter, { buildExpirationOptions, formatExpirationDropdownLabel
 import SparklineChart from '../components/SparklineChart';
 import ErrorBoundary from '../components/ErrorBoundary';
 import { Search, Loader2, RefreshCw } from 'lucide-react';
+import {
+  getCachedScannerExpirations,
+  getScannerOptionSnapshots,
+  isScannerOptionSnapshotStale,
+  selectScannerSnapshotExpiration,
+  type ScannerOptionSnapshot,
+} from '../lib/scannerOptionSnapshot';
 
 const InteractivePriceChartModal = lazy(() => import('../components/InteractivePriceChartModal'));
 
@@ -24,6 +31,13 @@ import { ETF_LIST } from '../lib/etfs';
 interface ExpiryAvailabilityCache {
   expirations: { date: number; label: string; dte: number }[];
   availability: Record<string, number[]>;
+}
+
+interface SnapshotUpdateProgress {
+  current: number;
+  total: number;
+  failed: number;
+  complete: boolean;
 }
 
 function getExpiryAvailabilityCache(): ExpiryAvailabilityCache | null {
@@ -146,6 +160,9 @@ export default function HomePage() {
   const [expiryAvailability, setExpiryAvailability] = useState<Record<string, number[]>>({});
   const [datesLoaded, setDatesLoaded] = useState(false);
   const [loadingDates, setLoadingDates] = useState(false);
+  const [optionSnapshots, setOptionSnapshots] = useState<Record<string, ScannerOptionSnapshot>>(() => getScannerOptionSnapshots());
+  const [snapshotProgress, setSnapshotProgress] = useState<SnapshotUpdateProgress | null>(null);
+  const snapshotUpdateRunningRef = useRef(false);
 
   // Batch price data
   const [prices, setPrices] = useState<BatchPriceData>({});
@@ -262,6 +279,7 @@ export default function HomePage() {
       setLoadingDates(false);
       setExpirationsCache(sorted);
       setExpiryAvailabilityCache({ expirations: sorted, availability });
+      setOptionSnapshots(getScannerOptionSnapshots());
     })();
 
     return () => { cancelled = true; };
@@ -323,6 +341,44 @@ export default function HomePage() {
     setExpFilter(value);
   }, []);
 
+  const updateVisibleOptionSnapshots = useCallback(async () => {
+    if (snapshotUpdateRunningRef.current) return;
+    const tickers = [...new Set(filtered.map(etf => etf.ticker.trim().toUpperCase()))]
+      .filter(ticker => isScannerOptionSnapshotStale(optionSnapshots[ticker]));
+    if (tickers.length === 0) {
+      setSnapshotProgress({ current: 0, total: 0, failed: 0, complete: true });
+      return;
+    }
+
+    snapshotUpdateRunningRef.current = true;
+    setSnapshotProgress({ current: 0, total: tickers.length, failed: 0, complete: false });
+    const tasks = tickers.map(ticker => async () => {
+      try {
+        let initialData = null;
+        let expirationDates = getCachedScannerExpirations(ticker) ?? expiryAvailability[ticker] ?? [];
+        if (expirationDates.length === 0) {
+          initialData = await fetchOptions(ticker, undefined, { source: 'Scanner:updateSnapshot:discovery' });
+          expirationDates = initialData.expirations.map(expiration => expiration.date);
+        }
+        const selectedExpiration = selectScannerSnapshotExpiration(expirationDates);
+        if (!selectedExpiration) throw new Error(`No reasonable 60-day expiration for ${ticker}`);
+        const returnedExpiration = initialData?.chainMeta?.returnedExpiration ?? initialData?.chainMeta?.expirationDate ?? null;
+        if (!initialData || returnedExpiration !== selectedExpiration.date) {
+          await fetchOptions(ticker, selectedExpiration.date, { source: 'Scanner:updateSnapshot:selected' });
+        }
+      } catch {
+        setSnapshotProgress(current => current ? { ...current, failed: current.failed + 1 } : current);
+      } finally {
+        setSnapshotProgress(current => current ? { ...current, current: current.current + 1 } : current);
+      }
+    });
+
+    await fetchWithConcurrencyLimit(tasks, 3);
+    setOptionSnapshots(getScannerOptionSnapshots());
+    setSnapshotProgress(current => current ? { ...current, complete: true } : current);
+    snapshotUpdateRunningRef.current = false;
+  }, [expiryAvailability, filtered, optionSnapshots]);
+
   return (
     <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-5">
@@ -372,7 +428,24 @@ export default function HomePage() {
             </div>
 
             <div className="mt-3">
-              <span className="block text-xs font-medium uppercase tracking-wider mb-1.5" style={{ color: 'var(--text-muted)' }}>Type</span>
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <span className="block text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Type</span>
+                <button
+                  type="button"
+                  onClick={() => void updateVisibleOptionSnapshots()}
+                  disabled={snapshotUpdateRunningRef.current}
+                  className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-medium whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-60"
+                  style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}
+                  title="Update missing or stale IV60 and liquidity snapshots for visible ETFs"
+                >
+                  {snapshotProgress && !snapshotProgress.complete && <Loader2 className="h-3 w-3 animate-spin" />}
+                  {snapshotProgress && !snapshotProgress.complete
+                    ? `Updating ${snapshotProgress.current}/${snapshotProgress.total}`
+                    : snapshotProgress?.complete && snapshotProgress.total === 0
+                      ? 'IV / Liquidity Current'
+                      : 'Update IV / Liquidity'}
+                </button>
+              </div>
               <div className="grid grid-cols-2 min-[430px]:grid-cols-3 sm:flex gap-1.5 min-w-0">
                 {TYPE_OPTIONS.map(opt => (
                   <button
@@ -413,6 +486,7 @@ export default function HomePage() {
               etf={etf}
               to={`/options/${etf.ticker}`}
               priceData={prices[etf.ticker] ?? null}
+              optionSnapshot={optionSnapshots[etf.ticker] ?? null}
               priceError={!pricesLoading && !!pricesError && !prices[etf.ticker]}
               onRetry={() => loadPrices(true)}
             />
