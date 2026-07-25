@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AlertTriangle, Briefcase, Edit2, FileImage, Loader2, Plus, RefreshCw, Trash2 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { calculatePutDelta, fetchBatchPrices, fetchOptions } from '../lib/api';
 import { formatCurrency, formatDate, formatOptionPrice, formatPercent, formatPercentPoints, normalizeTimestampMs } from '../lib/format';
 import { calculateDte, calculateMoneyness, calculateYieldPercent, isFiniteNumber } from '../lib/optionMetrics';
@@ -529,11 +529,9 @@ function CompactExposureBars({
 
 function NeedsAttentionList({
   items,
-  onTickerClick,
   onDetailsClick,
 }: {
   items: PortfolioTrade[];
-  onTickerClick: (ticker: string) => void;
   onDetailsClick: (trade: PortfolioTrade) => void;
 }) {
   return (
@@ -553,7 +551,7 @@ function NeedsAttentionList({
               <div key={trade.id} className="grid grid-cols-[minmax(88px,1fr)_auto] gap-2 rounded px-2 py-1.5" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <button onClick={() => onTickerClick(trade.ticker)} className="font-mono text-[13px] leading-none font-bold truncate underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</button>
+                    <Link to={`/options/${trade.ticker.trim().toUpperCase()}`} className="font-mono text-[13px] leading-none font-bold truncate underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</Link>
                     <button onClick={() => onDetailsClick(trade)} className="font-mono text-[13px] leading-none truncate underline-offset-2 hover:underline" style={{ color: 'var(--text)' }}>{formatCurrency(trade.strike, 0)} Put</button>
                   </div>
                   <div className="text-[11px] leading-none truncate mt-1" style={{ color: 'var(--text-dim)' }}>{expiryLabel(trade.expiration)} · {formatDteValue(calculateRemainingDte(trade))}</div>
@@ -572,7 +570,7 @@ function NeedsAttentionList({
   );
 }
 
-function CloseCandidatesCard({ candidates, onTickerClick }: { candidates: CloseCandidate[]; onTickerClick: (ticker: string) => void }) {
+function CloseCandidatesCard({ candidates }: { candidates: CloseCandidate[] }) {
   return (
     <section className="rounded-lg p-3 min-w-0 h-full flex flex-col" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
       <div className="flex items-start justify-between gap-2 mb-2 shrink-0">
@@ -589,7 +587,7 @@ function CloseCandidatesCard({ candidates, onTickerClick }: { candidates: CloseC
           {candidates.map(candidate => (
             <div key={candidate.trade.id} className="rounded px-2 py-1.5" title={candidate.reasons.join(', ')} style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
               <div className="grid grid-cols-[minmax(88px,1fr)_auto_auto] gap-2 items-baseline">
-                <button onClick={() => onTickerClick(candidate.trade.ticker)} className="text-left font-mono text-[13px] leading-none font-bold truncate underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{candidate.trade.ticker}</button>
+                <Link to={`/options/${candidate.trade.ticker.trim().toUpperCase()}`} className="text-left font-mono text-[13px] leading-none font-bold truncate underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{candidate.trade.ticker}</Link>
                 <span className="font-mono text-[12px] leading-none tabular-nums" style={{ color: pnlColor(candidate.percentCaptured) }}>{formatPctValue(candidate.percentCaptured)}</span>
                 <span className="font-mono text-[12px] leading-none tabular-nums" style={{ color: 'var(--text-secondary)' }}>{formatCurrency(candidate.remainingPremium, 0)}</span>
               </div>
@@ -987,7 +985,6 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
 }
 
 export default function PortfolioPage() {
-  const navigate = useNavigate();
   const [trades, setTrades] = useState<PortfolioTrade[]>([]);
   const [editingTrade, setEditingTrade] = useState<PortfolioTrade | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -1363,13 +1360,13 @@ export default function PortfolioPage() {
                     <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openTrades, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." />
                   </div>
                   <div className="md:col-span-1 xl:col-span-4">
-                    <NeedsAttentionList items={buildNeedsAttention(openTrades).slice(0, 5)} onTickerClick={ticker => navigate(`/options/${ticker.trim().toUpperCase()}`)} onDetailsClick={openDrawer} />
+                    <NeedsAttentionList items={buildNeedsAttention(openTrades).slice(0, 5)} onDetailsClick={openDrawer} />
                   </div>
                   <div className="md:col-span-1 xl:col-span-8">
                     <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openTrades, markBasis)} totalGrossRisk={sumValues(openTrades.map(calculateEquityAtRisk))} maxItems={8} />
                   </div>
                   <div className="md:col-span-1 xl:col-span-4">
-                    <CloseCandidatesCard candidates={buildCloseCandidates(openTrades, markBasis).slice(0, 5)} onTickerClick={ticker => navigate(`/options/${ticker.trim().toUpperCase()}`)} />
+                    <CloseCandidatesCard candidates={buildCloseCandidates(openTrades, markBasis).slice(0, 5)} />
                   </div>
                 </div>
               )}
@@ -1472,7 +1469,7 @@ export default function PortfolioPage() {
                       return (
                         <tr key={trade.id} style={{ borderBottom: '1px solid var(--border)', backgroundColor: index % 2 ? 'var(--row-alt)' : 'transparent' }}>
                           <td className="px-2 py-1 text-left font-mono font-bold whitespace-nowrap">
-                            <button onClick={() => navigate(`/options/${trade.ticker.trim().toUpperCase()}`)} className="underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</button>
+                            <Link to={`/options/${trade.ticker.trim().toUpperCase()}`} className="underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</Link>
                           </td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{expiryLabel(trade.expiration)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">

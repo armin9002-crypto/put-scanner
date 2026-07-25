@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import {
   getWatchlist,
   markWatchlistItems,
@@ -239,7 +239,6 @@ function mergeLiveItem(item: WatchlistItem, optData: OptionsChainData | null, cu
 }
 
 export default function WatchlistPage() {
-  const navigate = useNavigate();
   const [items, setItems] = useState<WatchlistItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
@@ -435,15 +434,15 @@ export default function WatchlistPage() {
                     style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', ...mutedStyle }}
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <button
-                        onClick={() => navigate(`/options/${row.ticker}?expiry=${row.expiryTimestamp}`)}
+                      <Link
+                        to={`/options/${row.ticker}?expiry=${row.expiryTimestamp}`}
                         className="min-w-0 text-left"
                       >
                         <div className="font-mono text-lg font-bold" style={{ color: 'var(--accent-light)' }}>{row.ticker}</div>
                         <div className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
                           {row.expiryFormatted} {isFiniteNumber(row.dte) ? `(${row.dte} DTE)` : ''}
                         </div>
-                      </button>
+                      </Link>
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <span
                           className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded"
@@ -591,13 +590,13 @@ export default function WatchlistPage() {
                           </button>
                         </td>
                         <td className="px-1.5 py-0.5 text-left whitespace-nowrap" style={mutedStyle}>
-                          <button
-                            onClick={() => navigate(`/options/${row.ticker}?expiry=${row.expiryTimestamp}`)}
-                            className="font-mono font-bold hover:opacity-80 transition-opacity min-h-[34px]"
+                          <Link
+                            to={`/options/${row.ticker}?expiry=${row.expiryTimestamp}`}
+                            className="inline-flex items-center font-mono font-bold hover:opacity-80 transition-opacity min-h-[34px]"
                             style={{ color: 'var(--accent-light)' }}
                           >
                             {row.ticker}
-                          </button>
+                          </Link>
                         </td>
                         <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={mutedStyle}>
                           <button

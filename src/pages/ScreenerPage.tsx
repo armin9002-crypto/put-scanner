@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { ETF_LIST } from '../lib/etfs';
 import type { ETFInfo, OptionsChainData } from '../lib/types';
 import { fetchOptions, fetchSparkline, fetchWithConcurrencyLimit, calculatePutDelta, formatPrice, formatNumber, fetchIVRank } from '../lib/api';
@@ -378,7 +378,6 @@ function vixLabel(vix: number): { text: string; color: string } {
 // --- Component ---
 
 export default function ScreenerPage() {
-  const navigate = useNavigate();
 
   // Filters — default expiry to ≤30 DTE (Opt 3)
   const [selectedETFs, setSelectedETFs] = useState<ETFInfo[]>([]);
@@ -1168,13 +1167,13 @@ export default function ScreenerPage() {
                   return (
                     <tr key={`${row.ticker}-${row.expDate}-${row.strike}`} className="transition-colors" style={{ borderBottom: '1px solid var(--border)', ...bgStyle }}>
                       <td className="px-2 py-1 text-left whitespace-nowrap sticky left-0 z-[2] border-r" style={{ borderColor: 'var(--border)', backgroundColor: bgStyle.backgroundColor || 'var(--surface)' }}>
-                        <button
-                          onClick={() => navigate(`/options/${row.ticker}`)}
-                          className="font-mono font-bold hover:opacity-80 transition-opacity min-h-[44px]"
+                        <Link
+                          to={`/options/${row.ticker}`}
+                          className="inline-flex items-center font-mono font-bold hover:opacity-80 transition-opacity min-h-[44px]"
                           style={{ color: 'var(--accent-light)' }}
                         >
                           {row.ticker}
-                        </button>
+                        </Link>
                       </td>
                       <td className="px-2 py-1 text-right font-mono hidden md:table-cell" style={{ color: 'var(--text)' }}>{formatPrice(row.currentPrice)}</td>
                       <td className="px-2 py-1 text-right font-mono whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{row.expLabel}</td>

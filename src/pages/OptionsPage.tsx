@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import type { ExpirationDate, OptionsChainData, SortField, SortDirection } from '../lib/types';
 import { ETF_LIST } from '../lib/etfs';
 import { fetchOptions, fetchExtendedPrice, calculatePutDelta, formatPrice, formatYield, yieldColor, formatNumber, fetchIVRank } from '../lib/api';
@@ -397,7 +397,6 @@ function resolvePreferredExpiration(
 
 export default function OptionsPage() {
   const { ticker } = useParams<{ ticker: string }>();
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const expiryParam = searchParams.get('expiry');
   const etf = ETF_LIST.find(e => e.ticker === ticker);
@@ -837,7 +836,7 @@ export default function OptionsPage() {
       <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--bg)' }}>
         <div className="text-center">
           <p className="mb-4" style={{ color: 'var(--text-muted)' }}>ETF not found: {ticker}</p>
-          <button onClick={() => navigate('/')} className="px-4 py-2 text-white rounded-lg text-sm" style={{ backgroundColor: 'var(--accent)' }}>Back to Scanner</button>
+          <Link to="/" className="inline-block px-4 py-2 text-white rounded-lg text-sm" style={{ backgroundColor: 'var(--accent)' }}>Back to Scanner</Link>
         </div>
       </div>
     );
@@ -848,13 +847,14 @@ export default function OptionsPage() {
       <div className="option-page-shell max-w-[1400px] mx-auto px-3 sm:px-5 lg:px-8 py-4 sm:py-6">
         {/* Header */}
         <div className="option-page-title-row flex items-center gap-2 sm:gap-4 mb-4 sm:mb-6 min-w-0">
-          <button
-            onClick={() => navigate('/')}
+          <Link
+            to="/"
+            aria-label="Back to Scanner"
             className="p-2 rounded-lg transition-all min-h-[44px] min-w-[44px] flex items-center justify-center"
             style={{ color: 'var(--text-muted)' }}
           >
             <ArrowLeft className="w-5 h-5" />
-          </button>
+          </Link>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 sm:gap-3 min-w-0">
               <h1 className="text-xl sm:text-2xl font-bold font-mono" style={{ color: 'var(--text)' }}>{etf.ticker}</h1>

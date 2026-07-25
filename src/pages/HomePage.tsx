@@ -1,5 +1,4 @@
 import { lazy, Suspense, useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { clearBatchPriceCache, fetchBatchPrices, fetchOptions, fetchSparkline, fetchWithConcurrencyLimit } from '../lib/api';
 import type { SparklineData } from '../lib/api';
 import { getExpirationsCache, setExpirationsCache } from '../lib/cache';
@@ -139,7 +138,6 @@ function MarketChartCard({
 }
 
 export default function HomePage() {
-  const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [leverageFilter, setLeverageFilter] = useState<string>('All');
   const [typeFilter, setTypeFilter] = useState<string>('All');
@@ -413,7 +411,7 @@ export default function HomePage() {
             <ETFCard
               key={etf.ticker}
               etf={etf}
-              onClick={() => navigate(`/options/${etf.ticker}`)}
+              to={`/options/${etf.ticker}`}
               priceData={prices[etf.ticker] ?? null}
               priceError={!pricesLoading && !!pricesError && !prices[etf.ticker]}
               onRetry={() => loadPrices(true)}

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Activity, AlertTriangle, RefreshCw, X } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { buildEtfPulseRows, getEtfPulseUniverse, type EtfPulseLoadResult, type EtfPulseProgress } from '../lib/etfPulseData';
 import type { EtfPulseRow, EtfPulseTrend } from '../lib/etfPulseMetrics';
 import { formatCurrency, formatPercent } from '../lib/format';
@@ -402,7 +402,7 @@ function VisualCard({ title, subtitle, children }: { title: string; subtitle: st
   );
 }
 
-function UniverseHeatmap({ rows, period, onOpenTicker }: { rows: EtfPulseRow[]; period: VisualPeriod; onOpenTicker: (ticker: string) => void }) {
+function UniverseHeatmap({ rows, period }: { rows: EtfPulseRow[]; period: VisualPeriod }) {
   const items = useMemo(() => [...rows].sort((a, b) => {
     const aValue = getReturnForPeriod(a, period);
     const bValue = getReturnForPeriod(b, period);
@@ -423,10 +423,9 @@ function UniverseHeatmap({ rows, period, onOpenTicker }: { rows: EtfPulseRow[]; 
         const trend = trendStyle(row);
         const style = heatmapTileStyle(value);
         return (
-          <button
+          <Link
             key={row.ticker}
-            type="button"
-            onClick={() => onOpenTicker(row.ticker)}
+            to={`/options/${row.ticker}`}
             aria-label={`Open ${row.ticker} ETF detail`}
             className="rounded-md p-2 min-h-[64px] overflow-hidden text-left cursor-pointer transition duration-150 hover:-translate-y-0.5 hover:shadow-[0_0_0_1px_rgba(96,165,250,0.28)] focus:outline-none focus:ring-2 focus:ring-blue-400/40 flex flex-col justify-between"
             title={`${row.ticker} - ${row.name}\n${period}: ${formatPct(value)}\nRSI: ${isFiniteNumber(row.rsi14) ? row.rsi14.toFixed(1) : DASH}\nTrend: ${trend.label}\n20D RV: ${formatPct(row.realizedVolatility20)}\nRecent DD: ${formatPct(row.recentDrawdown30)}\nvs 50D: ${formatPct(row.distance50)}\nvs 200D: ${formatPct(row.distance200)}\n52W Pos: ${formatPct(row.position52Week)}\n52W DD: ${formatPct(row.drawdown52Week)}`}
@@ -440,14 +439,14 @@ function UniverseHeatmap({ rows, period, onOpenTicker }: { rows: EtfPulseRow[]; 
               <div className="truncate text-[10px]" style={{ color: trend.color }}>{trend.label}</div>
               <div className="font-mono text-[10px] tabular-nums whitespace-nowrap flex-shrink-0" style={{ color: 'var(--text-muted)' }}>{formatPrice(row.price)}</div>
             </div>
-          </button>
+          </Link>
         );
       })}
     </div>
   );
 }
 
-function MomentumQuadrant({ rows, period, onOpenTicker }: { rows: EtfPulseRow[]; period: VisualPeriod; onOpenTicker: (ticker: string) => void }) {
+function MomentumQuadrant({ rows, period }: { rows: EtfPulseRow[]; period: VisualPeriod }) {
   const [hoveredTicker, setHoveredTicker] = useState<string | null>(null);
   const points = useMemo(() => rows
     .map(row => ({ row, x: getReturnForPeriod(row, period), y: row.rsi14 }))
@@ -507,31 +506,27 @@ function MomentumQuadrant({ rows, period, onOpenTicker }: { rows: EtfPulseRow[];
           const radius = Math.max(4, Math.min(9, 4 + ((row.realizedVolatility20 ?? 0) * 7)));
           const active = hoveredTicker === row.ticker;
           return (
-            <circle
+            <Link
               key={row.ticker}
-              cx={scaleX(x)}
-              cy={scaleY(y)}
-              r={active ? radius + 3 : radius}
-              fill={trend.color}
-              fillOpacity={active ? 0.96 : 0.82}
-              stroke={active ? 'var(--accent-light)' : 'var(--bg)'}
-              strokeWidth={active ? 2.5 : 1.5}
-              className="cursor-pointer"
-              onMouseEnter={() => setHoveredTicker(row.ticker)}
-              onFocus={() => setHoveredTicker(row.ticker)}
-              onMouseLeave={() => setHoveredTicker(current => current === row.ticker ? null : current)}
-              onBlur={() => setHoveredTicker(current => current === row.ticker ? null : current)}
-              onClick={() => onOpenTicker(row.ticker)}
+              to={`/options/${row.ticker}`}
               tabIndex={0}
-              role="button"
               aria-label={`Open ${row.ticker} ETF detail`}
-              onKeyDown={event => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault();
-                  onOpenTicker(row.ticker);
-                }
-              }}
-            />
+              onFocus={() => setHoveredTicker(row.ticker)}
+              onBlur={() => setHoveredTicker(current => current === row.ticker ? null : current)}
+            >
+              <circle
+                cx={scaleX(x)}
+                cy={scaleY(y)}
+                r={active ? radius + 3 : radius}
+                fill={trend.color}
+                fillOpacity={active ? 0.96 : 0.82}
+                stroke={active ? 'var(--accent-light)' : 'var(--bg)'}
+                strokeWidth={active ? 2.5 : 1.5}
+                className="cursor-pointer"
+                onMouseEnter={() => setHoveredTicker(row.ticker)}
+                onMouseLeave={() => setHoveredTicker(current => current === row.ticker ? null : current)}
+              />
+            </Link>
           );
         })}
         {hoveredPoint && (
@@ -569,7 +564,6 @@ function TooltipMetric({ label, value, color }: { label: string; value: string; 
 }
 
 export default function EtfPulsePage() {
-  const navigate = useNavigate();
   const [result, setResult] = useState<EtfPulseLoadResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -610,7 +604,6 @@ export default function EtfPulsePage() {
   const leverageOptions = useMemo(() => ['All', ...new Set(getEtfPulseUniverse().map(etf => etf.leverage))], []);
   const typeOptions = useMemo(() => ['All', ...new Set(getEtfPulseUniverse().map(etf => etf.type))], []);
   const trendOptions: TrendFilter[] = ['All', 'Strong Uptrend', 'Uptrend', 'Weakening', 'Downtrend', 'Oversold', 'Overbought'];
-  const openTicker = (ticker: string) => navigate(`/options/${ticker.trim().toUpperCase()}`);
 
   const filteredRows = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -642,9 +635,9 @@ export default function EtfPulsePage() {
       sortField: 'ticker',
       sticky: true,
       render: row => (
-        <button onClick={() => navigate(`/options/${row.ticker}`)} className="underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>
+        <Link to={`/options/${row.ticker}`} className="underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>
           {row.ticker}
-        </button>
+        </Link>
       ),
     },
     {
@@ -765,7 +758,7 @@ export default function EtfPulsePage() {
         );
       },
     },
-  ], [navigate]);
+  ], []);
 
   const tableMinWidth = useMemo(() => columns.reduce((sum, column) => sum + column.width, 0), [columns]);
 
@@ -911,10 +904,10 @@ export default function EtfPulsePage() {
             </div>
             <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)] gap-3">
               <VisualCard title="Universe Heatmap" subtitle="Performance by selected period across the ETF universe.">
-                <UniverseHeatmap rows={filteredRows} period={selectedVisualPeriod} onOpenTicker={openTicker} />
+                <UniverseHeatmap rows={filteredRows} period={selectedVisualPeriod} />
               </VisualCard>
               <VisualCard title="Momentum Quadrant" subtitle="Selected-period return versus RSI. Point size reflects 20D realized volatility.">
-                <MomentumQuadrant rows={filteredRows} period={selectedVisualPeriod} onOpenTicker={openTicker} />
+                <MomentumQuadrant rows={filteredRows} period={selectedVisualPeriod} />
               </VisualCard>
             </div>
           </section>

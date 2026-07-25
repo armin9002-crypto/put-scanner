@@ -1,9 +1,10 @@
 import type { ETFInfo } from '../lib/types';
 import { TrendingUp, TrendingDown } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 interface ETFCardProps {
   etf: ETFInfo;
-  onClick: () => void;
+  to: string;
   priceData?: {
     price: number | null;
     change: number | null;
@@ -63,7 +64,7 @@ function ScannerCardTooltip({ etf, priceData, ivStatus }: { etf: ETFInfo; priceD
 
   return (
     <div
-      className="pointer-events-none absolute left-3 right-3 top-3 z-30 hidden rounded-lg px-3 py-2 text-xs opacity-0 shadow-xl transition-opacity group-hover:block group-hover:opacity-100 group-focus-visible:block group-focus-visible:opacity-100 sm:block sm:translate-y-[-105%]"
+      className="pointer-events-none absolute left-3 right-3 top-3 z-30 hidden rounded-lg px-3 py-2 text-xs opacity-0 shadow-xl transition-opacity group-hover:block group-hover:opacity-100 group-focus-within:block group-focus-within:opacity-100 sm:block sm:translate-y-[-105%]"
       style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', boxShadow: 'var(--shadow)' }}
     >
       <div className="mb-1 flex items-center justify-between gap-2">
@@ -141,7 +142,7 @@ function PricePlaceholder({ showPriceSkeleton = false }: { showPriceSkeleton?: b
 
 export default function ETFCard({
   etf,
-  onClick,
+  to,
   priceData,
   priceError,
   onRetry,
@@ -151,10 +152,9 @@ export default function ETFCard({
   const ivEnv = hasValidPrice ? ivEnvStyle(priceData!.price!, priceData!.high52w, priceData!.low52w) : null;
 
   return (
-    <button
-      onClick={onClick}
+    <div
       title={`${etf.ticker} - ${etf.name}`}
-      className="group rounded-xl p-3 text-left transition-all duration-200 w-full relative min-w-0"
+      className="group rounded-xl p-3 text-left transition-all duration-200 w-full relative min-w-0 focus-within:ring-2 focus-within:ring-indigo-500/60"
       style={{
         backgroundColor: ivEnv ? ivEnv.bgTint : 'var(--surface)',
         border: `1px solid ${ivEnv ? ivEnv.borderColor : 'var(--border)'}`,
@@ -162,11 +162,17 @@ export default function ETFCard({
         boxShadow: 'var(--shadow)',
       }}
     >
-      <span className="absolute top-2 right-2 text-xs font-semibold px-1.5 py-0.5 rounded-md leading-none" style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)', border: '1px solid var(--accent-border)' }}>
+      <Link
+        to={to}
+        aria-label={`Open ${etf.ticker} options`}
+        className="absolute inset-0 z-0 rounded-xl focus:outline-none"
+      />
+
+      <span className="pointer-events-none absolute top-2 right-2 z-10 text-xs font-semibold px-1.5 py-0.5 rounded-md leading-none" style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)', border: '1px solid var(--accent-border)' }}>
         {etf.leverage}
       </span>
 
-      <div className="flex flex-row gap-3 pr-8 min-w-0">
+      <div className="pointer-events-none relative z-10 flex flex-row gap-3 pr-8 min-w-0">
         <div className="flex flex-col justify-between flex-shrink-0 w-[52%] sm:w-1/2 min-w-0">
           <div>
             <div className="flex items-baseline gap-1.5 min-w-0">
@@ -195,8 +201,9 @@ export default function ETFCard({
                 <PricePlaceholder />
                 {onRetry && (
                   <button
-                    onClick={(e) => { e.stopPropagation(); onRetry(); }}
-                    className="block text-[10px] mt-0.5 underline"
+                    type="button"
+                    onClick={onRetry}
+                    className="pointer-events-auto relative z-20 block text-[10px] mt-0.5 underline"
                     style={{ color: 'var(--accent-light)' }}
                   >
                     Retry
@@ -222,11 +229,11 @@ export default function ETFCard({
       </div>
 
       {ivEnv && (
-        <span className="hidden sm:block absolute right-2 bottom-2 text-[10px] font-semibold leading-none" style={{ color: ivEnv.badgeColor }}>
+        <span className="pointer-events-none hidden sm:block absolute right-2 bottom-2 z-10 text-[10px] font-semibold leading-none" style={{ color: ivEnv.badgeColor }}>
           {ivEnv.badge}
         </span>
       )}
       <ScannerCardTooltip etf={etf} priceData={priceData ?? null} ivStatus={ivEnv?.badge ?? null} />
-    </button>
+    </div>
   );
 }
