@@ -3,9 +3,12 @@ import { TrendingUp, TrendingDown } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import {
   isScannerOptionSnapshotStale,
+  scannerLiquidityCompactText,
   scannerLiquidityLabelText,
   type ScannerLiquidityLabel,
   type ScannerOptionSnapshot,
+  type ScannerSnapshotDiagnostic,
+  type SnapshotConfidence,
 } from '../lib/scannerOptionSnapshot';
 
 interface ETFCardProps {
@@ -24,6 +27,7 @@ interface ETFCardProps {
     posIn52wRange: number | null;
   } | null;
   optionSnapshot?: ScannerOptionSnapshot | null;
+  optionDiagnostic?: ScannerSnapshotDiagnostic | null;
   priceError?: boolean;
   onRetry?: () => void;
 }
@@ -58,6 +62,12 @@ function snapshotIvText(snapshot: ScannerOptionSnapshot | null | undefined): str
   const iv = snapshot?.atmPutIv;
   if (iv == null || !Number.isFinite(iv) || iv <= 0) return '—';
   return `${iv.toLocaleString('en-US', { maximumFractionDigits: 1 })}%`;
+}
+
+function snapshotIvLabel(snapshot: ScannerOptionSnapshot | null | undefined): string {
+  const dte = snapshot?.dte;
+  if (dte == null || !Number.isFinite(dte) || (dte >= 45 && dte <= 75)) return 'IV60';
+  return `IV${Math.round(dte)}`;
 }
 
 function liquidityColor(label: ScannerLiquidityLabel | undefined): string {
@@ -96,6 +106,30 @@ function formatSnapshotUpdatedAt(value: string | null | undefined): string {
   return Number.isFinite(timestamp) ? new Date(timestamp).toLocaleString('en-US') : '—';
 }
 
+function confidenceText(value: SnapshotConfidence | null | undefined): string {
+  return value ? value.charAt(0).toUpperCase() + value.slice(1) : '—';
+}
+
+function expirationConfidence(snapshot: ScannerOptionSnapshot | null | undefined): SnapshotConfidence | null {
+  if (snapshot?.expirationSelectionTier === 'ideal') return 'high';
+  if (snapshot?.expirationSelectionTier === 'normal') return 'normal';
+  if (snapshot?.expirationSelectionTier === 'expanded') return 'reduced';
+  if (snapshot?.expirationSelectionTier === 'broad') return 'low';
+  return null;
+}
+
+function methodologyText(snapshot: ScannerOptionSnapshot | null | undefined): string {
+  if (!snapshot?.atmIvMethod) return '—';
+  if (snapshot.atmIvMethod === 'interpolated') {
+    return snapshot.atmLowerStrike != null && snapshot.atmUpperStrike != null
+      ? `Interpolated between ${formatSnapshotMoney(snapshot.atmLowerStrike)} and ${formatSnapshotMoney(snapshot.atmUpperStrike)} puts`
+      : 'Interpolated between bracketing puts';
+  }
+  return snapshot.atmStrike != null
+    ? `Nearest valid ${formatSnapshotMoney(snapshot.atmStrike)} put`
+    : 'Nearest valid put';
+}
+
 function SnapshotMetric({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-3 leading-5">
@@ -105,11 +139,19 @@ function SnapshotMetric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ScannerSnapshotTooltip({ id, snapshot }: { id: string; snapshot: ScannerOptionSnapshot | null | undefined }) {
+function ScannerSnapshotTooltip({
+  id,
+  snapshot,
+  diagnostic,
+}: {
+  id: string;
+  snapshot: ScannerOptionSnapshot | null | undefined;
+  diagnostic: ScannerSnapshotDiagnostic | null | undefined;
+}) {
   const stale = snapshot ? isScannerOptionSnapshotStale(snapshot) : false;
   const liquidityText = scannerLiquidityLabelText(snapshot?.liquidityLabel ?? 'unavailable');
   const expirationText = snapshot
-    ? `${formatSnapshotDate(snapshot.expiration)} · ${snapshot.dte} DTE`
+    ? `${formatSnapshotDate(snapshot.expiration)} · ${formatSnapshotNumber(snapshot.dte)} DTE`
     : '—';
 
   return (
@@ -119,23 +161,46 @@ function ScannerSnapshotTooltip({ id, snapshot }: { id: string; snapshot: Scanne
       className="scanner-snapshot-tooltip pointer-events-none absolute bottom-5 right-0 z-30 w-[min(290px,calc(100vw-2rem))] rounded-lg px-3 py-2 text-[11px] opacity-0 shadow-xl transition-opacity group-hover/snapshot:opacity-100 group-focus-within:opacity-100"
       style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', boxShadow: 'var(--shadow)' }}
     >
-      <div className="mb-1 text-xs font-semibold">60-Day Options Snapshot</div>
-      <div className="mb-2" style={{ color: 'var(--text-secondary)' }}>{expirationText}</div>
-      <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>ATM Put</div>
-      <SnapshotMetric label="Strike" value={formatSnapshotMoney(snapshot?.atmStrike)} />
-      <SnapshotMetric label="IV" value={snapshotIvText(snapshot)} />
-      <div className="mb-1 mt-2 text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Approximately 30% OTM Put</div>
-      <SnapshotMetric label="Strike" value={snapshot?.liquidityStrike != null && snapshot.actualOtmPercent != null && Number.isFinite(snapshot.actualOtmPercent) ? `${formatSnapshotMoney(snapshot.liquidityStrike)} · ${snapshot.actualOtmPercent.toFixed(1)}% OTM` : '—'} />
+      <div className="mb-1 text-xs font-semibold">Options Snapshot</div>
+      <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>IV benchmark</div>
+      <SnapshotMetric label="Target" value="60 DTE ATM put" />
+      <SnapshotMetric label="Used" value={expirationText} />
+      <SnapshotMetric label="Expiration tier" value={snapshot?.expirationSelectionTier ? snapshot.expirationSelectionTier.replace('_', ' ') : '—'} />
+      <SnapshotMetric label="Expiration confidence" value={confidenceText(expirationConfidence(snapshot))} />
+      <SnapshotMetric label="Method" value={methodologyText(snapshot)} />
+      <SnapshotMetric
+        label="ATM moneyness"
+        value={snapshot?.atmMoneynessPercent != null && Number.isFinite(snapshot.atmMoneynessPercent)
+          ? `${snapshot.atmMoneynessPercent >= 0 ? '+' : ''}${snapshot.atmMoneynessPercent.toFixed(1)}%`
+          : '—'}
+      />
+      <SnapshotMetric label="ATM IV" value={snapshotIvText(snapshot)} />
+      <SnapshotMetric label="ATM confidence" value={confidenceText(snapshot?.atmConfidence)} />
+      <SnapshotMetric label="Price source" value={snapshot?.underlyingPriceSource ? snapshot.underlyingPriceSource.replace('_', ' ') : '—'} />
+      <div className="mb-1 mt-2 text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Liquidity benchmark</div>
+      <SnapshotMetric label="Target" value="30% OTM put" />
+      <SnapshotMetric label="Used" value={snapshot?.liquidityStrike != null && snapshot.actualOtmPercent != null && Number.isFinite(snapshot.actualOtmPercent) ? `${formatSnapshotMoney(snapshot.liquidityStrike)} · ${snapshot.actualOtmPercent.toFixed(1)}% OTM` : '—'} />
+      <SnapshotMetric label="Selection tier" value={snapshot?.liquiditySelectionTier ? snapshot.liquiditySelectionTier.replace('_', ' ') : '—'} />
       <SnapshotMetric label="Bid / Ask" value={`${formatSnapshotMoney(snapshot?.bid)} / ${formatSnapshotMoney(snapshot?.ask)}`} />
       <SnapshotMetric label="Mid / Last" value={`${formatSnapshotMoney(snapshot?.midpoint)} / ${formatSnapshotMoney(snapshot?.last)}`} />
       <SnapshotMetric label="Last Trade" value={formatSnapshotDate(snapshot?.lastTradeDate)} />
       <SnapshotMetric label="Open Interest" value={formatSnapshotNumber(snapshot?.openInterest)} />
       <SnapshotMetric label="Volume" value={formatSnapshotNumber(snapshot?.volume)} />
-      <SnapshotMetric label="Spread" value={snapshot?.spreadPercent != null && Number.isFinite(snapshot.spreadPercent) ? `${(snapshot.spreadPercent * 100).toFixed(1)}%` : '—'} />
+      <SnapshotMetric label="Spread" value={snapshot?.spreadPercent != null && Number.isFinite(snapshot.spreadPercent) ? `${formatSnapshotMoney(snapshot.absoluteSpread)} · ${(snapshot.spreadPercent * 100).toFixed(1)}%` : '—'} />
+      <SnapshotMetric label="Nearby bids" value={snapshot ? `${snapshot.neighboringStrikesWithBid} of ${snapshot.neighboringStrikeCount}` : '—'} />
       <div className="mt-2 flex items-center justify-between gap-3 border-t pt-1.5" style={{ borderColor: 'var(--border)' }}>
         <span style={{ color: 'var(--text-muted)' }}>Liquidity</span>
         <span className="font-semibold" style={{ color: liquidityColor(snapshot?.liquidityLabel) }}>{liquidityText}</span>
       </div>
+      <SnapshotMetric label="Confidence" value={confidenceText(snapshot?.liquidityConfidence)} />
+      {snapshot?.spreadGuardrail && <div className="mt-1 leading-4" style={{ color: 'var(--text-dim)' }}>{snapshot.spreadGuardrail}</div>}
+      {snapshot?.fallbackReason && <div className="mt-1 leading-4" style={{ color: 'var(--yellow)' }}>{snapshot.fallbackReason}</div>}
+      {snapshot?.unavailableReason && <div className="mt-1 leading-4" style={{ color: 'var(--red)' }}>Unavailable: {snapshot.unavailableReason}</div>}
+      {diagnostic && (
+        <div className="mt-1 leading-4" style={{ color: diagnostic.status === 'failed' ? 'var(--red)' : 'var(--yellow)' }}>
+          Last update {diagnostic.status}: {diagnostic.reason}
+        </div>
+      )}
       <div className="mt-1 text-[10px]" style={{ color: 'var(--text-dim)' }}>
         Updated: {formatSnapshotUpdatedAt(snapshot?.updatedAt)}{stale ? ' · Stale' : ''}
       </div>
@@ -204,6 +269,7 @@ export default function ETFCard({
   to,
   priceData,
   optionSnapshot,
+  optionDiagnostic,
   priceError,
   onRetry,
 }: ETFCardProps) {
@@ -211,7 +277,8 @@ export default function ETFCard({
   const changePositive = hasValidPrice ? (priceData!.changePct ?? 0) >= 0 : true;
   const rangeStyle = hasValidPrice ? rangePositionStyle(priceData!.price!, priceData!.high52w, priceData!.low52w) : null;
   const snapshotTooltipId = `scanner-option-snapshot-${etf.ticker}`;
-  const liquidityText = scannerLiquidityLabelText(optionSnapshot?.liquidityLabel ?? 'unavailable');
+  const liquidityText = scannerLiquidityCompactText(optionSnapshot?.liquidityLabel ?? 'unavailable');
+  const ivLabel = snapshotIvLabel(optionSnapshot);
 
   return (
     <div
@@ -293,14 +360,14 @@ export default function ETFCard({
 
       <Link
         to={to}
-        aria-label={`${etf.ticker} IV60 ${snapshotIvText(optionSnapshot)}, liquidity ${liquidityText}`}
+        aria-label={`${etf.ticker} ${ivLabel} ${snapshotIvText(optionSnapshot)}, liquidity ${liquidityText}`}
         aria-describedby={snapshotTooltipId}
-        className="group/snapshot absolute bottom-2 right-2 z-20 flex w-[44%] items-center justify-between gap-1 whitespace-nowrap text-[10px] font-medium leading-none focus:outline-none"
+        className="group/snapshot absolute bottom-2 right-2 z-20 flex w-[48%] items-center justify-end gap-1 whitespace-nowrap text-[9px] font-medium leading-none focus:outline-none"
       >
-        <span style={{ color: 'var(--text-dim)' }}>IV60 <span style={{ color: 'var(--text-secondary)' }}>{snapshotIvText(optionSnapshot)}</span></span>
+        <span className="shrink-0" style={{ color: 'var(--text-dim)' }}>{ivLabel} <span style={{ color: 'var(--text-secondary)' }}>{snapshotIvText(optionSnapshot)}</span></span>
         <span style={{ color: 'var(--text-dim)' }}>·</span>
-        <span className="truncate" style={{ color: liquidityColor(optionSnapshot?.liquidityLabel) }}>{liquidityText}</span>
-        <ScannerSnapshotTooltip id={snapshotTooltipId} snapshot={optionSnapshot} />
+        <span className="shrink-0" style={{ color: liquidityColor(optionSnapshot?.liquidityLabel) }}>{liquidityText}</span>
+        <ScannerSnapshotTooltip id={snapshotTooltipId} snapshot={optionSnapshot} diagnostic={optionDiagnostic} />
       </Link>
     </div>
   );
