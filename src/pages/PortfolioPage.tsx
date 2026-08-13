@@ -1,4 +1,4 @@
-import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AlertTriangle, Briefcase, ChevronDown, ChevronRight, Edit2, FileImage, Loader2, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { calculatePutDelta, fetchBatchPricesResult, fetchOptions } from '../lib/api';
@@ -52,7 +52,9 @@ import {
 } from '../lib/portfolioMetrics';
 import type { OptionDetail } from '../components/OptionDetailDrawer';
 import ErrorBoundary from '../components/ErrorBoundary';
+import DataFreshness from '../components/DataFreshness';
 import { persistCollapsedExpirationGroups, readCollapsedExpirationGroups, setAllExpirationGroupsCollapsed, toggleCollapsedExpirationGroup } from '../lib/portfolioSchedulePreferences';
+import { buildHistoryAnalytics, buildMonthlyRealizedPnl, filterHistoryTrades, historyDaysHeld, type HistoryOutcome } from '../lib/portfolioHistoryAnalytics';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 const PortfolioScreenshotImportModal = lazy(() => import('../components/PortfolioScreenshotImportModal'));
@@ -475,11 +477,13 @@ function CompactExposureBars({
   groups,
   labelFormatter = value => value,
   emptyLabel,
+  onGroupClick,
 }: {
   title: string;
   groups: PortfolioExposureGroup[];
   labelFormatter?: (value: string) => string;
   emptyLabel: string;
+  onGroupClick?: (group: PortfolioExposureGroup) => void;
 }) {
   const max = Math.max(...groups.map(group => group.grossRisk), 0);
   const totalGrossRisk = sumValues(groups.map(group => group.grossRisk));
@@ -506,7 +510,7 @@ function CompactExposureBars({
               `% Captured: ${formatGroupPercentCaptured(group)}`,
             ].join('\n');
             return (
-              <div key={group.key} title={tooltip}>
+              <button type="button" key={group.key} title={tooltip} onClick={() => onGroupClick?.(group)} className={`block w-full rounded px-1 py-0.5 text-left ${onGroupClick ? 'cursor-pointer hover:bg-white/5 focus:outline-none focus:ring-1 focus:ring-blue-400/40' : ''}`}>
                 <div className="flex items-center justify-between gap-2 text-[12px] leading-none mb-1">
                   <span className="font-medium truncate" style={{ color: 'var(--text)' }}>{labelFormatter(group.label)}</span>
                   <span className="font-mono tabular-nums flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>
@@ -520,7 +524,7 @@ function CompactExposureBars({
                   <span>{group.tradeCount} trade{group.tradeCount === 1 ? '' : 's'}</span>
                   <span className="truncate tabular-nums">Prem {formatCompactCurrency(group.premiumCollected)} · Captured {formatGroupPercentCaptured(group)} · Δ {formatDelta(group.weightedAverageDelta)} · Cur AY {formatPctValue(group.currentAY)}</span>
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>
@@ -532,9 +536,11 @@ function CompactExposureBars({
 function NeedsAttentionList({
   items,
   onDetailsClick,
+  onNavigate,
 }: {
   items: PortfolioTrade[];
   onDetailsClick: (trade: PortfolioTrade) => void;
+  onNavigate: (trade: PortfolioTrade) => void;
 }) {
   return (
     <section className="rounded-lg p-3 min-w-0 h-full flex flex-col" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
@@ -554,7 +560,8 @@ function NeedsAttentionList({
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5 min-w-0">
                     <Link to={`/options/${trade.ticker.trim().toUpperCase()}`} className="font-mono text-[13px] leading-none font-bold truncate underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</Link>
-                    <button onClick={() => onDetailsClick(trade)} className="font-mono text-[13px] leading-none truncate underline-offset-2 hover:underline" style={{ color: 'var(--text)' }}>{formatCurrency(trade.strike, 0)} Put</button>
+                    <button onClick={() => onNavigate(trade)} className="font-mono text-[13px] leading-none truncate underline-offset-2 hover:underline" style={{ color: 'var(--text)' }}>{formatCurrency(trade.strike, 0)} Put</button>
+                    <button onClick={() => onDetailsClick(trade)} className="rounded px-1 py-0.5 text-[9px]" title="Open option details" style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Details</button>
                   </div>
                   <div className="text-[11px] leading-none truncate mt-1" style={{ color: 'var(--text-dim)' }}>{expiryLabel(trade.expiration)} · {formatDteValue(calculateRemainingDte(trade))}</div>
                 </div>
@@ -572,7 +579,7 @@ function NeedsAttentionList({
   );
 }
 
-function CloseCandidatesCard({ candidates }: { candidates: CloseCandidate[] }) {
+function CloseCandidatesCard({ candidates, onNavigate }: { candidates: CloseCandidate[]; onNavigate: (trade: PortfolioTrade) => void }) {
   return (
     <section className="rounded-lg p-3 min-w-0 h-full flex flex-col" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
       <div className="flex items-start justify-between gap-2 mb-2 shrink-0">
@@ -587,17 +594,17 @@ function CloseCandidatesCard({ candidates }: { candidates: CloseCandidate[] }) {
       ) : (
         <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1 min-h-0">
           {candidates.map(candidate => (
-            <div key={candidate.trade.id} className="rounded px-2 py-1.5" title={candidate.reasons.join(', ')} style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
+            <div key={candidate.trade.id} className="block w-full rounded px-2 py-1.5 text-left" title={candidate.reasons.join(', ')} style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
               <div className="grid grid-cols-[minmax(88px,1fr)_auto_auto] gap-2 items-baseline">
                 <Link to={`/options/${candidate.trade.ticker.trim().toUpperCase()}`} className="text-left font-mono text-[13px] leading-none font-bold truncate underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{candidate.trade.ticker}</Link>
                 <span className="font-mono text-[12px] leading-none tabular-nums" style={{ color: pnlColor(candidate.percentCaptured) }}>{formatPctValue(candidate.percentCaptured)}</span>
                 <span className="font-mono text-[12px] leading-none tabular-nums" style={{ color: 'var(--text-secondary)' }}>{formatCurrency(candidate.remainingPremium, 0)}</span>
               </div>
-              <div className="grid grid-cols-[minmax(88px,1fr)_auto_auto] gap-2 text-[11px] leading-none mt-1" style={{ color: 'var(--text-dim)' }}>
+              <button type="button" onClick={() => onNavigate(candidate.trade)} className="grid w-full grid-cols-[minmax(88px,1fr)_auto_auto] gap-2 text-left text-[11px] leading-none mt-1 hover:opacity-80 focus:outline-none" title="Show in Schedule" style={{ color: 'var(--text-dim)' }}>
                 <span className="truncate">{expiryLabel(candidate.trade.expiration)} {formatCurrency(candidate.trade.strike, 0)} Put</span>
                 <span className="font-mono tabular-nums">{formatPctValue(candidate.currentAnnualizedYield)} AY</span>
                 <span className="font-mono tabular-nums">{formatDteValue(candidate.dte)}</span>
-              </div>
+              </button>
             </div>
           ))}
         </div>
@@ -611,11 +618,13 @@ function ConcentrationBars({
   groups,
   totalGrossRisk,
   maxItems = 6,
+  onGroupClick,
 }: {
   title: string;
   groups: PortfolioExposureGroup[];
   totalGrossRisk: number;
   maxItems?: number;
+  onGroupClick?: (group: PortfolioExposureGroup) => void;
 }) {
   const visible = groups.slice(0, maxItems);
   const max = Math.max(...visible.map(group => group.grossRisk), 0);
@@ -632,7 +641,7 @@ function ConcentrationBars({
           {visible.map(group => {
             const width = max > 0 ? Math.max(4, group.grossRisk / max * 100) : 0;
             return (
-              <div key={group.key} title={groupTooltip(group)}>
+              <button type="button" key={group.key} title={groupTooltip(group)} onClick={() => onGroupClick?.(group)} className={`block w-full rounded px-1 py-0.5 text-left ${onGroupClick ? 'cursor-pointer hover:bg-white/5 focus:outline-none focus:ring-1 focus:ring-blue-400/40' : ''}`}>
                 <div className="flex items-center justify-between gap-2 text-[12px] leading-none mb-1">
                   <span className="font-medium truncate" style={{ color: 'var(--text)' }}>{group.label}</span>
                   <span className="font-mono tabular-nums flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>{formatCompactCurrency(group.grossRisk)}</span>
@@ -644,7 +653,7 @@ function ConcentrationBars({
                   <span>{formatPctValue(percentOfTotal(group.grossRisk, totalGrossRisk))}</span>
                   <span className="truncate tabular-nums">{group.tradeCount} trades · Captured {formatGroupPercentCaptured(group)} · Δ {formatDelta(group.weightedAverageDelta)} · Cur AY {formatPctValue(group.currentAY)}</span>
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>
@@ -790,17 +799,11 @@ function getArchivedPercentCaptured(trade: PortfolioTrade): number | null {
 }
 
 function buildArchiveSummary(archivedTrades: PortfolioTrade[]) {
-  const realizedValues = archivedTrades.map(getArchivedRealizedPnl).filter(isFiniteNumber);
-  const premiums = archivedTrades.map(getArchivedPremium).filter(isFiniteNumber);
-  const pctItems = archivedTrades
-    .map(trade => ({ value: getArchivedPercentCaptured(trade), weight: getArchivedPremium(trade) }))
-    .filter(item => isFiniteNumber(item.value) && isFiniteNumber(item.weight) && item.weight > 0);
-  const totalWeight = sumValues(pctItems.map(item => item.weight));
+  const analytics = buildHistoryAnalytics(archivedTrades);
   return {
+    ...analytics,
     archivedTrades: archivedTrades.length,
-    realizedPnl: realizedValues.length > 0 ? sumValues(realizedValues) : null,
-    premiumCollected: premiums.length > 0 ? sumValues(premiums) : null,
-    avgPercentCaptured: totalWeight > 0 ? sumValues(pctItems.map(item => (item.value as number) * (item.weight as number))) / totalWeight : null,
+    avgPercentCaptured: analytics.blendedCapture,
     expiredWorthless: archivedTrades.filter(trade => trade.resolutionType === 'expired_worthless').length,
     expiredItm: archivedTrades.filter(trade => trade.resolutionType === 'expired_itm').length,
   };
@@ -1002,6 +1005,11 @@ export default function PortfolioPage() {
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [collapsedExpiryGroups, setCollapsedExpiryGroups] = useState<Record<string, boolean>>(readCollapsedExpirationGroups);
   const [resolvingArchiveIds, setResolvingArchiveIds] = useState<Set<string>>(() => new Set());
+  const [activeScheduleTicker, setActiveScheduleTicker] = useState<string | null>(null);
+  const [highlightedExpiration, setHighlightedExpiration] = useState<string | null>(null);
+  const [highlightedTradeId, setHighlightedTradeId] = useState<string | null>(null);
+  const scheduleRef = useRef<HTMLDivElement | null>(null);
+  const highlightTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -1034,6 +1042,10 @@ export default function PortfolioPage() {
   useEffect(() => {
     persistCollapsedExpirationGroups(collapsedExpiryGroups);
   }, [collapsedExpiryGroups]);
+
+  useEffect(() => () => {
+    if (highlightTimerRef.current) window.clearTimeout(highlightTimerRef.current);
+  }, []);
 
   const expirationGroups = useMemo(() => {
     const groups = buildExpirationScheduleGroups(openTrades, markBasis);
@@ -1080,6 +1092,51 @@ export default function PortfolioPage() {
       !allExpiryGroupsCollapsed,
     ));
   }, [expirationGroups, allExpiryGroupsCollapsed]);
+
+  const scrollToSchedule = useCallback((selector?: string) => {
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+      const target = selector
+        ? [...document.querySelectorAll<HTMLElement>(selector)].find(element => element.offsetParent !== null) ?? scheduleRef.current
+        : scheduleRef.current;
+      target?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+    }));
+  }, []);
+
+  const startTransientHighlight = useCallback((kind: 'expiration' | 'trade', value: string) => {
+    if (highlightTimerRef.current) window.clearTimeout(highlightTimerRef.current);
+    if (kind === 'expiration') setHighlightedExpiration(value);
+    else setHighlightedTradeId(value);
+    highlightTimerRef.current = window.setTimeout(() => {
+      setHighlightedExpiration(null);
+      setHighlightedTradeId(null);
+    }, 2000);
+  }, []);
+
+  const drillToExpiration = useCallback((group: PortfolioExposureGroup) => {
+    setActiveScheduleTicker(null);
+    setHighlightedTradeId(null);
+    setCollapsedExpiryGroups(current => ({ ...current, [group.key]: false }));
+    startTransientHighlight('expiration', group.key);
+    scrollToSchedule(`[data-expiration="${group.key}"]`);
+  }, [scrollToSchedule, startTransientHighlight]);
+
+  const drillToTicker = useCallback((group: PortfolioExposureGroup) => {
+    const ticker = group.key.trim().toUpperCase();
+    const expirations = openTrades.filter(trade => trade.ticker.trim().toUpperCase() === ticker).map(trade => trade.expiration);
+    setActiveScheduleTicker(ticker);
+    setHighlightedExpiration(null);
+    setHighlightedTradeId(null);
+    setCollapsedExpiryGroups(current => ({ ...current, ...Object.fromEntries(expirations.map(expiration => [expiration, false])) }));
+    scrollToSchedule(`[data-trade-ticker="${ticker}"]`);
+  }, [openTrades, scrollToSchedule]);
+
+  const drillToTrade = useCallback((trade: PortfolioTrade) => {
+    setActiveScheduleTicker(null);
+    setHighlightedExpiration(null);
+    setCollapsedExpiryGroups(current => ({ ...current, [trade.expiration]: false }));
+    startTransientHighlight('trade', trade.id);
+    scrollToSchedule(`[data-trade-id="${trade.id}"]`);
+  }, [scrollToSchedule, startTransientHighlight]);
 
   const persistTrades = useCallback((next: PortfolioTrade[]) => {
     savePortfolioTrades(next);
@@ -1324,9 +1381,7 @@ export default function PortfolioPage() {
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2 mb-3">
           <div className="min-w-0 lg:flex-shrink">
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight" style={{ color: 'var(--text)' }}>Portfolio</h1>
-            <div className="text-[10px]" style={{ color: 'var(--text-dim)' }}>
-              {lastRefreshed ? `Last refreshed: ${lastRefreshed.toLocaleString()}` : 'Last refreshed: saved snapshots are shown until you refresh open trades.'}
-            </div>
+            <DataFreshness updatedAt={lastRefreshed} status={refreshing ? 'updating' : refreshWarning ? 'failed' : lastRefreshed ? 'cached' : 'stale'} label="Portfolio market marks" />
           </div>
           <div className="flex flex-wrap lg:flex-nowrap items-center justify-start lg:justify-end gap-2 lg:shrink-0">
             {trades.length > 0 && <MarkBasisToggle markBasis={markBasis} onChange={setMarkBasis} />}
@@ -1390,23 +1445,26 @@ export default function PortfolioPage() {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-12 auto-rows-auto items-stretch gap-2">
                   <div className="md:col-span-1 xl:col-span-8">
-                    <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openTrades, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." />
+                    <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openTrades, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." onGroupClick={drillToExpiration} />
                   </div>
                   <div className="md:col-span-1 xl:col-span-4">
-                    <NeedsAttentionList items={buildNeedsAttention(openTrades).slice(0, 5)} onDetailsClick={openDrawer} />
+                    <NeedsAttentionList items={buildNeedsAttention(openTrades).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} />
                   </div>
                   <div className="md:col-span-1 xl:col-span-8">
-                    <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openTrades, markBasis)} totalGrossRisk={sumValues(openTrades.map(calculateEquityAtRisk))} maxItems={8} />
+                    <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openTrades, markBasis)} totalGrossRisk={sumValues(openTrades.map(calculateEquityAtRisk))} maxItems={8} onGroupClick={drillToTicker} />
                   </div>
                   <div className="md:col-span-1 xl:col-span-4">
-                    <CloseCandidatesCard candidates={buildCloseCandidates(openTrades, markBasis).slice(0, 5)} />
+                    <CloseCandidatesCard candidates={buildCloseCandidates(openTrades, markBasis).slice(0, 5)} onNavigate={drillToTrade} />
                   </div>
                 </div>
               )}
             </section>
 
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
-              <h2 className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--text-muted)' }}>Schedule of Positions</h2>
+            <div ref={scheduleRef} className="flex scroll-mt-20 flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--text-muted)' }}>Schedule of Positions</h2>
+                {activeScheduleTicker && <span className="inline-flex items-center gap-1 rounded px-2 py-1 text-[10px]" style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)', border: '1px solid var(--accent-border)' }}>Showing: {activeScheduleTicker}<button type="button" onClick={() => setActiveScheduleTicker(null)} className="font-bold" aria-label="Clear ticker highlight">× Clear</button></span>}
+              </div>
               <div className="flex flex-wrap items-center gap-2">
                 <DisplayToggle checked={showNominalYield} onChange={setShowNominalYield} label="Show Nominal Yield" />
                 <DisplayToggle checked={showNotesErrors} onChange={setShowNotesErrors} label="Show Notes / Errors" />
@@ -1420,7 +1478,7 @@ export default function PortfolioPage() {
                 const collapsed = collapsedExpiryGroups[group.expiration] === true;
                 const captured = group.premiumCollected > 0 && group.totalGainLoss != null ? group.totalGainLoss / group.premiumCollected : null;
                 return (
-                  <section key={group.expiration} className="overflow-hidden rounded-lg" style={{ border: '1px solid var(--border)' }}>
+                  <section key={group.expiration} data-expiration={group.expiration} className="scroll-mt-20 overflow-hidden rounded-lg transition-colors duration-500 motion-reduce:transition-none" style={{ border: `1px solid ${highlightedExpiration === group.expiration ? 'var(--accent)' : 'var(--border)'}`, backgroundColor: highlightedExpiration === group.expiration ? 'var(--accent-bg)' : undefined }}>
                     <button
                       onClick={() => toggleExpiryGroup(group.expiration)}
                       aria-expanded={!collapsed}
@@ -1441,7 +1499,7 @@ export default function PortfolioPage() {
                     </button>
                     {!collapsed && <div className="space-y-2 p-2" style={{ backgroundColor: 'var(--bg)' }}>
                     {group.trades.map(trade => (
-                <div key={trade.id} className="rounded-lg p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+                <div key={trade.id} data-trade-id={trade.id} data-trade-ticker={trade.ticker.trim().toUpperCase()} className="scroll-mt-20 rounded-lg p-3 transition-opacity duration-300 motion-reduce:transition-none" style={{ backgroundColor: highlightedTradeId === trade.id || activeScheduleTicker === trade.ticker.trim().toUpperCase() ? 'var(--accent-bg)' : 'var(--surface)', border: `1px solid ${highlightedTradeId === trade.id ? 'var(--accent)' : 'var(--border)'}`, opacity: activeScheduleTicker && activeScheduleTicker !== trade.ticker.trim().toUpperCase() ? 0.72 : 1 }}>
                   {(() => {
                     const health = getPositionHealth(trade);
                     return (
@@ -1527,7 +1585,7 @@ export default function PortfolioPage() {
                       const collapsed = collapsedExpiryGroups[group.expiration] === true;
                       const captured = group.premiumCollected > 0 && group.totalGainLoss != null ? group.totalGainLoss / group.premiumCollected : null;
                       return <Fragment key={group.expiration}>
-                        <tr style={{ backgroundColor: 'var(--surface-alt)', borderTop: '1px solid var(--accent-border)', borderBottom: '1px solid var(--border)', color: 'var(--text)' }}>
+                        <tr data-expiration={group.expiration} className="scroll-mt-20 transition-colors duration-500 motion-reduce:transition-none" style={{ backgroundColor: highlightedExpiration === group.expiration ? 'var(--accent-bg)' : 'var(--surface-alt)', borderTop: `1px solid ${highlightedExpiration === group.expiration ? 'var(--accent)' : 'var(--accent-border)'}`, borderBottom: '1px solid var(--border)', color: 'var(--text)' }}>
                           <td className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
                             <button onClick={() => toggleExpiryGroup(group.expiration)} aria-expanded={!collapsed} className="inline-flex items-center gap-1 hover:opacity-80">
                               {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
@@ -1568,7 +1626,7 @@ export default function PortfolioPage() {
                       const redeployBadges = getRedeployBadges(trade, markBasis);
                       const health = getPositionHealth(trade);
                       return (
-                        <tr key={trade.id} style={{ borderBottom: '1px solid var(--border)', backgroundColor: index % 2 ? 'var(--row-alt)' : 'transparent' }}>
+                        <tr key={trade.id} data-trade-id={trade.id} data-trade-ticker={trade.ticker.trim().toUpperCase()} className="scroll-mt-20 transition-opacity duration-300 motion-reduce:transition-none" style={{ borderBottom: '1px solid var(--border)', backgroundColor: highlightedTradeId === trade.id || activeScheduleTicker === trade.ticker.trim().toUpperCase() ? 'var(--accent-bg)' : index % 2 ? 'var(--row-alt)' : 'transparent', boxShadow: highlightedTradeId === trade.id ? 'inset 3px 0 var(--accent)' : undefined, opacity: activeScheduleTicker && activeScheduleTicker !== trade.ticker.trim().toUpperCase() ? 0.72 : 1 }}>
                           <td className="px-2 py-1 text-left font-mono font-bold whitespace-nowrap">
                             <Link to={`/options/${trade.ticker.trim().toUpperCase()}`} className="underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</Link>
                           </td>
@@ -1741,6 +1799,32 @@ function Metric({ label, value, color }: { label: string; value: string; color?:
   );
 }
 
+const HISTORY_FILTERS: Array<{ value: HistoryOutcome; label: string }> = [
+  { value: 'all', label: 'All' }, { value: 'expired_worthless', label: 'Expired Worthless' },
+  { value: 'closed', label: 'Closed' }, { value: 'expired_itm', label: 'Expired ITM' }, { value: 'assigned', label: 'Assigned' },
+];
+
+function MonthlyRealizedChart({ trades }: { trades: PortfolioTrade[] }) {
+  const months = buildMonthlyRealizedPnl(trades);
+  if (months.length === 0) return null;
+  const max = Math.max(...months.map(month => Math.abs(month.realizedPnl)), 1);
+  return (
+    <section className="mb-2 rounded-lg p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <div className="mb-2 flex items-center justify-between gap-2"><h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Realized P&amp;L by Month</h3><span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>{months.length} months</span></div>
+      <div className="flex h-28 items-end gap-1 overflow-x-auto pb-1">
+        {months.map(month => {
+          const captured = month.premiumCollected > 0 ? month.realizedPnl / month.premiumCollected : null;
+          const label = new Date(`${month.month}-01T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
+          return <div key={month.month} className="group/month relative flex h-full min-w-[42px] flex-1 flex-col items-center justify-end" title={`${label}\nTrades: ${month.trades}\nPremium Collected: ${formatCurrency(month.premiumCollected, 0)}\nRealized P&L: ${formatCurrency(month.realizedPnl, 0)}\nCaptured: ${formatPctValue(captured)}`}>
+            <div className="w-full max-w-10 rounded-t transition-opacity hover:opacity-80 motion-reduce:transition-none" style={{ height: `${Math.max(5, Math.abs(month.realizedPnl) / max * 78)}px`, backgroundColor: month.realizedPnl >= 0 ? 'var(--green)' : 'var(--red)' }} />
+            <span className="mt-1 text-[9px] whitespace-nowrap" style={{ color: 'var(--text-dim)' }}>{label}</span>
+          </div>;
+        })}
+      </div>
+    </section>
+  );
+}
+
 function ArchiveHistorySection({
   trades,
   summary,
@@ -1758,21 +1842,32 @@ function ArchiveHistorySection({
   onEdit: (trade: PortfolioTrade) => void;
   onDelete: (id: string) => void;
 }) {
+  const [outcomeFilter, setOutcomeFilter] = useState<HistoryOutcome>('all');
+  const visibleTrades = useMemo(() => filterHistoryTrades(trades, outcomeFilter), [outcomeFilter, trades]);
+  const visibleSummary = useMemo(() => outcomeFilter === 'all' ? summary : buildArchiveSummary(visibleTrades), [outcomeFilter, summary, visibleTrades]);
   if (trades.length === 0) return null;
 
   return (
     <section className="mt-5">
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
         <h2 className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--text-muted)' }}>Expired / Closed History</h2>
+        <div className="flex max-w-full gap-1 overflow-x-auto pb-0.5">
+          {HISTORY_FILTERS.map(filter => <button type="button" key={filter.value} onClick={() => setOutcomeFilter(filter.value)} className="rounded px-2 py-1 text-[10px] whitespace-nowrap" style={{ backgroundColor: outcomeFilter === filter.value ? 'var(--accent-bg)' : 'var(--surface)', color: outcomeFilter === filter.value ? 'var(--accent-light)' : 'var(--text-muted)', border: `1px solid ${outcomeFilter === filter.value ? 'var(--accent-border)' : 'var(--border)'}` }}>{filter.label}</button>)}
+        </div>
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-1.5 mb-2">
-        <SummaryCard label="Archived Trades" value={String(summary.archivedTrades)} />
-        <SummaryCard label="Realized P&L" value={formatCurrency(summary.realizedPnl)} color={pnlColor(summary.realizedPnl)} />
-        <SummaryCard label="Premium Collected" value={formatCurrency(summary.premiumCollected)} color="var(--green)" />
-        <SummaryCard label="Avg % Captured" value={formatPctValue(summary.avgPercentCaptured)} color={pnlColor(summary.avgPercentCaptured)} />
-        <SummaryCard label="Expired Worthless" value={String(summary.expiredWorthless)} color="var(--green)" />
-        <SummaryCard label="Expired ITM" value={String(summary.expiredItm)} color={summary.expiredItm > 0 ? 'var(--red)' : undefined} />
+      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-1.5 mb-2">
+        <SummaryCard label="Resolved Trades" value={String(visibleSummary.resolvedTrades)} />
+        <SummaryCard label="Realized P&L" value={formatCurrency(visibleSummary.realizedPnl)} color={pnlColor(visibleSummary.realizedPnl)} />
+        <SummaryCard label="Premium Collected" value={formatCurrency(visibleSummary.premiumCollected)} color="var(--green)" />
+        <SummaryCard label="Blended Capture" value={formatPctValue(visibleSummary.blendedCapture)} color={pnlColor(visibleSummary.blendedCapture)} />
+        <SummaryCard label="Avg Days Held" value={formatDays(visibleSummary.averageDaysHeld)} />
+        <SummaryCard label="Worthless %" value={formatPctValue(visibleSummary.percentages.expired_worthless)} color="var(--green)" />
+        <SummaryCard label="Expired ITM %" value={formatPctValue(visibleSummary.percentages.expired_itm)} color={visibleSummary.counts.expired_itm > 0 ? 'var(--red)' : undefined} />
       </div>
+      <div className="mb-2 flex h-2 overflow-hidden rounded-full" style={{ backgroundColor: 'var(--surface-alt)' }} title={`Expired Worthless ${visibleSummary.counts.expired_worthless} · Closed ${visibleSummary.counts.closed} · Expired ITM ${visibleSummary.counts.expired_itm} · Assigned ${visibleSummary.counts.assigned}`}>
+        {(['expired_worthless', 'closed', 'expired_itm', 'assigned'] as const).map((outcome, index) => <div key={outcome} style={{ width: `${visibleSummary.percentages[outcome] * 100}%`, backgroundColor: ['var(--green)', 'var(--accent)', 'var(--red)', 'var(--orange)'][index] }} />)}
+      </div>
+      <MonthlyRealizedChart trades={visibleTrades} />
       <div className="rounded-lg overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
         <div className="overflow-x-auto max-w-full overscroll-contain">
           <table className="min-w-max w-full text-[12px] leading-none">
@@ -1784,14 +1879,14 @@ function ArchiveHistorySection({
               </tr>
             </thead>
             <tbody>
-              {trades.map((trade, index) => {
+              {visibleTrades.map((trade, index) => {
                 const pending = trade.status === 'expired_price_pending' || trade.resolutionType === 'expired_price_pending';
                 const canSetExpirationClose = trade.status === 'expired' || trade.status === 'expired_price_pending';
                 const resolving = resolvingIds.has(trade.id);
                 const realizedPnl = getArchivedRealizedPnl(trade);
                 const percentCaptured = getArchivedPercentCaptured(trade);
                 return (
-                  <tr key={trade.id} style={{ borderBottom: '1px solid var(--border)', backgroundColor: index % 2 ? 'var(--row-alt)' : 'transparent' }}>
+                  <tr key={trade.id} title={`${trade.ticker} ${formatCurrency(trade.strike)} Put\nWritten: ${formatFullDate(trade.soldDate)}\nResolved: ${formatFullDate(trade.closeDate ?? trade.resolvedDate ?? trade.expiration)}\nDays held: ${formatDays(historyDaysHeld(trade))}\nSold: ${formatOptionPrice(trade.soldPrice)}\nClose: ${formatOptionPrice(trade.closePrice)}\nUnderlying expiration close: ${formatCurrency(trade.expirationClosePrice)}\nFinal value: ${formatCurrency(getArchivedFinalValue(trade))}\nPremium: ${formatCurrency(getArchivedPremium(trade))}\nRealized P&L: ${formatCurrency(realizedPnl)}\nCaptured: ${formatPctValue(percentCaptured)}\nOriginal AY: ${formatPctValue(calculateOriginalAnnualizedYield(trade))}\nOutcome: ${getArchiveOutcomeLabel(trade)}`} style={{ borderBottom: '1px solid var(--border)', backgroundColor: index % 2 ? 'var(--row-alt)' : 'transparent' }}>
                     <td className="px-2 py-1 text-left font-mono font-bold whitespace-nowrap" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatFullDate(trade.expiration)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatCurrency(trade.strike)}</td>

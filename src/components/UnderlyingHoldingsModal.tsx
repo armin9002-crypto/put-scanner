@@ -3,6 +3,7 @@ import { AlertCircle, RefreshCw, X } from 'lucide-react';
 import type { UnderlyingHoldingsProxy } from '../lib/underlyingHoldingsProxies';
 import { fetchUnderlyingHoldings, getCachedUnderlyingHoldings } from '../lib/underlyingHoldings';
 import type { UnderlyingHoldingsData } from '../lib/underlyingHoldings';
+import DataFreshness from './DataFreshness';
 
 interface UnderlyingHoldingsModalProps {
   proxy: UnderlyingHoldingsProxy;
@@ -12,11 +13,6 @@ interface UnderlyingHoldingsModalProps {
 function formatWeight(value: number | null | undefined): string {
   if (typeof value !== 'number' || !Number.isFinite(value)) return '-';
   return `${value.toFixed(1)}%`;
-}
-
-function formatTimestamp(value: number | null | undefined): string {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return '-';
-  return new Date(value).toLocaleString();
 }
 
 export default function UnderlyingHoldingsModal({ proxy, onClose }: UnderlyingHoldingsModalProps) {
@@ -126,10 +122,9 @@ export default function UnderlyingHoldingsModal({ proxy, onClose }: UnderlyingHo
               </div>
 
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-[11px] sm:mb-3 sm:text-xs" style={{ color: 'var(--text-muted)' }}>
-                <span className="min-w-0 truncate">
-                  {data
-                    ? `Top ${visibleHoldings.length || data.topHoldingsCount} - ${formatWeight(data.topHoldingsWeight)} weight - ${data.source} - ${formatTimestamp(data.fetchedAt)}`
-                    : loading ? 'Loading holdings...' : proxy.reason}
+                <span className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span className="truncate">{data ? `Top ${visibleHoldings.length || data.topHoldingsCount} · ${formatWeight(data.topHoldingsWeight)} weight · ${data.source}` : proxy.reason}</span>
+                  <DataFreshness updatedAt={data?.fetchedAt} status={loading ? 'updating' : error && data ? 'failed' : data ? 'cached' : 'stale'} source={data?.source ?? 'Yahoo Finance'} label="Underlying holdings" />
                 </span>
                 <button
                   type="button"

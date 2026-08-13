@@ -8,6 +8,7 @@ import { getOrderedChartTimeframes } from '../lib/chartTimeframes';
 import { getInstrumentName, isVolatilityInstrument, normalizeDisplayTicker } from '../lib/instrumentNames';
 import { getUnderlyingHoldingsProxy } from '../lib/underlyingHoldingsProxies';
 import { getTrueLeverageForPeriod, getTrueLeverageForRange, type TrueLeverageResult } from '../lib/trueLeverage';
+import DataFreshness from './DataFreshness';
 
 const CHART_WIDTH = 900;
 const CHART_HEIGHT = 360;
@@ -310,11 +311,7 @@ export default function InteractivePriceChartModal({
               <span className="text-sm font-mono tabular-nums" style={{ color: lineColor }}>
                 {formatSignedValue(periodChange.change, isVolatility)} / {formatPercent(periodChange.percent)}
               </span>
-              {activeData?.fetchedAt && (
-                <span className="text-xs" style={{ color: 'var(--text-dim)' }}>
-                  Updated {new Date(activeData.fetchedAt).toLocaleTimeString()}
-                </span>
-              )}
+              <DataFreshness updatedAt={activeData?.fetchedAt} status={loading ? 'updating' : error && activeData ? 'failed' : activeData?.freshness === 'stale' ? 'stale' : activeData ? 'cached' : 'stale'} label={`${titleTicker} chart`} />
             </div>
           </div>
 

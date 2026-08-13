@@ -9,6 +9,7 @@ import { isFiniteNumber } from '../lib/optionMetrics';
 import { postureFromRegime } from '../lib/marketRead/posture';
 import { analyzeRegime } from '../lib/marketRead/regime';
 import type { RegimeAnalysis, TradePosture } from '../lib/marketRead/types';
+import DataFreshness from '../components/DataFreshness';
 
 const DASH = '\u2014';
 
@@ -729,9 +730,7 @@ export default function EtfPulsePage() {
               <MarketReadStrip regime={regime} posture={posture} unavailable={rows.length === 0} onOpen={() => setShowMarketRead(true)} />
             </div>
             <div className="flex flex-wrap items-center gap-1.5 xl:justify-end xl:flex-shrink-0">
-              <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>
-                {result ? `Last updated: ${new Date(result.fetchedAt).toLocaleString()}` : loading ? `Loading ${progress.loaded} / ${progress.total} ETFs...` : 'Not loaded yet'}
-              </span>
+              <DataFreshness updatedAt={result?.lastSuccessfulAt ?? result?.fetchedAt} status={loading ? 'updating' : error || result?.stale ? 'failed' : result ? 'cached' : 'stale'} label="ETF Pulse" />
               <button
                 type="button"
                 onClick={() => void loadRows(true)}

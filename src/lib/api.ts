@@ -33,6 +33,8 @@ export interface BatchPriceRequestResult {
   data: BatchPriceData;
   freshness: DataFreshness;
   staleFallbackUsed: boolean;
+  fetchedAt: number;
+  cacheSource: 'memory' | 'persistent' | 'network' | 'stale-fallback';
 }
 
 export async function fetchBatchPricesResult(tickers: string[], options: { mode?: RefreshMode } = {}): Promise<BatchPriceRequestResult> {
@@ -66,7 +68,7 @@ export async function fetchBatchPricesResult(tickers: string[], options: { mode?
       return { ...existingBatch, ...data };
     },
   });
-  return { data: result.data, freshness: result.meta.freshness, staleFallbackUsed: result.meta.staleFallbackUsed };
+  return { data: result.data, freshness: result.meta.freshness, staleFallbackUsed: result.meta.staleFallbackUsed, fetchedAt: result.meta.fetchedAt, cacheSource: result.meta.source };
 }
 
 export async function fetchBatchPrices(tickers: string[], options: { mode?: RefreshMode } = {}): Promise<BatchPriceData> {

@@ -6,6 +6,7 @@ import ETFCard from '../components/ETFCard';
 import ExpirationFilter, { buildExpirationOptions } from '../components/ExpirationFilter';
 import SparklineChart from '../components/SparklineChart';
 import ErrorBoundary from '../components/ErrorBoundary';
+import DataFreshness, { type DataFreshnessStatus } from '../components/DataFreshness';
 import { Search, Loader2, RefreshCw } from 'lucide-react';
 import {
   cacheScannerOptionSnapshot,
@@ -38,6 +39,15 @@ import {
   type CachedExpirationState,
   type SnapshotUpdateProgress,
 } from '../lib/scannerUpdateState';
+import { passesScannerLiquidityFilter, sortScannerEtfs, type ScannerLiquidityFilter, type ScannerSort } from '../lib/scannerDiscovery';
+
+const SORT_OPTIONS: Array<{ value: ScannerSort; label: string }> = [
+  { value: 'default', label: 'Default' }, { value: 'iv60', label: 'IV60 High → Low' },
+  { value: 'liquidity', label: 'Liquidity' }, { value: 'fiveDay', label: '5D Return' },
+  { value: 'oneMonth', label: '1M Return' }, { value: 'threeMonth', label: '3M Return' },
+  { value: 'drawdown52w', label: '52W Drawdown' }, { value: 'priceHigh', label: 'Price High → Low' },
+  { value: 'priceLow', label: 'Price Low → High' },
+];
 
 function marketChangeColor(changePercent: number): string {
   return changePercent >= 0 ? 'var(--green)' : 'var(--red)';
@@ -134,6 +144,8 @@ export default function HomePage() {
   const [leverageFilter, setLeverageFilter] = useState<string>('All');
   const [typeFilter, setTypeFilter] = useState<string>('All');
   const [expFilter, setExpFilter] = useState('all');
+  const [scannerSort, setScannerSort] = useState<ScannerSort>('default');
+  const [liquidityFilter, setLiquidityFilter] = useState<ScannerLiquidityFilter>('all');
   const [expirationState, setExpirationState] = useState<CachedExpirationState>(() => buildCachedExpirationState());
   const [optionSnapshots, setOptionSnapshots] = useState<Record<string, ScannerOptionSnapshot>>(() => getScannerOptionSnapshots());
   const [snapshotDiagnostics, setSnapshotDiagnostics] = useState<Record<string, ScannerSnapshotDiagnostic>>(() => getScannerSnapshotDiagnostics());
@@ -145,6 +157,8 @@ export default function HomePage() {
   const [prices, setPrices] = useState<BatchPriceData>({});
   const [pricesLoading, setPricesLoading] = useState(true);
   const [pricesError, setPricesError] = useState<string | null>(null);
+  const [pricesUpdatedAt, setPricesUpdatedAt] = useState<number | null>(null);
+  const [pricesFreshness, setPricesFreshness] = useState<DataFreshnessStatus>('updating');
   const skeletonTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Market sparkline data (manual refresh only)
@@ -154,12 +168,14 @@ export default function HomePage() {
   const [vxnData, setVxnData] = useState<SparklineData | null>(null);
   const [marketLoading, setMarketLoading] = useState(true);
   const [lastMarketUpdate, setLastMarketUpdate] = useState<Date | null>(null);
+  const [marketRefreshFailed, setMarketRefreshFailed] = useState(false);
   const [chartModal, setChartModal] = useState<{ ticker: string; displayTicker: string } | null>(null);
 
   // Load batch prices with 10-second hard timeout
   const loadPrices = useCallback(async (forceRefresh = false) => {
     setPricesLoading(true);
     setPricesError(null);
+    setPricesFreshness('updating');
 
     // Max 10 seconds for skeleton loader
     if (skeletonTimerRef.current) clearTimeout(skeletonTimerRef.current);
@@ -192,10 +208,13 @@ export default function HomePage() {
           setPricesError('Partial data received — some prices unavailable');
         }
         setPrices(data);
+        setPricesUpdatedAt(response.fetchedAt);
+        setPricesFreshness(response.staleFallbackUsed ? 'failed' : response.cacheSource === 'network' ? 'fresh' : response.freshness === 'stale' ? 'stale' : 'cached');
         if (response.staleFallbackUsed) setPricesError('Refresh failed - showing cached prices');
       }
     } catch (err: unknown) {
       setPricesError(err instanceof Error ? err.message : 'Price data unavailable');
+      setPricesFreshness('failed');
     } finally {
       if (skeletonTimerRef.current) {
         clearTimeout(skeletonTimerRef.current);
@@ -210,6 +229,7 @@ export default function HomePage() {
   // Load market sparklines (manual refresh only, with cache)
   const loadMarketData = useCallback(async () => {
     setMarketLoading(true);
+    setMarketRefreshFailed(false);
     try {
       const [qqq, spy, vix, vxn] = await Promise.allSettled([
         fetchSparkline('QQQ'),
@@ -221,7 +241,9 @@ export default function HomePage() {
       if (spy.status === 'fulfilled') setSpyData(spy.value);
       if (vix.status === 'fulfilled') setVixData(vix.value);
       if (vxn.status === 'fulfilled') setVxnData(vxn.value);
-      setLastMarketUpdate(new Date());
+      const fulfilled = [qqq, spy, vix, vxn].filter(result => result.status === 'fulfilled').length;
+      if (fulfilled > 0) setLastMarketUpdate(new Date());
+      setMarketRefreshFailed(fulfilled < 4);
     } catch { /* ignore */ }
     setMarketLoading(false);
   }, []);
@@ -237,7 +259,7 @@ export default function HomePage() {
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
     const dateToDte = new Map(availableExps.map(exp => [exp.date, exp.dte]));
-    return ETF_LIST.filter(e => {
+    const matches = ETF_LIST.filter(e => {
       if (q && !e.ticker.toLowerCase().includes(q) && !e.underlying.toLowerCase().includes(q) && !e.name.toLowerCase().includes(q)) {
         return false;
       }
@@ -247,6 +269,7 @@ export default function HomePage() {
       if (typeFilter !== 'All' && e.type !== typeFilter) {
         return false;
       }
+      if (!passesScannerLiquidityFilter(optionSnapshots[e.ticker], liquidityFilter)) return false;
       if (expFilter === 'lte_30dte') {
         const dates = expiryAvailability[e.ticker] ?? [];
         if (!dates.some(date => (dateToDte.get(date) ?? Infinity) <= 30)) {
@@ -261,7 +284,8 @@ export default function HomePage() {
       }
       return true;
     });
-  }, [search, leverageFilter, typeFilter, expFilter, expiryAvailability, availableExps]);
+    return sortScannerEtfs(matches, scannerSort, prices, optionSnapshots);
+  }, [search, leverageFilter, typeFilter, liquidityFilter, scannerSort, prices, optionSnapshots, expFilter, expiryAvailability, availableExps]);
 
   const expDropdownOptions = useMemo(() => buildExpirationOptions(availableExps), [availableExps]);
 
@@ -406,6 +430,20 @@ export default function HomePage() {
                   </button>
                 ))}
               </div>
+              <div className="mt-2 grid grid-cols-2 gap-1.5">
+                <label className="min-w-0">
+                  <span className="mb-1 block text-[10px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Sort</span>
+                  <select value={scannerSort} onChange={event => setScannerSort(event.target.value as ScannerSort)} className="h-9 w-full rounded-lg px-2 text-xs outline-none" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
+                    {SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>
+                <label className="min-w-0">
+                  <span className="mb-1 block text-[10px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Liquidity</span>
+                  <select value={liquidityFilter} onChange={event => setLiquidityFilter(event.target.value as ScannerLiquidityFilter)} className="h-9 w-full rounded-lg px-2 text-xs outline-none" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
+                    <option value="all">All</option><option value="mediumPlus">Medium+</option><option value="liquidPlus">Liquid+</option>
+                  </select>
+                </label>
+              </div>
             </div>
           </div>
 
@@ -417,11 +455,10 @@ export default function HomePage() {
           </div>
         </div>
 
-        {lastMarketUpdate && (
-          <div className="text-[10px] mb-4" style={{ color: 'var(--text-dim)' }}>
-            Market data updated: {lastMarketUpdate.toLocaleTimeString()}
-          </div>
-        )}
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <DataFreshness updatedAt={pricesUpdatedAt} status={pricesFreshness} label="Scanner prices" />
+          <DataFreshness updatedAt={lastMarketUpdate} status={marketLoading ? 'updating' : marketRefreshFailed ? 'failed' : lastMarketUpdate ? 'fresh' : 'cached'} label="Market charts" />
+        </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
           {filtered.map(etf => (
