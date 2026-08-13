@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { ExpirationDate, OptionsChainData, SortField, SortDirection } from '../lib/types';
 import { ETF_LIST } from '../lib/etfs';
 import { fetchOptions, fetchExtendedPrice, calculatePutDelta, formatPrice, formatYield, yieldColor, formatNumber, fetchIVRank } from '../lib/api';
@@ -10,6 +10,7 @@ import { addPortfolioTrade } from '../lib/portfolioStorage';
 import { calculateBidAskSpreadPercent, calculateMoneyness, calculateYieldPercent } from '../lib/optionMetrics';
 import { normalizeTimestampMs } from '../lib/format';
 import { getUnderlyingHoldingsProxy } from '../lib/underlyingHoldingsProxies';
+import { getLastScannerUrl, isScannerNavigationState } from '../lib/scannerNavigation';
 import SparklineChart from '../components/SparklineChart';
 import ErrorBoundary from '../components/ErrorBoundary';
 import {
@@ -396,6 +397,8 @@ function resolvePreferredExpiration(
 }
 
 export default function OptionsPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const { ticker } = useParams<{ ticker: string }>();
   const [searchParams] = useSearchParams();
   const expiryParam = searchParams.get('expiry');
@@ -822,6 +825,14 @@ export default function OptionsPage() {
     else loadData(undefined, true, true);
   }, [loadData, loadExpiration, selectedExp]);
 
+  const handleBackToScanner = useCallback(() => {
+    if (isScannerNavigationState(location.state) && window.history.length > 1) {
+      navigate(-1);
+      return;
+    }
+    navigate(getLastScannerUrl(), { replace: true });
+  }, [location.state, navigate]);
+
   const mobileSortOptions: Array<{ field: SortField; label: string }> = [
     { field: 'strike', label: 'Strike' },
     { field: 'bid', label: 'Bid' },
@@ -852,14 +863,15 @@ export default function OptionsPage() {
       <div className="option-page-shell max-w-[1400px] mx-auto px-3 sm:px-5 lg:px-8 py-4 sm:py-6">
         {/* Header */}
         <div className="option-page-title-row flex items-center gap-2 sm:gap-4 mb-4 sm:mb-6 min-w-0">
-          <Link
-            to="/"
+          <button
+            type="button"
+            onClick={handleBackToScanner}
             aria-label="Back to Scanner"
             className="p-2 rounded-lg transition-all min-h-[44px] min-w-[44px] flex items-center justify-center"
             style={{ color: 'var(--text-muted)' }}
           >
             <ArrowLeft className="w-5 h-5" />
-          </Link>
+          </button>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 sm:gap-3 min-w-0">
               <h1 className="text-xl sm:text-2xl font-bold font-mono" style={{ color: 'var(--text)' }}>{etf.ticker}</h1>

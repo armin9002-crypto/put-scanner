@@ -15,6 +15,7 @@ import {
 interface ETFCardProps {
   etf: ETFInfo;
   to: string;
+  navigationState?: unknown;
   priceData?: {
     price: number | null;
     change: number | null;
@@ -269,6 +270,7 @@ function PricePlaceholder({ showPriceSkeleton = false }: { showPriceSkeleton?: b
 export default function ETFCard({
   etf,
   to,
+  navigationState,
   priceData,
   optionSnapshot,
   optionDiagnostic,
@@ -297,6 +299,7 @@ export default function ETFCard({
     >
       <Link
         to={to}
+        state={navigationState}
         aria-label={`Open ${etf.ticker} options`}
         aria-describedby={snapshotTooltipId}
         className="absolute inset-0 z-0 rounded-xl focus:outline-none"
@@ -369,6 +372,7 @@ export default function ETFCard({
 
       <Link
         to={to}
+        state={navigationState}
         aria-label={`${etf.ticker} ${ivLabel} ${snapshotIvText(optionSnapshot)}, liquidity ${liquidityText}`}
         aria-describedby={snapshotTooltipId}
         className="group/snapshot absolute bottom-2 right-2 z-20 flex w-[48%] items-center justify-end gap-1 whitespace-nowrap text-[9px] font-medium leading-none focus:outline-none"

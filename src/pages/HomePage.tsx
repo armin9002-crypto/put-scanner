@@ -43,6 +43,7 @@ import {
 import { passesScannerLiquidityFilter, sortScannerEtfs, type ScannerLiquidityFilter, type ScannerSort } from '../lib/scannerDiscovery';
 import { fetchFundAssets, type FundAssetsData } from '../lib/fundAssets';
 import { parseScannerState, resolveScannerExpiration, serializeScannerState, type ScannerState } from '../lib/scannerState';
+import { saveLastScannerUrl, type ScannerNavigationState } from '../lib/scannerNavigation';
 
 const SORT_OPTIONS: Array<{ value: ScannerSort; label: string }> = [
   { value: 'default', label: 'Default' }, { value: 'iv60', label: 'IV60 High → Low' },
@@ -272,6 +273,7 @@ export default function HomePage() {
     if (serializedScannerState !== currentSearchParams) {
       setSearchParams(serializedScannerState, { replace: true });
     }
+    saveLastScannerUrl(serializedScannerState ? `/?${serializedScannerState}` : '/');
   }, [currentSearchParams, serializedScannerState, setSearchParams]);
 
   // Load market sparklines (manual refresh only, with cache)
@@ -514,6 +516,7 @@ export default function HomePage() {
               key={etf.ticker}
               etf={etf}
               to={`/options/${etf.ticker}`}
+              navigationState={{ fromScanner: true } satisfies ScannerNavigationState}
               priceData={prices[etf.ticker] ?? null}
               optionSnapshot={optionSnapshots[etf.ticker] ?? null}
               optionDiagnostic={snapshotDiagnostics[etf.ticker] ?? null}
