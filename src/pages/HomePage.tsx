@@ -8,6 +8,7 @@ import SparklineChart from '../components/SparklineChart';
 import ErrorBoundary from '../components/ErrorBoundary';
 import DataFreshness, { type DataFreshnessStatus } from '../components/DataFreshness';
 import { Search, Loader2, RefreshCw } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import {
   cacheScannerOptionSnapshot,
   getCachedScannerExpirations,
@@ -40,6 +41,8 @@ import {
   type SnapshotUpdateProgress,
 } from '../lib/scannerUpdateState';
 import { passesScannerLiquidityFilter, sortScannerEtfs, type ScannerLiquidityFilter, type ScannerSort } from '../lib/scannerDiscovery';
+import { fetchFundAssets, type FundAssetsData } from '../lib/fundAssets';
+import { parseScannerState, resolveScannerExpiration, serializeScannerState, type ScannerState } from '../lib/scannerState';
 
 const SORT_OPTIONS: Array<{ value: ScannerSort; label: string }> = [
   { value: 'default', label: 'Default' }, { value: 'iv60', label: 'IV60 High → Low' },
@@ -140,13 +143,26 @@ function MarketChartCard({
 }
 
 export default function HomePage() {
-  const [search, setSearch] = useState('');
-  const [leverageFilter, setLeverageFilter] = useState<string>('All');
-  const [typeFilter, setTypeFilter] = useState<string>('All');
-  const [expFilter, setExpFilter] = useState('all');
-  const [scannerSort, setScannerSort] = useState<ScannerSort>('default');
-  const [liquidityFilter, setLiquidityFilter] = useState<ScannerLiquidityFilter>('all');
-  const [expirationState, setExpirationState] = useState<CachedExpirationState>(() => buildCachedExpirationState());
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialExpirationStateRef = useRef<CachedExpirationState | null>(null);
+  if (!initialExpirationStateRef.current) initialExpirationStateRef.current = buildCachedExpirationState();
+  const initialScannerStateRef = useRef<ScannerState | null>(null);
+  if (!initialScannerStateRef.current) {
+    const parsed = parseScannerState(searchParams);
+    const expirations = initialExpirationStateRef.current.expirations;
+    initialScannerStateRef.current = {
+      ...parsed,
+      expiration: resolveScannerExpiration(parsed.expiration, expirations.filter(expiration => expiration.dte > 30).map(expiration => expiration.date), expirations.some(expiration => expiration.dte <= 30)),
+    };
+  }
+  const initialScannerState = initialScannerStateRef.current!;
+  const [search, setSearch] = useState(initialScannerState.search);
+  const [leverageFilter, setLeverageFilter] = useState<string>(initialScannerState.leverage);
+  const [typeFilter, setTypeFilter] = useState<string>(initialScannerState.type);
+  const [expFilter, setExpFilter] = useState(initialScannerState.expiration);
+  const [scannerSort, setScannerSort] = useState<ScannerSort>(initialScannerState.sort);
+  const [liquidityFilter, setLiquidityFilter] = useState<ScannerLiquidityFilter>(initialScannerState.liquidity);
+  const [expirationState, setExpirationState] = useState<CachedExpirationState>(initialExpirationStateRef.current!);
   const [optionSnapshots, setOptionSnapshots] = useState<Record<string, ScannerOptionSnapshot>>(() => getScannerOptionSnapshots());
   const [snapshotDiagnostics, setSnapshotDiagnostics] = useState<Record<string, ScannerSnapshotDiagnostic>>(() => getScannerSnapshotDiagnostics());
   const [snapshotProgress, setSnapshotProgress] = useState<SnapshotUpdateProgress | null>(null);
@@ -159,6 +175,7 @@ export default function HomePage() {
   const [pricesError, setPricesError] = useState<string | null>(null);
   const [pricesUpdatedAt, setPricesUpdatedAt] = useState<number | null>(null);
   const [pricesFreshness, setPricesFreshness] = useState<DataFreshnessStatus>('updating');
+  const [fundAssets, setFundAssets] = useState<FundAssetsData>({});
   const skeletonTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Market sparkline data (manual refresh only)
@@ -225,6 +242,37 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => { loadPrices(); }, [loadPrices]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchFundAssets(HARDCODED_TICKERS.split(','))
+      .then(data => { if (!cancelled) setFundAssets(current => ({ ...current, ...data })); })
+      .catch(() => { /* preserve any cached/previous Assets values */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    setExpFilter(current => resolveScannerExpiration(
+      current,
+      availableExps.filter(expiration => expiration.dte > 30).map(expiration => expiration.date),
+      availableExps.some(expiration => expiration.dte <= 30),
+    ));
+  }, [availableExps]);
+
+  const serializedScannerState = serializeScannerState({
+    search,
+    leverage: leverageFilter,
+    type: typeFilter,
+    expiration: expFilter,
+    sort: scannerSort,
+    liquidity: liquidityFilter,
+  }).toString();
+  const currentSearchParams = searchParams.toString();
+  useEffect(() => {
+    if (serializedScannerState !== currentSearchParams) {
+      setSearchParams(serializedScannerState, { replace: true });
+    }
+  }, [currentSearchParams, serializedScannerState, setSearchParams]);
 
   // Load market sparklines (manual refresh only, with cache)
   const loadMarketData = useCallback(async () => {
@@ -469,6 +517,7 @@ export default function HomePage() {
               priceData={prices[etf.ticker] ?? null}
               optionSnapshot={optionSnapshots[etf.ticker] ?? null}
               optionDiagnostic={snapshotDiagnostics[etf.ticker] ?? null}
+              netAssets={fundAssets[etf.ticker] ?? null}
               priceError={!pricesLoading && !!pricesError && !prices[etf.ticker]}
               onRetry={() => loadPrices(true)}
             />

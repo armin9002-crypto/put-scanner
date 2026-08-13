@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, RefreshCw, X } from 'lucide-react';
 import { getChartHistory } from '../lib/chartHistory';
 import type { ChartHistoryResponse, ChartPoint, ChartTimeframe } from '../lib/chartHistory';
-import { calculateAnnualizedReturn, calculateSimpleReturn } from '../lib/chartReturns';
+import { calculateAnnualizedReturn, calculateRangeReturn, calculateSimpleReturn, normalizeSelectedRange } from '../lib/chartReturns';
 import { formatChartYAxisTick, getNiceYAxisScale } from '../lib/chartScale';
 import { getOrderedChartTimeframes } from '../lib/chartTimeframes';
 import { getInstrumentName, isVolatilityInstrument, normalizeDisplayTicker } from '../lib/instrumentNames';
@@ -217,9 +217,10 @@ export default function InteractivePriceChartModal({
   );
   const selectedPoint = selectedIndex != null ? points[selectedIndex] : null;
   const rangeEndPoint = selectedPoint && hoveredIndex != null ? points[hoveredIndex] : null;
-  const rangeChange = selectedPoint && rangeEndPoint ? changeFrom(selectedPoint.price, rangeEndPoint.price) : null;
-  const rangeAnnualizedReturn = selectedPoint && rangeEndPoint
-    ? calculateAnnualizedReturn(selectedPoint.price, rangeEndPoint.price, selectedPoint.timestamp, rangeEndPoint.timestamp)
+  const selectedRange = selectedPoint && rangeEndPoint ? normalizeSelectedRange(selectedPoint, rangeEndPoint) : null;
+  const rangeChange = selectedRange ? calculateRangeReturn(selectedRange.startPoint, selectedRange.endPoint) : null;
+  const rangeAnnualizedReturn = selectedRange
+    ? calculateAnnualizedReturn(selectedRange.startPoint.price, selectedRange.endPoint.price, selectedRange.startPoint.timestamp, selectedRange.endPoint.timestamp)
     : null;
   const periodTrueLeverage = useMemo(() => getTrueLeverageForPeriod(points, proxyPoints), [points, proxyPoints]);
   const activeTrueLeverage = useMemo(() => {
@@ -227,9 +228,9 @@ export default function InteractivePriceChartModal({
     return getTrueLeverageForRange(points, proxyPoints, activeBaselinePoint.timestamp, activePoint.timestamp);
   }, [activeBaselinePoint, activePoint, points, proxyPoints]);
   const rangeTrueLeverage = useMemo(() => {
-    if (!selectedPoint || !rangeEndPoint) return null;
-    return getTrueLeverageForRange(points, proxyPoints, selectedPoint.timestamp, rangeEndPoint.timestamp);
-  }, [points, proxyPoints, rangeEndPoint, selectedPoint]);
+    if (!selectedRange) return null;
+    return getTrueLeverageForRange(points, proxyPoints, selectedRange.startPoint.timestamp, selectedRange.endPoint.timestamp);
+  }, [points, proxyPoints, selectedRange]);
 
   const chart = useMemo(() => {
     if (points.length < 2) {
@@ -481,7 +482,7 @@ export default function InteractivePriceChartModal({
                           </div>
                         )}
                         <div className="truncate text-xs" style={{ color: 'var(--text-muted)' }}>
-                          {formatDateTime(selectedPoint, timeframe)} to {formatDateTime(rangeEndPoint, timeframe)}
+                          {formatDateTime(selectedRange?.startPoint, timeframe)} to {formatDateTime(selectedRange?.endPoint, timeframe)}
                         </div>
                       </>
                     ) : (

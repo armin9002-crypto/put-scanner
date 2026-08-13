@@ -1,4 +1,4 @@
-export type RequestEndpoint = 'options' | 'prices' | 'price' | 'chart-history' | 'ivrank' | 'holdings';
+export type RequestEndpoint = 'options' | 'prices' | 'price' | 'chart-history' | 'ivrank' | 'holdings' | 'fund-metadata';
 export type RequestDiagnosticKind = 'attempted' | 'cacheHit' | 'memoryHit' | 'persistentHit' | 'network' | 'deduped' | 'staleFallback' | 'success' | 'failure';
 
 export interface RequestDiagnosticEntry {
@@ -17,7 +17,7 @@ export interface RequestDiagnosticEntry {
 
 export type RequestDiagnosticsSnapshot = Record<RequestEndpoint, RequestDiagnosticEntry>;
 
-const endpoints: RequestEndpoint[] = ['options', 'prices', 'price', 'chart-history', 'ivrank', 'holdings'];
+const endpoints: RequestEndpoint[] = ['options', 'prices', 'price', 'chart-history', 'ivrank', 'holdings', 'fund-metadata'];
 const state: RequestDiagnosticsSnapshot = endpoints.reduce((acc, endpoint) => {
   acc[endpoint] = { attempted: 0, cacheHits: 0, networkRequests: 0, memoryHits: 0, persistentCacheHits: 0, inFlightDedupes: 0, staleFallbacks: 0, failures: 0, lastDurationMs: null, lastRequestAt: null, sources: {} };
   return acc;

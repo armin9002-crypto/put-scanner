@@ -26,24 +26,6 @@ export function calculateTrueLeverage(etfReturn: number | null | undefined, prox
   return Number.isFinite(leverage) ? leverage : null;
 }
 
-function pointAtOrAfter(points: ChartPoint[], timestamp: number): ChartPoint | null {
-  return points.find(point => point.timestamp >= timestamp) ?? points[points.length - 1] ?? null;
-}
-
-function pointAtOrBefore(points: ChartPoint[], timestamp: number): ChartPoint | null {
-  for (let index = points.length - 1; index >= 0; index -= 1) {
-    if (points[index].timestamp <= timestamp) return points[index];
-  }
-  return points[0] ?? null;
-}
-
-function nearestPoint(points: ChartPoint[], timestamp: number): ChartPoint | null {
-  if (points.length === 0) return null;
-  return points.reduce((nearest, point) =>
-    Math.abs(point.timestamp - timestamp) < Math.abs(nearest.timestamp - timestamp) ? point : nearest
-  );
-}
-
 function normalizeRange(startTimestamp: number, endTimestamp: number): { start: number; end: number } {
   return startTimestamp <= endTimestamp
     ? { start: startTimestamp, end: endTimestamp }
@@ -59,27 +41,27 @@ export function getTrueLeverageForPeriod(etfPoints: ChartPoint[], proxyPoints: C
   const overlapEnd = Math.min(etfPoints[etfPoints.length - 1].timestamp, proxyPoints[proxyPoints.length - 1].timestamp);
   if (overlapEnd <= overlapStart) return emptyResult();
 
-  return getTrueLeverageForRange(etfPoints, proxyPoints, overlapStart, overlapEnd, 'overlap');
+  return getTrueLeverageForRange(etfPoints, proxyPoints, overlapStart, overlapEnd);
 }
 
 export function getTrueLeverageForRange(
   etfPoints: ChartPoint[],
   proxyPoints: ChartPoint[],
   startTimestamp: number,
-  endTimestamp: number,
-  mode: 'nearest' | 'overlap' = 'nearest'
+  endTimestamp: number
 ): TrueLeverageResult {
   if (etfPoints.length < 2 || proxyPoints.length < 2) return emptyResult();
   const range = normalizeRange(startTimestamp, endTimestamp);
+  const etfByTimestamp = new Map(etfPoints.map(point => [point.timestamp, point]));
+  const commonPoints = proxyPoints
+    .filter(point => point.timestamp >= range.start && point.timestamp <= range.end && etfByTimestamp.has(point.timestamp))
+    .sort((a, b) => a.timestamp - b.timestamp);
+  if (commonPoints.length < 2) return emptyResult();
 
-  const etfStart = mode === 'overlap' ? pointAtOrAfter(etfPoints, range.start) : nearestPoint(etfPoints, range.start);
-  const etfEnd = mode === 'overlap' ? pointAtOrBefore(etfPoints, range.end) : nearestPoint(etfPoints, range.end);
-  const proxyStart = mode === 'overlap' ? pointAtOrAfter(proxyPoints, range.start) : nearestPoint(proxyPoints, range.start);
-  const proxyEnd = mode === 'overlap' ? pointAtOrBefore(proxyPoints, range.end) : nearestPoint(proxyPoints, range.end);
-
-  if (!etfStart || !etfEnd || !proxyStart || !proxyEnd || etfStart.timestamp === etfEnd.timestamp || proxyStart.timestamp === proxyEnd.timestamp) {
-    return emptyResult();
-  }
+  const proxyStart = commonPoints[0];
+  const proxyEnd = commonPoints[commonPoints.length - 1];
+  const etfStart = etfByTimestamp.get(proxyStart.timestamp)!;
+  const etfEnd = etfByTimestamp.get(proxyEnd.timestamp)!;
 
   const etfReturn = calculateReturn(etfStart.price, etfEnd.price);
   const proxyReturn = calculateReturn(proxyStart.price, proxyEnd.price);
@@ -91,8 +73,8 @@ export function getTrueLeverageForRange(
     proxyReturn,
     leverage,
     directionDiverged,
-    startTimestamp: Math.max(etfStart.timestamp, proxyStart.timestamp),
-    endTimestamp: Math.min(etfEnd.timestamp, proxyEnd.timestamp),
+    startTimestamp: proxyStart.timestamp,
+    endTimestamp: proxyEnd.timestamp,
   };
 }
 

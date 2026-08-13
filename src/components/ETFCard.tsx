@@ -1,6 +1,7 @@
 import type { ETFInfo } from '../lib/types';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { formatFundAssets, formatFundAssetsDetail } from '../lib/fundAssets';
 import {
   isScannerOptionSnapshotStale,
   scannerLiquidityCompactText,
@@ -28,6 +29,7 @@ interface ETFCardProps {
   } | null;
   optionSnapshot?: ScannerOptionSnapshot | null;
   optionDiagnostic?: ScannerSnapshotDiagnostic | null;
+  netAssets?: number | null;
   priceError?: boolean;
   onRetry?: () => void;
 }
@@ -270,6 +272,7 @@ export default function ETFCard({
   priceData,
   optionSnapshot,
   optionDiagnostic,
+  netAssets,
   priceError,
   onRetry,
 }: ETFCardProps) {
@@ -279,10 +282,11 @@ export default function ETFCard({
   const snapshotTooltipId = `scanner-option-snapshot-${etf.ticker}`;
   const liquidityText = scannerLiquidityCompactText(optionSnapshot?.liquidityLabel ?? 'unavailable');
   const ivLabel = snapshotIvLabel(optionSnapshot);
+  const assetsText = formatFundAssets(netAssets);
 
   return (
     <div
-      title={`${etf.ticker} - ${etf.name}`}
+      title={`${etf.ticker} - ${etf.name}\nNet Assets ${formatFundAssetsDetail(netAssets)}`}
       className="group rounded-xl p-3 text-left transition-all duration-200 w-full relative min-w-0 focus-within:ring-2 focus-within:ring-indigo-500/60"
       style={{
         backgroundColor: rangeStyle ? rangeStyle.bgTint : 'var(--surface)',
@@ -309,7 +313,12 @@ export default function ETFCard({
               <span className="text-lg font-bold font-mono tracking-tight leading-none flex-shrink-0" style={{ color: 'var(--text)' }}>{etf.ticker}</span>
               <span className="text-xs leading-tight truncate" style={{ color: 'var(--text-muted)' }}>{etf.name}</span>
             </div>
-            <div className="text-xs leading-tight truncate mt-0.5" style={{ color: 'var(--text-dim)' }}>{etf.underlying}</div>
+            <div className="mt-0.5 flex min-w-0 items-center gap-1 text-xs leading-tight" style={{ color: 'var(--text-dim)' }}>
+              <span className="min-w-0 truncate">{etf.underlying}</span>
+              <span className="shrink-0 text-[9px]">
+                Assets <span className="font-mono tabular-nums" style={{ color: 'var(--text-secondary)' }}>{assetsText}</span>
+              </span>
+            </div>
           </div>
 
           <div className="mt-1">
