@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Activity, AlertTriangle, RefreshCw, X } from 'lucide-react';
+import { Activity, AlertTriangle, RefreshCw, X, SlidersHorizontal, ChevronDown } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { buildEtfPulseRows, getEtfPulseUniverse, type EtfPulseLoadResult, type EtfPulseProgress } from '../lib/etfPulseData';
 import type { EtfPulseRow } from '../lib/etfPulseMetrics';
@@ -202,7 +202,7 @@ function MarketReadStrip({
         <button
           type="button"
           onClick={onOpen}
-          className="rounded px-2 py-0.5 text-[11px] font-semibold min-h-[24px] transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-400/40 whitespace-nowrap"
+          className="pressable rounded px-3 py-1 text-[11px] font-semibold min-h-[44px] sm:min-h-[24px] transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-400/40 whitespace-nowrap"
           style={{ backgroundColor: 'var(--surface)', color: 'var(--accent-light)', border: '1px solid var(--border)' }}
         >
           Details
@@ -213,10 +213,22 @@ function MarketReadStrip({
 }
 
 function MarketReadModal({ regime, posture, onClose }: { regime: RegimeAnalysis; posture: TradePosture; onClose: () => void }) {
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const handleKeyDown = (event: KeyboardEvent) => event.key === 'Escape' && onClose();
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [onClose]);
+
   return (
-    <div className="fixed inset-0 z-[90]">
+    <div className="fixed inset-0 z-[90] flex items-end sm:block">
       <button type="button" aria-label="Close market read" onClick={onClose} className="absolute inset-0 bg-black/55" />
-      <section className="absolute inset-x-3 top-6 sm:inset-x-1/2 sm:w-[680px] sm:-translate-x-1/2 rounded-lg max-h-[85dvh] overflow-y-auto p-3 sm:p-4 shadow-2xl" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
+      <section className="market-read-sheet relative z-10 w-full max-h-[92dvh] overflow-y-auto rounded-t-2xl p-3 sm:absolute sm:inset-x-1/2 sm:top-6 sm:w-[680px] sm:-translate-x-1/2 sm:rounded-lg sm:max-h-[85dvh] sm:p-4 shadow-2xl" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
+        <div className="mx-auto mb-2 h-1 w-10 rounded-full sm:hidden" aria-hidden="true" style={{ backgroundColor: 'var(--border-strong)' }} />
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="min-w-0">
             <div className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--text-dim)' }}>Market Read</div>
@@ -226,7 +238,7 @@ function MarketReadModal({ regime, posture, onClose }: { regime: RegimeAnalysis;
               <MarketBadge label={posture.label} tone="posture" />
             </div>
           </div>
-          <button type="button" onClick={onClose} className="rounded-lg p-2 min-h-[40px] min-w-[40px] inline-flex items-center justify-center" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+          <button type="button" onClick={onClose} className="rounded-lg p-2 min-h-[44px] min-w-[44px] inline-flex items-center justify-center" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -274,13 +286,13 @@ function MarketReadList({ title, items }: { title: string; items: string[] }) {
 
 function VisualPeriodSelector({ value, onChange }: { value: VisualPeriod; onChange: (period: VisualPeriod) => void }) {
   return (
-    <div className="inline-flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+    <div className="mobile-scroll-row flex max-w-full overflow-x-auto rounded-lg" style={{ border: '1px solid var(--border)' }}>
       {VISUAL_PERIODS.map(period => (
         <button
           key={period}
           type="button"
           onClick={() => onChange(period)}
-          className="px-2.5 py-1.5 text-[11px] font-medium transition-colors"
+          className="pressable min-h-[44px] flex-none px-3 py-1.5 text-[11px] font-medium transition-colors sm:min-h-0"
           style={{
             backgroundColor: value === period ? 'var(--accent-bg)' : 'var(--surface)',
             color: value === period ? 'var(--accent-light)' : 'var(--text-muted)',
@@ -387,8 +399,8 @@ function MomentumQuadrant({ rows, period }: { rows: EtfPulseRow[]; period: Visua
   }
 
   return (
-    <div className="overflow-x-auto">
-      <svg viewBox={`0 0 ${width} ${height}`} className="w-full min-w-[520px]" role="img" aria-label={`Momentum quadrant using ${period} return and RSI`}>
+    <div className="overflow-hidden">
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full" role="img" aria-label={`Momentum quadrant using ${period} return and RSI`}>
         <rect x={0} y={0} width={width} height={height} rx={8} fill="transparent" />
         <line x1={padding.left} x2={padding.left + plotWidth} y1={rsi70Y} y2={rsi70Y} stroke="rgba(251,146,60,0.35)" strokeDasharray="4 4" />
         <line x1={padding.left} x2={padding.left + plotWidth} y1={rsi35Y} y2={rsi35Y} stroke="rgba(96,165,250,0.35)" strokeDasharray="4 4" />
@@ -479,6 +491,8 @@ export default function EtfPulsePage() {
   const [sort, setSort] = useState<SortState>({ field: 'ticker', direction: 'asc' });
   const [selectedVisualPeriod, setSelectedVisualPeriod] = useState<VisualPeriod>('30D');
   const [showMarketRead, setShowMarketRead] = useState(false);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [mobileVisual, setMobileVisual] = useState<'heatmap' | 'momentum'>('heatmap');
 
   const loadRows = async (forceRefresh = false) => {
     setLoading(true);
@@ -754,7 +768,11 @@ export default function EtfPulsePage() {
             </div>
           )}
           <div className="rounded-lg p-1.5" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(180px,1fr)_160px_180px_190px] gap-1.5">
+            <button type="button" onClick={() => setMobileFiltersOpen(current => !current)} className="pressable flex min-h-[44px] w-full items-center justify-between gap-3 px-1 sm:hidden" aria-expanded={mobileFiltersOpen} aria-controls="pulse-filter-controls">
+              <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: 'var(--text)' }}><SlidersHorizontal className="h-4 w-4" style={{ color: 'var(--accent-light)' }} /> Search & filters</span>
+              <span className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>{[leverageFilter !== 'All', typeFilter !== 'All', trendFilter !== 'All', search.trim() !== ''].filter(Boolean).length} active <ChevronDown className={`h-4 w-4 transition-transform ${mobileFiltersOpen ? 'rotate-180' : ''}`} /></span>
+            </button>
+            <div id="pulse-filter-controls" className={`pulse-filter-controls grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(180px,1fr)_160px_180px_190px] gap-1.5 ${mobileFiltersOpen ? 'is-open' : ''}`}>
               <input
                 value={search}
                 onChange={event => setSearch(event.target.value)}
@@ -770,7 +788,44 @@ export default function EtfPulsePage() {
         </div>
 
         <div className="etf-pulse-content min-w-0">
-          <div className="etf-pulse-table-card rounded-lg overflow-hidden h-[min(56dvh,620px)] min-h-[320px]" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+          <div className="mb-2 grid grid-cols-[1fr_auto] gap-2 md:hidden">
+            <select value={sort.field} onChange={event => setSort(current => ({ ...current, field: event.target.value as PulseSortField }))} className="min-h-[44px] min-w-0 rounded-lg px-3 text-base outline-none" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }} aria-label="Sort ETF Pulse cards">
+              <option value="ticker">Ticker</option><option value="oneDay">1D return</option><option value="thirtyDay">30D return</option><option value="rsi14">RSI</option><option value="realizedVolatility20">20D volatility</option><option value="drawdown52Week">52W drawdown</option><option value="trend">Trend</option>
+            </select>
+            <button type="button" onClick={() => setSort(current => ({ ...current, direction: current.direction === 'asc' ? 'desc' : 'asc' }))} className="pressable tap-target rounded-lg px-3 text-xs font-semibold" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>{sort.direction === 'asc' ? 'Low → High' : 'High → Low'}</button>
+          </div>
+
+          <div className="space-y-2 md:hidden">
+            {loading && rows.length === 0 ? (
+              <div className="rounded-xl px-4 py-12 text-center text-sm" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Loading {progress.loaded} / {progress.total} ETFs...</div>
+            ) : filteredRows.length === 0 ? (
+              <div className="rounded-xl px-4 py-12 text-center text-sm" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>No ETFs match these filters.</div>
+            ) : filteredRows.map(row => {
+              const trend = trendStyle(row);
+              return (
+                <Link key={`mobile-${row.ticker}`} to={`/options/${row.ticker}`} className="pressable block rounded-xl p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2"><span className="font-mono text-base font-bold" style={{ color: 'var(--accent-light)' }}>{row.ticker}</span><Badge>{row.leverage}</Badge><Badge>{row.type}</Badge></div>
+                      <p className="mt-0.5 truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>{row.name} · {row.underlying}</p>
+                    </div>
+                    <div className="flex-none text-right"><div className="font-mono text-base font-bold" style={{ color: 'var(--text)' }}>{formatPrice(row.price)}</div><span className="rounded px-1.5 py-0.5 text-[10px] font-semibold" style={{ color: trend.color, backgroundColor: trend.bg, border: `1px solid ${trend.border}` }}>{trend.label}</span></div>
+                  </div>
+                  <div className="mt-3 grid grid-cols-4 gap-1.5 border-t pt-2" style={{ borderColor: 'var(--border)' }}>
+                    {[
+                      ['1D', formatPct(row.returns.oneDay), valueColor(row.returns.oneDay)],
+                      ['30D', formatPct(row.returns.thirtyDay), valueColor(row.returns.thirtyDay)],
+                      ['RSI', isFiniteNumber(row.rsi14) ? row.rsi14.toFixed(1) : DASH, rsiColor(row.rsi14)],
+                      ['20D RV', formatPct(row.realizedVolatility20), volatilityColor(row.realizedVolatility20)],
+                    ].map(([label, value, color]) => <div key={label} className="min-w-0 rounded-lg p-2 text-center" style={{ backgroundColor: 'var(--surface-alt)' }}><div className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>{label}</div><div className="truncate font-mono text-xs font-semibold" style={{ color }}>{value}</div></div>)}
+                  </div>
+                  <div className="mt-2 grid grid-cols-3 gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}><span>vs 200D <b className="font-mono" style={{ color: valueColor(row.distance200) }}>{formatPct(row.distance200)}</b></span><span>52W pos <b className="font-mono" style={{ color: rangePositionColor(row.position52Week) }}>{formatPct(row.position52Week)}</b></span><span className="text-right">Drawdown <b className="font-mono" style={{ color: drawdownColor(row.drawdown52Week) }}>{formatPct(row.drawdown52Week)}</b></span></div>
+                </Link>
+              );
+            })}
+          </div>
+
+          <div className="etf-pulse-table-card hidden rounded-lg overflow-hidden h-[min(56dvh,620px)] min-h-[320px] md:block" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
             <div className="h-full max-w-full overflow-auto overscroll-contain">
               <table className="w-full table-fixed text-[11px]" style={{ minWidth: tableMinWidth }}>
                 <colgroup>
@@ -804,7 +859,14 @@ export default function EtfPulsePage() {
               </div>
               <VisualPeriodSelector value={selectedVisualPeriod} onChange={setSelectedVisualPeriod} />
             </div>
-            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)] gap-3">
+            <div className="mb-2 grid grid-cols-2 gap-1 rounded-xl p-1 md:hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }} role="tablist" aria-label="ETF Pulse visual">
+              <button type="button" role="tab" aria-selected={mobileVisual === 'heatmap'} onClick={() => setMobileVisual('heatmap')} className="pressable min-h-[40px] rounded-lg text-xs font-semibold" style={{ backgroundColor: mobileVisual === 'heatmap' ? 'var(--accent)' : 'transparent', color: mobileVisual === 'heatmap' ? 'white' : 'var(--text-muted)' }}>Heatmap</button>
+              <button type="button" role="tab" aria-selected={mobileVisual === 'momentum'} onClick={() => setMobileVisual('momentum')} className="pressable min-h-[40px] rounded-lg text-xs font-semibold" style={{ backgroundColor: mobileVisual === 'momentum' ? 'var(--accent)' : 'transparent', color: mobileVisual === 'momentum' ? 'white' : 'var(--text-muted)' }}>Momentum</button>
+            </div>
+            <div className="md:hidden">
+              {mobileVisual === 'heatmap' ? <VisualCard title="Universe Heatmap" subtitle="Performance by selected period across the ETF universe."><UniverseHeatmap rows={filteredRows} period={selectedVisualPeriod} /></VisualCard> : <VisualCard title="Momentum Quadrant" subtitle="Selected-period return versus RSI. Point size reflects 20D realized volatility."><MomentumQuadrant rows={filteredRows} period={selectedVisualPeriod} /></VisualCard>}
+            </div>
+            <div className="hidden grid-cols-1 gap-3 md:grid xl:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)]">
               <VisualCard title="Universe Heatmap" subtitle="Performance by selected period across the ETF universe.">
                 <UniverseHeatmap rows={filteredRows} period={selectedVisualPeriod} />
               </VisualCard>

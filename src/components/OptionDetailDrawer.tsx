@@ -197,11 +197,16 @@ export default function OptionDetailDrawer({
 
   useEffect(() => {
     if (!option) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', onKeyDown);
+    };
   }, [option, onClose]);
 
   if (!option) return null;
@@ -248,7 +253,8 @@ export default function OptionDetailDrawer({
         className="option-detail-drawer absolute inset-x-0 bottom-0 max-h-[94dvh] w-full overflow-y-auto rounded-t-2xl p-3 shadow-2xl sm:inset-y-0 sm:left-auto sm:right-0 sm:h-full sm:max-h-none sm:w-[480px] md:w-[520px] lg:w-[560px] sm:rounded-none sm:p-5"
         style={{ backgroundColor: 'var(--bg)', borderLeft: '1px solid var(--border)' }}
       >
-        <div className="flex items-start justify-between gap-3 mb-4 min-w-0">
+        <div className="mx-auto mb-2 h-1 w-10 rounded-full sm:hidden" aria-hidden="true" style={{ backgroundColor: 'var(--border-strong)' }} />
+        <div className="option-detail-drawer__header sticky -top-3 z-10 -mx-3 mb-3 flex min-w-0 items-start justify-between gap-3 px-3 pb-3 sm:static sm:mx-0 sm:mb-4 sm:p-0">
           <div className="min-w-0">
             <h2 className="text-lg sm:text-xl font-bold font-mono break-words" style={{ color: 'var(--text)' }}>
               {ticker} {formatCurrency(option.strike, option.strike % 1 === 0 ? 0 : 2)} Put
@@ -317,7 +323,7 @@ export default function OptionDetailDrawer({
                 />
               </label>
             </div>
-            <div className="flex flex-wrap gap-2 mb-3">
+            <div className="grid grid-cols-4 gap-1 mb-3 rounded-xl p-1" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }} role="group" aria-label="Use market quote as sold price">
               {[
                 ['Bid', bid],
                 ['Mid', mid],
@@ -328,8 +334,8 @@ export default function OptionDetailDrawer({
                   key={label as string}
                   onClick={() => setSoldPriceFromQuote(value as number | null)}
                   disabled={!isFiniteNumber(value as number | null)}
-                  className="px-3 py-2 sm:py-1.5 rounded-lg text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed min-h-[40px]"
-                  style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)', border: '1px solid var(--accent-border)' }}
+                  className="pressable min-h-[44px] rounded-lg px-2 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-[40px]"
+                  style={{ backgroundColor: activeSoldPrice === value ? 'var(--accent)' : 'transparent', color: activeSoldPrice === value ? 'white' : 'var(--accent-light)' }}
                 >
                   {label}
                 </button>

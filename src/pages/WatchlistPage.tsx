@@ -394,7 +394,7 @@ export default function WatchlistPage() {
   return (
     <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>
       <div className="max-w-[1800px] mx-auto px-2 sm:px-4 lg:px-6 py-4 sm:py-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+        <div className="flex items-center justify-between gap-3 mb-3">
           <div className="min-w-0">
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight" style={{ color: 'var(--text)' }}>Watchlist</h1>
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Saved puts — click refresh to update prices.</p>
@@ -402,7 +402,7 @@ export default function WatchlistPage() {
           <button
             onClick={handleRefresh}
             disabled={loading || items.length === 0}
-            className="flex w-full sm:w-auto items-center justify-center gap-1.5 px-4 py-2 sm:py-1.5 text-white text-xs font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all min-h-[44px] sm:min-h-0"
+            className="pressable flex flex-none items-center justify-center gap-1.5 px-3 py-2 sm:py-1.5 text-white text-xs font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all min-h-[44px] sm:min-h-0"
             style={{ backgroundColor: 'var(--accent)' }}
           >
             {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
@@ -415,6 +415,15 @@ export default function WatchlistPage() {
             ? `Last refreshed: ${lastRefreshed.toLocaleString()}`
             : 'Last refreshed: not yet in this session. Saved snapshots are shown until prices are refreshed.'}
         </div>
+
+        {items.length > 0 && (
+          <div className="mb-3 grid grid-cols-[1fr_auto] gap-2 md:hidden">
+            <select value={sortField} onChange={event => setSortField(event.target.value as SortField)} className="min-h-[44px] min-w-0 rounded-lg px-3 text-base outline-none" aria-label="Sort watchlist" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
+              <option value="dte">Days to expiry</option><option value="ticker">Ticker</option><option value="annYieldBid">Annualized yield</option><option value="strike">Strike</option><option value="delta">Delta</option><option value="iv">IV</option><option value="added">Recently added</option>
+            </select>
+            <button type="button" onClick={() => setSortDir(current => current === 'asc' ? 'desc' : 'asc')} className="pressable tap-target rounded-lg px-3 text-xs font-semibold" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>{sortDir === 'asc' ? 'Low → High' : 'High → Low'}</button>
+          </div>
+        )}
 
         {items.length === 0 ? (
           <div className="text-center py-20">

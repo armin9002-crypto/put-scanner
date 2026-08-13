@@ -113,6 +113,7 @@ export default function InteractivePriceChartModal({
   const [error, setError] = useState<string | null>(null);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const [rangeIndex, setRangeIndex] = useState<number | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const timeframes = useMemo(() => getOrderedChartTimeframes(), []);
 
@@ -134,6 +135,7 @@ export default function InteractivePriceChartModal({
       setData(history);
       setHoveredIndex(null);
       setSelectedIndex(null);
+      setRangeIndex(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load chart data');
     } finally {
@@ -205,7 +207,7 @@ export default function InteractivePriceChartModal({
     : points[0]?.price ?? null;
   const periodChange = changeFrom(baseline, latestPrice);
   const lineColor = chartColor(periodChange.percent);
-  const activeIndex = hoveredIndex ?? points.length - 1;
+  const activeIndex = hoveredIndex ?? rangeIndex ?? points.length - 1;
   const activePoint = activeIndex != null ? points[activeIndex] : latestPoint;
   const activeBaselinePoint = points[0] ?? null;
   const activeChange = changeFrom(timeframe === '1D' ? baseline : activeBaselinePoint?.price, activePoint?.price);
@@ -216,7 +218,8 @@ export default function InteractivePriceChartModal({
     activePoint?.timestamp
   );
   const selectedPoint = selectedIndex != null ? points[selectedIndex] : null;
-  const rangeEndPoint = selectedPoint && hoveredIndex != null ? points[hoveredIndex] : null;
+  const effectiveRangeIndex = hoveredIndex ?? rangeIndex;
+  const rangeEndPoint = selectedPoint && effectiveRangeIndex != null && effectiveRangeIndex !== selectedIndex ? points[effectiveRangeIndex] : null;
   const selectedRange = selectedPoint && rangeEndPoint ? normalizeSelectedRange(selectedPoint, rangeEndPoint) : null;
   const rangeChange = selectedRange ? calculateRangeReturn(selectedRange.startPoint, selectedRange.endPoint) : null;
   const rangeAnnualizedReturn = selectedRange
@@ -258,21 +261,39 @@ export default function InteractivePriceChartModal({
     return { scaledPoints, linePath: buildPath(scaledPoints), referenceY, yTicks: scale?.ticks ?? [] };
   }, [activeData?.previousClose, points]);
 
-  const updateHoveredPoint = useCallback((event: React.PointerEvent<SVGSVGElement>) => {
+  const pointIndexFromClientX = useCallback((clientX: number) => {
     if (points.length === 0 || !svgRef.current) return;
     const rect = svgRef.current.getBoundingClientRect();
-    const x = event.clientX - rect.left;
+    const x = clientX - rect.left;
     const plotLeft = (PAD_LEFT / CHART_WIDTH) * rect.width;
     const plotRight = rect.width - (PAD_RIGHT / CHART_WIDTH) * rect.width;
     const ratio = Math.min(1, Math.max(0, (x - plotLeft) / Math.max(1, plotRight - plotLeft)));
     const index = Math.round(ratio * (points.length - 1));
-    setHoveredIndex(index);
+    return index;
   }, [points.length]);
 
-  const handleChartClick = useCallback(() => {
-    if (hoveredIndex == null) return;
-    setSelectedIndex(current => current === hoveredIndex ? null : hoveredIndex);
-  }, [hoveredIndex]);
+  const updateHoveredPoint = useCallback((event: React.PointerEvent<SVGSVGElement>) => {
+    const index = pointIndexFromClientX(event.clientX);
+    if (index != null) setHoveredIndex(index);
+  }, [pointIndexFromClientX]);
+
+  const handlePointerDown = useCallback((event: React.PointerEvent<SVGSVGElement>) => {
+    const index = pointIndexFromClientX(event.clientX);
+    if (index == null) return;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    setHoveredIndex(index);
+    if (selectedIndex == null) {
+      setSelectedIndex(index);
+      setRangeIndex(null);
+    } else {
+      setRangeIndex(index);
+    }
+  }, [pointIndexFromClientX, selectedIndex]);
+
+  const clearSelection = useCallback(() => {
+    setSelectedIndex(null);
+    setRangeIndex(null);
+  }, []);
 
   if (!isOpen) return null;
 
@@ -290,7 +311,7 @@ export default function InteractivePriceChartModal({
         className="chart-modal-panel relative z-[91] flex max-h-[96dvh] sm:max-h-[90dvh] w-full sm:w-[min(96vw,900px)] lg:w-[min(94vw,1100px)] flex-col overflow-hidden rounded-t-2xl sm:rounded-2xl shadow-2xl"
         style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
       >
-        <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-start sm:justify-between sm:p-5" style={{ borderColor: 'var(--border)' }}>
+        <div className="chart-modal-header flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-start sm:justify-between sm:p-5" style={{ borderColor: 'var(--border)' }}>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-lg sm:text-xl font-semibold font-mono" style={{ color: 'var(--text)' }}>
@@ -341,13 +362,13 @@ export default function InteractivePriceChartModal({
 
         <div className="overflow-y-auto p-3 sm:p-5">
           <div className="mb-3 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap lg:min-w-0 lg:pb-0">
+            <div className="mobile-scroll-row flex gap-2 overflow-x-auto pb-1 sm:flex-wrap lg:min-w-0 lg:pb-0">
               {timeframes.map(option => (
                 <button
                   type="button"
                   key={option}
                   onClick={() => setTimeframe(option)}
-                  className="min-h-[40px] flex-shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition-all"
+                  className="pressable min-h-[44px] flex-shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition-all sm:min-h-[40px]"
                   style={{
                     backgroundColor: timeframe === option ? 'var(--accent)' : 'var(--surface-alt)',
                     color: timeframe === option ? 'white' : 'var(--text-muted)',
@@ -438,9 +459,9 @@ export default function InteractivePriceChartModal({
           ) : (
             <>
               <div className="rounded-xl p-3 sm:p-4" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
-                <div className="mb-3 grid grid-cols-1 gap-2 md:grid-cols-3">
+                <div className="chart-metric-strip mobile-scroll-row mb-3 grid grid-cols-1 gap-2 md:grid-cols-3">
                   <div className="rounded-lg p-3" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
-                    <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Hover Point</div>
+                    <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Active Point</div>
                     <div className="mt-1 font-mono text-sm tabular-nums" style={{ color: 'var(--text)' }}>{formatValue(activePoint?.price, isVolatility)}</div>
                     <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDateTime(activePoint, timeframe)}</div>
                   </div>
@@ -487,8 +508,8 @@ export default function InteractivePriceChartModal({
                       </>
                     ) : (
                       <>
-                        <div className="mt-1 font-mono text-sm" style={{ color: 'var(--text-dim)' }}>Click a point</div>
-                        <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Then hover another point</div>
+                        <div className="mt-1 font-mono text-sm" style={{ color: 'var(--text-dim)' }}>Tap a point</div>
+                        <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Then tap or drag to compare</div>
                       </>
                     )}
                   </div>
@@ -498,9 +519,9 @@ export default function InteractivePriceChartModal({
                   ref={svgRef}
                   viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
                   className="h-[260px] w-full touch-none select-none sm:h-[340px] lg:h-[380px]"
+                  onPointerDown={handlePointerDown}
                   onPointerMove={updateHoveredPoint}
                   onPointerLeave={() => setHoveredIndex(null)}
-                  onClick={handleChartClick}
                   role="img"
                   aria-label={`${titleTicker} ${timeframe} price chart`}
                 >
@@ -583,18 +604,18 @@ export default function InteractivePriceChartModal({
                       <circle cx={chart.scaledPoints[selectedIndex].x} cy={chart.scaledPoints[selectedIndex].y} r="5" fill="var(--accent-light)" />
                     </>
                   )}
-                  {hoveredIndex != null && chart.scaledPoints[hoveredIndex] && (
+                  {effectiveRangeIndex != null && chart.scaledPoints[effectiveRangeIndex] && effectiveRangeIndex !== selectedIndex && (
                     <>
                       <line
-                        x1={chart.scaledPoints[hoveredIndex].x}
+                        x1={chart.scaledPoints[effectiveRangeIndex].x}
                         y1={PAD_Y}
-                        x2={chart.scaledPoints[hoveredIndex].x}
+                        x2={chart.scaledPoints[effectiveRangeIndex].x}
                         y2={CHART_HEIGHT - PAD_Y}
                         stroke="currentColor"
                         strokeOpacity="0.35"
                         className="text-slate-300"
                       />
-                      <circle cx={chart.scaledPoints[hoveredIndex].x} cy={chart.scaledPoints[hoveredIndex].y} r="4.5" fill={lineColor} stroke="var(--surface)" strokeWidth="2" />
+                      <circle cx={chart.scaledPoints[effectiveRangeIndex].x} cy={chart.scaledPoints[effectiveRangeIndex].y} r="4.5" fill={lineColor} stroke="var(--surface)" strokeWidth="2" />
                     </>
                   )}
                 </svg>
@@ -606,8 +627,8 @@ export default function InteractivePriceChartModal({
                     </span>
                     <button
                       type="button"
-                      onClick={() => setSelectedIndex(null)}
-                      className="rounded-lg px-3 py-2 font-medium"
+                      onClick={clearSelection}
+                      className="tap-target rounded-lg px-3 py-2 font-medium"
                       style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
                     >
                       Clear selection

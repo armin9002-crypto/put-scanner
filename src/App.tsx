@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
-import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom';
 import { ShieldCheck, ScanLine, BarChart3, Moon, Sun, BookOpen, Star, Square, Briefcase, Activity } from 'lucide-react';
 import { ThemeProvider, useTheme } from './lib/theme';
 import { useResponsiveMode } from './lib/responsive';
@@ -41,8 +41,25 @@ function ThemeToggle() {
 }
 
 function NavBar() {
-  const { isPhoneLandscape } = useResponsiveMode();
+  const { isPhone, isPhoneLandscape } = useResponsiveMode();
+  const location = useLocation();
   const pulseLabel = isPhoneLandscape ? 'Pulse' : 'ETF Pulse';
+
+  if (isPhone && !isPhoneLandscape) {
+    if (location.pathname.startsWith('/options/')) return null;
+
+    return (
+      <header className="mobile-utility-bar">
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="flex h-7 w-7 flex-none items-center justify-center rounded-lg" style={{ backgroundColor: 'var(--accent-bg)' }}>
+            <ShieldCheck className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+          </div>
+          <span className="truncate text-sm font-bold tracking-tight" style={{ color: 'var(--text)' }}>Put Scanner</span>
+        </div>
+        <ThemeToggle />
+      </header>
+    );
+  }
 
   return (
     <nav className="sticky top-0 z-50" style={{ backgroundColor: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
@@ -132,12 +149,43 @@ function NavBar() {
   );
 }
 
+const mobileTabs = [
+  { to: '/', label: 'Scanner', icon: ScanLine, end: true },
+  { to: '/screener', label: 'Screener', icon: BarChart3, end: false },
+  { to: '/watchlist', label: 'Watchlist', icon: Star, end: false },
+  { to: '/portfolio', label: 'Portfolio', icon: Briefcase, end: false },
+  { to: '/pulse', label: 'Pulse', icon: Activity, end: false },
+] as const;
+
+function MobileBottomNav() {
+  const location = useLocation();
+  if (location.pathname.startsWith('/options/')) return null;
+
+  return (
+    <nav className="mobile-bottom-nav" aria-label="Primary navigation">
+      {mobileTabs.map(({ to, label, icon: Icon, end }) => (
+        <NavLink
+          key={to}
+          to={to}
+          end={end}
+          aria-label={label}
+          className={({ isActive }) => `mobile-bottom-nav__item${isActive ? ' is-active' : ''}`}
+        >
+          <Icon aria-hidden="true" className="h-5 w-5" strokeWidth={2} />
+          <span>{label}</span>
+        </NavLink>
+      ))}
+    </nav>
+  );
+}
+
 function AppContent() {
   return (
     <BrowserRouter>
       <NavBar />
       <ErrorBoundary title="Page unavailable" message="This page could not render. Refresh and try again.">
-        <Suspense fallback={<RouteLoadingFallback />}>
+        <main className="app-content-shell">
+          <Suspense fallback={<RouteLoadingFallback />}>
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/screener" element={<ScreenerPage />} />
@@ -147,8 +195,10 @@ function AppContent() {
             <Route path="/cockpit" element={<Navigate to="/pulse" replace />} />
             <Route path="/options/:ticker" element={<OptionsPage />} />
           </Routes>
-        </Suspense>
+          </Suspense>
+        </main>
       </ErrorBoundary>
+      <MobileBottomNav />
       <NetworkDiagnosticsPanel />
       <LayoutDiagnosticsPanel />
     </BrowserRouter>

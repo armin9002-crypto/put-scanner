@@ -424,7 +424,7 @@ function SummaryCard({ label, value, color }: { label: string; value: string; co
 
 function MarkBasisToggle({ markBasis, onChange }: { markBasis: MarkBasis; onChange: (basis: MarkBasis) => void }) {
   return (
-    <div className="flex items-center gap-1.5 min-w-0 whitespace-nowrap">
+    <div className="mark-basis-toggle flex items-center gap-1.5 min-w-0 whitespace-nowrap">
       <span className="text-[10px] uppercase tracking-wider font-semibold whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>Mark book at</span>
       <div className="inline-flex rounded-lg overflow-hidden w-fit" style={{ border: '1px solid var(--border)' }}>
         {MARK_BASIS_OPTIONS.map(option => (
@@ -828,6 +828,19 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
   const [closeDate, setCloseDate] = useState(trade?.closeDate ?? todayIso());
   const [submitted, setSubmitted] = useState(false);
 
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [onClose]);
+
   const parsed = {
     strike: parseNumber(strike),
     contracts: parseNumber(contracts),
@@ -894,7 +907,8 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
   return (
     <div className="fixed inset-0 z-[80]">
       <button type="button" aria-label="Close add trade modal" onClick={onClose} className="absolute inset-0 bg-black/55" />
-      <div className="absolute inset-x-2 top-2 bottom-2 sm:inset-x-1/2 sm:top-8 sm:bottom-8 sm:w-[720px] sm:-translate-x-1/2 rounded-lg overflow-y-auto p-3 sm:p-5 shadow-2xl" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
+      <div className="portfolio-trade-sheet absolute inset-x-0 bottom-0 max-h-[96dvh] rounded-t-2xl overflow-y-auto p-3 sm:inset-x-1/2 sm:top-8 sm:bottom-8 sm:max-h-none sm:w-[720px] sm:-translate-x-1/2 sm:rounded-lg sm:p-5 shadow-2xl" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
+        <div className="mx-auto mb-2 h-1 w-10 rounded-full sm:hidden" aria-hidden="true" style={{ backgroundColor: 'var(--border-strong)' }} />
         <div className="flex items-start justify-between gap-3 mb-4">
           <div>
             <h2 className="text-lg font-bold" style={{ color: 'var(--text)' }}>{trade ? 'Edit Sold Put' : 'Add Sold Put'}</h2>
@@ -1008,6 +1022,7 @@ export default function PortfolioPage() {
   const [activeScheduleTicker, setActiveScheduleTicker] = useState<string | null>(null);
   const [highlightedExpiration, setHighlightedExpiration] = useState<string | null>(null);
   const [highlightedTradeId, setHighlightedTradeId] = useState<string | null>(null);
+  const [mobileAnalytics, setMobileAnalytics] = useState<'maturity' | 'ticker' | 'attention' | 'close'>('maturity');
   const scheduleRef = useRef<HTMLDivElement | null>(null);
   const highlightTimerRef = useRef<number | null>(null);
 
@@ -1383,7 +1398,7 @@ export default function PortfolioPage() {
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight" style={{ color: 'var(--text)' }}>Portfolio</h1>
             <DataFreshness updatedAt={lastRefreshed} status={refreshing ? 'updating' : refreshWarning ? 'failed' : lastRefreshed ? 'cached' : 'stale'} label="Portfolio market marks" />
           </div>
-          <div className="flex flex-wrap lg:flex-nowrap items-center justify-start lg:justify-end gap-2 lg:shrink-0">
+          <div className="portfolio-actions flex flex-wrap lg:flex-nowrap items-center justify-start lg:justify-end gap-2 lg:shrink-0">
             {trades.length > 0 && <MarkBasisToggle markBasis={markBasis} onChange={setMarkBasis} />}
             <button onClick={() => setShowAddModal(true)} className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-white min-h-[44px] sm:min-h-0 whitespace-nowrap" style={{ backgroundColor: 'var(--accent)' }}>
               <Plus className="w-3.5 h-3.5" /> Add Trade
@@ -1391,7 +1406,7 @@ export default function PortfolioPage() {
             <button onClick={() => setShowImportModal(true)} className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium min-h-[44px] sm:min-h-0 whitespace-nowrap" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
               <FileImage className="w-3.5 h-3.5" /> Import Screenshot
             </button>
-            <button onClick={handleRefreshOpenTrades} disabled={refreshing || openTrades.length === 0} className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px] sm:min-h-0 whitespace-nowrap" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
+            <button onClick={handleRefreshOpenTrades} disabled={refreshing || openTrades.length === 0} className="portfolio-refresh-action inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px] sm:min-h-0 whitespace-nowrap" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
               {refreshing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
               Refresh Open Trades
             </button>
@@ -1419,7 +1434,30 @@ export default function PortfolioPage() {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-2 md:grid-cols-5 xl:grid-cols-10 gap-1.5 mb-3">
+            <div className="mb-3 md:hidden">
+              <div className="grid grid-cols-2 gap-1.5">
+                <div className="col-span-2 rounded-xl p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+                  <div className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Total gain / loss</div>
+                  <div className="mt-1 font-mono text-2xl font-bold tabular-nums" style={{ color: pnlColor(markSummary.totalGainLoss) }}>{formatCurrency(markSummary.totalGainLoss, 0)}</div>
+                  <div className="mt-1 text-xs font-mono" style={{ color: pnlColor(markSummary.percentCaptured) }}>{formatPctValue(markSummary.percentCaptured)} captured</div>
+                </div>
+                <SummaryCard label="Open Trades" value={String(summary.totalOpenTrades)} />
+                <SummaryCard label="Premium Collected" value={formatCurrency(summary.totalPremiumCollected, 0)} color="var(--green)" />
+                <SummaryCard label="Gross Risk" value={formatCurrency(summary.totalEquityAtRisk, 0)} />
+                <SummaryCard label="Net Capital at Risk" value={formatCurrency(summary.totalNetCapitalAtRisk, 0)} />
+              </div>
+              <details className="mt-1.5 rounded-lg" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+                <summary className="flex min-h-[44px] cursor-pointer list-none items-center justify-between px-3 text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>More portfolio metrics <ChevronDown className="h-4 w-4" /></summary>
+                <div className="grid grid-cols-2 gap-1.5 border-t p-2" style={{ borderColor: 'var(--border)' }}>
+                  <SummaryCard label="Weighted Avg Entry AY" value={formatPctValue(markSummary.portfolioOriginalAnnualizedYield)} color="var(--accent-light)" />
+                  <SummaryCard label="Weighted Avg Current AY" value={formatPctValue(markSummary.portfolioCurrentAnnualizedYield)} color="var(--accent-light)" />
+                  <SummaryCard label="Weighted Avg Delta" value={formatDelta(markSummary.weightedAverageDelta)} color={pnlColor(markSummary.weightedAverageDelta)} />
+                  <SummaryCard label="Weighted Avg DTE" value={isFiniteNumber(summary.weightedAverageRemainingDte) ? `${Math.round(summary.weightedAverageRemainingDte)} DTE` : DASH} />
+                </div>
+              </details>
+            </div>
+
+            <div className="hidden grid-cols-2 md:grid md:grid-cols-5 xl:grid-cols-10 gap-1.5 mb-3">
               <SummaryCard label="Open Trades" value={String(summary.totalOpenTrades)} />
               <SummaryCard label="Premium Collected" value={formatCurrency(summary.totalPremiumCollected, 0)} color="var(--green)" />
               <SummaryCard label="Gross Risk" value={formatCurrency(summary.totalEquityAtRisk, 0)} />
@@ -1443,7 +1481,21 @@ export default function PortfolioPage() {
               {openTrades.length === 0 ? (
                 <section className="rounded-lg p-3 text-sm" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>No open positions for analytics.</section>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-12 auto-rows-auto items-stretch gap-2">
+                <>
+                <div className="mb-2 md:hidden">
+                  <div className="mobile-scroll-row flex gap-1 overflow-x-auto rounded-xl p-1" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }} role="tablist" aria-label="Portfolio analytics view">
+                    {([['maturity', 'Maturity'], ['ticker', 'Exposure'], ['attention', 'Attention'], ['close', 'Close']] as const).map(([value, label]) => (
+                      <button key={value} type="button" role="tab" aria-selected={mobileAnalytics === value} onClick={() => setMobileAnalytics(value)} className="pressable min-h-[40px] flex-1 whitespace-nowrap rounded-lg px-3 text-xs font-semibold" style={{ backgroundColor: mobileAnalytics === value ? 'var(--accent)' : 'transparent', color: mobileAnalytics === value ? 'white' : 'var(--text-muted)' }}>{label}</button>
+                    ))}
+                  </div>
+                  <div className="mt-2">
+                    {mobileAnalytics === 'maturity' && <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openTrades, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." onGroupClick={drillToExpiration} />}
+                    {mobileAnalytics === 'ticker' && <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openTrades, markBasis)} totalGrossRisk={sumValues(openTrades.map(calculateEquityAtRisk))} maxItems={8} onGroupClick={drillToTicker} />}
+                    {mobileAnalytics === 'attention' && <NeedsAttentionList items={buildNeedsAttention(openTrades).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} />}
+                    {mobileAnalytics === 'close' && <CloseCandidatesCard candidates={buildCloseCandidates(openTrades, markBasis).slice(0, 5)} onNavigate={drillToTrade} />}
+                  </div>
+                </div>
+                <div className="hidden grid-cols-1 md:grid md:grid-cols-2 xl:grid-cols-12 auto-rows-auto items-stretch gap-2">
                   <div className="md:col-span-1 xl:col-span-8">
                     <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openTrades, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." onGroupClick={drillToExpiration} />
                   </div>
@@ -1457,6 +1509,7 @@ export default function PortfolioPage() {
                     <CloseCandidatesCard candidates={buildCloseCandidates(openTrades, markBasis).slice(0, 5)} onNavigate={drillToTrade} />
                   </div>
                 </div>
+                </>
               )}
             </section>
 
@@ -1868,7 +1921,40 @@ function ArchiveHistorySection({
         {(['expired_worthless', 'closed', 'expired_itm', 'assigned'] as const).map((outcome, index) => <div key={outcome} style={{ width: `${visibleSummary.percentages[outcome] * 100}%`, backgroundColor: ['var(--green)', 'var(--accent)', 'var(--red)', 'var(--orange)'][index] }} />)}
       </div>
       <MonthlyRealizedChart trades={visibleTrades} />
-      <div className="rounded-lg overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <div className="space-y-2 md:hidden">
+        {visibleTrades.map(trade => {
+          const pending = trade.status === 'expired_price_pending' || trade.resolutionType === 'expired_price_pending';
+          const canSetExpirationClose = trade.status === 'expired' || trade.status === 'expired_price_pending';
+          const resolving = resolvingIds.has(trade.id);
+          const realizedPnl = getArchivedRealizedPnl(trade);
+          const percentCaptured = getArchivedPercentCaptured(trade);
+          return (
+            <article key={`history-${trade.id}`} className="rounded-xl p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="font-mono text-base font-bold" style={{ color: 'var(--accent-light)' }}>{trade.ticker} {formatCurrency(trade.strike)} Put</div>
+                  <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{formatFullDate(trade.expiration)} · {formatDays(historyDaysHeld(trade))} held</div>
+                </div>
+                <span className="rounded px-1.5 py-1 text-[10px] font-semibold" style={{ color: getArchiveOutcomeColor(trade), backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>{getArchiveOutcomeLabel(trade)}</span>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <Metric label="Premium" value={formatCurrency(getArchivedPremium(trade))} color="var(--green)" />
+                <Metric label="Realized P&L" value={formatCurrency(realizedPnl)} color={pnlColor(realizedPnl)} />
+                <Metric label="Captured" value={formatPctValue(percentCaptured)} color={pnlColor(percentCaptured)} />
+                <Metric label="Final value" value={formatCurrency(getArchivedFinalValue(trade))} />
+              </div>
+              {trade.resolutionWarning && <p className="mt-2 text-[11px]" style={{ color: 'var(--yellow)' }}>{trade.resolutionWarning}</p>}
+              <div className="mt-3 flex flex-wrap gap-2 border-t pt-2" style={{ borderColor: 'var(--border)' }}>
+                {pending && <button onClick={() => onRetryResolve(trade)} disabled={resolving} className="tap-target rounded-lg px-3 text-xs disabled:opacity-50" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>{resolving ? 'Resolving...' : 'Retry'}</button>}
+                {canSetExpirationClose && <button onClick={() => onManualExpirationClose(trade)} className="tap-target rounded-lg px-3 text-xs" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Set close</button>}
+                <button onClick={() => onEdit(trade)} className="tap-target ml-auto flex items-center justify-center rounded-lg px-3" aria-label={`Edit ${trade.ticker} trade`} style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }}><Edit2 className="h-4 w-4" /></button>
+                <button onClick={() => onDelete(trade.id)} className="tap-target flex items-center justify-center rounded-lg px-3" aria-label={`Delete ${trade.ticker} trade`} style={{ color: 'var(--red)', backgroundColor: 'rgba(239,68,68,0.1)' }}><Trash2 className="h-4 w-4" /></button>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+      <div className="hidden rounded-lg overflow-hidden md:block" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
         <div className="overflow-x-auto max-w-full overscroll-contain">
           <table className="min-w-max w-full text-[12px] leading-none">
             <thead>

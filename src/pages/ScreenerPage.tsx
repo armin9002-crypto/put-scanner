@@ -10,7 +10,7 @@ import SparklineChart from '../components/SparklineChart';
 import ExpirationFilter, { buildExpirationOptions, formatExpirationDropdownLabel } from '../components/ExpirationFilter';
 import ErrorBoundary from '../components/ErrorBoundary';
 import type { OptionDetail } from '../components/OptionDetailDrawer';
-import { Search, X, ChevronUp, ChevronDown, Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Search, X, ChevronUp, ChevronDown, Loader2, AlertTriangle, RefreshCw, SlidersHorizontal } from 'lucide-react';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 
@@ -394,6 +394,7 @@ export default function ScreenerPage() {
   const [volFilter, setVolFilter] = useState('all');
   const [ivRankFilter, setIvRankFilter] = useState('all');
   const [showVolOI, setShowVolOI] = useState(false);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   // Data state
   const [rows, setRows] = useState<ScreenerRow[]>([]);
@@ -761,6 +762,7 @@ export default function ScreenerPage() {
       return;
     }
     await executeLoad(criteria);
+    setMobileFiltersOpen(false);
   }, [executeLoad, getCurrentCriteria]);
 
   // Sorted rows
@@ -844,13 +846,40 @@ export default function ScreenerPage() {
   const columns = showVolOI ? [...baseColumns, ...volOIColumns] : baseColumns;
 
   const progressPct = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
+  const activeFilterCount = [
+    selectedETFs.length > 0,
+    expFilter !== 'all',
+    deltaFilter !== 'all',
+    moneynessFilter !== 'all',
+    yieldFilter !== 'all',
+    oiFilter !== 'all',
+    volFilter !== 'all',
+    ivRankFilter !== 'all',
+  ].filter(Boolean).length;
 
   return (
     <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>
       <div className="max-w-[1600px] mx-auto px-3 sm:px-5 lg:px-8 py-4">
         {/* Filter Bar */}
         <div className="rounded-xl p-3 sm:p-4 mb-3 sm:mb-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-          <div className="grid grid-cols-1 min-[430px]:grid-cols-2 sm:flex sm:flex-row sm:flex-wrap sm:items-end gap-3">
+          <button
+            type="button"
+            className="pressable flex min-h-11 w-full items-center justify-between gap-3 sm:hidden"
+            aria-expanded={mobileFiltersOpen}
+            aria-controls="screener-filter-controls"
+            onClick={() => setMobileFiltersOpen(current => !current)}
+          >
+            <span className="flex items-center gap-2">
+              <span className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)' }}><SlidersHorizontal className="h-4 w-4" /></span>
+              <span className="text-left">
+                <span className="block text-sm font-semibold" style={{ color: 'var(--text)' }}>Scan filters</span>
+                <span className="block text-[11px]" style={{ color: 'var(--text-muted)' }}>{activeFilterCount} active · {selectedETFs.length || 'All'} ETFs</span>
+              </span>
+            </span>
+            <ChevronDown className={`h-4 w-4 transition-transform ${mobileFiltersOpen ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} />
+          </button>
+
+          <div id="screener-filter-controls" className={`screener-filter-controls grid grid-cols-1 min-[430px]:grid-cols-2 sm:flex sm:flex-row sm:flex-wrap sm:items-end gap-3 ${mobileFiltersOpen ? 'is-open' : ''}`}>
             {/* ETF Selector */}
             <div className="w-full sm:min-w-[180px] sm:w-auto min-w-0 min-[430px]:col-span-2 sm:col-span-1">
               <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>ETFs</label>
@@ -1054,8 +1083,8 @@ export default function ScreenerPage() {
 
         {/* Confirmation dialog */}
         {showConfirm && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-3" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-            <div className="max-h-[85dvh] w-full max-w-sm overflow-y-auto rounded-xl p-4 sm:p-6" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+          <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-3" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+            <div className="mobile-confirm-sheet max-h-[85dvh] w-full max-w-sm overflow-y-auto rounded-t-2xl p-4 sm:rounded-xl sm:p-6" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
               <h3 className="text-sm font-semibold mb-2" style={{ color: 'var(--text)' }}>Scan All ETFs?</h3>
               <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
                 Scanning all ETFs will make approximately 40-80 API calls. Proceed?
@@ -1103,8 +1132,81 @@ export default function ScreenerPage() {
           </label>
         </div>
 
+        <div className="mb-3 grid grid-cols-[1fr_auto] gap-2 md:hidden">
+          <label className="min-w-0">
+            <span className="sr-only">Sort results</span>
+            <select value={sortField} onChange={event => setSortField(event.target.value as ScreenerSortField)} className="min-h-[44px] w-full rounded-lg px-3 text-base outline-none" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}>
+              <option value="annYieldBid">Annualized yield</option>
+              <option value="ticker">Ticker</option>
+              <option value="expDate">Expiration</option>
+              <option value="strike">Strike</option>
+              <option value="delta">Delta</option>
+              <option value="bid">Bid</option>
+              <option value="iv">IV</option>
+              <option value="openInterest">Open interest</option>
+            </select>
+          </label>
+          <button type="button" onClick={() => setSortDir(current => current === 'asc' ? 'desc' : 'asc')} className="pressable tap-target rounded-lg px-3 text-xs font-semibold" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }} aria-label={`Sort ${sortDir === 'asc' ? 'descending' : 'ascending'}`}>
+            {sortDir === 'asc' ? 'Low → High' : 'High → Low'}
+          </button>
+        </div>
+
+        <div className="space-y-2 md:hidden">
+          {!loaded && !loading && (
+            <div className="rounded-xl px-5 py-12 text-center" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+              <Search className="mx-auto mb-3 h-6 w-6" style={{ color: 'var(--text-dim)' }} />
+              <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Ready to scan</p>
+              <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Choose filters above, then tap Load.</p>
+            </div>
+          )}
+          {loaded && sortedRows.length === 0 && (
+            <div className="rounded-xl px-5 py-10 text-center" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+              <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No matching options</p>
+              <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Try relaxing Delta, Moneyness, or Annualized Yield.</p>
+              <button type="button" onClick={() => setMobileFiltersOpen(true)} className="tap-target mt-4 rounded-lg px-4 text-xs font-semibold" style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)', border: '1px solid var(--accent-border)' }}>Adjust filters</button>
+            </div>
+          )}
+          {sortedRows.map(row => (
+            <article key={`mobile-${row.ticker}-${row.expDate}-${row.strike}`} className="pressable rounded-xl p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <Link to={`/options/${row.ticker}`} className="tap-target inline-flex items-center font-mono text-base font-bold" style={{ color: 'var(--accent-light)' }}>{row.ticker}</Link>
+                    <span className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold" style={{ color: row.moneynessColor, backgroundColor: 'var(--surface-alt)' }}>{row.moneynessLabel}</span>
+                  </div>
+                  <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{row.expLabel} · {row.dte} DTE · Underlying ${formatPrice(row.currentPrice)}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedOption({ option: optionDetailFromScreenerRow(row), ticker: row.ticker, expirationLabel: row.expLabel, dte: row.dte, underlyingPrice: row.currentPrice > 0 ? row.currentPrice : null })}
+                  className="pressable tap-target rounded-lg px-3 text-right"
+                  style={{ backgroundColor: 'var(--accent-bg)', border: '1px solid var(--accent-border)' }}
+                  aria-label={`Open option details for ${row.ticker} ${formatPrice(row.strike)} put`}
+                >
+                  <span className="block text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Strike</span>
+                  <span className="font-mono text-sm font-bold" style={{ color: 'var(--accent-light)' }}>${formatPrice(row.strike)}</span>
+                </button>
+              </div>
+              <div className="mt-2 grid grid-cols-4 gap-1.5 border-t pt-2" style={{ borderColor: 'var(--border)' }}>
+                {[
+                  ['Bid', `$${formatPrice(row.bid)}`, 'var(--green)'],
+                  ['AY Bid', row.annYieldBid != null ? `${row.annYieldBid.toFixed(1)}%` : '—', annYieldColor(row.annYieldBid)],
+                  ['Delta', row.delta.toFixed(2), deltaColor(row.delta)],
+                  ['IV', row.iv != null ? `${row.iv.toFixed(1)}%` : '—', ivColor(row.iv)],
+                ].map(([label, value, color]) => (
+                  <div key={label} className="min-w-0 rounded-lg p-2 text-center" style={{ backgroundColor: 'var(--surface-alt)' }}>
+                    <div className="truncate text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>{label}</div>
+                    <div className="truncate font-mono text-xs font-semibold tabular-nums" style={{ color }}>{value}</div>
+                  </div>
+                ))}
+              </div>
+              {showVolOI && <p className="mt-2 text-[11px] font-mono" style={{ color: 'var(--text-muted)' }}>Vol {formatNumber(row.volume)} · OI {formatNumber(row.openInterest)} · Vol/OI {row.volOI?.toFixed(2) ?? '—'}</p>}
+            </article>
+          ))}
+        </div>
+
         {/* Table */}
-        <div className="rounded-xl overflow-hidden max-w-full" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+        <div className="hidden rounded-xl overflow-hidden max-w-full md:block" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
           <div className="overflow-x-auto max-w-full overscroll-contain">
             <table className="min-w-[560px] md:min-w-[1120px] xl:min-w-0 w-full text-xs">
               <thead className="sticky top-0 z-10">

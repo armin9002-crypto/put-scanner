@@ -7,7 +7,7 @@ import ExpirationFilter, { buildExpirationOptions } from '../components/Expirati
 import SparklineChart from '../components/SparklineChart';
 import ErrorBoundary from '../components/ErrorBoundary';
 import DataFreshness, { type DataFreshnessStatus } from '../components/DataFreshness';
-import { Search, Loader2, RefreshCw } from 'lucide-react';
+import { Search, Loader2, RefreshCw, SlidersHorizontal, ChevronDown } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import {
   cacheScannerOptionSnapshot,
@@ -163,6 +163,7 @@ export default function HomePage() {
   const [expFilter, setExpFilter] = useState(initialScannerState.expiration);
   const [scannerSort, setScannerSort] = useState<ScannerSort>(initialScannerState.sort);
   const [liquidityFilter, setLiquidityFilter] = useState<ScannerLiquidityFilter>(initialScannerState.liquidity);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [expirationState, setExpirationState] = useState<CachedExpirationState>(initialExpirationStateRef.current!);
   const [optionSnapshots, setOptionSnapshots] = useState<Record<string, ScannerOptionSnapshot>>(() => getScannerOptionSnapshots());
   const [snapshotDiagnostics, setSnapshotDiagnostics] = useState<Record<string, ScannerSnapshotDiagnostic>>(() => getScannerSnapshotDiagnostics());
@@ -418,7 +419,27 @@ export default function HomePage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(360px,500px)_minmax(0,1fr)] xl:grid-cols-[minmax(420px,520px)_minmax(0,1fr)] lg:items-start gap-3 mb-4">
           {/* Filters */}
-          <div className="w-full rounded-xl p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+          <div className="scanner-filter-card w-full rounded-xl p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+            <button
+              type="button"
+              className="pressable flex min-h-11 w-full items-center justify-between gap-3 sm:hidden"
+              aria-expanded={mobileFiltersOpen}
+              aria-controls="scanner-filter-controls"
+              onClick={() => setMobileFiltersOpen(current => !current)}
+            >
+              <span className="flex min-w-0 items-center gap-2 text-left">
+                <span className="flex h-9 w-9 flex-none items-center justify-center rounded-lg" style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)' }}>
+                  <SlidersHorizontal className="h-4 w-4" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Expiration & filters</span>
+                  <span className="block truncate text-sm font-semibold" style={{ color: 'var(--text)' }}>{expDropdownOptions.find(option => option.value === expFilter)?.label ?? 'Any expiration'}</span>
+                </span>
+              </span>
+              <ChevronDown className={`h-4 w-4 flex-none transition-transform ${mobileFiltersOpen ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} />
+            </button>
+
+            <div id="scanner-filter-controls" className={`scanner-filter-controls ${mobileFiltersOpen ? 'is-open' : ''}`}>
             <div className="grid grid-cols-1 sm:grid-cols-[auto_minmax(200px,1fr)] gap-3 sm:items-end">
               <div>
                 <span className="block text-xs font-medium uppercase tracking-wider mb-1.5" style={{ color: 'var(--text-muted)' }}>Leverage</span>
@@ -427,7 +448,7 @@ export default function HomePage() {
                     <button
                       key={opt}
                       onClick={() => setLeverageFilter(opt)}
-                      className="px-3 py-2 sm:py-1 rounded-lg text-sm font-medium transition-all min-h-[44px] sm:min-h-0"
+                      className="pressable px-3 py-2 sm:py-1 rounded-lg text-sm font-medium transition-all min-h-[44px] sm:min-h-0"
                       style={{
                         backgroundColor: leverageFilter === opt ? 'var(--accent)' : 'var(--surface-alt)',
                         color: leverageFilter === opt ? 'white' : 'var(--text-muted)',
@@ -469,7 +490,7 @@ export default function HomePage() {
                   <button
                     key={opt}
                     onClick={() => setTypeFilter(opt)}
-                    className="px-2.5 py-2 sm:px-3 sm:py-1 rounded-lg text-sm font-medium transition-all min-h-[44px] sm:min-h-0 truncate"
+                    className="pressable px-2.5 py-2 sm:px-3 sm:py-1 rounded-lg text-sm font-medium transition-all min-h-[44px] sm:min-h-0 truncate"
                     style={{
                       backgroundColor: typeFilter === opt ? 'var(--accent)' : 'var(--surface-alt)',
                       color: typeFilter === opt ? 'white' : 'var(--text-muted)',
@@ -495,9 +516,10 @@ export default function HomePage() {
                 </label>
               </div>
             </div>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 min-[390px]:grid-cols-2 xl:grid-cols-4 gap-2 min-w-0">
+          <div className="scanner-market-strip mobile-scroll-row grid grid-cols-1 min-[390px]:grid-cols-2 xl:grid-cols-4 gap-2 min-w-0">
             <MarketChartCard ticker="SPY" chartTicker="SPY" data={spyData} loading={marketLoading} onRefresh={loadMarketData} onOpenChart={(chartTicker, displayTicker) => setChartModal({ ticker: chartTicker, displayTicker })} />
             <MarketChartCard ticker="VIX" chartTicker="^VIX" data={vixData} loading={marketLoading} onRefresh={loadMarketData} onOpenChart={(chartTicker, displayTicker) => setChartModal({ ticker: chartTicker, displayTicker })} />
             <MarketChartCard ticker="QQQ" chartTicker="QQQ" data={qqqData} loading={marketLoading} onRefresh={loadMarketData} onOpenChart={(chartTicker, displayTicker) => setChartModal({ ticker: chartTicker, displayTicker })} />
@@ -508,6 +530,11 @@ export default function HomePage() {
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <DataFreshness updatedAt={pricesUpdatedAt} status={pricesFreshness} label="Scanner prices" />
           <DataFreshness updatedAt={lastMarketUpdate} status={marketLoading ? 'updating' : marketRefreshFailed ? 'failed' : lastMarketUpdate ? 'fresh' : 'cached'} label="Market charts" />
+        </div>
+
+        <div className="mb-2 flex items-baseline justify-between gap-3">
+          <h1 className="text-base font-bold tracking-tight" style={{ color: 'var(--text)' }}>ETFs</h1>
+          <span className="text-xs font-medium tabular-nums" style={{ color: 'var(--text-dim)' }}>{filtered.length} results</span>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">

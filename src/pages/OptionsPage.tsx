@@ -975,7 +975,7 @@ export default function OptionsPage() {
             <button
               type="button"
               onClick={() => setShowUnderlyingHoldings(true)}
-              className="flex-shrink-0 rounded-lg px-3 py-1.5 text-center transition-all hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-indigo-500/60"
+              className="pressable min-h-[44px] flex-shrink-0 rounded-lg px-3 py-1.5 text-center transition-all hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-indigo-500/60"
               style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}
               title={holdingsProxy.meaningful && holdingsProxy.proxyTicker
                 ? `${holdingsProxy.proxyTicker} holdings used as the underlying exposure proxy for ${holdingsProxy.sourceTicker}.`
@@ -993,7 +993,7 @@ export default function OptionsPage() {
 
             {/* Right side: last updated + refresh + vol/OI toggle */}
             <div data-mobile-controls className="flex w-full flex-wrap items-center gap-2 text-xs sm:ml-auto sm:w-auto sm:gap-3 min-w-0" style={{ color: 'var(--text-muted)' }}>
-              <label className="flex items-center gap-1.5 text-xs cursor-pointer min-h-[40px] sm:min-h-0" style={{ color: 'var(--text-muted)' }}>
+              <label className="flex items-center gap-1.5 text-xs cursor-pointer min-h-[44px] sm:min-h-0" style={{ color: 'var(--text-muted)' }}>
                 <input
                   type="checkbox"
                   checked={showVolOI}
@@ -1013,7 +1013,7 @@ export default function OptionsPage() {
               <button
                 onClick={handleRefresh}
                 disabled={loading}
-                className="ml-auto sm:ml-0 flex items-center gap-1.5 px-3 py-2 sm:py-2 rounded-lg disabled:opacity-50 transition-all min-h-[40px] sm:min-h-0"
+                className="pressable ml-auto sm:ml-0 flex items-center gap-1.5 px-3 py-2 sm:py-2 rounded-lg disabled:opacity-50 transition-all min-h-[44px] sm:min-h-0"
                 style={{ backgroundColor: 'var(--border)', color: 'var(--text)' }}
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -1021,13 +1021,40 @@ export default function OptionsPage() {
               </button>
             </div>
           </div>
+
+          <div className="mt-3 grid grid-cols-[1.2fr_repeat(4,1fr)] gap-1.5 sm:hidden">
+            <button
+              type="button"
+              onClick={() => setShowPriceChart(true)}
+              className="pressable min-h-[44px] rounded-lg px-2 text-left"
+              style={{ backgroundColor: 'var(--accent-bg)', border: '1px solid var(--accent-border)', color: 'var(--accent-light)' }}
+            >
+              <span className="block text-[9px] font-semibold uppercase tracking-wider">Price</span>
+              <span className="block text-xs font-bold">Open chart</span>
+            </button>
+            {extendedPrice ? (
+              <>
+                <PerfCell label="5D" value={extendedPrice.fiveDay} />
+                <PerfCell label="1M" value={extendedPrice.oneMonth} />
+                <PerfCell label="3M" value={extendedPrice.threeMonth} />
+                <FiftyTwoWeekCell value={extendedPrice.fiftyTwoWeekHighPct} />
+              </>
+            ) : (
+              <>
+                <PerfCell label="5D" value={null} />
+                <PerfCell label="1M" value={null} />
+                <PerfCell label="3M" value={null} />
+                <FiftyTwoWeekCell value={null} />
+              </>
+            )}
+          </div>
         </div>
 
         {/* Expiration selector */}
         {optionsData && optionsData.expirations.length > 0 && (
           <div
             data-layout="expiry-row"
-            className="option-expiry-row sticky-stack mobile-static-sticky touch-scroll z-20 flex gap-2 mb-3 sm:mb-6 overflow-x-auto pt-2 pb-2 -mx-3 px-3 sm:mx-0 sm:px-0 sm:flex-wrap bg-[#0a0a0f]"
+            className="option-expiry-row mobile-scroll-row sticky-stack mobile-static-sticky touch-scroll z-20 flex gap-2 mb-3 sm:mb-6 overflow-x-auto pt-2 pb-2 -mx-3 px-3 sm:mx-0 sm:px-0 sm:flex-wrap bg-[#0a0a0f]"
             style={{
               top: EXPIRY_ROW_TOP,
               zIndex: 20,
