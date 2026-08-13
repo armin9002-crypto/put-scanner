@@ -1,3 +1,5 @@
+import { normalizeFiniteNumber, normalizePositiveNumber, readYahooJson, yahooFetch } from './_lib/yahoo.js';
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
 
@@ -23,35 +25,33 @@ export default async function handler(req, res) {
       url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=${interval}&range=${range}`;
     }
 
-    const yahooRes = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }
-    });
+    const yahooRes = await yahooFetch(url, { endpoint: 'price' });
     if (!yahooRes.ok) {
       return res.status(yahooRes.status).json({ error: `Yahoo chart request failed for ${ticker}` });
     }
-    const data = await yahooRes.json();
+    const data = await readYahooJson(yahooRes, 'price');
     const result = data.chart?.result?.[0];
     if (!result) {
       return res.status(502).json({ error: `No chart result for ${ticker}` });
     }
     const meta = result.meta;
-    const price = meta.regularMarketPrice;
-    const prev = meta.chartPreviousClose;
-    const change = price - prev;
-    const changePct = (change / prev) * 100;
+    const price = normalizePositiveNumber(meta.regularMarketPrice);
+    const prev = normalizePositiveNumber(meta.chartPreviousClose ?? meta.previousClose);
+    const change = price != null && prev != null ? price - prev : null;
+    const changePct = change != null && prev != null ? (change / prev) * 100 : null;
 
     const response = { price, change, changePct, previousClose: prev };
 
     // If intraday data requested, include sparkline
     if (interval === '1m' && range === '1d') {
       const closes = result.indicators?.quote?.[0]?.close || [];
-      response.sparkline = closes.filter(v => v != null);
+      response.sparkline = closes.map(normalizeFiniteNumber).filter(v => v != null);
     }
 
     // If extended data requested, include performance metrics. Intraday sparkline is opt-in.
     if (extended) {
       const dailyCloses = result.indicators?.quote?.[0]?.close || [];
-      const filtered = dailyCloses.filter(v => v != null);
+      const filtered = dailyCloses.map(normalizeFiniteNumber).filter(v => v != null);
       const len = filtered.length;
 
       // 5-day change: compare current price to 5 trading days ago
@@ -76,9 +76,9 @@ export default async function handler(req, res) {
       }
 
       // 52-week high
-      const fiftyTwoWeekHigh = meta.fiftyTwoWeekHigh || Math.max(...filtered);
+      const fiftyTwoWeekHigh = normalizePositiveNumber(meta.fiftyTwoWeekHigh) ?? (filtered.length > 0 ? Math.max(...filtered) : null);
       let fiftyTwoWeekHighPct = null;
-      if (fiftyTwoWeekHigh > 0) {
+      if (fiftyTwoWeekHigh != null && fiftyTwoWeekHigh > 0 && price != null) {
         fiftyTwoWeekHighPct = ((price - fiftyTwoWeekHigh) / fiftyTwoWeekHigh) * 100;
       }
 
@@ -90,14 +90,12 @@ export default async function handler(req, res) {
       if (includeSparkline) {
         try {
           const intradayUrl = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1m&range=1d`;
-          const intradayRes = await fetch(intradayUrl, {
-            headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }
-          });
-          const intradayData = await intradayRes.json();
+          const intradayRes = await yahooFetch(intradayUrl, { endpoint: 'price' });
+          const intradayData = await readYahooJson(intradayRes, 'price');
           const intradayResult = intradayData.chart?.result?.[0];
           const intradayCloses = intradayResult?.indicators?.quote?.[0]?.close || [];
-          response.sparkline = intradayCloses.filter(v => v != null);
-          response.previousClose = intradayResult?.meta?.chartPreviousClose ?? response.previousClose;
+          response.sparkline = intradayCloses.map(normalizeFiniteNumber).filter(v => v != null);
+          response.previousClose = normalizePositiveNumber(intradayResult?.meta?.chartPreviousClose) ?? response.previousClose;
         } catch {
           response.sparkline = [];
         }

@@ -1,3 +1,5 @@
+import { normalizeFiniteNumber, normalizeTimestampSeconds, readYahooJson, yahooFetch } from './_lib/yahoo.js';
+
 const TIMEFRAME_CONFIG = {
   '1D': {
     range: '1d',
@@ -129,15 +131,13 @@ export default async function handler(req, res) {
       ? `period1=${config.period1}&period2=${config.period2}`
       : `range=${config.range}`;
     const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=${config.interval}&${rangeParams}`;
-    const yahooRes = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' },
-    });
+    const yahooRes = await yahooFetch(url, { endpoint: 'chart' });
 
     if (!yahooRes.ok) {
       throw new Error(`Yahoo chart request failed with ${yahooRes.status}`);
     }
 
-    const data = await yahooRes.json();
+    const data = await readYahooJson(yahooRes, 'chart');
     const result = data?.chart?.result?.[0];
     if (!result) {
       throw new Error(data?.chart?.error?.description || 'No chart data returned');
@@ -149,12 +149,14 @@ export default async function handler(req, res) {
     const rawPoints = timestamps
       .map((timestamp, index) => {
         const price = closes[index];
-        if (!Number.isFinite(timestamp) || !Number.isFinite(price)) return null;
-        if (config.filterYtd && timestamp < startOfYear) return null;
+        const normalizedTimestamp = normalizeTimestampSeconds(timestamp);
+        const normalizedPrice = normalizeFiniteNumber(price);
+        if (normalizedTimestamp == null || normalizedPrice == null) return null;
+        if (config.filterYtd && normalizedTimestamp < startOfYear) return null;
         return {
-          timestamp,
-          date: new Date(timestamp * 1000).toISOString(),
-          price,
+          timestamp: normalizedTimestamp,
+          date: new Date(normalizedTimestamp * 1000).toISOString(),
+          price: normalizedPrice,
         };
       })
       .filter(Boolean);
@@ -162,13 +164,16 @@ export default async function handler(req, res) {
     const points = downsample(rawPoints, config.maxPoints);
     const meta = result.meta || {};
     const latestPoint = points[points.length - 1];
-    const latestPrice = Number.isFinite(meta.regularMarketPrice)
-      ? meta.regularMarketPrice
+    const normalizedLatest = normalizeFiniteNumber(meta.regularMarketPrice);
+    const normalizedChartPrevious = normalizeFiniteNumber(meta.chartPreviousClose);
+    const normalizedPrevious = normalizeFiniteNumber(meta.previousClose);
+    const latestPrice = normalizedLatest != null
+      ? normalizedLatest
       : latestPoint?.price ?? null;
-    const previousClose = Number.isFinite(meta.chartPreviousClose)
-      ? meta.chartPreviousClose
-      : Number.isFinite(meta.previousClose)
-        ? meta.previousClose
+    const previousClose = normalizedChartPrevious != null
+      ? normalizedChartPrevious
+      : normalizedPrevious != null
+        ? normalizedPrevious
         : null;
 
     res.setHeader('Cache-Control', config.cacheControl);

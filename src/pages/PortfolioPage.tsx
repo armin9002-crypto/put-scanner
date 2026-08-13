@@ -1,7 +1,7 @@
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AlertTriangle, Briefcase, ChevronDown, ChevronRight, Edit2, FileImage, Loader2, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { calculatePutDelta, fetchBatchPrices, fetchOptions } from '../lib/api';
+import { calculatePutDelta, fetchBatchPricesResult, fetchOptions } from '../lib/api';
 import { formatCurrency, formatDate, formatOptionPrice, formatPercent, formatPercentPoints, normalizeTimestampMs } from '../lib/format';
 import { calculateDte, calculateMoneyness, calculateYieldPercent, isFiniteNumber } from '../lib/optionMetrics';
 import {
@@ -1131,7 +1131,9 @@ export default function PortfolioPage() {
     setRefreshWarning(false);
     const nowIso = new Date().toISOString();
     const tickers = [...new Set(open.map(trade => trade.ticker))];
-    const batchPrices = await fetchBatchPrices(tickers).catch(() => null);
+    const batchPriceResult = await fetchBatchPricesResult(tickers, { mode: 'revalidate' }).catch(() => null);
+    const batchPrices = batchPriceResult?.data ?? null;
+    if (batchPriceResult?.staleFallbackUsed) setRefreshWarning(true);
     const requestKeys = [...new Set(open.map(trade => {
       const timestamp = isoToUnixSeconds(trade.expiration);
       return timestamp == null ? null : `${trade.ticker}|${timestamp}`;
@@ -1139,13 +1141,17 @@ export default function PortfolioPage() {
 
     const optionResults = await Promise.allSettled(requestKeys.map(async key => {
       const [ticker, timestamp] = key.split('|');
-      return { key, data: await fetchOptions(ticker, Number(timestamp), { source: 'Portfolio:refreshOpenTrades' }) };
+      return { key, data: await fetchOptions(ticker, Number(timestamp), { source: 'Portfolio:refreshOpenTrades', refreshMode: 'revalidate' }) };
     }));
     const optionsByKey = new Map(optionResults.map((result, index) => [
       requestKeys[index],
       result.status === 'fulfilled' ? result.value.data : null,
     ]));
-    const failedKeys = new Set(optionResults.flatMap((result, index) => result.status === 'rejected' ? [requestKeys[index]] : []));
+    const failedKeys = new Set(optionResults.flatMap((result, index) => (
+      result.status === 'rejected' || result.value.data.chainMeta?.staleFallbackUsed
+        ? [requestKeys[index]]
+        : []
+    )));
 
     const refreshed = sweepTrades.map(trade => {
       if (trade.status !== 'open') return trade;

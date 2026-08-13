@@ -43,7 +43,7 @@ export interface ExpirationDate {
   dte: number;
 }
 
-export type OptionChainSource = 'cache' | 'network' | 'fresh';
+export type OptionChainSource = 'cache' | 'stale' | 'network' | 'fresh';
 
 export interface OptionChainMeta {
   ticker: string;
@@ -52,6 +52,8 @@ export interface OptionChainMeta {
   expirationDate: number | null;
   fetchedAt: number;
   source: OptionChainSource;
+  freshness?: 'fresh' | 'stale' | 'expired';
+  staleFallbackUsed?: boolean;
   fresh?: boolean;
   cacheKey?: string;
   putCount: number;

@@ -9,8 +9,8 @@ const DAY = 24 * HOUR;
 
 const CACHE_RULES: CacheRule[] = [
   { prefix: 'options_v2_', ttlMs: 2 * HOUR, timestampPaths: [['timestamp'], ['fetchedAt']] },
-  { prefix: 'chart_history', ttlMs: 2 * DAY, timestampPaths: [['fetchedAt'], ['timestamp']] },
-  { prefix: 'etf_pulse_rows', ttlMs: 12 * HOUR, timestampPaths: [['fetchedAt']] },
+  { prefix: 'chart_history', ttlMs: 14 * DAY, timestampPaths: [['fetchedAt'], ['timestamp']] },
+  { prefix: 'etf_pulse_rows', ttlMs: DAY, timestampPaths: [['fetchedAt']] },
   { prefix: 'sparkline_', ttlMs: 2 * HOUR, timestampPaths: [['timestamp'], ['fetchedAt'], ['data', 'cachedAt']] },
   { prefix: 'extended_price_', ttlMs: 2 * HOUR, timestampPaths: [['timestamp'], ['fetchedAt']] },
   { prefix: 'price_cache', ttlMs: 2 * HOUR, timestampPaths: [['timestamp'], ['fetchedAt']] },

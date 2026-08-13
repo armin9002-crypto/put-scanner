@@ -6,6 +6,12 @@ import {
   updateScannerSnapshotForTicker,
 } from '../src/lib/scannerOptionSnapshot.ts';
 import { buildExpirationScheduleGroups } from '../src/lib/portfolioAnalytics.ts';
+import { clearMarketDataCache, requestMarketData } from '../src/lib/marketDataRequest.ts';
+import { normalizeFiniteNumber, normalizeTimestampSeconds, normalizeYahooIvPercent } from '../src/lib/marketDataNormalize.ts';
+import { getYahooProviderHealth, invalidateYahooSession, yahooFetch } from '../api/_lib/yahoo.js';
+import { getChartHistory } from '../src/lib/chartHistory.ts';
+import optionsHandler from '../api/options.js';
+import pricesHandler from '../api/prices.js';
 
 const EPSILON = 1e-9;
 
@@ -301,6 +307,10 @@ const checks = [
   () => assert('isolated strike is downgraded', isolatedSnapshot.liquidityLabel !== 'very_liquid'),
   () => assert('small absolute spread activates cheap-option guardrail', cheapWideRelativeSnapshot.spreadGuardrail?.includes('Tiny-premium')),
   () => assert('snapshot numeric outputs contain no non-finite values', Object.values(strongSnapshot).every(value => typeof value !== 'number' || Number.isFinite(value))),
+  () => assert('market normalization preserves missing values', normalizeFiniteNumber(null) === null && normalizeYahooIvPercent(undefined) === null),
+  () => assertClose('market normalization accepts numeric strings', normalizeFiniteNumber('12.5'), 12.5),
+  () => assertClose('market normalization converts Yahoo IV decimals', normalizeYahooIvPercent('0.82'), 82),
+  () => assertClose('market normalization converts millisecond timestamps', normalizeTimestampSeconds(1893456000000), 1893456000),
   () => assert('schedule groups only open trades by expiration', scheduleGroupsAsk.length === 2 && januaryScheduleGroup.tradeCount === 2),
   () => assert('schedule groups are chronological', scheduleGroupsAsk[0].expiration === '2099-01-15' && scheduleGroupsAsk[1].expiration === '2099-02-19'),
   () => assertClose('expiration contracts sum', januaryScheduleGroup.contractCount, 3),
@@ -390,6 +400,123 @@ globalThis.localStorage = {
   key: index => [...memory.keys()][index] ?? null,
   get length() { return memory.size; },
 };
+
+const brokerKey = 'selfcheck:market-broker:stale';
+clearMarketDataCache(brokerKey);
+let brokerCalls = 0;
+const brokerOptions = {
+  key: brokerKey,
+  source: 'selfcheck',
+  endpoint: 'ivrank',
+  softTtlMs: 0,
+  hardTtlMs: 60_000,
+  schemaVersion: 1,
+  allowStaleOnError: true,
+  validator: data => data?.value === 7,
+};
+const brokerFresh = await requestMarketData({
+  ...brokerOptions,
+  fetcher: async () => { brokerCalls += 1; return { value: 7 }; },
+});
+assert('market broker stores successful response', brokerFresh.data.value === 7 && brokerCalls === 1);
+const brokerStale = await requestMarketData({
+  ...brokerOptions,
+  mode: 'revalidate',
+  fetcher: async () => { brokerCalls += 1; throw new Error('temporary failure'); },
+});
+assert('market broker serves stale-on-error without overwriting data', brokerStale.data.value === 7 && brokerStale.meta.staleFallbackUsed && brokerCalls === 2);
+
+await requestMarketData({ ...brokerOptions, mode: 'revalidate', fetcher: async () => { brokerCalls += 1; throw new Error('failure two'); } });
+await requestMarketData({ ...brokerOptions, mode: 'revalidate', fetcher: async () => { brokerCalls += 1; throw new Error('failure three'); } });
+const circuitFallback = await requestMarketData({ ...brokerOptions, mode: 'revalidate', fetcher: async () => { brokerCalls += 1; return { value: 7 }; } });
+assert('market broker circuit breaker suppresses cascading calls', circuitFallback.meta.staleFallbackUsed && brokerCalls === 4);
+
+const dedupeKey = 'selfcheck:market-broker:dedupe';
+clearMarketDataCache(dedupeKey);
+let dedupeCalls = 0;
+const dedupeOptions = {
+  key: dedupeKey,
+  source: 'selfcheck',
+  endpoint: 'price',
+  softTtlMs: 60_000,
+  hardTtlMs: 120_000,
+  schemaVersion: 1,
+  mode: 'revalidate',
+  validator: data => data?.ok === true,
+  fetcher: async () => { dedupeCalls += 1; await Promise.resolve(); return { ok: true }; },
+};
+const dedupedResults = await Promise.all([requestMarketData(dedupeOptions), requestMarketData(dedupeOptions)]);
+assert('market broker deduplicates in-flight requests', dedupeCalls === 1 && dedupedResults.some(result => result.meta.deduped));
+
+const chartNowSeconds = Math.floor(Date.now() / 1000);
+const chartPoints = [300, 120, 10].map(daysAgo => {
+  const timestamp = chartNowSeconds - daysAgo * 86400;
+  return { timestamp, date: new Date(timestamp * 1000).toISOString(), price: 100 + daysAgo };
+});
+await requestMarketData({
+  key: 'chart_history_cache:TST:1Y',
+  source: 'selfcheck',
+  endpoint: 'chart-history',
+  softTtlMs: 6 * 60 * 60 * 1000,
+  hardTtlMs: 72 * 60 * 60 * 1000,
+  schemaVersion: 2,
+  validator: data => data?.timeframe === '1Y',
+  fetcher: async () => ({ ticker: 'TST', displayTicker: 'TST', timeframe: '1Y', points: chartPoints, fetchedAt: Date.now(), metadata: { interval: '1d' } }),
+});
+const derivedSixMonth = await getChartHistory('TST', '6M');
+assert('richer daily chart cache satisfies shorter timeframe without a request', derivedSixMonth.metadata?.derivedFrom === '1Y' && derivedSixMonth.points.length === 2);
+
+const originalFetch = globalThis.fetch;
+const makeApiResponse = () => ({
+  statusCode: 200,
+  headers: {},
+  body: null,
+  setHeader(name, value) { this.headers[name] = value; },
+  status(code) { this.statusCode = code; return this; },
+  json(body) { this.body = body; return body; },
+});
+
+invalidateYahooSession();
+let optionUpstreamCalls = 0;
+globalThis.fetch = async url => {
+  optionUpstreamCalls += 1;
+  if (String(url).includes('finance.yahoo.com/quote/')) {
+    return new Response('{"crumb":"session-crumb"}', { status: 200, headers: { 'set-cookie': 'B=session; Path=/' } });
+  }
+  return Response.json({ optionChain: { result: [{ quote: { regularMarketPrice: 100 }, expirationDates: [], options: [] }] } });
+};
+const firstOptionsResponse = makeApiResponse();
+const secondOptionsResponse = makeApiResponse();
+await optionsHandler({ query: { ticker: 'AAA' } }, firstOptionsResponse);
+await optionsHandler({ query: { ticker: 'BBB' } }, secondOptionsResponse);
+assert('Yahoo option session is reused across warm requests', firstOptionsResponse.statusCode === 200 && secondOptionsResponse.statusCode === 200 && optionUpstreamCalls === 3);
+
+let pricesUpstreamCalls = 0;
+const priceCloses = Array.from({ length: 66 }, (_, index) => 80 + index / 2);
+globalThis.fetch = async () => {
+  pricesUpstreamCalls += 1;
+  return Response.json({ spark: { result: [{ symbol: 'TQQQ', response: [{ meta: { regularMarketPrice: 112.5, chartPreviousClose: 111, fiftyTwoWeekHigh: 120, fiftyTwoWeekLow: 60 }, indicators: { quote: [{ close: priceCloses }] } }] }] } });
+};
+const pricesResponse = makeApiResponse();
+await pricesHandler({ query: { tickers: 'TQQQ' } }, pricesResponse);
+assert('batch prices use one Yahoo payload per chunk for all metrics', pricesUpstreamCalls === 1 && pricesResponse.body.TQQQ.fiveDay != null && pricesResponse.body.TQQQ.oneMonth != null && pricesResponse.body.TQQQ.threeMonth != null && pricesResponse.body.TQQQ.high52w === 120);
+
+let yahooCalls = 0;
+globalThis.fetch = async () => {
+  yahooCalls += 1;
+  return new Response('', { status: yahooCalls <= 3 ? 503 : 200 });
+};
+await yahooFetch('https://example.invalid/one', { endpoint: 'selfcheck' });
+await yahooFetch('https://example.invalid/two', { endpoint: 'selfcheck' });
+await yahooFetch('https://example.invalid/three', { endpoint: 'selfcheck' });
+let circuitOpened = false;
+try { await yahooFetch('https://example.invalid/four', { endpoint: 'selfcheck' }); } catch { circuitOpened = true; }
+assert('Yahoo circuit opens after consecutive provider failures', circuitOpened && yahooCalls === 3 && getYahooProviderHealth().selfcheck.circuitOpenUntil > Date.now());
+const overrideResponse = await yahooFetch('https://example.invalid/override', { endpoint: 'selfcheck', overrideCircuit: true });
+assert('Yahoo circuit allows one explicit override and resets on success', overrideResponse.ok && yahooCalls === 4 && getYahooProviderHealth().selfcheck.consecutiveFailures === 0);
+globalThis.fetch = originalFetch;
+passed += 9;
+
 memory.set('scanner_option_snapshots_v1', JSON.stringify({ OLD: { ticker: 'OLD', updatedAt: SNAPSHOT_NOW.toISOString() } }));
 assert('old snapshot schema is invalidated', getScannerOptionSnapshots().OLD == null);
 cacheScannerOptionSnapshot({ ...strongSnapshot, ticker: 'KEEP' });
@@ -406,4 +533,4 @@ passed += 2;
 if (originalLocalStorage === undefined) delete globalThis.localStorage;
 else globalThis.localStorage = originalLocalStorage;
 
-console.log(`Self-checks passed: ${passed}/${checks.length + 8}`);
+console.log(`Self-checks passed: ${passed}/${checks.length + 17}`);

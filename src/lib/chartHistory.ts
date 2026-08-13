@@ -1,4 +1,5 @@
-import { cachedRequest, makeCacheKey } from './dataCache';
+import { makeCacheKey } from './dataCache.ts';
+import { peekMarketData, requestMarketData, type DataFreshness } from './marketDataRequest.ts';
 
 export type ChartTimeframe = '1D' | '5D' | '30D' | 'YTD' | '3M' | '6M' | '1Y' | '2Y' | '3Y' | '5Y' | 'All';
 
@@ -16,10 +17,13 @@ export interface ChartHistoryResponse {
   previousClose?: number | null;
   latestPrice?: number | null;
   fetchedAt: number;
+  freshness?: DataFreshness;
+  staleFallbackUsed?: boolean;
   metadata?: {
     range?: string;
     interval?: string;
     sourcePoints?: number;
+    derivedFrom?: ChartTimeframe;
   };
 }
 
@@ -37,12 +41,29 @@ const CHART_TTLS: Record<ChartTimeframe, number> = {
   All: 24 * 60 * 60 * 1000,
 };
 
+const CHART_HARD_TTLS: Record<ChartTimeframe, number> = {
+  '1D': 30 * 60 * 1000,
+  '5D': 2 * 60 * 60 * 1000,
+  '30D': 24 * 60 * 60 * 1000,
+  YTD: 48 * 60 * 60 * 1000,
+  '3M': 48 * 60 * 60 * 1000,
+  '6M': 48 * 60 * 60 * 1000,
+  '1Y': 72 * 60 * 60 * 1000,
+  '2Y': 72 * 60 * 60 * 1000,
+  '3Y': 7 * 24 * 60 * 60 * 1000,
+  '5Y': 7 * 24 * 60 * 60 * 1000,
+  All: 14 * 24 * 60 * 60 * 1000,
+};
+
+const DAILY_HISTORY_FAMILIES: Partial<Record<ChartTimeframe, ChartTimeframe[]>> = {
+  '3M': ['6M', '1Y', '2Y'],
+  '6M': ['1Y', '2Y'],
+  YTD: ['1Y', '2Y'],
+  '1Y': ['2Y'],
+};
+
 function cacheKey(ticker: string, timeframe: ChartTimeframe): string {
   return makeCacheKey(['chart_history_cache', ticker, timeframe]);
-}
-
-function isFresh(data: ChartHistoryResponse, timeframe: ChartTimeframe): boolean {
-  return Date.now() - data.fetchedAt < CHART_TTLS[timeframe];
 }
 
 function isValidChartHistory(value: unknown, timeframe: ChartTimeframe): value is ChartHistoryResponse {
@@ -63,6 +84,43 @@ function isValidChartHistory(value: unknown, timeframe: ChartTimeframe): value i
   );
 }
 
+function clipStart(timeframe: ChartTimeframe, now = new Date()): number | null {
+  const start = new Date(now);
+  if (timeframe === 'YTD') start.setUTCMonth(0, 1);
+  else if (timeframe === '3M') start.setUTCMonth(start.getUTCMonth() - 3);
+  else if (timeframe === '6M') start.setUTCMonth(start.getUTCMonth() - 6);
+  else if (timeframe === '1Y') start.setUTCFullYear(start.getUTCFullYear() - 1);
+  else return null;
+  start.setUTCHours(0, 0, 0, 0);
+  return Math.floor(start.getTime() / 1000);
+}
+
+function findReusableHistory(ticker: string, timeframe: ChartTimeframe): ChartHistoryResponse | null {
+  const cutoff = clipStart(timeframe);
+  if (cutoff == null) return null;
+  for (const candidate of DAILY_HISTORY_FAMILIES[timeframe] ?? []) {
+    const cached = peekMarketData<ChartHistoryResponse>({
+      key: cacheKey(ticker, candidate),
+      softTtlMs: CHART_TTLS[candidate],
+      hardTtlMs: CHART_HARD_TTLS[candidate],
+      schemaVersion: 2,
+      validator: data => isValidChartHistory(data, candidate) && data.metadata?.interval === '1d',
+    });
+    if (!cached || cached.meta.freshness === 'expired') continue;
+    const points = cached.data.points.filter(point => point.timestamp >= cutoff);
+    if (points.length < 2) continue;
+    return {
+      ...cached.data,
+      timeframe,
+      points,
+      freshness: cached.meta.freshness,
+      staleFallbackUsed: false,
+      metadata: { ...cached.data.metadata, sourcePoints: points.length, derivedFrom: candidate },
+    };
+  }
+  return null;
+}
+
 export async function getChartHistory(
   ticker: string,
   timeframe: ChartTimeframe,
@@ -71,13 +129,37 @@ export async function getChartHistory(
   const normalizedTicker = ticker.trim().toUpperCase();
   const key = cacheKey(normalizedTicker, timeframe);
 
-  return cachedRequest(
+  if (!options.forceRefresh) {
+    const exact = peekMarketData<ChartHistoryResponse>({
+      key,
+      softTtlMs: CHART_TTLS[timeframe],
+      hardTtlMs: CHART_HARD_TTLS[timeframe],
+      schemaVersion: 2,
+      validator: data => isValidChartHistory(data, timeframe),
+    });
+    if (exact && exact.meta.freshness !== 'expired') {
+      return { ...exact.data, freshness: exact.meta.freshness, staleFallbackUsed: false };
+    }
+    const reusable = findReusableHistory(normalizedTicker, timeframe);
+    if (reusable) return reusable;
+  }
+
+  const result = await requestMarketData<ChartHistoryResponse>({
     key,
-    CHART_TTLS[timeframe],
-    async () => {
-      const response = await fetch(`/api/chart-history?ticker=${encodeURIComponent(normalizedTicker)}&timeframe=${encodeURIComponent(timeframe)}`);
+    source: `getChartHistory:${timeframe}`,
+    endpoint: 'chart-history',
+    softTtlMs: CHART_TTLS[timeframe],
+    hardTtlMs: CHART_HARD_TTLS[timeframe],
+    schemaVersion: 2,
+    mode: options.forceRefresh ? 'revalidate' : 'cache-first',
+    allowStaleOnError: true,
+    validator: data => isValidChartHistory(data, timeframe),
+    fetcher: async signal => {
+      const response = await fetch(`/api/chart-history?ticker=${encodeURIComponent(normalizedTicker)}&timeframe=${encodeURIComponent(timeframe)}`, { signal });
       if (!response.ok) {
-        throw new Error('Failed to fetch chart history');
+        const error = new Error('Failed to fetch chart history') as Error & { status: number };
+        error.status = response.status;
+        throw error;
       }
 
       const data = await response.json();
@@ -89,11 +171,6 @@ export async function getChartHistory(
       }
       return data;
     },
-    {
-      bypassCache: options.forceRefresh,
-      validator: (data) => isValidChartHistory(data, timeframe) && isFresh(data, timeframe),
-      diagnosticsEndpoint: 'chart-history',
-      diagnosticsSource: `getChartHistory:${timeframe}`,
-    }
-  );
+  });
+  return { ...result.data, freshness: result.meta.freshness, staleFallbackUsed: result.meta.staleFallbackUsed };
 }

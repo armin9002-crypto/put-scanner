@@ -1,4 +1,5 @@
 import type { ExpirationDate, OptionContract, OptionsChainData } from './types';
+import type { DataFreshness } from './marketDataRequest';
 
 export type SnapshotConfidence = 'high' | 'normal' | 'reduced' | 'low';
 export type ExpirationSelectionTier = 'ideal' | 'normal' | 'expanded' | 'broad';
@@ -86,6 +87,7 @@ const SNAPSHOT_CACHE_KEY = 'scanner_option_snapshots_v2';
 const EXPIRATION_CACHE_KEY = 'scanner_option_expirations_v1';
 const DIAGNOSTIC_CACHE_KEY = 'scanner_option_snapshot_diagnostics_v2';
 export const SCANNER_OPTION_SNAPSHOT_TTL = 8 * 60 * 60 * 1000;
+export const SCANNER_OPTION_SNAPSHOT_HARD_TTL = 24 * 60 * 60 * 1000;
 export const SCANNER_EXPIRATION_METADATA_TTL = 12 * 60 * 60 * 1000;
 
 const CONFIDENCE_ORDER: SnapshotConfidence[] = ['low', 'reduced', 'normal', 'high'];
@@ -671,6 +673,7 @@ export async function updateScannerSnapshotForTicker({
 }): Promise<ScannerSnapshotUpdateOutcome> {
   const requestedExpirations: Array<number | null> = [];
   const chainsByExpiration = new Map<number, OptionsChainData>();
+  const requestedChains: OptionsChainData[] = [];
   const requestedKeys = new Set<string>();
 
   const request = async (expiration?: number): Promise<OptionsChainData> => {
@@ -684,6 +687,7 @@ export async function updateScannerSnapshotForTicker({
     requestedKeys.add(key);
     requestedExpirations.push(expiration ?? null);
     const chain = await fetchChain(expiration);
+    requestedChains.push(chain);
     const returnedExpiration = chain.chainMeta?.returnedExpiration ?? chain.chainMeta?.expirationDate ?? null;
     if (returnedExpiration != null) chainsByExpiration.set(returnedExpiration, chain);
     return chain;
@@ -752,11 +756,12 @@ export async function updateScannerSnapshotForTicker({
     const expanded = snapshot.expirationSelectionTier !== 'ideal'
       || snapshot.liquiditySelectionTier !== 'ideal'
       || snapshot.usedSecondExpiration;
+    const staleFallbackUsed = requestedChains.some(chain => chain.chainMeta?.staleFallbackUsed === true);
     return {
-      status: 'updated',
+      status: staleFallbackUsed ? 'failed' : 'updated',
       snapshot,
       expanded,
-      reason: null,
+      reason: staleFallbackUsed ? 'Refresh failed; retained the last usable cached option snapshot.' : null,
       requestCount: requestedExpirations.length,
       requestedExpirations,
     };
@@ -802,9 +807,16 @@ export function cacheScannerOptionSnapshot(snapshot: ScannerOptionSnapshot): boo
 }
 
 export function isScannerOptionSnapshotStale(snapshot: ScannerOptionSnapshot | null | undefined, now = Date.now()): boolean {
-  if (!snapshot || !isSnapshotV2(snapshot)) return true;
+  return getScannerOptionSnapshotFreshness(snapshot, now) !== 'fresh';
+}
+
+export function getScannerOptionSnapshotFreshness(snapshot: ScannerOptionSnapshot | null | undefined, now = Date.now()): DataFreshness {
+  if (!snapshot || !isSnapshotV2(snapshot)) return 'expired';
   const updatedAt = Date.parse(snapshot.updatedAt);
-  return !Number.isFinite(updatedAt) || now - updatedAt > SCANNER_OPTION_SNAPSHOT_TTL;
+  if (!Number.isFinite(updatedAt)) return 'expired';
+  const age = now - updatedAt;
+  if (age <= SCANNER_OPTION_SNAPSHOT_TTL) return 'fresh';
+  return age <= SCANNER_OPTION_SNAPSHOT_HARD_TTL ? 'stale' : 'expired';
 }
 
 function cacheExpirationMetadata(ticker: string, chain: OptionsChainData): void {
@@ -820,6 +832,7 @@ function cacheExpirationMetadata(ticker: string, chain: OptionsChainData): void 
 export function cacheScannerOptionChain(ticker: string, chain: OptionsChainData): ScannerOptionSnapshot | null {
   const normalizedTicker = ticker.trim().toUpperCase();
   if (!normalizedTicker) return null;
+  if (chain.chainMeta?.freshness === 'stale') return getScannerOptionSnapshots()[normalizedTicker] ?? null;
   cacheExpirationMetadata(normalizedTicker, chain);
   const selectedExpiration = selectScannerSnapshotExpiration(chain.expirations);
   const returnedExpiration = chain.chainMeta?.returnedExpiration ?? chain.chainMeta?.expirationDate ?? null;

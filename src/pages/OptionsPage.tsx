@@ -715,8 +715,10 @@ export default function OptionsPage() {
   const selectedExpiration = optionsData?.expirations.find(exp => exp.date === selectedExp) ?? null;
   const chainMeta = optionsData?.chainMeta ?? null;
   const chainAgeMs = chainMeta ? Date.now() - chainMeta.fetchedAt : null;
-  const staleCachedChain = chainMeta?.source === 'cache' && chainAgeMs != null && chainAgeMs > 10 * 60 * 1000;
-  const freshnessLabel = staleCachedChain
+  const staleCachedChain = chainMeta?.source === 'stale' || (chainMeta?.source === 'cache' && chainAgeMs != null && chainAgeMs > 10 * 60 * 1000);
+  const freshnessLabel = chainMeta?.staleFallbackUsed
+    ? 'Refresh failed - showing cached data'
+    : staleCachedChain
     ? 'Cached - refresh for latest'
     : chainMeta?.source === 'fresh'
       ? 'Fresh'
@@ -737,6 +739,9 @@ export default function OptionsPage() {
     }
     if (staleCachedChain && debugOptionsEnabled) {
       warnings.push('This chain is from local cache and is older than 10 minutes. Click Refresh for a fresh Yahoo chain.');
+    }
+    if (chainMeta.staleFallbackUsed) {
+      warnings.push('Yahoo refresh failed. The last usable cached chain is still displayed.');
     }
     if (
       chainMeta.source === 'fresh' &&

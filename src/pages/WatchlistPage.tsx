@@ -269,7 +269,7 @@ export default function WatchlistPage() {
     setLoading(true);
 
     const uniqueTickers = [...new Set(currentItems.map(item => item.ticker))];
-    const batchResult = await fetchBatchPrices(uniqueTickers).catch(() => null);
+    const batchResult = await fetchBatchPrices(uniqueTickers, { mode: 'revalidate' }).catch(() => null);
 
     const requestKeys = [...new Set(currentItems
       .filter(item => {
@@ -281,7 +281,7 @@ export default function WatchlistPage() {
     const optionResults = await Promise.allSettled(
       requestKeys.map(async key => {
         const [ticker, timestamp] = key.split('|');
-        return { key, data: await fetchOptions(ticker, Number(timestamp), { source: 'Watchlist:refreshAll' }) };
+        return { key, data: await fetchOptions(ticker, Number(timestamp), { source: 'Watchlist:refreshAll', refreshMode: 'revalidate' }) };
       })
     );
 
@@ -296,7 +296,7 @@ export default function WatchlistPage() {
       const hasRequest = optionsByKey.has(key);
       const optData = optionsByKey.get(key) ?? null;
       const price = batchResult?.[item.ticker]?.price ?? optData?.currentPrice ?? item.snapshot?.underlyingPrice ?? null;
-      return mergeLiveItem(item, optData, price, hasRequest && optData == null);
+      return mergeLiveItem(item, optData, price, hasRequest && (optData == null || optData.chainMeta?.staleFallbackUsed === true));
     });
 
     const stored = markWatchlistItems(refreshed);

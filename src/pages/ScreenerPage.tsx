@@ -460,7 +460,7 @@ export default function ScreenerPage() {
         }
       });
 
-      const results = await fetchWithConcurrencyLimit(tasks, 5);
+      const results = await fetchWithConcurrencyLimit(tasks, 3);
       if (cancelled) return;
 
       const allExps = new Map<number, { date: number; label: string; dte: number }>();
@@ -619,7 +619,7 @@ export default function ScreenerPage() {
     }, 1000);
 
     try {
-    await fetchWithConcurrencyLimit(tasks1, 5);
+    await fetchWithConcurrencyLimit(tasks1, 3);
 
     // Phase 1.5: Fetch IV Rank for each ETF (non-blocking, best-effort)
     const ivRankMap = new Map<string, number | null>();
@@ -676,7 +676,7 @@ export default function ScreenerPage() {
 
     setProgress({ current: initialResults.size, total: totalFetches });
     if (fetchTasks.length > 0) {
-      await fetchWithConcurrencyLimit(fetchTasks, 5);
+      await fetchWithConcurrencyLimit(fetchTasks, 3);
     }
 
     clearInterval(slowCheck);

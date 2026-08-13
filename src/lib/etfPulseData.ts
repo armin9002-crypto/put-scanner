@@ -10,6 +10,8 @@ export interface EtfPulseLoadResult {
   loaded: number;
   failed: number;
   errors: Array<{ ticker: string; message: string }>;
+  stale?: boolean;
+  lastSuccessfulAt?: number;
 }
 
 export interface EtfPulseProgress {
@@ -20,6 +22,7 @@ export interface EtfPulseProgress {
 
 const ROW_CACHE_KEY = 'etf_pulse_rows:v2';
 const ROW_CACHE_TTL = 6 * 60 * 60 * 1000;
+const ROW_CACHE_HARD_TTL = 24 * 60 * 60 * 1000;
 const CONCURRENCY_LIMIT = 5;
 
 function getStorage(): Storage | null {
@@ -50,7 +53,7 @@ function isValidLoadResult(value: unknown): value is EtfPulseLoadResult {
     Array.isArray(value.errors);
 }
 
-export function readEtfPulseRowsCache(): EtfPulseLoadResult | null {
+export function readEtfPulseRowsCache(allowStale = false): EtfPulseLoadResult | null {
   const storage = getStorage();
   if (!storage) return null;
   try {
@@ -58,7 +61,8 @@ export function readEtfPulseRowsCache(): EtfPulseLoadResult | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!isValidLoadResult(parsed)) return null;
-    return Date.now() - parsed.fetchedAt < ROW_CACHE_TTL ? parsed : null;
+    const maxAge = allowStale ? ROW_CACHE_HARD_TTL : ROW_CACHE_TTL;
+    return Date.now() - parsed.fetchedAt < maxAge ? parsed : null;
   } catch {
     return null;
   }
@@ -120,8 +124,9 @@ export async function buildEtfPulseRows(options: {
   forceRefresh?: boolean;
   onProgress?: (progress: EtfPulseProgress) => void;
 } = {}): Promise<EtfPulseLoadResult> {
+  const previous = readEtfPulseRowsCache(true);
   if (!options.forceRefresh) {
-    const cached = readEtfPulseRowsCache();
+    const cached = readEtfPulseRowsCache(false);
     if (cached) return cached;
   }
 
@@ -131,10 +136,13 @@ export async function buildEtfPulseRows(options: {
   const tasks = universe.map(etf => async (): Promise<EtfPulseRow | null> => {
     try {
       const history = await fetchEtfPulseHistory(etf.ticker, { forceRefresh: options.forceRefresh });
+      if (history.staleFallbackUsed) {
+        errors.push({ ticker: etf.ticker, message: 'Refresh failed; retained cached history.' });
+      }
       return buildEtfPulseRow(etf, history.points, history.latestPrice);
     } catch (error) {
       errors.push({ ticker: etf.ticker, message: error instanceof Error ? error.message : 'History unavailable' });
-      return null;
+      return previous?.rows.find(row => row.ticker === etf.ticker) ?? null;
     } finally {
       completed += 1;
       options.onProgress?.({ loaded: completed, total: universe.length, ticker: etf.ticker });
@@ -150,7 +158,9 @@ export async function buildEtfPulseRows(options: {
     loaded: rows.length,
     failed: errors.length,
     errors,
+    stale: errors.length > 0,
+    lastSuccessfulAt: errors.length === 0 ? Date.now() : previous?.lastSuccessfulAt ?? previous?.fetchedAt,
   };
-  writeRowsCache(result);
+  if (rows.length > 0) writeRowsCache(result);
   return result;
 }

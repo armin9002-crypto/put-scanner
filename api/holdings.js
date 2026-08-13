@@ -1,3 +1,5 @@
+import { getYahooSession, readYahooJson, yahooFetch } from './_lib/yahoo.js';
+
 function normalizeWeight(value) {
   if (value == null) return null;
   if (typeof value === 'number') {
@@ -41,38 +43,16 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Invalid ticker parameter' });
   }
 
-  const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-
   try {
     const baseUrl = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=topHoldings,price`;
-    let yahooRes = await fetch(baseUrl, {
-      headers: {
-        'User-Agent': userAgent,
-        'Accept': 'application/json',
-      },
-    });
+    let yahooRes = await yahooFetch(baseUrl, { endpoint: 'holdings' });
 
     if (!yahooRes.ok && (yahooRes.status === 401 || yahooRes.status === 403)) {
-      const pageRes = await fetch(`https://finance.yahoo.com/quote/${ticker}/holdings/`, {
-        headers: {
-          'User-Agent': userAgent,
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.5',
-        },
-        redirect: 'follow',
-      });
-      const rawCookies = pageRes.headers.get('set-cookie') || '';
-      const cookieStr = rawCookies.split(',').map(c => c.split(';')[0]).join('; ');
-      const html = await pageRes.text();
-      const crumbMatch = html.match(/"crumb":"([^"\\]+)"/);
-      const crumb = crumbMatch ? crumbMatch[1].replace(/\\u002F/g, '/') : '';
-      const fallbackUrl = crumb ? `${baseUrl}&crumb=${encodeURIComponent(crumb)}` : baseUrl;
-      yahooRes = await fetch(fallbackUrl, {
-        headers: {
-          'User-Agent': userAgent,
-          'Accept': 'application/json',
-          'Cookie': cookieStr,
-        },
+      const session = await getYahooSession(ticker);
+      const fallbackUrl = `${baseUrl}&crumb=${encodeURIComponent(session.crumb)}`;
+      yahooRes = await yahooFetch(fallbackUrl, {
+        endpoint: 'holdings',
+        fetchOptions: { headers: { Cookie: session.cookie } },
       });
     }
 
@@ -91,7 +71,7 @@ export default async function handler(req, res) {
       });
     }
 
-    const data = await yahooRes.json();
+    const data = await readYahooJson(yahooRes, 'holdings');
     const result = data?.quoteSummary?.result?.[0];
     const rawHoldings = Array.isArray(result?.topHoldings?.holdings)
       ? result.topHoldings.holdings

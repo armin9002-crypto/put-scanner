@@ -196,7 +196,7 @@ function NetworkDiagnosticsPanel() {
           <div key={endpoint} className="grid grid-cols-[78px_1fr] gap-2">
             <span style={{ color: 'var(--text)' }}>{endpoint}</span>
             <span>
-              a:{entry.attempted} c:{entry.cacheHits} n:{entry.networkRequests}
+              a:{entry.attempted} n:{entry.networkRequests} m:{entry.memoryHits} p:{entry.persistentCacheHits} d:{entry.inFlightDedupes} s:{entry.staleFallbacks} f:{entry.failures}
             </span>
           </div>
         ))}

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { clearBatchPriceCache, fetchBatchPrices, fetchOptions, fetchSparkline, fetchWithConcurrencyLimit } from '../lib/api';
+import { fetchBatchPricesResult, fetchOptions, fetchSparkline, fetchWithConcurrencyLimit } from '../lib/api';
 import type { SparklineData } from '../lib/api';
 import type { BatchPriceData } from '../lib/cache';
 import ETFCard from '../components/ETFCard';
@@ -14,6 +14,7 @@ import {
   getCachedScannerExpirations,
   getScannerOptionSnapshots,
   getScannerSnapshotDiagnostics,
+  hasScannerSnapshotData,
   isScannerOptionSnapshotStale,
   recordScannerSnapshotDiagnostic,
   updateScannerSnapshotForTicker,
@@ -213,8 +214,7 @@ export default function HomePage() {
   const [chartModal, setChartModal] = useState<{ ticker: string; displayTicker: string } | null>(null);
 
   // Load batch prices with 10-second hard timeout
-  const loadPrices = useCallback(async (clearCache = false) => {
-    if (clearCache) clearBatchPriceCache();
+  const loadPrices = useCallback(async (forceRefresh = false) => {
     setPricesLoading(true);
     setPricesError(null);
 
@@ -222,21 +222,24 @@ export default function HomePage() {
     if (skeletonTimerRef.current) clearTimeout(skeletonTimerRef.current);
     skeletonTimerRef.current = setTimeout(() => {
       setPricesLoading(false);
-      if (Object.keys(prices).length === 0) {
-        setPricesError('Price data unavailable');
-      }
+      setPrices(current => {
+        if (Object.keys(current).length === 0) setPricesError('Price data unavailable');
+        return current;
+      });
     }, 10000);
 
     try {
       const tickers = HARDCODED_TICKERS.split(',');
-      const fetchPromise = fetchBatchPrices(tickers);
+      const fetchPromise = fetchBatchPricesResult(tickers, { mode: forceRefresh ? 'revalidate' : 'cache-first' });
 
       // 10-second hard timeout
       const timeoutPromise = new Promise<null>((_, reject) =>
         setTimeout(() => reject(new Error('Request timed out')), 10000)
       );
 
-      const data = await Promise.race([fetchPromise, timeoutPromise]) as BatchPriceData;
+      const response = await Promise.race([fetchPromise, timeoutPromise]);
+      if (!response) throw new Error('Price data unavailable');
+      const data = response.data as BatchPriceData;
 
       if (!data || Object.keys(data).length === 0) {
         setPricesError('Price data unavailable');
@@ -246,6 +249,7 @@ export default function HomePage() {
           setPricesError('Partial data received — some prices unavailable');
         }
         setPrices(data);
+        if (response.staleFallbackUsed) setPricesError('Refresh failed - showing cached prices');
       }
     } catch (err: unknown) {
       setPricesError(err instanceof Error ? err.message : 'Price data unavailable');
@@ -256,9 +260,9 @@ export default function HomePage() {
       }
       setPricesLoading(false);
     }
-  }, [prices]);
+  }, []);
 
-  useEffect(() => { loadPrices(); }, []);
+  useEffect(() => { loadPrices(); }, [loadPrices]);
 
   // Load market sparklines (manual refresh only, with cache)
   const loadMarketData = useCallback(async () => {
@@ -345,9 +349,10 @@ export default function HomePage() {
             { source: expiration == null ? 'Scanner:updateSnapshot:discovery' : 'Scanner:updateSnapshot:selected' },
           ),
         });
-        if (outcome.status === 'updated' && outcome.snapshot) {
+        if (outcome.snapshot && hasScannerSnapshotData(outcome.snapshot)) {
           cacheScannerOptionSnapshot(outcome.snapshot);
-        } else {
+        }
+        if (outcome.status !== 'updated') {
           const diagnostic = diagnosticForOutcome(outcome);
           if (diagnostic) recordScannerSnapshotDiagnostic(ticker, diagnostic.status, diagnostic.reason);
         }

@@ -1,4 +1,4 @@
-import { clearCachedData, getCachedData, setCachedData, dedupeRequest } from './dataCache';
+import { clearMarketDataCache, peekMarketData, requestMarketData } from './marketDataRequest';
 
 export interface UnderlyingHolding {
   symbol: string;
@@ -19,6 +19,7 @@ export interface UnderlyingHoldingsData {
 }
 
 const HOLDINGS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const HOLDINGS_HARD_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const HOLDINGS_ERROR_TTL_MS = 15 * 60 * 1000;
 
 function cacheKey(proxyTicker: string): string {
@@ -38,13 +39,17 @@ function isValidHoldingsData(data: UnderlyingHoldingsData): boolean {
 }
 
 export function getCachedUnderlyingHoldings(proxyTicker: string): UnderlyingHoldingsData | null {
-  return getCachedData<UnderlyingHoldingsData>(cacheKey(proxyTicker), HOLDINGS_TTL_MS, {
+  return peekMarketData<UnderlyingHoldingsData>({
+    key: cacheKey(proxyTicker),
+    softTtlMs: HOLDINGS_TTL_MS,
+    hardTtlMs: HOLDINGS_HARD_TTL_MS,
+    schemaVersion: 2,
     validator: isValidHoldingsData,
-  });
+  })?.data ?? null;
 }
 
 export function clearUnderlyingHoldingsCache(proxyTicker: string): void {
-  clearCachedData(cacheKey(proxyTicker));
+  clearMarketDataCache(cacheKey(proxyTicker));
 }
 
 export async function fetchUnderlyingHoldings(
@@ -54,29 +59,21 @@ export async function fetchUnderlyingHoldings(
   const ticker = normalizeTicker(proxyTicker);
   const key = cacheKey(ticker);
 
-  if (!options.bypassCache) {
-    const cached = getCachedUnderlyingHoldings(ticker);
-    if (cached) return cached;
-  } else {
-    clearUnderlyingHoldingsCache(ticker);
-  }
-
-  return dedupeRequest(key, async () => {
-    const response = await fetch(`/api/holdings?ticker=${encodeURIComponent(ticker)}`);
+  try {
+    const result = await requestMarketData<UnderlyingHoldingsData>({
+      key,
+      source: 'fetchUnderlyingHoldings',
+      endpoint: 'holdings',
+      softTtlMs: HOLDINGS_TTL_MS,
+      hardTtlMs: HOLDINGS_HARD_TTL_MS,
+      schemaVersion: 2,
+      mode: options.bypassCache ? 'revalidate' : 'cache-first',
+      allowStaleOnError: true,
+      validator: isValidHoldingsData,
+      fetcher: async signal => {
+    const response = await fetch(`/api/holdings?ticker=${encodeURIComponent(ticker)}`, { signal });
     if (!response.ok) {
-      const errorData: UnderlyingHoldingsData = {
-        ticker,
-        name: ticker,
-        holdings: [],
-        topHoldingsCount: 0,
-        topHoldingsWeight: null,
-        source: 'Yahoo Finance',
-        fetchedAt: Date.now(),
-        unavailableReason: `Unable to load holdings for ${ticker}.`,
-        errorCachedUntil: Date.now() + HOLDINGS_ERROR_TTL_MS,
-      };
-      setCachedData(key, errorData);
-      return errorData;
+      throw new Error(`Unable to load holdings for ${ticker}.`);
     }
 
     const data = await response.json() as UnderlyingHoldingsData;
@@ -98,7 +95,21 @@ export async function fetchUnderlyingHoldings(
       errorCachedUntil: data.errorCachedUntil,
     };
 
-    setCachedData(key, normalized);
     return normalized;
-  }, options.bypassCache);
+      },
+    });
+    return result.data;
+  } catch {
+    return {
+      ticker,
+      name: ticker,
+      holdings: [],
+      topHoldingsCount: 0,
+      topHoldingsWeight: null,
+      source: 'Yahoo Finance',
+      fetchedAt: Date.now(),
+      unavailableReason: `Unable to load holdings for ${ticker}.`,
+      errorCachedUntil: Date.now() + HOLDINGS_ERROR_TTL_MS,
+    };
+  }
 }

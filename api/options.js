@@ -1,3 +1,5 @@
+import { fetchYahooOptions } from './_lib/yahoo.js';
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
 
@@ -18,60 +20,8 @@ export default async function handler(req, res) {
   const rawFresh = Array.isArray(req.query.fresh) ? req.query.fresh[0] : req.query.fresh;
   const fresh = rawFresh === '1' || rawFresh === 'true';
 
-  const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-
   try {
-    // Step 1: Hit Yahoo Finance quote page to get cookies + crumb
-    const pageRes = await fetch(`https://finance.yahoo.com/quote/${ticker}/options/`, {
-      headers: {
-        'User-Agent': userAgent,
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-      },
-      redirect: 'follow'
-    });
-    if (!pageRes.ok) {
-      return res.status(pageRes.status).json({ error: `Yahoo quote page failed for ${ticker}` });
-    }
-
-    // Extract cookies
-    const rawCookies = pageRes.headers.get('set-cookie') || '';
-    const cookieStr = rawCookies.split(',').map(c => c.split(';')[0]).join('; ');
-
-    // Extract crumb from HTML
-    const html = await pageRes.text();
-    const crumbMatch = html.match(/"crumb":"([^"\\]+)"/);
-    let crumb = crumbMatch ? crumbMatch[1].replace(/\\u002F/g, '/') : null;
-
-    if (!crumb) {
-      // Fallback: try getcrumb endpoint with page cookies
-      const crumbRes = await fetch('https://query1.finance.yahoo.com/v1/test/getcrumb', {
-        headers: { 'User-Agent': userAgent, 'Cookie': cookieStr }
-      });
-      if (crumbRes.ok) {
-        crumb = await crumbRes.text();
-      }
-    }
-
-    const finalCrumb = crumb || '';
-    let url = `https://query2.finance.yahoo.com/v7/finance/options/${ticker}?crumb=${encodeURIComponent(finalCrumb)}`;
-    if (date) url += `&date=${date}`;
-    if (fresh) url += `&_=${Date.now()}`;
-
-    const optRes = await fetch(url, {
-      headers: {
-        'User-Agent': userAgent,
-        'Accept': 'application/json',
-        'Cookie': cookieStr
-      }
-    });
-    if (!optRes.ok) {
-      return res.status(optRes.status).json({ error: `Yahoo options request failed for ${ticker}` });
-    }
-    const data = await optRes.json();
+    const data = await fetchYahooOptions(ticker, date, { fresh });
 
     res.setHeader(
       'Cache-Control',
@@ -83,6 +33,6 @@ export default async function handler(req, res) {
     );
     return res.status(200).json(data);
   } catch(e) {
-    return res.status(500).json({ error: e.message });
+    return res.status(e?.status || 500).json({ error: e?.message || 'Failed to fetch options' });
   }
 }

@@ -1,76 +1,41 @@
+import {
+  fetchYahooOptions,
+  getYahooSession,
+  normalizeFiniteNumber,
+  normalizePositiveNumber,
+  readYahooJson,
+  yahooFetch,
+} from './_lib/yahoo.js';
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-
   const rawTicker = Array.isArray(req.query.ticker) ? req.query.ticker[0] : req.query.ticker;
   const ticker = String(rawTicker || '').trim().toUpperCase();
-  if (!ticker) {
-    return res.status(400).json({ error: 'Missing ticker parameter' });
-  }
-  if (!/^[A-Z0-9.^-]{1,12}$/.test(ticker)) {
-    return res.status(400).json({ error: 'Invalid ticker parameter' });
-  }
-
-  const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+  if (!ticker) return res.status(400).json({ error: 'Missing ticker parameter' });
+  if (!/^[A-Z0-9.^-]{1,12}$/.test(ticker)) return res.status(400).json({ error: 'Invalid ticker parameter' });
 
   try {
-    // Step 1: Get cookies + crumb from Yahoo Finance
-    const pageRes = await fetch(`https://finance.yahoo.com/quote/${ticker}/options/`, {
-      headers: {
-        'User-Agent': userAgent,
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-      },
-      redirect: 'follow'
-    });
-    if (!pageRes.ok) {
-      return res.status(pageRes.status).json({ error: `Yahoo quote page failed for ${ticker}` });
-    }
-
-    const rawCookies = pageRes.headers.get('set-cookie') || '';
-    const cookieStr = rawCookies.split(',').map(c => c.split(';')[0]).join('; ');
-    const html = await pageRes.text();
-    const crumbMatch = html.match(/"crumb":"([^"\\]+)"/);
-    let crumb = crumbMatch ? crumbMatch[1].replace(/\\u002F/g, '/') : '';
-    if (!crumb) {
-      const crumbRes = await fetch('https://query1.finance.yahoo.com/v1/test/getcrumb', {
-        headers: { 'User-Agent': userAgent, 'Cookie': cookieStr }
-      });
-      if (crumbRes.ok) {
-        crumb = await crumbRes.text();
-      }
-    }
-
-    // Step 2: Get current ATM IV from nearest expiry options chain
-    const optUrl = `https://query2.finance.yahoo.com/v7/finance/options/${ticker}?crumb=${encodeURIComponent(crumb)}`;
-    const optRes = await fetch(optUrl, {
-      headers: { 'User-Agent': userAgent, 'Accept': 'application/json', 'Cookie': cookieStr }
-    });
-    if (!optRes.ok) {
-      return res.status(optRes.status).json({ error: `Yahoo options request failed for ${ticker}` });
-    }
-    const optData = await optRes.json();
-
-    const result = optData?.optionChain?.result?.[0];
+    const optionData = await fetchYahooOptions(ticker);
+    const result = optionData?.optionChain?.result?.[0];
     if (!result) {
       res.setHeader('Cache-Control', 'public, s-maxage=3600, stale-while-revalidate=21600');
       return res.status(200).json({ currentIV: null, ivRank: null, ivPercentile: null });
     }
 
-    const currentPrice = result.quote?.regularMarketPrice ?? 0;
-    const puts = result.options?.[0]?.puts || [];
-
-    // Find ATM put (closest strike to current price)
+    const currentPrice = normalizePositiveNumber(result.quote?.regularMarketPrice);
+    const puts = Array.isArray(result.options?.[0]?.puts) ? result.options[0].puts : [];
     let atmIV = null;
-    let minDist = Infinity;
-    for (const p of puts) {
-      const dist = Math.abs(p.strike - currentPrice);
-      if (dist < minDist && p.impliedVolatility != null && p.impliedVolatility > 0) {
-        minDist = dist;
-        let iv = p.impliedVolatility;
-        if (iv < 5) iv = iv * 100; // normalize to percentage
-        atmIV = iv;
+    let minDistance = Infinity;
+    if (currentPrice != null) {
+      for (const put of puts) {
+        const strike = normalizePositiveNumber(put.strike);
+        const rawIv = normalizePositiveNumber(put.impliedVolatility);
+        if (strike == null || rawIv == null) continue;
+        const distance = Math.abs(strike - currentPrice);
+        if (distance < minDistance) {
+          minDistance = distance;
+          atmIV = rawIv < 5 ? rawIv * 100 : rawIv;
+        }
       }
     }
 
@@ -79,41 +44,34 @@ export default async function handler(req, res) {
       return res.status(200).json({ currentIV: null, ivRank: null, ivPercentile: null });
     }
 
-    // Step 3: Get 1 year of historical data for IV range calculation
+    const session = await getYahooSession(ticker);
     const oneYearAgo = Math.floor(Date.now() / 1000) - 365 * 24 * 60 * 60;
-    const chartUrl = `https://query2.finance.yahoo.com/v8/finance/chart/${ticker}?period1=${oneYearAgo}&period2=${Math.floor(Date.now() / 1000)}&interval=1wk&crumb=${encodeURIComponent(crumb)}`;
-    const chartRes = await fetch(chartUrl, {
-      headers: { 'User-Agent': userAgent, 'Accept': 'application/json', 'Cookie': cookieStr }
+    const chartUrl = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?period1=${oneYearAgo}&period2=${Math.floor(Date.now() / 1000)}&interval=1wk&crumb=${encodeURIComponent(session.crumb)}`;
+    const chartResponse = await yahooFetch(chartUrl, {
+      endpoint: 'chart',
+      fetchOptions: { headers: { Cookie: session.cookie } },
     });
-    if (!chartRes.ok) {
-      return res.status(chartRes.status).json({ error: `Yahoo chart request failed for ${ticker}` });
-    }
-    const chartData = await chartRes.json();
-
+    if (!chartResponse.ok) return res.status(chartResponse.status).json({ error: `Yahoo chart request failed for ${ticker}` });
+    const chartData = await readYahooJson(chartResponse, 'chart');
     const closes = chartData?.chart?.result?.[0]?.indicators?.quote?.[0]?.close || [];
-    const validCloses = closes.filter(c => c != null);
+    const validCloses = closes.map(normalizeFiniteNumber).filter(value => value != null);
 
     if (validCloses.length < 20) {
       res.setHeader('Cache-Control', 'public, s-maxage=3600, stale-while-revalidate=21600');
       return res.status(200).json({ currentIV: atmIV, ivRank: null, ivPercentile: null });
     }
 
-    // Calculate rolling 20-day (4-week) annualized volatility for each week
     const weeklyVols = [];
-    for (let i = 4; i < validCloses.length; i++) {
-      const window = validCloses.slice(i - 4, i + 1);
+    for (let index = 4; index < validCloses.length; index += 1) {
+      const window = validCloses.slice(index - 4, index + 1);
       const returns = [];
-      for (let j = 1; j < window.length; j++) {
-        if (window[j - 1] > 0) {
-          returns.push(Math.log(window[j] / window[j - 1]));
-        }
+      for (let offset = 1; offset < window.length; offset += 1) {
+        if (window[offset - 1] > 0) returns.push(Math.log(window[offset] / window[offset - 1]));
       }
-      if (returns.length >= 3) {
-        const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
-        const variance = returns.reduce((a, b) => a + (b - mean) ** 2, 0) / returns.length;
-        const annualizedVol = Math.sqrt(variance) * Math.sqrt(52) * 100;
-        weeklyVols.push(annualizedVol);
-      }
+      if (returns.length < 3) continue;
+      const mean = returns.reduce((total, value) => total + value, 0) / returns.length;
+      const variance = returns.reduce((total, value) => total + (value - mean) ** 2, 0) / returns.length;
+      weeklyVols.push(Math.sqrt(variance) * Math.sqrt(52) * 100);
     }
 
     if (weeklyVols.length < 5) {
@@ -123,14 +81,8 @@ export default async function handler(req, res) {
 
     const ivLow = Math.min(...weeklyVols);
     const ivHigh = Math.max(...weeklyVols);
-    const ivRange = ivHigh - ivLow;
-
-    // IV Rank: percentage of time IV was below current
-    const belowCount = weeklyVols.filter(v => v < atmIV).length;
-    const ivPercentile = (belowCount / weeklyVols.length) * 100;
-
-    // IV Rank: (current - low) / (high - low) * 100
-    const ivRank = ivRange > 0 ? ((atmIV - ivLow) / ivRange) * 100 : 50;
+    const ivPercentile = weeklyVols.filter(value => value < atmIV).length / weeklyVols.length * 100;
+    const ivRank = ivHigh > ivLow ? (atmIV - ivLow) / (ivHigh - ivLow) * 100 : 50;
 
     res.setHeader('Cache-Control', 'public, s-maxage=3600, stale-while-revalidate=21600');
     return res.status(200).json({
@@ -138,7 +90,7 @@ export default async function handler(req, res) {
       ivRank: Math.round(Math.max(0, Math.min(100, ivRank)) * 10) / 10,
       ivPercentile: Math.round(ivPercentile * 10) / 10,
     });
-  } catch(e) {
-    return res.status(500).json({ error: e.message });
+  } catch (error) {
+    return res.status(error?.status || 500).json({ error: error?.message || 'Failed to calculate IV rank' });
   }
 }

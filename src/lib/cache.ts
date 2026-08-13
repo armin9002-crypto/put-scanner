@@ -1,114 +1,59 @@
-import { getMemCache, setMemCache, clearMemCache } from './memoryCache';
-import { dedupeRequest } from './dataCache';
-import { recordRequestDiagnostic, type RequestEndpoint } from './requestDiagnostics';
+import { getMemCache, setMemCache } from './memoryCache';
+import { requestMarketData } from './marketDataRequest';
+import type { RequestEndpoint } from './requestDiagnostics';
 
-const TEN_MIN = 10 * 60 * 1000;
-const FIFTEEN_MIN = 15 * 60 * 1000;
-const THIRTY_MIN = 30 * 60 * 1000;
-const ONE_HOUR = 60 * 60 * 1000;
+const TEN_MINUTES = 10 * 60 * 1000;
+const FIFTEEN_MINUTES = 15 * 60 * 1000;
 const TWO_HOURS = 2 * 60 * 60 * 1000;
 
 function getStorage(): Storage | null {
   try {
-    return typeof localStorage !== 'undefined' ? localStorage : null;
+    return typeof localStorage === 'undefined' ? null : localStorage;
   } catch {
     return null;
   }
 }
 
-export function getCached<T>(key: string, ttlMs: number): T | null {
+function getCached<T>(key: string, ttlMs: number): T | null {
   const storage = getStorage();
   if (!storage) return null;
   try {
-    const raw = storage.getItem(key);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (Date.now() - parsed.timestamp > ttlMs) {
-      storage.removeItem(key);
-      return null;
-    }
+    const parsed = JSON.parse(storage.getItem(key) ?? 'null');
+    const fetchedAt = parsed?.fetchedAt ?? parsed?.timestamp;
+    if (!parsed || typeof fetchedAt !== 'number' || Date.now() - fetchedAt > ttlMs) return null;
     return parsed.data as T;
   } catch {
     return null;
   }
 }
 
-export function setCache<T>(key: string, data: T): void {
-  const storage = getStorage();
-  if (!storage) return;
-  try {
-    storage.setItem(key, JSON.stringify({ data, timestamp: Date.now() }));
-  } catch { /* storage full or unavailable */ }
+function setCache<T>(key: string, data: T): void {
+  try { getStorage()?.setItem(key, JSON.stringify({ data, timestamp: Date.now() })); } catch { /* best effort */ }
 }
 
-export function clearLsCache(key: string): void {
-  const storage = getStorage();
-  if (!storage) return;
-  try { storage.removeItem(key); } catch { /* ignore */ }
-}
-
-// Three-layer cache: memory -> localStorage -> fetch
-// With validation: only cache if validator passes (or no validator provided)
-export function threeLayerCache<T>(
+export async function threeLayerCache<T>(
   key: string,
-  memTtl: number,
-  lsTtl: number,
+  memoryTtlMs: number,
+  persistentTtlMs: number,
   fetcher: () => Promise<T>,
   validator?: (data: T) => boolean,
   options: { bypassCache?: boolean; diagnosticsEndpoint?: RequestEndpoint; diagnosticsSource?: string } = {}
 ): Promise<T> {
-  if (options.diagnosticsEndpoint) {
-    recordRequestDiagnostic(options.diagnosticsEndpoint, 'attempted', options.diagnosticsSource);
-  }
-
-  if (options.bypassCache) {
-    clearMemCache(key);
-    clearLsCache(key);
-  }
-
-  // Layer 1: memory cache
-  const memHit = options.bypassCache ? null : getMemCache(key, memTtl);
-  if (memHit !== null) {
-    if (!validator || validator(memHit as T)) {
-      if (options.diagnosticsEndpoint) {
-        recordRequestDiagnostic(options.diagnosticsEndpoint, 'cacheHit', options.diagnosticsSource);
-      }
-      return Promise.resolve(memHit as T);
-    }
-    // Invalid cached data — clear and continue
-    clearMemCache(key);
-  }
-
-  // Layer 2: localStorage cache
-  const lsHit = options.bypassCache ? null : getCached<T>(key, lsTtl);
-  if (lsHit !== null) {
-    if (!validator || validator(lsHit)) {
-      setMemCache(key, lsHit);
-      if (options.diagnosticsEndpoint) {
-        recordRequestDiagnostic(options.diagnosticsEndpoint, 'cacheHit', options.diagnosticsSource);
-      }
-      return Promise.resolve(lsHit);
-    }
-    // Invalid cached data — clear and continue
-    clearLsCache(key);
-  }
-
-  // Layer 3: fetch with in-flight request deduping
-  return dedupeRequest(key, fetcher, options.bypassCache).then(data => {
-    if (options.diagnosticsEndpoint) {
-      recordRequestDiagnostic(options.diagnosticsEndpoint, 'network', options.diagnosticsSource);
-    }
-    if (!validator || validator(data)) {
-      setMemCache(key, data);
-      setCache(key, data);
-    }
-    return data;
+  const result = await requestMarketData({
+    key,
+    source: options.diagnosticsSource ?? 'threeLayerCache',
+    endpoint: options.diagnosticsEndpoint ?? 'price',
+    softTtlMs: Math.min(memoryTtlMs, persistentTtlMs),
+    hardTtlMs: Math.max(persistentTtlMs * 4, persistentTtlMs + 30 * 60 * 1000),
+    schemaVersion: 1,
+    mode: options.bypassCache ? 'revalidate' : 'cache-first',
+    allowStaleOnError: true,
+    validator: validator ?? (() => true),
+    fetcher: () => fetcher(),
   });
+  return result.data;
 }
 
-// --- Specific cache helpers with TTLs ---
-
-// Batch prices: memory 60 min, localStorage 60 min (end-of-day data)
 export interface BatchPriceData {
   [ticker: string]: {
     price: number | null;
@@ -125,56 +70,24 @@ export interface BatchPriceData {
 }
 
 export const BATCH_PRICE_KEY = 'price_cache_batch_v5';
-export const BATCH_PRICE_MEM_TTL = ONE_HOUR;
-export const BATCH_PRICE_LS_TTL = ONE_HOUR;
+export const SPARKLINE_MEM_TTL = TEN_MINUTES;
+export const SPARKLINE_LS_TTL = FIFTEEN_MINUTES;
+export const EXTENDED_PRICE_MEM_TTL = TEN_MINUTES;
+export const EXTENDED_PRICE_LS_TTL = FIFTEEN_MINUTES;
 
-// Sparkline: memory 10 min, localStorage 15 min
-export interface CachedSparkline {
-  price: number;
-  change: number;
-  changePercent: number;
-  sparkline: number[];
-  cachedAt: number;
-}
-
-export const SPARKLINE_MEM_TTL = TEN_MIN;
-export const SPARKLINE_LS_TTL = FIFTEEN_MIN;
-
-export function getSparklineCache(ticker: string): CachedSparkline | null {
-  const key = `sparkline_${ticker}`;
-  const mem = getMemCache(key, SPARKLINE_MEM_TTL);
-  if (mem) return mem as CachedSparkline;
-  return getCached<CachedSparkline>(key, SPARKLINE_LS_TTL);
-}
-
-export function setSparklineCache(ticker: string, data: Omit<CachedSparkline, 'cachedAt'>): void {
-  const key = `sparkline_${ticker}`;
-  const withTs = { ...data, cachedAt: Date.now() };
-  setMemCache(key, withTs);
-  setCache(key, withTs);
-}
-
-// Options chain: memory 30 min, localStorage 15 min
-export const OPTIONS_MEM_TTL = THIRTY_MIN;
-export const OPTIONS_LS_TTL = FIFTEEN_MIN;
-
-// Expiry dates: memory 2 hours, localStorage 2 hours
 export interface CachedExpirations {
   expirations: { date: number; label: string; dte: number }[];
   cachedAt: number;
 }
 
-export const EXPIRATIONS_MEM_TTL = TWO_HOURS;
-export const EXPIRATIONS_LS_TTL = TWO_HOURS;
 const EXPIRATIONS_CACHE_KEY = 'expiry_dates_cache';
 const LEGACY_EXPIRATIONS_CACHE_KEY = 'screener_expirations_v2';
 
 export function getExpirationsCache(): CachedExpirations | null {
-  const mem = getMemCache(EXPIRATIONS_CACHE_KEY, EXPIRATIONS_MEM_TTL);
-  if (mem) return mem as CachedExpirations;
-  const cached = getCached<CachedExpirations>(EXPIRATIONS_CACHE_KEY, EXPIRATIONS_LS_TTL);
-  if (cached) return cached;
-  return getCached<CachedExpirations>(LEGACY_EXPIRATIONS_CACHE_KEY, EXPIRATIONS_LS_TTL);
+  const memory = getMemCache<CachedExpirations>(EXPIRATIONS_CACHE_KEY, TWO_HOURS);
+  if (memory) return memory;
+  return getCached<CachedExpirations>(EXPIRATIONS_CACHE_KEY, TWO_HOURS)
+    ?? getCached<CachedExpirations>(LEGACY_EXPIRATIONS_CACHE_KEY, TWO_HOURS);
 }
 
 export function setExpirationsCache(expirations: CachedExpirations['expirations']): void {
@@ -182,7 +95,3 @@ export function setExpirationsCache(expirations: CachedExpirations['expirations'
   setMemCache(EXPIRATIONS_CACHE_KEY, data);
   setCache(EXPIRATIONS_CACHE_KEY, data);
 }
-
-// Extended price: memory 10 min, localStorage 15 min
-export const EXTENDED_PRICE_MEM_TTL = TEN_MIN;
-export const EXTENDED_PRICE_LS_TTL = FIFTEEN_MIN;
