@@ -62,6 +62,10 @@ const DAILY_HISTORY_FAMILIES: Partial<Record<ChartTimeframe, ChartTimeframe[]>> 
   '1Y': ['2Y'],
 };
 
+const WEEKLY_HISTORY_FAMILIES: Partial<Record<ChartTimeframe, ChartTimeframe[]>> = {
+  '3Y': ['5Y'],
+};
+
 function cacheKey(ticker: string, timeframe: ChartTimeframe): string {
   return makeCacheKey(['chart_history_cache', ticker, timeframe]);
 }
@@ -90,6 +94,7 @@ function clipStart(timeframe: ChartTimeframe, now = new Date()): number | null {
   else if (timeframe === '3M') start.setUTCMonth(start.getUTCMonth() - 3);
   else if (timeframe === '6M') start.setUTCMonth(start.getUTCMonth() - 6);
   else if (timeframe === '1Y') start.setUTCFullYear(start.getUTCFullYear() - 1);
+  else if (timeframe === '3Y') start.setUTCFullYear(start.getUTCFullYear() - 3);
   else return null;
   start.setUTCHours(0, 0, 0, 0);
   return Math.floor(start.getTime() / 1000);
@@ -98,13 +103,17 @@ function clipStart(timeframe: ChartTimeframe, now = new Date()): number | null {
 function findReusableHistory(ticker: string, timeframe: ChartTimeframe): ChartHistoryResponse | null {
   const cutoff = clipStart(timeframe);
   if (cutoff == null) return null;
-  for (const candidate of DAILY_HISTORY_FAMILIES[timeframe] ?? []) {
+  const candidates = [
+    ...(DAILY_HISTORY_FAMILIES[timeframe] ?? []).map(candidate => ({ candidate, interval: '1d' })),
+    ...(WEEKLY_HISTORY_FAMILIES[timeframe] ?? []).map(candidate => ({ candidate, interval: '1wk' })),
+  ];
+  for (const { candidate, interval } of candidates) {
     const cached = peekMarketData<ChartHistoryResponse>({
       key: cacheKey(ticker, candidate),
       softTtlMs: CHART_TTLS[candidate],
       hardTtlMs: CHART_HARD_TTLS[candidate],
       schemaVersion: 2,
-      validator: data => isValidChartHistory(data, candidate) && data.metadata?.interval === '1d',
+      validator: data => isValidChartHistory(data, candidate) && data.metadata?.interval === interval,
     });
     if (!cached || cached.meta.freshness === 'expired') continue;
     const points = cached.data.points.filter(point => point.timestamp >= cutoff);

@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Activity, AlertTriangle, RefreshCw, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { buildEtfPulseRows, getEtfPulseUniverse, type EtfPulseLoadResult, type EtfPulseProgress } from '../lib/etfPulseData';
-import type { EtfPulseRow, EtfPulseTrend } from '../lib/etfPulseMetrics';
+import type { EtfPulseRow } from '../lib/etfPulseMetrics';
+import { getReturnForPeriod, heatmapTileStyle, matchesTrend, sortValue, trendStyle, type PulseSortField, type TrendFilter, type VisualPeriod } from '../lib/etfPulseViewModel';
 import { formatCurrency, formatPercent } from '../lib/format';
 import { isFiniteNumber } from '../lib/optionMetrics';
 import { postureFromRegime } from '../lib/marketRead/posture';
@@ -11,34 +12,7 @@ import type { RegimeAnalysis, TradePosture } from '../lib/marketRead/types';
 
 const DASH = '\u2014';
 
-type PulseSortField =
-  | 'ticker'
-  | 'name'
-  | 'type'
-  | 'leverage'
-  | 'price'
-  | 'oneDay'
-  | 'fiveDay'
-  | 'thirtyDay'
-  | 'threeMonth'
-  | 'sixMonth'
-  | 'yearToDate'
-  | 'oneYear'
-  | 'recentDrawdown30'
-  | 'rsi14'
-  | 'realizedVolatility20'
-  | 'distance20'
-  | 'distance50'
-  | 'distance200'
-  | 'high52Week'
-  | 'percentOf52WeekHigh'
-  | 'position52Week'
-  | 'drawdown52Week'
-  | 'trend';
-
 type SortDirection = 'asc' | 'desc';
-type TrendFilter = 'All' | EtfPulseTrend | 'Oversold' | 'Overbought';
-type VisualPeriod = '1D' | '5D' | '30D' | '3M' | '6M' | 'YTD' | '1Y';
 
 interface SortState {
   field: PulseSortField;
@@ -113,77 +87,6 @@ function volatilityColor(value: number | null | undefined): string {
   if (value >= 0.55) return 'var(--orange)';
   if (value >= 0.35) return 'var(--yellow)';
   return 'var(--text-secondary)';
-}
-
-function getReturnForPeriod(row: EtfPulseRow, period: VisualPeriod): number | null {
-  switch (period) {
-    case '1D': return row.returns.oneDay;
-    case '5D': return row.returns.fiveDay;
-    case '30D': return row.returns.thirtyDay;
-    case '3M': return row.returns.threeMonth;
-    case '6M': return row.returns.sixMonth;
-    case 'YTD': return row.returns.yearToDate;
-    case '1Y': return row.returns.oneYear;
-    default: return null;
-  }
-}
-
-function heatmapTileStyle(value: number | null): { backgroundColor: string; borderColor: string; color: string } {
-  if (!isFiniteNumber(value)) return { backgroundColor: 'var(--surface-alt)', borderColor: 'var(--border)', color: 'var(--text-dim)' };
-  if (value >= 0.2) return { backgroundColor: 'rgba(34,197,94,0.28)', borderColor: 'rgba(34,197,94,0.42)', color: 'var(--green)' };
-  if (value >= 0.05) return { backgroundColor: 'rgba(34,197,94,0.18)', borderColor: 'rgba(34,197,94,0.30)', color: 'var(--green)' };
-  if (value >= 0) return { backgroundColor: 'rgba(34,197,94,0.08)', borderColor: 'rgba(34,197,94,0.18)', color: 'var(--text-secondary)' };
-  if (value > -0.05) return { backgroundColor: 'rgba(249,115,22,0.08)', borderColor: 'rgba(249,115,22,0.18)', color: 'var(--text-secondary)' };
-  if (value > -0.2) return { backgroundColor: 'rgba(249,115,22,0.18)', borderColor: 'rgba(249,115,22,0.32)', color: 'var(--orange)' };
-  return { backgroundColor: 'rgba(239,68,68,0.24)', borderColor: 'rgba(239,68,68,0.42)', color: 'var(--red)' };
-}
-
-function trendStyle(row: EtfPulseRow): { label: string; color: string; bg: string; border: string } {
-  if (row.isOversold && (row.distance50 ?? 1) < 0) {
-    return { label: 'Oversold', color: 'var(--accent-light)', bg: 'var(--accent-bg)', border: 'var(--accent-border)' };
-  }
-  if (row.isOverbought) return { label: 'Overbought', color: 'var(--orange)', bg: 'rgba(251,146,60,0.10)', border: 'rgba(251,146,60,0.28)' };
-  if (row.trend === 'Strong Uptrend') return { label: 'Strong Uptrend', color: 'var(--green)', bg: 'rgba(34,197,94,0.10)', border: 'rgba(34,197,94,0.25)' };
-  if (row.trend === 'Uptrend') return { label: 'Uptrend', color: 'var(--green)', bg: 'rgba(34,197,94,0.06)', border: 'rgba(34,197,94,0.18)' };
-  if (row.trend === 'Weakening') return { label: 'Weakening', color: 'var(--yellow)', bg: 'rgba(250,204,21,0.10)', border: 'rgba(250,204,21,0.25)' };
-  if (row.trend === 'Downtrend') return { label: 'Downtrend', color: 'var(--red)', bg: 'rgba(239,68,68,0.10)', border: 'rgba(239,68,68,0.25)' };
-  return { label: 'Neutral', color: 'var(--text-muted)', bg: 'var(--surface-alt)', border: 'var(--border)' };
-}
-
-function sortValue(row: EtfPulseRow, field: PulseSortField): number | string | null {
-  switch (field) {
-    case 'ticker': return row.ticker;
-    case 'name': return row.name;
-    case 'type': return row.type;
-    case 'leverage': return row.leverage;
-    case 'price': return row.price;
-    case 'oneDay': return row.returns.oneDay;
-    case 'fiveDay': return row.returns.fiveDay;
-    case 'thirtyDay': return row.returns.thirtyDay;
-    case 'threeMonth': return row.returns.threeMonth;
-    case 'sixMonth': return row.returns.sixMonth;
-    case 'yearToDate': return row.returns.yearToDate;
-    case 'oneYear': return row.returns.oneYear;
-    case 'recentDrawdown30': return row.recentDrawdown30;
-    case 'rsi14': return row.rsi14;
-    case 'realizedVolatility20': return row.realizedVolatility20;
-    case 'distance20': return row.distance20;
-    case 'distance50': return row.distance50;
-    case 'distance200': return row.distance200;
-    case 'high52Week': return row.high52Week;
-    case 'percentOf52WeekHigh': return row.percentOf52WeekHigh;
-    case 'position52Week': return row.position52Week;
-    case 'drawdown52Week': return row.drawdown52Week;
-    case 'trend': return trendStyle(row).label;
-    default: return row.ticker;
-  }
-}
-
-function matchesTrend(row: EtfPulseRow, filter: TrendFilter): boolean {
-  if (filter === 'All') return true;
-  if (filter === 'Oversold') return row.isOversold;
-  if (filter === 'Overbought') return row.isOverbought;
-  return row.trend === filter;
 }
 
 function Badge({ children }: { children: string }) {

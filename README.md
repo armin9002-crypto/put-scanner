@@ -12,3 +12,9 @@
 - Sorting, filtering, visual period toggles, Market Read details, and hover interactions are client-side only.
 - Refresh buttons are the intended market-data refresh points.
 - Run `npm run build` followed by `npm run build:report` to inspect the largest built JS/CSS assets.
+
+## Validation
+
+- `npm test` runs deterministic Node regression tests against sanitized Yahoo fixtures and the production domain modules.
+- `npm run verify` is the pre-commit gate: typecheck, unit tests, legacy self-checks, responsive checks, one production build, and lint.
+- `npm run build:report` reads the completed build output separately, so the verification gate does not build twice.

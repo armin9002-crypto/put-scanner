@@ -52,12 +52,12 @@ import {
 } from '../lib/portfolioMetrics';
 import type { OptionDetail } from '../components/OptionDetailDrawer';
 import ErrorBoundary from '../components/ErrorBoundary';
+import { persistCollapsedExpirationGroups, readCollapsedExpirationGroups, setAllExpirationGroupsCollapsed, toggleCollapsedExpirationGroup } from '../lib/portfolioSchedulePreferences';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 const PortfolioScreenshotImportModal = lazy(() => import('../components/PortfolioScreenshotImportModal'));
 const DASH = '\u2014';
 const PORTFOLIO_MARK_BASIS_KEY = 'put_scanner_portfolio_mark_basis';
-const PORTFOLIO_EXPIRY_GROUPS_KEY = 'put_scanner_portfolio_expiry_groups:v1';
 const MARK_BASIS_OPTIONS: MarkBasis[] = ['bid', 'ask', 'last'];
 
 interface TradeModalProps {
@@ -418,24 +418,6 @@ function SummaryCard({ label, value, color }: { label: string; value: string; co
       <div className="text-xs xl:text-sm font-mono font-semibold tabular-nums truncate" title={value} style={{ color: color ?? 'var(--text)' }}>{value}</div>
     </div>
   );
-}
-
-function getInitialCollapsedExpiryGroups(): Record<string, boolean> {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(PORTFOLIO_EXPIRY_GROUPS_KEY) ?? '{}');
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-    return Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, boolean] => typeof entry[1] === 'boolean'));
-  } catch {
-    return {};
-  }
-}
-
-function persistCollapsedExpiryGroups(value: Record<string, boolean>) {
-  try {
-    localStorage.setItem(PORTFOLIO_EXPIRY_GROUPS_KEY, JSON.stringify(value));
-  } catch {
-    // Preference persistence is best-effort only.
-  }
 }
 
 function MarkBasisToggle({ markBasis, onChange }: { markBasis: MarkBasis; onChange: (basis: MarkBasis) => void }) {
@@ -1018,7 +1000,7 @@ export default function PortfolioPage() {
   const [showNotesErrors, setShowNotesErrors] = useState(false);
   const [sortField, setSortField] = useState<SortField>('expiration');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
-  const [collapsedExpiryGroups, setCollapsedExpiryGroups] = useState<Record<string, boolean>>(getInitialCollapsedExpiryGroups);
+  const [collapsedExpiryGroups, setCollapsedExpiryGroups] = useState<Record<string, boolean>>(readCollapsedExpirationGroups);
   const [resolvingArchiveIds, setResolvingArchiveIds] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
@@ -1050,7 +1032,7 @@ export default function PortfolioPage() {
   }, [markBasis]);
 
   useEffect(() => {
-    persistCollapsedExpiryGroups(collapsedExpiryGroups);
+    persistCollapsedExpirationGroups(collapsedExpiryGroups);
   }, [collapsedExpiryGroups]);
 
   const expirationGroups = useMemo(() => {
@@ -1089,12 +1071,13 @@ export default function PortfolioPage() {
     && expirationGroups.every(group => collapsedExpiryGroups[group.expiration] === true);
 
   const toggleExpiryGroup = useCallback((expiration: string) => {
-    setCollapsedExpiryGroups(current => ({ ...current, [expiration]: !current[expiration] }));
+    setCollapsedExpiryGroups(current => toggleCollapsedExpirationGroup(current, expiration));
   }, []);
 
   const toggleAllExpiryGroups = useCallback(() => {
-    setCollapsedExpiryGroups(() => Object.fromEntries(
-      expirationGroups.map(group => [group.expiration, !allExpiryGroupsCollapsed])
+    setCollapsedExpiryGroups(() => setAllExpirationGroupsCollapsed(
+      expirationGroups.map(group => group.expiration),
+      !allExpiryGroupsCollapsed,
     ));
   }, [expirationGroups, allExpiryGroupsCollapsed]);
 

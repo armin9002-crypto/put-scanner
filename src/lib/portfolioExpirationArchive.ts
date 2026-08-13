@@ -1,6 +1,6 @@
-import { cachedRequest, makeCacheKey } from './dataCache';
-import { isFiniteNumber } from './optionMetrics';
-import { calculatePremiumCollected } from './portfolioMetrics';
+import { cachedRequest, makeCacheKey } from './dataCache.ts';
+import { isFiniteNumber } from './optionMetrics.ts';
+import { calculatePremiumCollected } from './portfolioMetrics.ts';
 import type { PortfolioResolutionSource, PortfolioTrade } from './portfolioStorage';
 
 interface HistoricalClosePoint {
@@ -20,6 +20,23 @@ export interface ExpirationCloseResult {
   closePrice: number;
   closeDate: string;
   warning?: string;
+}
+
+export function selectExpirationClose(
+  points: Array<{ timestamp: number; date: string; price: number }>,
+  expirationDate: string,
+): ExpirationCloseResult | null {
+  const candidates = points
+    .map(point => ({ date: toIsoDate(point.date) ?? toIsoDate(point.timestamp), close: point.price }))
+    .filter((point): point is { date: string; close: number } => point.date != null && isFiniteNumber(point.close))
+    .filter(point => point.date <= expirationDate)
+    .sort((a, b) => b.date.localeCompare(a.date));
+  const selected = candidates.find(point => point.date === expirationDate) ?? candidates[0];
+  return selected ? {
+    closePrice: selected.close,
+    closeDate: selected.date,
+    warning: selected.date === expirationDate ? undefined : PRIOR_CLOSE_WARNING,
+  } : null;
 }
 
 const EXPIRATION_CLOSE_TTL = 3650 * 24 * 60 * 60 * 1000;
@@ -110,21 +127,7 @@ export async function getExpirationClosePrice(ticker: string, expirationDate: st
     }
   );
 
-  const candidates = history.points
-    .map(point => ({ date: toIsoDate(point.date) ?? toIsoDate(point.timestamp), close: point.price }))
-    .filter((point): point is { date: string; close: number } => point.date != null && isFiniteNumber(point.close))
-    .filter(point => point.date <= expirationDate)
-    .sort((a, b) => b.date.localeCompare(a.date));
-
-  const exact = candidates.find(point => point.date === expirationDate);
-  const selected = exact ?? candidates[0];
-  if (!selected) return null;
-
-  return {
-    closePrice: selected.close,
-    closeDate: selected.date,
-    warning: selected.date === expirationDate ? undefined : PRIOR_CLOSE_WARNING,
-  };
+  return selectExpirationClose(history.points, expirationDate);
 }
 
 export function resolveExpiredTradeWithClose(
@@ -219,4 +222,3 @@ export async function archiveExpiredOpenTrades(trades: PortfolioTrade[], options
     trades: trades.map(trade => byId.get(trade.id) ?? trade),
   };
 }
-

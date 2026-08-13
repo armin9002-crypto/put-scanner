@@ -3,14 +3,12 @@ import { fetchBatchPricesResult, fetchOptions, fetchSparkline, fetchWithConcurre
 import type { SparklineData } from '../lib/api';
 import type { BatchPriceData } from '../lib/cache';
 import ETFCard from '../components/ETFCard';
-import ExpirationFilter, { buildExpirationOptions, formatExpirationDropdownLabel } from '../components/ExpirationFilter';
+import ExpirationFilter, { buildExpirationOptions } from '../components/ExpirationFilter';
 import SparklineChart from '../components/SparklineChart';
 import ErrorBoundary from '../components/ErrorBoundary';
 import { Search, Loader2, RefreshCw } from 'lucide-react';
 import {
   cacheScannerOptionSnapshot,
-  calculateCalendarDte,
-  getAllCachedScannerExpirations,
   getCachedScannerExpirations,
   getScannerOptionSnapshots,
   getScannerSnapshotDiagnostics,
@@ -32,69 +30,14 @@ const TYPE_OPTIONS = ['All', 'Broad Index', 'Sector', 'Commodity', 'Country'] as
 
 // Import ETF_LIST for filtering only
 import { ETF_LIST } from '../lib/etfs';
-
-interface CachedExpirationState {
-  expirations: { date: number; label: string; dte: number }[];
-  availability: Record<string, number[]>;
-}
-
-interface SnapshotUpdateProgress {
-  current: number;
-  total: number;
-  updated: number;
-  expanded: number;
-  unavailable: number;
-  failed: number;
-  complete: boolean;
-}
-
-function buildCachedExpirationState(): CachedExpirationState {
-  const availability = getAllCachedScannerExpirations();
-  const expirationMap = new Map<number, { date: number; label: string; dte: number }>();
-  Object.values(availability).flat().forEach(date => {
-    const dte = calculateCalendarDte(date);
-    if (dte <= 0 || expirationMap.has(date)) return;
-    expirationMap.set(date, {
-      date,
-      label: formatExpirationDropdownLabel(date),
-      dte,
-    });
-  });
-  return {
-    expirations: [...expirationMap.values()].sort((a, b) => a.date - b.date),
-    availability,
-  };
-}
-
-function summarizeSnapshotOutcomes(outcomes: ScannerSnapshotUpdateOutcome[]): Pick<
-  SnapshotUpdateProgress,
-  'updated' | 'expanded' | 'unavailable' | 'failed'
-> {
-  return outcomes.reduce((summary, outcome) => {
-    if (outcome.status === 'updated') summary.updated += 1;
-    if (outcome.status === 'updated' && outcome.expanded) summary.expanded += 1;
-    if (outcome.status === 'unavailable') summary.unavailable += 1;
-    if (outcome.status === 'failed') summary.failed += 1;
-    return summary;
-  }, { updated: 0, expanded: 0, unavailable: 0, failed: 0 });
-}
-
-function snapshotProgressLabel(progress: SnapshotUpdateProgress | null): string {
-  if (!progress) return 'Update IV / Liquidity';
-  if (!progress.complete) return `Updating ${progress.current}/${progress.total}`;
-  if (progress.total === 0) return 'IV / Liquidity Current';
-  return `Updated ${progress.updated} · Expanded ${progress.expanded} · Unavailable ${progress.unavailable} · Failed ${progress.failed}`;
-}
-
-function diagnosticForOutcome(outcome: ScannerSnapshotUpdateOutcome): { status: ScannerSnapshotDiagnostic['status']; reason: string } | null {
-  if (outcome.status === 'failed') {
-    return { status: 'failed', reason: outcome.reason ?? 'Snapshot update failed.' };
-  }
-  if (outcome.status === 'unavailable') {
-    return { status: 'unavailable', reason: outcome.reason ?? 'No usable snapshot could be constructed.' };
-  }
-  return null;
-}
+import {
+  buildCachedExpirationState,
+  diagnosticForOutcome,
+  snapshotProgressLabel,
+  summarizeSnapshotOutcomes,
+  type CachedExpirationState,
+  type SnapshotUpdateProgress,
+} from '../lib/scannerUpdateState';
 
 function marketChangeColor(changePercent: number): string {
   return changePercent >= 0 ? 'var(--green)' : 'var(--red)';
