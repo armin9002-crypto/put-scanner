@@ -13,6 +13,9 @@ import { getUnderlyingHoldingsProxy } from '../lib/underlyingHoldingsProxies';
 import { getLastScannerUrl, isScannerNavigationState } from '../lib/scannerNavigation';
 import SparklineChart from '../components/SparklineChart';
 import ErrorBoundary from '../components/ErrorBoundary';
+import MobileOptionRow from '../components/mobile/MobileOptionRow';
+import { useResponsiveMode } from '../lib/responsive';
+import type { AddToPortfolioDraft } from '../components/OptionDetailDrawer';
 import {
   ArrowLeft, RefreshCw, TrendingUp, TrendingDown, AlertCircle,
   ChevronUp, ChevronDown, ChevronsUpDown, Star, BarChart3, Layers
@@ -397,6 +400,7 @@ function resolvePreferredExpiration(
 }
 
 export default function OptionsPage() {
+  const { isPhone } = useResponsiveMode();
   const navigate = useNavigate();
   const location = useLocation();
   const { ticker } = useParams<{ ticker: string }>();
@@ -854,6 +858,84 @@ export default function OptionsPage() {
           <p className="mb-4" style={{ color: 'var(--text-muted)' }}>ETF not found: {ticker}</p>
           <Link to="/" className="inline-block px-4 py-2 text-white rounded-lg text-sm" style={{ backgroundColor: 'var(--accent)' }}>Back to Scanner</Link>
         </div>
+      </div>
+    );
+  }
+
+  if (isPhone) {
+    const addSelectedToPortfolio = (draft: AddToPortfolioDraft) => {
+      if (!ticker || !selectedExpiration) return;
+      const expiration = new Date(selectedExpiration.date * 1000).toISOString().split('T')[0];
+      addPortfolioTrade({
+        ticker,
+        optionType: 'put',
+        strike: draft.option.strike,
+        expiration,
+        contracts: draft.contracts,
+        soldPrice: draft.soldPrice,
+        soldDate: new Date().toISOString().split('T')[0],
+        status: 'open',
+        notes: '',
+        entrySnapshot: {
+          underlyingPrice: draft.underlyingPrice,
+          bid: draft.option.bid,
+          ask: draft.option.ask,
+          last: draft.option.last,
+          iv: draft.option.impliedVolatility,
+          delta: draft.option.delta,
+        },
+      });
+      setSelectedOption(null);
+    };
+    const mobileStaleText = (value: number | null | undefined) => {
+      const timestamp = normalizeTimestampMs(value);
+      if (timestamp == null) return null;
+      const ageDays = Math.max(0, Math.floor((Date.now() - timestamp) / (24 * 60 * 60 * 1000)));
+      return ageDays > 2 ? `Last ${ageDays}d ago` : null;
+    };
+
+    return (
+      <div className="mobile-route-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
+        <header className="mobile-option-header sticky top-0 z-40" style={{ backgroundColor: 'color-mix(in srgb, var(--bg) 95%, transparent)', borderBottom: '1px solid var(--border)' }}>
+          <div className="grid min-h-[58px] grid-cols-[88px_1fr_88px] items-center px-1.5">
+            <button type="button" onClick={handleBackToScanner} className="pressable flex min-h-11 items-center gap-0.5 rounded-lg px-1 text-[13px] font-semibold" style={{ color: 'var(--accent-light)' }} aria-label="Back to Scanner"><ArrowLeft className="h-5 w-5" /> Scanner</button>
+            <button type="button" onClick={() => setShowPriceChart(true)} className="pressable min-w-0 text-center" aria-label={`Open ${ticker} price chart`}>
+              <div className="truncate font-mono text-[17px] font-bold" style={{ color: 'var(--text)' }}>{ticker}</div>
+              <div className="flex items-baseline justify-center gap-1.5 font-mono text-[12px]"><span style={{ color: 'var(--text)' }}>{currentPrice > 0 ? `$${currentPrice.toFixed(2)}` : '—'}</span>{extendedPrice && <span style={{ color: changePositive ? 'var(--green)' : 'var(--red)' }}>{extendedPrice.changePercent >= 0 ? '+' : ''}{extendedPrice.changePercent.toFixed(2)}%</span>}</div>
+            </button>
+            <div className="flex justify-end">
+              <button type="button" onClick={() => setShowUnderlyingHoldings(true)} className="pressable flex h-11 w-11 items-center justify-center rounded-lg" aria-label={`Open underlying holdings for ${ticker}`} style={{ color: 'var(--text-muted)' }}><Layers className="h-5 w-5" /></button>
+              <button type="button" onClick={handleRefresh} disabled={loading} className="pressable flex h-11 w-11 items-center justify-center rounded-lg disabled:opacity-50" aria-label="Refresh option chain" style={{ color: 'var(--text-muted)' }}><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /></button>
+            </div>
+          </div>
+          {optionsData && optionsData.expirations.length > 0 && (
+            <div className="mobile-scroll-row flex gap-1.5 overflow-x-auto px-3 pb-2">
+              {optionsData.expirations.map(expiration => <button type="button" key={expiration.date} onClick={() => loadExpiration(expiration.date)} className="pressable min-h-11 flex-none rounded-lg px-3 text-[12px] font-semibold" aria-pressed={selectedExp === expiration.date} style={{ backgroundColor: selectedExp === expiration.date ? 'var(--accent)' : 'var(--surface)', color: selectedExp === expiration.date ? 'white' : 'var(--text-muted)', border: `1px solid ${selectedExp === expiration.date ? 'var(--accent)' : 'var(--border)'}` }}>{expiration.label} · {expiration.dte}D</button>)}
+            </div>
+          )}
+        </header>
+
+        <div className="flex min-h-[46px] items-center gap-2 border-b px-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+          <span className="mr-auto text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Puts <span className="font-mono font-normal" style={{ color: 'var(--text-muted)' }}>{sortedPuts.length}</span></span>
+          <select value={sortField} onChange={event => setSortField(event.target.value as SortField)} className="min-h-11 rounded-lg px-2 text-[12px] outline-none" aria-label="Sort option chain" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>{mobileSortOptions.map(option => <option key={option.field} value={option.field}>{option.label}</option>)}</select>
+          <button type="button" onClick={() => setSortDir(current => current === 'asc' ? 'desc' : 'asc')} className="pressable flex h-11 min-w-11 items-center justify-center rounded-lg text-[11px] font-semibold" aria-label={`Sort ${sortDir === 'asc' ? 'descending' : 'ascending'}`} style={{ color: 'var(--accent-light)' }}>{sortDir === 'asc' ? '↑' : '↓'}</button>
+        </div>
+
+        {freshnessLabel && <div className="border-b px-3 py-1 text-[10px]" style={{ borderColor: 'var(--border)', color: staleCachedChain ? 'var(--yellow)' : 'var(--text-dim)' }}>{freshnessLabel}</div>}
+
+        {error ? <OptionsEmptyState type="error" onRefresh={handleRefresh} loading={loading} /> : hasEmptyOptions ? <OptionsEmptyState type="empty" onRefresh={handleRefresh} loading={loading} /> : (
+          <div className="mobile-financial-list">
+            {loading && enrichedPuts.length === 0 ? Array.from({ length: 6 }).map((_, index) => <div key={index} className="mobile-option-row animate-pulse"><div className="h-4 w-24 rounded" style={{ backgroundColor: 'var(--border)' }} /><div className="mt-4 h-8 w-full rounded" style={{ backgroundColor: 'var(--border)' }} /><div className="mt-3 h-3 w-4/5 rounded" style={{ backgroundColor: 'var(--border)' }} /></div>) : sortedPuts.map(put => {
+              const expirationIso = selectedExp ? new Date(selectedExp * 1000).toISOString().split('T')[0] : '';
+              const watchlistId = makeWatchlistId(ticker ?? '', expirationIso, put.strike);
+              return <MobileOptionRow key={put.strike} strike={put.strike} bid={put.bid} ask={put.ask} mid={getMidPrice(put.bid, put.ask)} last={put.last} annualYield={put.annYieldBid} delta={put.delta} impliedVolatility={put.impliedVolatility} openInterest={put.openInterest} moneynessLabel={put.otmItmLabel} moneynessColor={put.otmItmColor} staleText={mobileStaleText(put.lastTradeDate)} watched={watchlistIds.has(watchlistId)} onToggleWatchlist={() => toggleWatchlist(put)} onSelect={() => setSelectedOption(put)} />;
+            })}
+          </div>
+        )}
+
+        {selectedOption && <ErrorBoundary title="Option sheet unavailable" message="Close it and try again."><Suspense fallback={null}><OptionDetailDrawer option={selectedOption} ticker={ticker ?? ''} expirationLabel={selectedExpiration?.label ?? ''} dte={selectedExpiration?.dte ?? null} underlyingPrice={currentPrice > 0 ? currentPrice : null} onAddToPortfolio={addSelectedToPortfolio} onClose={() => setSelectedOption(null)} /></Suspense></ErrorBoundary>}
+        {showUnderlyingHoldings && <ErrorBoundary title="Underlying holdings unavailable" message="Close it and try again."><Suspense fallback={null}><UnderlyingHoldingsModal proxy={holdingsProxy} onClose={() => setShowUnderlyingHoldings(false)} /></Suspense></ErrorBoundary>}
+        {showPriceChart && <ErrorBoundary title="Chart unavailable" message="Close it and try again."><Suspense fallback={null}><InteractivePriceChartModal isOpen ticker={ticker ?? ''} displayTicker={ticker ?? ''} onClose={() => setShowPriceChart(false)} /></Suspense></ErrorBoundary>}
       </div>
     );
   }

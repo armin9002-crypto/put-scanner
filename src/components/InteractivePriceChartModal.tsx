@@ -9,6 +9,7 @@ import { getInstrumentName, isVolatilityInstrument, normalizeDisplayTicker } fro
 import { getUnderlyingHoldingsProxy } from '../lib/underlyingHoldingsProxies';
 import { getTrueLeverageForPeriod, getTrueLeverageForRange, type TrueLeverageResult } from '../lib/trueLeverage';
 import DataFreshness from './DataFreshness';
+import { useResponsiveMode } from '../lib/responsive';
 
 const CHART_WIDTH = 900;
 const CHART_HEIGHT = 360;
@@ -104,6 +105,7 @@ export default function InteractivePriceChartModal({
   displayTicker,
   onClose,
 }: InteractivePriceChartModalProps) {
+  const { isPhone, isPhoneLandscape } = useResponsiveMode();
   const [timeframe, setTimeframe] = useState<ChartTimeframe>('1D');
   const [data, setData] = useState<ChartHistoryResponse | null>(null);
   const [proxyData, setProxyData] = useState<ChartHistoryResponse | null>(null);
@@ -308,10 +310,10 @@ export default function InteractivePriceChartModal({
       />
 
       <div
-        className="chart-modal-panel relative z-[91] flex max-h-[96dvh] sm:max-h-[90dvh] w-full sm:w-[min(96vw,900px)] lg:w-[min(94vw,1100px)] flex-col overflow-hidden rounded-t-2xl sm:rounded-2xl shadow-2xl"
+        className={`chart-modal-panel ${isPhone ? 'is-phone-chart' : ''} ${isPhoneLandscape ? 'is-phone-landscape-chart' : ''} relative z-[91] flex max-h-[96dvh] sm:max-h-[90dvh] w-full sm:w-[min(96vw,900px)] lg:w-[min(94vw,1100px)] flex-col overflow-hidden rounded-t-2xl sm:rounded-2xl shadow-2xl`}
         style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
       >
-        <div className="chart-modal-header flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-start sm:justify-between sm:p-5" style={{ borderColor: 'var(--border)' }}>
+        <div className="chart-modal-header flex flex-col gap-2 border-b p-3 sm:flex-row sm:items-start sm:justify-between sm:p-5" style={{ borderColor: 'var(--border)' }}>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-lg sm:text-xl font-semibold font-mono" style={{ color: 'var(--text)' }}>
@@ -326,14 +328,14 @@ export default function InteractivePriceChartModal({
                 {timeframe}
               </span>
             </div>
-            <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1 sm:mt-2">
               <span className="text-2xl sm:text-3xl font-bold font-mono tabular-nums" style={{ color: 'var(--text)' }}>
                 {formatValue(latestPrice, isVolatility)}
               </span>
               <span className="text-sm font-mono tabular-nums" style={{ color: lineColor }}>
                 {formatSignedValue(periodChange.change, isVolatility)} / {formatPercent(periodChange.percent)}
               </span>
-              <DataFreshness updatedAt={activeData?.fetchedAt} status={loading ? 'updating' : error && activeData ? 'failed' : activeData?.freshness === 'stale' ? 'stale' : activeData ? 'cached' : 'stale'} label={`${titleTicker} chart`} />
+              {!isPhone && <DataFreshness updatedAt={activeData?.fetchedAt} status={loading ? 'updating' : error && activeData ? 'failed' : activeData?.freshness === 'stale' ? 'stale' : activeData ? 'cached' : 'stale'} label={`${titleTicker} chart`} />}
             </div>
           </div>
 
@@ -346,7 +348,7 @@ export default function InteractivePriceChartModal({
               style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
             >
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-              Refresh
+              <span className="chart-refresh-label">Refresh</span>
             </button>
             <button
               type="button"
@@ -360,7 +362,7 @@ export default function InteractivePriceChartModal({
           </div>
         </div>
 
-        <div className="overflow-y-auto p-3 sm:p-5">
+        <div className="chart-modal-body overflow-y-auto p-3 sm:p-5">
           <div className="mb-3 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
             <div className="mobile-scroll-row flex gap-2 overflow-x-auto pb-1 sm:flex-wrap lg:min-w-0 lg:pb-0">
               {timeframes.map(option => (
@@ -459,7 +461,7 @@ export default function InteractivePriceChartModal({
           ) : (
             <>
               <div className="rounded-xl p-3 sm:p-4" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
-                <div className="chart-metric-strip mobile-scroll-row mb-3 grid grid-cols-1 gap-2 md:grid-cols-3">
+                <div className="chart-metric-strip mobile-scroll-row mb-2 grid grid-cols-1 gap-2 md:mb-3 md:grid-cols-3">
                   <div className="rounded-lg p-3" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
                     <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Active Point</div>
                     <div className="mt-1 font-mono text-sm tabular-nums" style={{ color: 'var(--text)' }}>{formatValue(activePoint?.price, isVolatility)}</div>
@@ -518,7 +520,7 @@ export default function InteractivePriceChartModal({
                 <svg
                   ref={svgRef}
                   viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
-                  className="h-[260px] w-full touch-none select-none sm:h-[340px] lg:h-[380px]"
+                  className="chart-svg h-[260px] w-full touch-pan-y select-none sm:h-[340px] lg:h-[380px]"
                   onPointerDown={handlePointerDown}
                   onPointerMove={updateHoveredPoint}
                   onPointerLeave={() => setHoveredIndex(null)}

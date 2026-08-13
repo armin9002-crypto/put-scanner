@@ -1,5 +1,5 @@
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { AlertTriangle, Briefcase, ChevronDown, ChevronRight, Edit2, FileImage, Loader2, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { AlertTriangle, Briefcase, ChevronDown, ChevronRight, Edit2, FileImage, Loader2, MoreHorizontal, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { calculatePutDelta, fetchBatchPricesResult, fetchOptions } from '../lib/api';
 import { formatCurrency, formatDate, formatOptionPrice, formatPercent, formatPercentPoints, normalizeTimestampMs } from '../lib/format';
@@ -55,6 +55,11 @@ import ErrorBoundary from '../components/ErrorBoundary';
 import DataFreshness from '../components/DataFreshness';
 import { persistCollapsedExpirationGroups, readCollapsedExpirationGroups, setAllExpirationGroupsCollapsed, toggleCollapsedExpirationGroup } from '../lib/portfolioSchedulePreferences';
 import { buildHistoryAnalytics, buildMonthlyRealizedPnl, filterHistoryTrades, historyDaysHeld, type HistoryOutcome } from '../lib/portfolioHistoryAnalytics';
+import { useResponsiveMode } from '../lib/responsive';
+import MobileBottomSheet from '../components/mobile/MobileBottomSheet';
+import MobileSegmentedControl from '../components/mobile/MobileSegmentedControl';
+import MobilePositionRow from '../components/mobile/MobilePositionRow';
+import MobileExpirationGroup from '../components/mobile/MobileExpirationGroup';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 const PortfolioScreenshotImportModal = lazy(() => import('../components/PortfolioScreenshotImportModal'));
@@ -1004,6 +1009,7 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
 }
 
 export default function PortfolioPage() {
+  const { isPhone } = useResponsiveMode();
   const [trades, setTrades] = useState<PortfolioTrade[]>([]);
   const [editingTrade, setEditingTrade] = useState<PortfolioTrade | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -1023,6 +1029,8 @@ export default function PortfolioPage() {
   const [highlightedExpiration, setHighlightedExpiration] = useState<string | null>(null);
   const [highlightedTradeId, setHighlightedTradeId] = useState<string | null>(null);
   const [mobileAnalytics, setMobileAnalytics] = useState<'maturity' | 'ticker' | 'attention' | 'close'>('maturity');
+  const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
+  const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false);
   const scheduleRef = useRef<HTMLDivElement | null>(null);
   const highlightTimerRef = useRef<number | null>(null);
 
@@ -1389,6 +1397,49 @@ export default function PortfolioPage() {
       }} className="hover:opacity-80">{label}</button>
     </th>
   );
+
+  if (isPhone) {
+    return (
+      <div className="mobile-route-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
+        {trades.length === 0 ? <div className="px-6 py-16 text-center"><Briefcase className="mx-auto mb-3 h-7 w-7" style={{ color: 'var(--text-dim)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No open positions</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Add a trade or import a brokerage screenshot.</p><div className="mx-auto mt-4 grid max-w-xs grid-cols-2 gap-2"><button type="button" onClick={() => setShowAddModal(true)} className="mobile-sheet-action primary"><Plus className="h-4 w-4" /> Add Trade</button><button type="button" onClick={() => setShowImportModal(true)} className="mobile-sheet-action secondary"><FileImage className="h-4 w-4" /> Import</button></div></div> : (
+          <>
+            <section className="mobile-portfolio-hero px-4 pb-3 pt-3" style={{ backgroundColor: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
+              <div className="flex items-start justify-between gap-3">
+                <div><div className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: 'var(--text-dim)' }}>Total gain / loss</div><div className="mt-0.5 font-mono text-[28px] font-bold tracking-tight tabular-nums" style={{ color: pnlColor(markSummary.totalGainLoss) }}>{formatCurrency(markSummary.totalGainLoss, 0)}</div><div className="font-mono text-[13px] font-semibold" style={{ color: pnlColor(markSummary.percentCaptured) }}>{formatPctValue(markSummary.percentCaptured)} captured</div></div>
+                <button type="button" onClick={() => setMobileActionsOpen(true)} className="pressable flex h-11 w-11 items-center justify-center rounded-full" aria-label="Portfolio actions" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }}><MoreHorizontal className="h-5 w-5" /></button>
+              </div>
+              <div className="mt-3 grid grid-cols-4 gap-2 border-t pt-3" style={{ borderColor: 'var(--border)' }}>
+                {[
+                  ['Gross Risk', formatCurrency(summary.totalEquityAtRisk, 0)],
+                  ['Net Capital', formatCurrency(summary.totalNetCapitalAtRisk, 0)],
+                  ['Current AY', formatPctValue(markSummary.portfolioCurrentAnnualizedYield)],
+                  ['Weighted Δ', formatDelta(markSummary.weightedAverageDelta)],
+                ].map(([label, value]) => <div key={label} className="min-w-0"><div className="truncate text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>{label}</div><div className="truncate font-mono text-[12px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{value}</div></div>)}
+              </div>
+              <div className="mt-3 flex items-center gap-3"><span className="flex-none text-[12px] font-semibold" style={{ color: 'var(--text-muted)' }}>Mark at</span><div className="min-w-0 flex-1"><MobileSegmentedControl value={markBasis} onChange={setMarkBasis} label="Portfolio mark basis" options={MARK_BASIS_OPTIONS.map(value => ({ value, label: value.charAt(0).toUpperCase() + value.slice(1) }))} /></div></div>
+              <DataFreshness updatedAt={lastRefreshed} status={refreshing ? 'updating' : refreshWarning ? 'failed' : lastRefreshed ? 'cached' : 'stale'} label="Portfolio marks" />
+            </section>
+
+            <div ref={scheduleRef} className="flex min-h-[48px] items-center justify-between border-b px-3.5" style={{ borderColor: 'var(--border)' }}><h2 className="text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Open Positions</h2><span className="font-mono text-[11px]" style={{ color: 'var(--text-muted)' }}>{openTrades.length} trades</span></div>
+            {openTrades.length === 0 ? <div className="px-4 py-10 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No open positions.</div> : <div className="space-y-2 px-2 py-2">{expirationGroups.map(group => {
+              const expanded = collapsedExpiryGroups[group.expiration] !== true;
+              const captured = group.premiumCollected > 0 && group.totalGainLoss != null ? group.totalGainLoss / group.premiumCollected : null;
+              return <MobileExpirationGroup key={group.expiration} label={formatFullDate(group.expiration)} dte={formatDteValue(group.dte)} positions={group.tradeCount} contracts={group.contractCount} risk={formatCurrency(group.grossRisk, 0)} pnl={formatCurrency(group.totalGainLoss, 0)} captured={formatPctValue(captured)} expanded={expanded} onToggle={() => toggleExpiryGroup(group.expiration)}>{group.trades.map(trade => <MobilePositionRow key={trade.id} ticker={trade.ticker} strike={formatCurrency(trade.strike)} contracts={trade.contracts} expiration={formatDteValue(calculateRemainingDte(trade))} pnl={formatCurrency(calculateTotalGainLoss(trade, markBasis), 0)} captured={formatPctValue(calculatePercentCaptured(trade, markBasis))} mark={formatOptionPrice(calculateCurrentOptionMark(trade, markBasis))} delta={formatDelta(trade.latestMarketData?.delta)} distance={formatPctValue(calculateDistanceToStrike(trade))} health={getPositionHealth(trade)} onOpen={() => openDrawer(trade)} onEdit={() => setEditingTrade(trade)} />)}</MobileExpirationGroup>;
+            })}</div>}
+
+            {openTrades.length > 0 && <section className="border-t px-3.5 py-4" style={{ borderColor: 'var(--border)' }}><h2 className="mb-2 text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Analytics</h2><MobileSegmentedControl value={mobileAnalytics} onChange={setMobileAnalytics} label="Portfolio analytics" options={[{ value: 'maturity', label: 'Maturity' }, { value: 'ticker', label: 'Exposure' }, { value: 'attention', label: 'Attention' }, { value: 'close', label: 'Close' }]} /><div className="mt-2">{mobileAnalytics === 'maturity' && <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openTrades, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." onGroupClick={drillToExpiration} />}{mobileAnalytics === 'ticker' && <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openTrades, markBasis)} totalGrossRisk={sumValues(openTrades.map(calculateEquityAtRisk))} maxItems={8} onGroupClick={drillToTicker} />}{mobileAnalytics === 'attention' && <NeedsAttentionList items={buildNeedsAttention(openTrades).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} />}{mobileAnalytics === 'close' && <CloseCandidatesCard candidates={buildCloseCandidates(openTrades, markBasis).slice(0, 5)} onNavigate={drillToTrade} />}</div></section>}
+
+            {archivedTrades.length > 0 && <section className="border-t px-3.5 py-3" style={{ borderColor: 'var(--border)' }}><button type="button" onClick={() => setMobileHistoryOpen(current => !current)} className="pressable flex min-h-11 w-full items-center justify-between text-left" aria-expanded={mobileHistoryOpen}><span><b className="block text-[15px]" style={{ color: 'var(--text)' }}>History</b><span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{archivedTrades.length} resolved · {formatCurrency(archiveSummary.realizedPnl, 0)} realized</span></span><ChevronDown className={`h-4 w-4 transition-transform ${mobileHistoryOpen ? 'rotate-180' : ''}`} /></button>{mobileHistoryOpen && <ArchiveHistorySection trades={archivedTrades} summary={archiveSummary} resolvingIds={resolvingArchiveIds} onRetryResolve={handleRetryResolve} onManualExpirationClose={handleManualExpirationClose} onEdit={setEditingTrade} onDelete={handleDeleteTrade} />}</section>}
+          </>
+        )}
+
+        {mobileActionsOpen && <MobileBottomSheet title="Portfolio actions" onClose={() => setMobileActionsOpen(false)}><div className="space-y-2"><button type="button" onClick={() => { setMobileActionsOpen(false); setShowAddModal(true); }} className="mobile-sheet-action primary w-full"><Plus className="h-4 w-4" /> Add Trade</button><button type="button" onClick={() => { setMobileActionsOpen(false); setShowImportModal(true); }} className="mobile-sheet-action secondary w-full"><FileImage className="h-4 w-4" /> Import Screenshot</button><button type="button" onClick={() => { setMobileActionsOpen(false); void handleRefreshOpenTrades(); }} disabled={refreshing || openTrades.length === 0} className="mobile-sheet-action secondary w-full disabled:opacity-40"><RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} /> Refresh Open Trades</button></div></MobileBottomSheet>}
+        {(showAddModal || editingTrade) && <TradeModal trade={editingTrade} onClose={() => { setShowAddModal(false); setEditingTrade(null); }} onSave={handleSaveTrade} onDelete={handleDeleteTrade} />}
+        {drawerSelection && <ErrorBoundary title="Option sheet unavailable" message="Close it and try again."><Suspense fallback={null}><OptionDetailDrawer option={drawerSelection.option} ticker={drawerSelection.ticker} expirationLabel={drawerSelection.expirationLabel} dte={drawerSelection.dte} underlyingPrice={drawerSelection.underlyingPrice} onClose={() => setDrawerSelection(null)} /></Suspense></ErrorBoundary>}
+        {showImportModal && <Suspense fallback={null}><PortfolioScreenshotImportModal trades={trades} onClose={() => setShowImportModal(false)} onApply={async nextTrades => { const archived = await archiveExpiredOpenTrades(nextTrades); persistTrades(archived.trades); setShowImportModal(false); }} /></Suspense>}
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>

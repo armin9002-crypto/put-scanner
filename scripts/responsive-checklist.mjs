@@ -37,19 +37,31 @@ const sources = {
   watchlist: read('src/pages/WatchlistPage.tsx'),
   portfolio: read('src/pages/PortfolioPage.tsx'),
   pulse: read('src/pages/EtfPulsePage.tsx'),
+  optionDetail: read('src/components/OptionDetailDrawer.tsx'),
+  chart: read('src/components/InteractivePriceChartModal.tsx'),
+  holdings: read('src/components/UnderlyingHoldingsModal.tsx'),
+  mobileSheet: read('src/components/mobile/MobileBottomSheet.tsx'),
+  mobileEtfRow: read('src/components/mobile/MobileEtfRow.tsx'),
+  mobileOptionRow: read('src/components/mobile/MobileOptionRow.tsx'),
+  mobilePositionRow: read('src/components/mobile/MobilePositionRow.tsx'),
 };
 
 const guardrails = [
-  ['portrait phone uses real-link bottom navigation', sources.app.includes('mobile-bottom-nav') && sources.app.includes('<NavLink')],
-  ['option workflow does not show the bottom tab bar', sources.app.includes("location.pathname.startsWith('/options/')")],
-  ['safe areas and dynamic viewport units are present', sources.css.includes('safe-area-inset-bottom') && sources.css.includes('100dvh')],
+  ['phone navigation uses contextual headers and real links', sources.app.includes('<MobilePageHeader') && sources.app.includes('<NavLink')],
+  ['option workflow owns its compact header and hides the tab bar', sources.options.includes('mobile-option-header') && sources.app.includes("location.pathname.startsWith('/options/')")],
+  ['safe areas, dynamic viewport units, and native phone font are present', sources.css.includes('safe-area-inset-bottom') && sources.css.includes('100dvh') && sources.css.includes('-apple-system')],
   ['phone-landscape semantic breakpoint remains explicit', sources.responsive.includes('viewportHeight <= 520') && sources.responsive.includes('viewportWidth <= 950')],
-  ['Scanner has compact filters and a touch-scroll market strip', sources.scanner.includes('scanner-filter-controls') && sources.scanner.includes('scanner-market-strip')],
-  ['Options retain dedicated phone cards', sources.options.includes('option-mobile-chain') && sources.options.includes('MobileOptionCard')],
-  ['Screener renders phone cards instead of requiring its table', sources.screener.includes("key={`mobile-${row.ticker}") && sources.screener.includes('hidden rounded-xl overflow-hidden max-w-full md:block')],
-  ['Watchlist retains dedicated phone cards', sources.watchlist.includes('md:hidden space-y-2')],
-  ['Portfolio has mobile analytics and schedule cards', sources.portfolio.includes('mobileAnalytics') && sources.portfolio.includes('md:hidden space-y-2 mb-4')],
-  ['ETF Pulse has phone cards and responsive visuals', sources.pulse.includes("key={`mobile-${row.ticker}") && !sources.pulse.includes('className="w-full min-w-[520px]"')],
+  ['shared bottom sheet locks scroll and restores focus', sources.mobileSheet.includes("document.body.style.overflow = 'hidden'") && sources.mobileSheet.includes('previousFocus?.focus()')],
+  ['Scanner uses a purpose-built phone tree and dense shared ETF rows', sources.scanner.includes('if (isPhone)') && sources.scanner.includes('<MobileMarketStrip') && sources.scanner.includes('<MobileEtfRow')],
+  ['Options use a purpose-built phone tree and dense shared option rows', sources.options.includes('if (isPhone)') && sources.options.includes('<MobileOptionRow')],
+  ['Screener uses the shared option language and a filter sheet', sources.screener.includes('if (isPhone)') && sources.screener.includes('<MobileOptionRow') && sources.screener.includes('<MobileBottomSheet')],
+  ['Watchlist uses the same shared option row language', sources.watchlist.includes('if (isPhone)') && sources.watchlist.includes('<MobileOptionRow')],
+  ['Portfolio puts grouped position rows before one-at-a-time analytics', sources.portfolio.includes('if (isPhone)') && sources.portfolio.indexOf('<MobilePositionRow') < sources.portfolio.indexOf('Portfolio analytics')],
+  ['ETF Pulse offers one-at-a-time List, Heatmap, and Momentum views', sources.pulse.includes("'list' | 'heatmap' | 'momentum'") && sources.pulse.includes('mobileVisual === \'heatmap\'') && sources.pulse.includes('mobileVisual === \'momentum\'')],
+  ['option detail is a full-screen phone trade sheet', sources.optionDetail.includes('if (isPhone)') && sources.optionDetail.includes('mobile-trade-sheet absolute inset-0') && sources.css.includes('.mobile-trade-sheet')],
+  ['phone chart prioritizes canvas and keeps vertical page panning available', sources.chart.includes('is-phone-chart') && sources.chart.includes('touch-pan-y select-none') && !sources.chart.includes('touch-none')],
+  ['holdings modal replaces the phone-width table with compact rows', sources.holdings.includes('sm:hidden') && sources.holdings.includes('hidden overflow-x-auto rounded-xl sm:block')],
+  ['shared financial rows meet requested density and touch sizing', sources.css.includes('.mobile-etf-row {\n  min-height: 108px') && sources.css.includes('.mobile-option-row {\n  min-height: 104px') && sources.css.includes('.mobile-position-row {') && sources.css.includes('min-height: 126px')],
 ];
 
 const failedGuardrails = guardrails.filter(([, passed]) => !passed);
@@ -93,4 +105,4 @@ console.log(`  (() => {
     };
   })()`);
 
-console.log('\nPass criteria: no page-level horizontal overflow; sorting/resizing/hovering creates zero API calls; only explicit refresh/load/scan actions fetch.');
+console.log('\nPass criteria: no page-level horizontal overflow; dense rows meet the requested above-the-fold targets; sheets trap the workflow safely; sorting/resizing/hovering creates zero API calls; only explicit refresh/load/scan actions fetch.');

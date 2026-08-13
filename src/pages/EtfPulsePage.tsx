@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Activity, AlertTriangle, RefreshCw, X, SlidersHorizontal, ChevronDown } from 'lucide-react';
+import { Activity, AlertTriangle, Loader2, RefreshCw, X, SlidersHorizontal, ChevronDown } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { buildEtfPulseRows, getEtfPulseUniverse, type EtfPulseLoadResult, type EtfPulseProgress } from '../lib/etfPulseData';
 import type { EtfPulseRow } from '../lib/etfPulseMetrics';
@@ -10,6 +10,9 @@ import { postureFromRegime } from '../lib/marketRead/posture';
 import { analyzeRegime } from '../lib/marketRead/regime';
 import type { RegimeAnalysis, TradePosture } from '../lib/marketRead/types';
 import DataFreshness from '../components/DataFreshness';
+import { useResponsiveMode } from '../lib/responsive';
+import MobileBottomSheet from '../components/mobile/MobileBottomSheet';
+import MobileSegmentedControl from '../components/mobile/MobileSegmentedControl';
 
 const DASH = '\u2014';
 
@@ -427,6 +430,12 @@ function MomentumQuadrant({ rows, period }: { rows: EtfPulseRow[]; period: Visua
               to={`/options/${row.ticker}`}
               tabIndex={0}
               aria-label={`Open ${row.ticker} ETF detail`}
+              onClick={event => {
+                if (hoveredTicker !== row.ticker) {
+                  event.preventDefault();
+                  setHoveredTicker(row.ticker);
+                }
+              }}
               onFocus={() => setHoveredTicker(row.ticker)}
               onBlur={() => setHoveredTicker(current => current === row.ticker ? null : current)}
             >
@@ -480,6 +489,7 @@ function TooltipMetric({ label, value, color }: { label: string; value: string; 
 }
 
 export default function EtfPulsePage() {
+  const { isPhone } = useResponsiveMode();
   const [result, setResult] = useState<EtfPulseLoadResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -492,7 +502,7 @@ export default function EtfPulsePage() {
   const [selectedVisualPeriod, setSelectedVisualPeriod] = useState<VisualPeriod>('30D');
   const [showMarketRead, setShowMarketRead] = useState(false);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
-  const [mobileVisual, setMobileVisual] = useState<'heatmap' | 'momentum'>('heatmap');
+  const [mobileVisual, setMobileVisual] = useState<'list' | 'heatmap' | 'momentum'>('list');
 
   const loadRows = async (forceRefresh = false) => {
     setLoading(true);
@@ -730,6 +740,32 @@ export default function EtfPulsePage() {
     );
   };
 
+  if (isPhone) {
+    return (
+      <div className="mobile-route-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
+        <section className="border-b px-3.5 py-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: 'var(--text-dim)' }}>Market Read</div>
+          {regime && posture ? <><div className="flex flex-wrap items-center gap-1.5"><MarketBadge label={regime.label} /><MarketBadge label={posture.label} tone="posture" /><MarketBadge label={`${regime.confidence} confidence`} tone="confidence" /></div><p className="mt-2 line-clamp-2 text-[12px] leading-5" style={{ color: 'var(--text-secondary)' }}>{regime.marketRead}</p><button type="button" onClick={() => setShowMarketRead(true)} className="pressable mt-1 inline-flex min-h-11 items-center text-[12px] font-semibold" style={{ color: 'var(--accent-light)' }}>Details</button></> : <div className="flex min-h-[64px] items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>{loading ? <><Loader2 className="h-4 w-4 animate-spin" /> Reading market {progress.loaded}/{progress.total}</> : 'Market Read unavailable'}</div>}
+        </section>
+
+        <div className="border-b px-3.5 py-2.5" style={{ borderColor: 'var(--border)' }}>
+          <div className="grid grid-cols-[1fr_auto] gap-2"><MobileSegmentedControl value={mobileVisual} onChange={setMobileVisual} label="ETF Pulse view" options={[{ value: 'list', label: 'List' }, { value: 'heatmap', label: 'Heatmap' }, { value: 'momentum', label: 'Momentum' }]} /><button type="button" onClick={() => setMobileFiltersOpen(true)} className="pressable mobile-control-button" aria-haspopup="dialog"><SlidersHorizontal className="h-4 w-4" /> Filters</button></div>
+          <div className="mt-2 flex items-center justify-between gap-2"><VisualPeriodSelector value={selectedVisualPeriod} onChange={setSelectedVisualPeriod} />{mobileVisual === 'list' && <button type="button" onClick={() => setSort(current => ({ ...current, direction: current.direction === 'asc' ? 'desc' : 'asc' }))} className="pressable flex h-11 w-11 flex-none items-center justify-center rounded-lg text-sm" aria-label={`Sort ${sort.direction === 'asc' ? 'descending' : 'ascending'}`} style={{ color: 'var(--accent-light)' }}>{sort.direction === 'asc' ? '↑' : '↓'}</button>}</div>
+        </div>
+
+        {error && <div className="mx-3.5 mt-3 flex items-center gap-2 rounded-lg px-3 py-2 text-xs" style={{ backgroundColor: 'rgba(239,68,68,0.1)', color: 'var(--red)', border: '1px solid rgba(239,68,68,0.24)' }}><AlertTriangle className="h-4 w-4" /> ETF Pulse could not update. Existing data remains visible.</div>}
+
+        {mobileVisual === 'list' ? <div className="mobile-financial-list">{loading && rows.length === 0 ? Array.from({ length: 6 }).map((_, index) => <div key={index} className="mobile-pulse-row animate-pulse"><div className="h-4 w-24 rounded" style={{ backgroundColor: 'var(--border)' }} /><div className="mt-5 h-3 w-full rounded" style={{ backgroundColor: 'var(--border)' }} /></div>) : filteredRows.length === 0 ? <div className="px-6 py-14 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No ETFs match these filters.</div> : filteredRows.map(row => {
+          const trend = trendStyle(row);
+          return <Link key={row.ticker} to={`/options/${row.ticker}`} className="pressable mobile-pulse-row"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="font-mono text-[16px] font-bold" style={{ color: 'var(--accent-light)' }}>{row.ticker}</div><div className="truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>{row.name}</div></div><div className="text-right"><div className="font-mono text-[15px] font-semibold" style={{ color: 'var(--text)' }}>{formatPrice(row.price)}</div><div className="text-[10px] font-semibold" style={{ color: trend.color }}>{trend.label}</div></div></div><div className="mt-2 grid grid-cols-3 gap-2 border-y py-1.5" style={{ borderColor: 'var(--border)' }}>{([['1M', row.returns.thirtyDay], ['3M', row.returns.threeMonth], ['YTD', row.returns.yearToDate]] as const).map(([label, value]) => <span key={label} className="text-[11px]"><span style={{ color: 'var(--text-dim)' }}>{label} </span><b className="font-mono" style={{ color: valueColor(value) }}>{formatPct(value)}</b></span>)}</div><div className="mt-1.5 grid grid-cols-3 gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}><span>RSI <b className="font-mono" style={{ color: rsiColor(row.rsi14) }}>{isFiniteNumber(row.rsi14) ? row.rsi14.toFixed(0) : DASH}</b></span><span>vs 50D <b className="font-mono" style={{ color: valueColor(row.distance50) }}>{formatPct(row.distance50)}</b></span><span className="text-right">DD <b className="font-mono" style={{ color: drawdownColor(row.drawdown52Week) }}>{formatPct(row.drawdown52Week)}</b></span></div></Link>;
+        })}</div> : <section className="px-3.5 py-3">{mobileVisual === 'heatmap' ? <UniverseHeatmap rows={filteredRows} period={selectedVisualPeriod} /> : <MomentumQuadrant rows={filteredRows} period={selectedVisualPeriod} />}</section>}
+
+        {mobileFiltersOpen && <MobileBottomSheet title="ETF Pulse filters" description="Filter and sort loaded market intelligence" onClose={() => setMobileFiltersOpen(false)} footer={<div className="grid grid-cols-2 gap-2"><button type="button" onClick={() => { setSearch(''); setLeverageFilter('All'); setTypeFilter('All'); setTrendFilter('All'); }} className="mobile-sheet-action secondary">Reset</button><button type="button" onClick={() => setMobileFiltersOpen(false)} className="mobile-sheet-action primary">Done</button></div>}><div className="space-y-4"><label><span className="mobile-sheet-label">Search</span><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Ticker, name, or theme" className="mobile-control-field w-full" /></label><Select label="Leverage" value={leverageFilter} options={leverageOptions} onChange={setLeverageFilter} /><Select label="Type" value={typeFilter} options={typeOptions} onChange={setTypeFilter} /><Select label="Trend" value={trendFilter} options={trendOptions} onChange={value => setTrendFilter(value as TrendFilter)} /><label className="block"><span className="mobile-sheet-label">Sort list</span><select value={sort.field} onChange={event => setSort(current => ({ ...current, field: event.target.value as PulseSortField }))} className="mobile-control-field w-full"><option value="ticker">Ticker</option><option value="oneDay">1D return</option><option value="thirtyDay">30D return</option><option value="threeMonth">3M return</option><option value="rsi14">RSI</option><option value="realizedVolatility20">20D volatility</option><option value="drawdown52Week">52W drawdown</option><option value="trend">Trend</option></select></label><button type="button" onClick={() => void loadRows(true)} disabled={loading} className="mobile-sheet-action secondary w-full"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh data</button></div></MobileBottomSheet>}
+        {showMarketRead && regime && posture && <MarketReadModal regime={regime} posture={posture} onClose={() => setShowMarketRead(false)} />}
+      </div>
+    );
+  }
+
   return (
     <div className="etf-pulse-page min-h-[calc(100dvh-2.75rem)]" style={{ backgroundColor: 'var(--bg)' }}>
       <div className="max-w-[1800px] mx-auto px-2 sm:px-4 lg:px-6 py-1.5 sm:py-2">
@@ -893,7 +929,7 @@ function Select({ label, value, options, onChange }: { label: string; value: str
       <select
         value={value}
         onChange={event => onChange(event.target.value)}
-        className="min-w-0 w-full rounded-lg px-2 py-2 text-sm outline-none min-h-[40px]"
+        className="min-h-11 min-w-0 w-full rounded-lg px-2 py-2 text-sm outline-none"
         style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
       >
         {options.map(option => <option key={option} value={option}>{option}</option>)}

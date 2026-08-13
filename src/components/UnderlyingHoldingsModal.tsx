@@ -150,7 +150,20 @@ export default function UnderlyingHoldingsModal({ proxy, onClose }: UnderlyingHo
               ) : null}
 
               {visibleHoldings.length > 0 ? (
-                <div className="overflow-x-auto rounded-xl" style={{ border: '1px solid var(--border)' }}>
+                <>
+                  <div className="divide-y sm:hidden" style={{ borderColor: 'var(--border)' }}>
+                    {visibleHoldings.map((holding, index) => (
+                      <div key={`${holding.symbol}-${index}`} className="grid min-h-[52px] grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-2 py-1.5">
+                        <span className="font-mono text-[11px]" style={{ color: 'var(--text-dim)' }}>{index + 1}</span>
+                        <span className="min-w-0">
+                          <span className="block font-mono text-xs font-semibold" style={{ color: 'var(--text)' }}>{holding.symbol || '-'}</span>
+                          <span className="block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>{holding.name}</span>
+                        </span>
+                        <span className="font-mono text-xs font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{formatWeight(holding.weight)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="hidden overflow-x-auto rounded-xl sm:block" style={{ border: '1px solid var(--border)' }}>
                   <table className="w-full min-w-[360px] border-collapse text-xs sm:min-w-[520px] sm:text-sm">
                     <thead className="sticky top-0 z-10" style={{ backgroundColor: 'var(--surface)' }}>
                       <tr style={{ borderBottom: '1px solid var(--border)' }}>
@@ -171,7 +184,8 @@ export default function UnderlyingHoldingsModal({ proxy, onClose }: UnderlyingHo
                       ))}
                     </tbody>
                   </table>
-                </div>
+                  </div>
+                </>
               ) : loading ? (
                 <div className="space-y-1.5 sm:space-y-2">
                   {Array.from({ length: 6 }).map((_, index) => (

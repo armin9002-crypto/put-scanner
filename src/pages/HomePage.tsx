@@ -44,6 +44,10 @@ import { passesScannerLiquidityFilter, sortScannerEtfs, type ScannerLiquidityFil
 import { fetchFundAssets, type FundAssetsData } from '../lib/fundAssets';
 import { parseScannerState, resolveScannerExpiration, serializeScannerState, type ScannerState } from '../lib/scannerState';
 import { saveLastScannerUrl, type ScannerNavigationState } from '../lib/scannerNavigation';
+import { useResponsiveMode } from '../lib/responsive';
+import MobileBottomSheet from '../components/mobile/MobileBottomSheet';
+import MobileMarketStrip from '../components/mobile/MobileMarketStrip';
+import MobileEtfRow from '../components/mobile/MobileEtfRow';
 
 const SORT_OPTIONS: Array<{ value: ScannerSort; label: string }> = [
   { value: 'default', label: 'Default' }, { value: 'iv60', label: 'IV60 High → Low' },
@@ -144,6 +148,7 @@ function MarketChartCard({
 }
 
 export default function HomePage() {
+  const { isPhone } = useResponsiveMode();
   const [searchParams, setSearchParams] = useSearchParams();
   const initialExpirationStateRef = useRef<CachedExpirationState | null>(null);
   if (!initialExpirationStateRef.current) initialExpirationStateRef.current = buildCachedExpirationState();
@@ -401,6 +406,116 @@ export default function HomePage() {
       snapshotUpdateRunningRef.current = false;
     }
   }, [filtered, optionSnapshots, prices]);
+
+  const mobileActiveFilterCount = [
+    leverageFilter !== 'All',
+    typeFilter !== 'All',
+    liquidityFilter !== 'all',
+    scannerSort !== 'default',
+  ].filter(Boolean).length;
+
+  if (isPhone) {
+    const marketItems = [
+      { ticker: 'SPY', data: spyData, chartTicker: 'SPY', isVolatility: false },
+      { ticker: 'QQQ', data: qqqData, chartTicker: 'QQQ', isVolatility: false },
+      { ticker: 'VIX', data: vixData, chartTicker: '^VIX', isVolatility: true },
+      { ticker: 'VXN', data: vxnData, chartTicker: '^VXN', isVolatility: true },
+    ];
+    const resetMobileFilters = () => {
+      setLeverageFilter('All');
+      setTypeFilter('All');
+      setLiquidityFilter('all');
+      setScannerSort('default');
+    };
+
+    return (
+      <div className="mobile-route-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
+        <MobileMarketStrip items={marketItems.map(item => ({
+          ticker: item.ticker,
+          price: item.data?.price ?? null,
+          changePercent: item.data?.changePercent ?? null,
+          isVolatility: item.isVolatility,
+          loading: marketLoading,
+          onOpen: () => item.data && setChartModal({ ticker: item.chartTicker, displayTicker: item.ticker }),
+        }))} />
+
+        <div className="px-3.5 pb-3 pt-3">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+            <label className="min-w-0">
+              <span className="sr-only">Expiration</span>
+              <select value={expFilter} onChange={event => handleExpirationChange(event.target.value)} className="mobile-control-field w-full" aria-label="Scanner expiration">
+                {expDropdownOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
+            <button type="button" onClick={() => setMobileFiltersOpen(true)} className="pressable mobile-control-button" aria-haspopup="dialog">
+              <SlidersHorizontal className="h-4 w-4" /> Filters{mobileActiveFilterCount > 0 ? ` ${mobileActiveFilterCount}` : ''}
+            </button>
+          </div>
+
+          <label className="relative mt-2 block">
+            <span className="sr-only">Search ETFs</span>
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: 'var(--text-dim)' }} />
+            <input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search ETFs" className="mobile-control-field w-full pl-10" />
+          </label>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 border-y px-3.5 py-2" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+          <div className="min-w-0">
+            <h2 className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>ETF opportunities</h2>
+            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{filtered.length} results · {expDropdownOptions.find(option => option.value === expFilter)?.label ?? 'All dates'}</p>
+          </div>
+          {(pricesLoading || marketLoading) && <span className="flex items-center gap-1 text-[11px]" style={{ color: 'var(--text-muted)' }}><Loader2 className="h-3 w-3 animate-spin" /> Updating</span>}
+        </div>
+
+        <div className="mobile-financial-list">
+          {pricesLoading && Object.keys(prices).length === 0 ? Array.from({ length: 5 }).map((_, index) => (
+            <div key={index} className="mobile-etf-row animate-pulse"><div className="h-4 w-20 rounded" style={{ backgroundColor: 'var(--border)' }} /><div className="mt-3 h-3 w-44 rounded" style={{ backgroundColor: 'var(--border)' }} /><div className="mt-5 h-3 w-full rounded" style={{ backgroundColor: 'var(--border)' }} /></div>
+          )) : filtered.map(etf => (
+            <MobileEtfRow
+              key={etf.ticker}
+              etf={etf}
+              to={`/options/${etf.ticker}`}
+              navigationState={{ fromScanner: true } satisfies ScannerNavigationState}
+              priceData={prices[etf.ticker] ?? null}
+              optionSnapshot={optionSnapshots[etf.ticker] ?? null}
+              optionDiagnostic={snapshotDiagnostics[etf.ticker] ?? null}
+              netAssets={fundAssets[etf.ticker] ?? null}
+            />
+          ))}
+        </div>
+
+        {filtered.length === 0 && !pricesLoading && <div className="px-6 py-12 text-center"><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No matching ETFs</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Try clearing search or widening your filters.</p><button type="button" onClick={resetMobileFilters} className="tap-target mt-3 rounded-lg px-4 text-xs font-semibold" style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)' }}>Reset filters</button></div>}
+
+        {mobileFiltersOpen && (
+          <MobileBottomSheet
+            title="Scanner filters"
+            description="Refine the ETF opportunity list"
+            onClose={() => setMobileFiltersOpen(false)}
+            footer={<div className="grid grid-cols-2 gap-2"><button type="button" onClick={resetMobileFilters} className="mobile-sheet-action secondary">Reset</button><button type="button" onClick={() => setMobileFiltersOpen(false)} className="mobile-sheet-action primary">Apply</button></div>}
+          >
+            <div className="space-y-5">
+              <fieldset>
+                <legend className="mobile-sheet-label">Leverage</legend>
+                <div className="grid grid-cols-3 gap-2">{LEVERAGE_OPTIONS.map(option => <button type="button" key={option} onClick={() => setLeverageFilter(option)} className="mobile-choice" data-selected={leverageFilter === option}>{option}</button>)}</div>
+              </fieldset>
+              <fieldset>
+                <legend className="mobile-sheet-label">Type</legend>
+                <div className="grid grid-cols-2 gap-2">{TYPE_OPTIONS.map(option => <button type="button" key={option} onClick={() => setTypeFilter(option)} className="mobile-choice" data-selected={typeFilter === option}>{option === 'Broad Index' ? 'Broad' : option}</button>)}</div>
+              </fieldset>
+              <fieldset>
+                <legend className="mobile-sheet-label">Liquidity</legend>
+                <div className="grid grid-cols-3 gap-2">{([['all', 'All'], ['mediumPlus', 'Medium+'], ['liquidPlus', 'Liquid+']] as const).map(([value, label]) => <button type="button" key={value} onClick={() => setLiquidityFilter(value)} className="mobile-choice" data-selected={liquidityFilter === value}>{label}</button>)}</div>
+              </fieldset>
+              <label className="block"><span className="mobile-sheet-label">Sort</span><select value={scannerSort} onChange={event => setScannerSort(event.target.value as ScannerSort)} className="mobile-control-field w-full">{SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+              <button type="button" onClick={() => void updateVisibleOptionSnapshots()} disabled={snapshotUpdateRunningRef.current} className="mobile-sheet-action secondary w-full">{snapshotProgress && !snapshotProgress.complete ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}{snapshotProgressLabel(snapshotProgress)}</button>
+            </div>
+          </MobileBottomSheet>
+        )}
+
+        {chartModal && <ErrorBoundary title="Chart unavailable" message="The chart modal could not render. Close it and try again."><Suspense fallback={null}><InteractivePriceChartModal isOpen ticker={chartModal.ticker} displayTicker={chartModal.displayTicker} onClose={() => setChartModal(null)} /></Suspense></ErrorBoundary>}
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>

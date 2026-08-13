@@ -11,6 +11,9 @@ import ExpirationFilter, { buildExpirationOptions, formatExpirationDropdownLabel
 import ErrorBoundary from '../components/ErrorBoundary';
 import type { OptionDetail } from '../components/OptionDetailDrawer';
 import { Search, X, ChevronUp, ChevronDown, Loader2, AlertTriangle, RefreshCw, SlidersHorizontal } from 'lucide-react';
+import { useResponsiveMode } from '../lib/responsive';
+import MobileBottomSheet from '../components/mobile/MobileBottomSheet';
+import MobileOptionRow from '../components/mobile/MobileOptionRow';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 
@@ -378,6 +381,7 @@ function vixLabel(vix: number): { text: string; color: string } {
 // --- Component ---
 
 export default function ScreenerPage() {
+  const { isPhone } = useResponsiveMode();
 
   // Filters — default expiry to ≤30 DTE (Opt 3)
   const [selectedETFs, setSelectedETFs] = useState<ETFInfo[]>([]);
@@ -856,6 +860,51 @@ export default function ScreenerPage() {
     volFilter !== 'all',
     ivRankFilter !== 'all',
   ].filter(Boolean).length;
+
+  if (isPhone) {
+    const activeCriteria = [
+      deltaFilter !== 'all' ? `Δ ${DELTA_OPTIONS.find(option => option.value === deltaFilter)?.label}` : null,
+      moneynessFilter !== 'all' ? MONEYNESS_OPTIONS.find(option => option.value === moneynessFilter)?.label : null,
+      yieldFilter !== 'all' ? `AY ${YIELD_OPTIONS.find(option => option.value === yieldFilter)?.label}` : null,
+      oiFilter !== 'all' ? `OI ${OI_OPTIONS.find(option => option.value === oiFilter)?.label}` : null,
+    ].filter(Boolean).join(' · ') || 'All deltas · All moneyness · All yields';
+    const resetFilters = () => clearFilters();
+
+    return (
+      <div className="mobile-route-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
+        <div className="border-b px-3.5 pb-3 pt-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0"><div className="text-[12px] font-medium" style={{ color: 'var(--text-muted)' }}>Screening criteria</div><p className="truncate text-[13px]" style={{ color: 'var(--text)' }}>{activeCriteria}</p></div>
+            <button type="button" onClick={() => setMobileFiltersOpen(true)} className="pressable mobile-control-button" aria-haspopup="dialog"><SlidersHorizontal className="h-4 w-4" /> Filters {activeFilterCount}</button>
+          </div>
+          <button type="button" onClick={() => void handleLoad()} disabled={loading} className="mobile-sheet-action primary mt-3 w-full disabled:opacity-50">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}{loading ? `Scanning ${progress.current}/${progress.total}` : 'Run Screener'}</button>
+          {loading && progress.total > 0 && <div className="mt-2 h-1 overflow-hidden rounded-full" style={{ backgroundColor: 'var(--border)' }}><div className="h-full rounded-full" style={{ width: `${progressPct}%`, backgroundColor: 'var(--accent)' }} /></div>}
+          {slowWarning && <p className="mt-2 flex items-center gap-1 text-[11px]" style={{ color: 'var(--yellow)' }}><AlertTriangle className="h-3.5 w-3.5" /> Narrow filters for a faster scan.</p>}
+        </div>
+
+        <div className="flex min-h-[46px] items-center gap-2 border-b px-3.5" style={{ borderColor: 'var(--border)' }}>
+          <h2 className="mr-auto text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Results <span className="font-mono font-normal" style={{ color: 'var(--text-muted)' }}>{loaded ? sortedRows.length : '—'}</span></h2>
+          <select value={sortField} onChange={event => setSortField(event.target.value as ScreenerSortField)} className="min-h-11 min-w-0 rounded-lg px-2 text-[12px] outline-none" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} aria-label="Sort screener results"><option value="annYieldBid">Annualized yield</option><option value="ticker">Ticker</option><option value="expDate">Expiration</option><option value="strike">Strike</option><option value="delta">Delta</option><option value="bid">Bid</option><option value="iv">IV</option><option value="openInterest">Open interest</option></select>
+          <button type="button" onClick={() => setSortDir(current => current === 'asc' ? 'desc' : 'asc')} className="pressable flex h-11 w-11 items-center justify-center rounded-lg text-sm font-semibold" aria-label={`Sort ${sortDir === 'asc' ? 'descending' : 'ascending'}`} style={{ color: 'var(--accent-light)' }}>{sortDir === 'asc' ? '↑' : '↓'}</button>
+        </div>
+
+        {!loaded && !loading ? <div className="px-6 py-14 text-center"><Search className="mx-auto mb-3 h-6 w-6" style={{ color: 'var(--text-dim)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Ready to screen</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Choose criteria, then run the screener.</p></div> : loaded && sortedRows.length === 0 ? <div className="px-6 py-14 text-center"><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No screener matches</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Try widening delta, moneyness, or yield.</p><button type="button" onClick={() => setMobileFiltersOpen(true)} className="mobile-sheet-action secondary mt-4">Adjust filters</button></div> : (
+          <div className="mobile-financial-list">{sortedRows.map(row => <MobileOptionRow key={`${row.ticker}-${row.expDate}-${row.strike}`} ticker={row.ticker} strike={row.strike} expirationLabel={row.expLabel} dte={row.dte} bid={row.bid} ask={row.ask} last={row.last} annualYield={row.annYieldBid} delta={row.delta} impliedVolatility={row.iv} openInterest={row.openInterest} moneynessLabel={row.moneynessLabel} moneynessColor={row.moneynessColor} statusText={`Vol ${formatNumber(row.volume)} · OI ${formatNumber(row.openInterest)}`} onSelect={() => setSelectedOption({ option: optionDetailFromScreenerRow(row), ticker: row.ticker, expirationLabel: row.expLabel, dte: row.dte, underlyingPrice: row.currentPrice > 0 ? row.currentPrice : null })} />)}</div>
+        )}
+
+        {mobileFiltersOpen && <MobileBottomSheet title="Screener filters" description="Define the contracts you want to find" onClose={() => setMobileFiltersOpen(false)} footer={<div className="grid grid-cols-2 gap-2"><button type="button" onClick={resetFilters} className="mobile-sheet-action secondary">Reset</button><button type="button" onClick={() => setMobileFiltersOpen(false)} className="mobile-sheet-action primary">Done</button></div>}>
+          <div className="space-y-4">
+            <div><span className="mobile-sheet-label">ETFs</span><div className="flex min-h-11 flex-wrap gap-1.5 rounded-lg border p-1.5" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--input-bg)' }}>{selectedETFs.map(etf => <span key={etf.ticker} className="inline-flex items-center gap-1 rounded-md px-2 text-xs" style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)' }}>{etf.ticker}<button type="button" onClick={() => removeETF(etf.ticker)} className="flex h-7 w-7 items-center justify-center" aria-label={`Remove ${etf.ticker}`}><X className="h-3 w-3" /></button></span>)}<input value={etfSearch} onChange={event => { setEtfSearch(event.target.value); setShowEtfDropdown(true); }} onFocus={() => setShowEtfDropdown(true)} placeholder={selectedETFs.length ? 'Add ETF' : 'All ETFs'} className="min-w-[100px] flex-1 bg-transparent px-2 text-base outline-none" style={{ color: 'var(--text)' }} /></div>{showEtfDropdown && etfOptions.length > 0 && <div className="mt-1 max-h-40 overflow-y-auto rounded-lg border" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>{etfOptions.slice(0, 20).map(etf => <button type="button" key={etf.ticker} onClick={() => addETF(etf)} className="flex min-h-11 w-full items-center gap-2 border-b px-3 text-left" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}><b className="font-mono">{etf.ticker}</b><span className="truncate text-xs" style={{ color: 'var(--text-muted)' }}>{etf.name}</span></button>)}</div>}</div>
+            <ExpirationFilter value={expFilter} onChange={setExpFilter} options={expDropdownOptions} loadingDates={loadingDates} datesLoaded={datesLoaded} />
+            {([['Delta (abs)', deltaFilter, setDeltaFilter, DELTA_OPTIONS], ['Moneyness', moneynessFilter, setMoneynessFilter, MONEYNESS_OPTIONS], ['Ann. Yield Bid', yieldFilter, setYieldFilter, YIELD_OPTIONS], ['Minimum OI', oiFilter, setOiFilter, OI_OPTIONS], ['Minimum Volume', volFilter, setVolFilter, VOL_OPTIONS], ['IV Rank', ivRankFilter, setIvRankFilter, IVRANK_OPTIONS]] as const).map(([label, value, setter, options]) => <label key={label} className="block"><span className="mobile-sheet-label">{label}</span><select value={value} onChange={event => setter(event.target.value)} className="mobile-control-field w-full">{options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>)}
+          </div>
+        </MobileBottomSheet>}
+
+        {showConfirm && <MobileBottomSheet title="Scan all ETFs?" description="This uses approximately 40–80 existing market-data requests." onClose={() => setShowConfirm(false)} footer={<div className="grid grid-cols-2 gap-2"><button type="button" onClick={() => setShowConfirm(false)} className="mobile-sheet-action secondary">Cancel</button><button type="button" onClick={() => executeLoad({ ...currentCriteria, selectedETFs: ETF_LIST })} className="mobile-sheet-action primary">Run scan</button></div>}><p className="text-sm leading-6" style={{ color: 'var(--text-muted)' }}>Select specific ETFs for a faster result, or continue to scan the full universe.</p></MobileBottomSheet>}
+        {selectedOption && <ErrorBoundary title="Option sheet unavailable" message="Close it and try again."><Suspense fallback={null}><OptionDetailDrawer option={selectedOption.option} ticker={selectedOption.ticker} expirationLabel={selectedOption.expirationLabel} dte={selectedOption.dte} underlyingPrice={selectedOption.underlyingPrice} onClose={() => setSelectedOption(null)} /></Suspense></ErrorBoundary>}
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>

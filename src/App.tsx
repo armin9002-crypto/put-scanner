@@ -4,6 +4,7 @@ import { ShieldCheck, ScanLine, BarChart3, Moon, Sun, BookOpen, Star, Square, Br
 import { ThemeProvider, useTheme } from './lib/theme';
 import { useResponsiveMode } from './lib/responsive';
 import ErrorBoundary from './components/ErrorBoundary';
+import MobilePageHeader from './components/mobile/MobilePageHeader';
 import { getRequestDiagnosticsSnapshot, isRequestDiagnosticsEnabled, type RequestDiagnosticsSnapshot } from './lib/requestDiagnostics';
 
 const HomePage = lazy(() => import('./pages/HomePage'));
@@ -45,19 +46,21 @@ function NavBar() {
   const location = useLocation();
   const pulseLabel = isPhoneLandscape ? 'Pulse' : 'ETF Pulse';
 
-  if (isPhone && !isPhoneLandscape) {
+  if (isPhone) {
     if (location.pathname.startsWith('/options/')) return null;
 
+    const title = location.pathname === '/screener'
+      ? 'Screener'
+      : location.pathname === '/watchlist'
+        ? 'Watchlist'
+        : location.pathname === '/portfolio'
+          ? 'Portfolio'
+          : location.pathname === '/pulse' || location.pathname === '/cockpit'
+            ? 'ETF Pulse'
+            : 'Scanner';
+
     return (
-      <header className="mobile-utility-bar">
-        <div className="flex min-w-0 items-center gap-2">
-          <div className="flex h-7 w-7 flex-none items-center justify-center rounded-lg" style={{ backgroundColor: 'var(--accent-bg)' }}>
-            <ShieldCheck className="h-4 w-4" style={{ color: 'var(--accent)' }} />
-          </div>
-          <span className="truncate text-sm font-bold tracking-tight" style={{ color: 'var(--text)' }}>Put Scanner</span>
-        </div>
-        <ThemeToggle />
-      </header>
+      <MobilePageHeader title={title} action={<ThemeToggle />} />
     );
   }
 
@@ -159,10 +162,11 @@ const mobileTabs = [
 
 function MobileBottomNav() {
   const location = useLocation();
-  if (location.pathname.startsWith('/options/')) return null;
+  const { isPhone, isPhoneLandscape } = useResponsiveMode();
+  if (!isPhone || location.pathname.startsWith('/options/')) return null;
 
   return (
-    <nav className="mobile-bottom-nav" aria-label="Primary navigation">
+    <nav className={`mobile-bottom-nav ${isPhoneLandscape ? 'is-phone-landscape' : ''}`} aria-label="Primary navigation">
       {mobileTabs.map(({ to, label, icon: Icon, end }) => (
         <NavLink
           key={to}
@@ -180,11 +184,12 @@ function MobileBottomNav() {
 }
 
 function AppContent() {
+  const { isPhone, isPhoneLandscape } = useResponsiveMode();
   return (
     <BrowserRouter>
       <NavBar />
       <ErrorBoundary title="Page unavailable" message="This page could not render. Refresh and try again.">
-        <main className="app-content-shell">
+        <main className={`app-content-shell ${isPhone ? 'is-phone' : ''} ${isPhoneLandscape ? 'is-phone-landscape' : ''}`}>
           <Suspense fallback={<RouteLoadingFallback />}>
           <Routes>
             <Route path="/" element={<HomePage />} />

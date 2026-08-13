@@ -9,6 +9,7 @@ import {
   isFiniteNumber,
 } from '../lib/optionMetrics';
 import { formatCurrency, formatNumber, formatPercent, normalizeTimestampMs } from '../lib/format';
+import { useResponsiveMode } from '../lib/responsive';
 
 export interface OptionDetail {
   strike: number;
@@ -186,6 +187,7 @@ export default function OptionDetailDrawer({
   onClose,
   onAddToPortfolio,
 }: OptionDetailDrawerProps) {
+  const { isPhone } = useResponsiveMode();
   const defaultPrice = useMemo(() => option ? getDefaultSoldPrice(option) : null, [option]);
   const [contracts, setContracts] = useState('1');
   const [soldPrice, setSoldPrice] = useState('');
@@ -240,6 +242,87 @@ export default function OptionDetailDrawer({
   const setSoldPriceFromQuote = (value: number | null | undefined) => {
     if (isFiniteNumber(value) && value >= 0) setSoldPrice(value.toFixed(2));
   };
+
+  if (isPhone) {
+    const quoteOptions = [
+      ['Bid', bid],
+      ['Mid', mid],
+      ['Ask', ask],
+      ['Last', usableLast],
+    ] as const;
+    const addToPortfolio = () => {
+      if (!onAddToPortfolio || activeSoldPrice == null || validContracts == null) return;
+      onAddToPortfolio({ option, soldPrice: activeSoldPrice, contracts: validContracts, underlyingPrice });
+    };
+    return (
+      <div className="fixed inset-0 z-[90]" role="dialog" aria-modal="true" aria-label={`${ticker} ${formatCurrency(option.strike)} put details`}>
+        <div className="mobile-trade-sheet absolute inset-0 overflow-y-auto" style={{ backgroundColor: 'var(--bg)' }}>
+          <header className="mobile-trade-sheet__header sticky top-0 z-20 border-b px-3 pb-2 pt-1" style={{ borderColor: 'var(--border)', backgroundColor: 'color-mix(in srgb, var(--bg) 96%, transparent)' }}>
+            <div className="mx-auto mb-1.5 h-1 w-10 rounded-full" aria-hidden="true" style={{ backgroundColor: 'var(--border-strong)' }} />
+            <div className="flex min-h-11 items-center justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="truncate font-mono text-[18px] font-bold" style={{ color: 'var(--text)' }}>{ticker} {formatCurrency(option.strike, option.strike % 1 === 0 ? 0 : 2)} Put</h2>
+                <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>{expirationLabel || '—'} · {isFiniteNumber(dte) ? `${dte} DTE` : '— DTE'} · Underlying {formatCurrency(underlyingPrice)}</p>
+              </div>
+              <button type="button" onClick={onClose} className="pressable flex h-11 w-11 flex-none items-center justify-center rounded-full" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }} aria-label="Close option details"><X className="h-5 w-5" /></button>
+            </div>
+          </header>
+
+          <div className="space-y-5 px-4 py-4">
+            <section>
+              <div className="mobile-segmented" role="group" aria-label="Select sold price quote">
+                {quoteOptions.map(([label, value]) => {
+                  const selected = isFiniteNumber(value) && activeSoldPrice === value;
+                  return <button type="button" key={label} disabled={!isFiniteNumber(value)} onClick={() => setSoldPriceFromQuote(value)} className="pressable mobile-segmented__item disabled:opacity-35" data-selected={selected ? 'true' : 'false'} aria-pressed={selected}>{label}</button>;
+                })}
+              </div>
+              <div className="mt-3 flex items-end justify-between border-b pb-3" style={{ borderColor: 'var(--border)' }}>
+                <span className="text-[13px]" style={{ color: 'var(--text-muted)' }}>Selected price</span>
+                <span className="font-mono text-[26px] font-semibold tabular-nums" style={{ color: 'var(--accent-light)' }}>{formatCurrency(activeSoldPrice)}</span>
+              </div>
+              <div className="mt-1 divide-y" style={{ borderColor: 'var(--border)' }}>
+                <DetailRow label="Annualized Yield" value={formatPercent(positionMetrics.annualizedReturn)} color="var(--green)" />
+                <DetailRow label="Delta" value={formatPlainNumber(option.delta, 3)} />
+                <DetailRow label="Moneyness" value={option.otmItmLabel || '—'} color={option.otmItmColor || undefined} />
+                <DetailRow label="Breakeven" value={formatCurrency(topBreakeven)} />
+                <DetailRow label="Implied Volatility" value={isFiniteNumber(option.impliedVolatility) ? `${option.impliedVolatility.toFixed(1)}%` : '—'} />
+                <DetailRow label="Open Interest" value={formatInteger(option.openInterest)} />
+              </div>
+            </section>
+
+            <section className="border-t pt-4" style={{ borderColor: 'var(--border)' }}>
+              <h3 className="mb-3 text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Position Calculator</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <label><span className="mobile-sheet-label">Contracts</span><input type="text" inputMode="numeric" value={contracts} onChange={event => /^\d*$/.test(event.target.value) && setContracts(event.target.value)} onBlur={() => { const value = Number(contracts); setContracts(Number.isInteger(value) && value >= 1 ? String(value) : '1'); }} className="mobile-control-field w-full font-mono" /></label>
+                <label><span className="mobile-sheet-label">Sold Price</span><input type="number" inputMode="decimal" min={0} step="0.01" value={soldPrice} onChange={event => { const next = event.target.value; if (next === '' || Number(next) >= 0) setSoldPrice(next); }} className="mobile-control-field w-full font-mono" /></label>
+              </div>
+              <div className="mt-3 divide-y" style={{ borderColor: 'var(--border)' }}>
+                <DetailRow label="Premium" value={formatCurrency(positionMetrics.totalPremium)} color="var(--green)" />
+                <DetailRow label="Net Capital Risk" value={formatCurrency(positionMetrics.netCapitalAtRisk)} />
+                <DetailRow label="Return on Risk" value={formatPercent(positionMetrics.returnOnRisk)} color="var(--accent-light)" />
+                <DetailRow label="Annualized Return" value={formatPercent(positionMetrics.annualizedReturn)} color="var(--green)" />
+                <DetailRow label="Maximum Loss" value={formatCurrency(positionMetrics.maximumLoss)} color="var(--red)" />
+              </div>
+              {onAddToPortfolio && <button type="button" onClick={addToPortfolio} disabled={activeSoldPrice == null || validContracts == null} className="mobile-sheet-action primary mt-4 w-full disabled:opacity-45">Add to Portfolio</button>}
+            </section>
+
+            <details className="border-t pt-3" style={{ borderColor: 'var(--border)' }}>
+              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Market details <span style={{ color: 'var(--text-dim)' }}>+</span></summary>
+              <div className="divide-y pb-4" style={{ borderColor: 'var(--border)' }}>
+                <DetailRow label="Bid / Ask" value={`${formatCurrency(bid)} / ${formatCurrency(ask)}`} />
+                <DetailRow label="Mid / Last" value={`${formatCurrency(mid)} / ${formatCurrency(option.last)}`} />
+                <DetailRow label="Last Trade Date" value={lastTradeInfo.date} color={lastTradeInfo.color} />
+                <DetailRow label="Last Trade Age" value={lastTradeInfo.age} color={lastTradeInfo.color} />
+                <DetailRow label="Spread" value={`${formatCurrency(spread)} · ${formatPercent(spreadPct)}`} />
+                <DetailRow label="Volume / OI" value={`${formatInteger(option.volume)} / ${formatInteger(option.openInterest)}`} />
+                <DetailRow label="Gamma / Theta / Vega" value={`${formatPlainNumber(option.gamma, 3)} / ${formatPlainNumber(option.theta, 3)} / ${formatPlainNumber(option.vega, 3)}`} />
+              </div>
+            </details>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-[70]">
