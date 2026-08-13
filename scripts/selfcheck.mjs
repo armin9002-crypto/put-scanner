@@ -5,6 +5,7 @@ import {
   selectScannerSnapshotExpiration,
   updateScannerSnapshotForTicker,
 } from '../src/lib/scannerOptionSnapshot.ts';
+import { buildExpirationScheduleGroups } from '../src/lib/portfolioAnalytics.ts';
 
 const EPSILON = 1e-9;
 
@@ -227,6 +228,32 @@ const cheapWideRelativeSnapshot = snapshotFor([
   put(101),
 ]);
 
+const scheduleTrades = [
+  {
+    id: 'schedule-a', ticker: 'AAA', optionType: 'put', strike: 50, expiration: '2099-01-15', contracts: 2,
+    soldPrice: 2, soldDate: '2098-11-15', status: 'open', notes: '', createdAt: SNAPSHOT_NOW.toISOString(), updatedAt: SNAPSHOT_NOW.toISOString(),
+    latestMarketData: { optionBid: 0.8, optionAsk: 1, optionLast: 0.9, delta: -0.2 },
+  },
+  {
+    id: 'schedule-b', ticker: 'BBB', optionType: 'put', strike: 40, expiration: '2099-01-15', contracts: 1,
+    soldPrice: 1, soldDate: '2098-12-01', status: 'open', notes: '', createdAt: SNAPSHOT_NOW.toISOString(), updatedAt: SNAPSHOT_NOW.toISOString(),
+    latestMarketData: { optionBid: 0.4, optionAsk: 0.5, optionLast: 0.45, delta: -0.4 },
+  },
+  {
+    id: 'schedule-c', ticker: 'CCC', optionType: 'put', strike: 30, expiration: '2099-02-19', contracts: 3,
+    soldPrice: 1.5, soldDate: '2098-12-15', status: 'open', notes: '', createdAt: SNAPSHOT_NOW.toISOString(), updatedAt: SNAPSHOT_NOW.toISOString(),
+    latestMarketData: { optionBid: 0.6, optionAsk: 0.75, optionLast: 0.7, delta: -0.1 },
+  },
+  {
+    id: 'schedule-archived', ticker: 'OLD', optionType: 'put', strike: 20, expiration: '2099-01-15', contracts: 9,
+    soldPrice: 2, soldDate: '2098-11-15', status: 'closed', notes: '', createdAt: SNAPSHOT_NOW.toISOString(), updatedAt: SNAPSHOT_NOW.toISOString(),
+    latestMarketData: { optionBid: 1, optionAsk: 1.2, delta: -0.5 },
+  },
+];
+const scheduleGroupsAsk = buildExpirationScheduleGroups(scheduleTrades, 'ask');
+const januaryScheduleGroup = scheduleGroupsAsk[0];
+const scheduleGroupsBid = buildExpirationScheduleGroups(scheduleTrades, 'bid');
+
 const checks = [
   () => assertClose('breakeven uses premium per share', calculateBreakeven(50, 2), 48),
   () => assertClose('downside cushion is decimal', calculateDownsideCushion(60, 48), 0.2),
@@ -274,6 +301,30 @@ const checks = [
   () => assert('isolated strike is downgraded', isolatedSnapshot.liquidityLabel !== 'very_liquid'),
   () => assert('small absolute spread activates cheap-option guardrail', cheapWideRelativeSnapshot.spreadGuardrail?.includes('Tiny-premium')),
   () => assert('snapshot numeric outputs contain no non-finite values', Object.values(strongSnapshot).every(value => typeof value !== 'number' || Number.isFinite(value))),
+  () => assert('schedule groups only open trades by expiration', scheduleGroupsAsk.length === 2 && januaryScheduleGroup.tradeCount === 2),
+  () => assert('schedule groups are chronological', scheduleGroupsAsk[0].expiration === '2099-01-15' && scheduleGroupsAsk[1].expiration === '2099-02-19'),
+  () => assertClose('expiration contracts sum', januaryScheduleGroup.contractCount, 3),
+  () => assertClose('expiration premium reconciles', januaryScheduleGroup.premiumCollected, 500),
+  () => assertClose('expiration gross risk reconciles', januaryScheduleGroup.grossRisk, 14000),
+  () => assertClose('expiration net capital reconciles', januaryScheduleGroup.netCapitalAtRisk, 13500),
+  () => assertClose('expiration current value reconciles', januaryScheduleGroup.currentValue, -250),
+  () => assertClose('expiration gain loss uses aggregate economics', januaryScheduleGroup.totalGainLoss, 250),
+  () => assertClose('expiration captured percentage is blended', januaryScheduleGroup.totalGainLoss / januaryScheduleGroup.premiumCollected, 0.5),
+  () => assertClose('expiration delta is gross-risk weighted', januaryScheduleGroup.weightedAverageDelta, (-0.2 * 10000 - 0.4 * 4000) / 14000),
+  () => assertClose('expiration original nominal yield is aggregate', januaryScheduleGroup.originalNY, 500 / 13500),
+  () => assertClose('expiration original annualized yield uses dollar-days', januaryScheduleGroup.originalAY, 500 / ((9600 * 61 + 3900 * 45) / 365)),
+  () => assertClose('expiration current nominal yield is aggregate', januaryScheduleGroup.currentNY, 250 / 13500),
+  () => assertClose('expiration current annualized yield uses remaining dollar-days', januaryScheduleGroup.currentAY, 250 / (13500 * januaryScheduleGroup.dte / 365)),
+  () => assertClose('mark basis recomputes expiration current value', scheduleGroupsBid[0].currentValue, -200),
+  () => assertClose('expiration premiums reconcile to all-group total', scheduleGroupsAsk.reduce((total, group) => total + group.premiumCollected, 0), 950),
+  () => assertClose('expiration gross risk reconciles to all-group total', scheduleGroupsAsk.reduce((total, group) => total + group.grossRisk, 0), 23000),
+  () => assertClose('expiration net capital reconciles to all-group total', scheduleGroupsAsk.reduce((total, group) => total + group.netCapitalAtRisk, 0), 22050),
+  () => assertClose('expiration current values reconcile to all-group total', scheduleGroupsAsk.reduce((total, group) => total + group.currentValue, 0), -475),
+  () => assertClose('expiration gain loss reconciles to all-group total', scheduleGroupsAsk.reduce((total, group) => total + group.totalGainLoss, 0), 475),
+  () => {
+    const collapsedState = { '2099-01-15': true, '2099-02-19': false };
+    assert('collapse state is presentation-only', collapsedState['2099-01-15'] && JSON.stringify(buildExpirationScheduleGroups(scheduleTrades, 'ask')) === JSON.stringify(scheduleGroupsAsk));
+  },
 ];
 
 let passed = 0;

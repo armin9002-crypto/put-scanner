@@ -1,5 +1,5 @@
-import { ETF_LIST } from './etfs';
-import { calculateDte, isFiniteNumber } from './optionMetrics';
+import { ETF_LIST } from './etfs.ts';
+import { calculateDte, isFiniteNumber } from './optionMetrics.ts';
 import {
   calculateBreakeven,
   calculateCurrentAnnualizedYield,
@@ -20,7 +20,7 @@ import {
   calculateTotalGainLoss,
   isOpenTrade,
   type MarkBasis,
-} from './portfolioMetrics';
+} from './portfolioMetrics.ts';
 import type { PortfolioTrade } from './portfolioStorage';
 
 export type PortfolioDteBucket =
@@ -61,6 +61,13 @@ export interface PortfolioTotals {
 export interface PortfolioExposureGroup extends PortfolioTotals {
   key: string;
   label: string;
+}
+
+export interface PortfolioExpirationScheduleGroup extends PortfolioExposureGroup {
+  expiration: string;
+  dte: number | null;
+  trades: PortfolioTrade[];
+  contractCount: number;
 }
 
 export interface EtfMetadata {
@@ -232,6 +239,30 @@ export function getTotalUnderlyingEquivalentExposure(trades: PortfolioTrade[]): 
 export function groupByExpiration(trades: PortfolioTrade[], markBasis: MarkBasis): PortfolioExposureGroup[] {
   return buildGroups(openTrades(trades), markBasis, trade => trade.expiration, trade => trade.expiration)
     .sort((a, b) => a.key.localeCompare(b.key));
+}
+
+export function buildExpirationScheduleGroups(
+  trades: PortfolioTrade[],
+  markBasis: MarkBasis
+): PortfolioExpirationScheduleGroup[] {
+  const open = openTrades(trades);
+  const tradesByExpiration = new Map<string, PortfolioTrade[]>();
+  open.forEach(trade => {
+    const groupTrades = tradesByExpiration.get(trade.expiration) ?? [];
+    groupTrades.push(trade);
+    tradesByExpiration.set(trade.expiration, groupTrades);
+  });
+
+  return groupByExpiration(open, markBasis).map(group => {
+    const groupTrades = tradesByExpiration.get(group.key) ?? [];
+    return {
+      ...group,
+      expiration: group.key,
+      dte: groupTrades.length > 0 ? calculateRemainingDte(groupTrades[0]) : null,
+      trades: groupTrades,
+      contractCount: groupTrades.reduce((total, trade) => total + trade.contracts, 0),
+    };
+  });
 }
 
 export function groupByDteBucket(trades: PortfolioTrade[], markBasis: MarkBasis): PortfolioExposureGroup[] {

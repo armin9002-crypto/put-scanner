@@ -1,5 +1,5 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { AlertTriangle, Briefcase, Edit2, FileImage, Loader2, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { AlertTriangle, Briefcase, ChevronDown, ChevronRight, Edit2, FileImage, Loader2, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { calculatePutDelta, fetchBatchPrices, fetchOptions } from '../lib/api';
 import { formatCurrency, formatDate, formatOptionPrice, formatPercent, formatPercentPoints, normalizeTimestampMs } from '../lib/format';
@@ -14,6 +14,7 @@ import {
   getTradeDistanceToBreakeven,
   getTradeDistanceToStrike,
   getTradeGrossRisk,
+  buildExpirationScheduleGroups,
   groupByExpiration,
   groupByTicker,
   type PortfolioExposureGroup,
@@ -56,6 +57,7 @@ const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer')
 const PortfolioScreenshotImportModal = lazy(() => import('../components/PortfolioScreenshotImportModal'));
 const DASH = '\u2014';
 const PORTFOLIO_MARK_BASIS_KEY = 'put_scanner_portfolio_mark_basis';
+const PORTFOLIO_EXPIRY_GROUPS_KEY = 'put_scanner_portfolio_expiry_groups:v1';
 const MARK_BASIS_OPTIONS: MarkBasis[] = ['bid', 'ask', 'last'];
 
 interface TradeModalProps {
@@ -416,6 +418,24 @@ function SummaryCard({ label, value, color }: { label: string; value: string; co
       <div className="text-xs xl:text-sm font-mono font-semibold tabular-nums truncate" title={value} style={{ color: color ?? 'var(--text)' }}>{value}</div>
     </div>
   );
+}
+
+function getInitialCollapsedExpiryGroups(): Record<string, boolean> {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(PORTFOLIO_EXPIRY_GROUPS_KEY) ?? '{}');
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, boolean] => typeof entry[1] === 'boolean'));
+  } catch {
+    return {};
+  }
+}
+
+function persistCollapsedExpiryGroups(value: Record<string, boolean>) {
+  try {
+    localStorage.setItem(PORTFOLIO_EXPIRY_GROUPS_KEY, JSON.stringify(value));
+  } catch {
+    // Preference persistence is best-effort only.
+  }
 }
 
 function MarkBasisToggle({ markBasis, onChange }: { markBasis: MarkBasis; onChange: (basis: MarkBasis) => void }) {
@@ -998,6 +1018,7 @@ export default function PortfolioPage() {
   const [showNotesErrors, setShowNotesErrors] = useState(false);
   const [sortField, setSortField] = useState<SortField>('expiration');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const [collapsedExpiryGroups, setCollapsedExpiryGroups] = useState<Record<string, boolean>>(getInitialCollapsedExpiryGroups);
   const [resolvingArchiveIds, setResolvingArchiveIds] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
@@ -1028,9 +1049,13 @@ export default function PortfolioPage() {
     persistMarkBasis(markBasis);
   }, [markBasis]);
 
-  const sortedTrades = useMemo(() => {
-    const next = [...openTrades];
-    next.sort((a, b) => {
+  useEffect(() => {
+    persistCollapsedExpiryGroups(collapsedExpiryGroups);
+  }, [collapsedExpiryGroups]);
+
+  const expirationGroups = useMemo(() => {
+    const groups = buildExpirationScheduleGroups(openTrades, markBasis);
+    const compareTrades = (a: PortfolioTrade, b: PortfolioTrade) => {
       const dir = sortDir === 'asc' ? 1 : -1;
       const value = (trade: PortfolioTrade): number | string => {
         switch (sortField) {
@@ -1050,9 +1075,28 @@ export default function PortfolioPage() {
       const bVal = value(b);
       if (typeof aVal === 'string' && typeof bVal === 'string') return aVal.localeCompare(bVal) * dir;
       return ((aVal as number) - (bVal as number)) * dir;
-    });
-    return next;
+    };
+    const groupDir = sortField === 'expiration' && sortDir === 'desc' ? -1 : 1;
+    return groups
+      .sort((a, b) => a.expiration.localeCompare(b.expiration) * groupDir)
+      .map(group => ({
+        ...group,
+        trades: sortField === 'expiration' ? [...group.trades] : [...group.trades].sort(compareTrades),
+      }));
   }, [openTrades, sortField, sortDir, markBasis]);
+
+  const allExpiryGroupsCollapsed = expirationGroups.length > 0
+    && expirationGroups.every(group => collapsedExpiryGroups[group.expiration] === true);
+
+  const toggleExpiryGroup = useCallback((expiration: string) => {
+    setCollapsedExpiryGroups(current => ({ ...current, [expiration]: !current[expiration] }));
+  }, []);
+
+  const toggleAllExpiryGroups = useCallback(() => {
+    setCollapsedExpiryGroups(() => Object.fromEntries(
+      expirationGroups.map(group => [group.expiration, !allExpiryGroupsCollapsed])
+    ));
+  }, [expirationGroups, allExpiryGroupsCollapsed]);
 
   const persistTrades = useCallback((next: PortfolioTrade[]) => {
     savePortfolioTrades(next);
@@ -1377,10 +1421,37 @@ export default function PortfolioPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <DisplayToggle checked={showNominalYield} onChange={setShowNominalYield} label="Show Nominal Yield" />
                 <DisplayToggle checked={showNotesErrors} onChange={setShowNotesErrors} label="Show Notes / Errors" />
+                {expirationGroups.length > 0 && <button onClick={toggleAllExpiryGroups} className="rounded-lg px-2 py-1.5 text-[11px] whitespace-nowrap" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+                  {allExpiryGroupsCollapsed ? 'Expand All' : 'Collapse All'}
+                </button>}
               </div>
             </div>
             <div className="md:hidden space-y-2 mb-4">
-              {sortedTrades.map(trade => (
+              {expirationGroups.map(group => {
+                const collapsed = collapsedExpiryGroups[group.expiration] === true;
+                const captured = group.premiumCollected > 0 && group.totalGainLoss != null ? group.totalGainLoss / group.premiumCollected : null;
+                return (
+                  <section key={group.expiration} className="overflow-hidden rounded-lg" style={{ border: '1px solid var(--border)' }}>
+                    <button
+                      onClick={() => toggleExpiryGroup(group.expiration)}
+                      aria-expanded={!collapsed}
+                      className="flex w-full items-start justify-between gap-2 px-2.5 py-2 text-left"
+                      style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)' }}
+                    >
+                      <span className="flex min-w-0 items-start gap-1.5">
+                        {collapsed ? <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0" /> : <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
+                        <span>
+                          <span className="block text-xs font-semibold uppercase tracking-wide">{formatFullDate(group.expiration)}</span>
+                          <span className="block text-[10px]" style={{ color: 'var(--text-muted)' }}>{formatDteValue(group.dte)} · {group.tradeCount} {group.tradeCount === 1 ? 'position' : 'positions'} · {group.contractCount} {group.contractCount === 1 ? 'contract' : 'contracts'}</span>
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-right font-mono text-[10px] tabular-nums">
+                        <span className="block">Premium {formatCurrency(group.premiumCollected, 0)} · Risk {formatCurrency(group.grossRisk, 0)}</span>
+                        <span className="block" style={{ color: pnlColor(group.totalGainLoss) }}>P&amp;L {formatCurrency(group.totalGainLoss, 0)} · {formatPctValue(captured)}</span>
+                      </span>
+                    </button>
+                    {!collapsed && <div className="space-y-2 p-2" style={{ backgroundColor: 'var(--bg)' }}>
+                    {group.trades.map(trade => (
                 <div key={trade.id} className="rounded-lg p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
                   {(() => {
                     const health = getPositionHealth(trade);
@@ -1422,7 +1493,11 @@ export default function PortfolioPage() {
                     <button onClick={() => setEditingTrade(trade)} className="px-3 py-2 rounded-lg text-xs min-h-[40px]" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Edit</button>
                   </div>
                 </div>
-              ))}
+                    ))}
+                    </div>}
+                  </section>
+                );
+              })}
             </div>
 
             <div className="hidden md:block rounded-lg overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
@@ -1459,7 +1534,44 @@ export default function PortfolioPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedTrades.map((trade, index) => {
+                    {expirationGroups.map(group => {
+                      const collapsed = collapsedExpiryGroups[group.expiration] === true;
+                      const captured = group.premiumCollected > 0 && group.totalGainLoss != null ? group.totalGainLoss / group.premiumCollected : null;
+                      return <Fragment key={group.expiration}>
+                        <tr style={{ backgroundColor: 'var(--surface-alt)', borderTop: '1px solid var(--accent-border)', borderBottom: '1px solid var(--border)', color: 'var(--text)' }}>
+                          <td className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
+                            <button onClick={() => toggleExpiryGroup(group.expiration)} aria-expanded={!collapsed} className="inline-flex items-center gap-1 hover:opacity-80">
+                              {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                              <span className="uppercase tracking-wide">{formatFullDate(group.expiration)}</span>
+                            </button>
+                          </td>
+                          <td className="px-2 py-1.5 text-right font-mono tabular-nums">{DASH}</td>
+                          <td className="px-2 py-1.5 text-right font-mono tabular-nums whitespace-nowrap">{formatDteValue(group.dte)}</td>
+                          <td className="px-2 py-1.5 text-left whitespace-nowrap">{group.tradeCount} {group.tradeCount === 1 ? 'position' : 'positions'}</td>
+                          <td className="px-2 py-1.5 text-right">{DASH}</td>
+                          <td className="px-2 py-1.5 text-right font-mono tabular-nums font-semibold">{group.contractCount}</td>
+                          <td className="px-2 py-1.5 text-right">{DASH}</td>
+                          <td className="px-2 py-1.5 text-right font-mono tabular-nums font-semibold" style={{ color: 'var(--green)' }}>{formatCurrency(group.premiumCollected, 0)}</td>
+                          <td className="px-2 py-1.5 text-right font-mono tabular-nums font-semibold">{formatCurrency(group.grossRisk, 0)}</td>
+                          <td className="px-2 py-1.5 text-right font-mono tabular-nums font-semibold">{formatCurrency(group.netCapitalAtRisk, 0)}</td>
+                          <td className="px-2 py-1.5 text-right">{DASH}</td>
+                          <td className="px-2 py-1.5 text-right font-mono tabular-nums font-semibold">{formatCurrency(group.currentValue, 0)}</td>
+                          <td className="px-2 py-1.5 text-right font-mono tabular-nums font-semibold" style={{ color: pnlColor(group.totalGainLoss) }}>{formatCurrency(group.totalGainLoss, 0)}</td>
+                          <td className="px-2 py-1.5 text-right font-mono tabular-nums font-semibold" style={{ color: pnlColor(captured) }}>{formatPctValue(captured)}</td>
+                          <td className="px-2 py-1.5 text-right font-mono tabular-nums font-semibold" style={{ color: pnlColor(group.weightedAverageDelta) }}>{formatDelta(group.weightedAverageDelta)}</td>
+                          <td className="px-2 py-1.5 text-right">{DASH}</td>
+                          <td className="px-2 py-1.5 text-right">{DASH}</td>
+                          <td className="px-2 py-1.5 text-right">{DASH}</td>
+                          <td className="px-2 py-1.5 text-right">{DASH}</td>
+                          <td className="px-2 py-1.5 text-right">{DASH}</td>
+                          {showNominalYield && <td className="px-2 py-1.5 text-right font-mono tabular-nums font-semibold">{formatPctValue(group.originalNY)}</td>}
+                          <td className="px-2 py-1.5 text-right font-mono tabular-nums font-semibold">{formatPctValue(group.originalAY)}</td>
+                          {showNominalYield && <td className="px-2 py-1.5 text-right font-mono tabular-nums font-semibold">{formatPctValue(group.currentNY)}</td>}
+                          <td className="px-2 py-1.5 text-right font-mono tabular-nums font-semibold">{formatPctValue(group.currentAY)}</td>
+                          {showNotesErrors && <td className="px-2 py-1.5 text-left text-[10px]" style={{ color: 'var(--text-dim)' }}>Expiration subtotal</td>}
+                          <td className="px-2 py-1.5 text-left">{DASH}</td>
+                        </tr>
+                        {!collapsed && group.trades.map((trade, index) => {
                       const totalGainLoss = calculateTotalGainLoss(trade, markBasis);
                       const currentValue = calculateCurrentPositionValue(trade, markBasis);
                       const currentMark = calculateCurrentOptionMark(trade, markBasis);
@@ -1529,6 +1641,8 @@ export default function PortfolioPage() {
                           </td>
                         </tr>
                       );
+                        })}
+                      </Fragment>;
                     })}
                     <tr style={{ backgroundColor: 'var(--surface-alt)', borderTop: '2px solid var(--accent-border)', color: 'var(--text)' }}>
                       <td className="px-2 py-2 text-left font-bold uppercase tracking-wider whitespace-nowrap">Totals</td>

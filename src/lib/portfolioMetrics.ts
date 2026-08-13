@@ -1,4 +1,4 @@
-import { calculateDte, isFiniteNumber } from './optionMetrics';
+import { calculateDte, isFiniteNumber } from './optionMetrics.ts';
 import type { PortfolioTrade } from './portfolioStorage';
 
 export type MarkBasis = 'ask' | 'mid' | 'bid' | 'last';
