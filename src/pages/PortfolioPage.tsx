@@ -1,5 +1,5 @@
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { AlertTriangle, Briefcase, ChevronDown, ChevronRight, Edit2, FileImage, Loader2, MoreHorizontal, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { AlertTriangle, Briefcase, ChevronDown, ChevronRight, Download, Edit2, FileImage, Loader2, MoreHorizontal, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { calculatePutDelta, fetchBatchPricesResult, fetchOptions } from '../lib/api';
 import { formatCurrency, formatDate, formatOptionPrice, formatPercent, formatPercentPoints, normalizeTimestampMs } from '../lib/format';
@@ -74,11 +74,12 @@ import {
   type PortfolioScheduleSortField,
 } from '../lib/portfolioScheduleSorting';
 import { OPTION_QUOTE_TABLE_DISPLAY_ORDER, orderedOptionQuoteEntries } from '../lib/optionQuoteDisplay';
+import { persistPortfolioMarkBasis, readPortfolioMarkBasis } from '../lib/portfolioMarkPreference';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 const PortfolioScreenshotImportModal = lazy(() => import('../components/PortfolioScreenshotImportModal'));
+const DataBackupModal = lazy(() => import('../components/DataBackupModal'));
 const DASH = '\u2014';
-const PORTFOLIO_MARK_BASIS_KEY = 'put_scanner_portfolio_mark_basis';
 const MARK_BASIS_OPTIONS: MarkBasis[] = [...OPTION_QUOTE_TABLE_DISPLAY_ORDER];
 
 interface TradeModalProps {
@@ -450,23 +451,6 @@ function getPositionHealth(trade: PortfolioTrade): PositionHealth {
 
 function expiryLabel(iso: string): string {
   return formatDate(`${iso}T00:00:00`);
-}
-
-function getInitialMarkBasis(): MarkBasis {
-  try {
-    const saved = localStorage.getItem(PORTFOLIO_MARK_BASIS_KEY);
-    return MARK_BASIS_OPTIONS.includes(saved as MarkBasis) ? saved as MarkBasis : 'ask';
-  } catch {
-    return 'ask';
-  }
-}
-
-function persistMarkBasis(value: MarkBasis) {
-  try {
-    localStorage.setItem(PORTFOLIO_MARK_BASIS_KEY, value);
-  } catch {
-    // Preference persistence is best-effort only.
-  }
 }
 
 function weightedAverageValue(items: Array<{ value: number | null | undefined; weight: number | null | undefined }>): number | null {
@@ -1088,11 +1072,12 @@ export default function PortfolioPage() {
   const [editingTrade, setEditingTrade] = useState<PortfolioTrade | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showDataBackup, setShowDataBackup] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshWarning, setRefreshWarning] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [drawerSelection, setDrawerSelection] = useState<DrawerSelection | null>(null);
-  const [markBasis, setMarkBasis] = useState<MarkBasis>(getInitialMarkBasis);
+  const [markBasis, setMarkBasis] = useState<MarkBasis>(readPortfolioMarkBasis);
   const [showNominalYield, setShowNominalYield] = useState(false);
   const [showNotesErrors, setShowNotesErrors] = useState(false);
   const [showOpenInterestVolume, setShowOpenInterestVolume] = useState(false);
@@ -1138,7 +1123,7 @@ export default function PortfolioPage() {
   const scheduleTotals = useMemo(() => buildScheduleTotals(openTrades, markBasis), [openTrades, markBasis]);
 
   useEffect(() => {
-    persistMarkBasis(markBasis);
+    persistPortfolioMarkBasis(markBasis);
   }, [markBasis]);
 
   useEffect(() => {
@@ -1254,6 +1239,14 @@ export default function PortfolioPage() {
     setTrades(archived.trades);
     setShowAddModal(false);
     setEditingTrade(null);
+  }, []);
+
+  const handleBackupImported = useCallback(() => {
+    setTrades(loadPortfolioTrades());
+    setMarkBasis(readPortfolioMarkBasis());
+    setGroupMode(readPortfolioGroupMode());
+    setCollapsedExpiryGroups(readCollapsedExpirationGroups());
+    setCollapsedUnderlyingGroups(readCollapsedUnderlyingGroups());
   }, []);
 
   const handleDeleteTrade = useCallback((id: string) => {
@@ -1495,7 +1488,7 @@ export default function PortfolioPage() {
   if (isPhone) {
     return (
       <div className="mobile-route-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
-        {trades.length === 0 ? <div className="px-6 py-16 text-center"><Briefcase className="mx-auto mb-3 h-7 w-7" style={{ color: 'var(--text-dim)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No open positions</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Add a trade or import a brokerage screenshot.</p><div className="mx-auto mt-4 grid max-w-xs grid-cols-2 gap-2"><button type="button" onClick={() => setShowAddModal(true)} className="mobile-sheet-action primary"><Plus className="h-4 w-4" /> Add Trade</button><button type="button" onClick={() => setShowImportModal(true)} className="mobile-sheet-action secondary"><FileImage className="h-4 w-4" /> Import</button></div></div> : (
+        {trades.length === 0 ? <div className="px-6 py-16 text-center"><Briefcase className="mx-auto mb-3 h-7 w-7" style={{ color: 'var(--text-dim)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No open positions</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Add a trade or import a brokerage screenshot.</p><div className="mx-auto mt-4 grid max-w-xs grid-cols-2 gap-2"><button type="button" onClick={() => setShowAddModal(true)} className="mobile-sheet-action primary"><Plus className="h-4 w-4" /> Add Trade</button><button type="button" onClick={() => setShowImportModal(true)} className="mobile-sheet-action secondary"><FileImage className="h-4 w-4" /> Import</button></div><button type="button" onClick={() => setShowDataBackup(true)} className="pressable mt-3 inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-xs font-semibold" style={{ color: 'var(--text-muted)' }}><Download className="h-4 w-4" /> Data Backup</button></div> : (
           <>
             <section className="mobile-portfolio-hero px-4 pb-3 pt-3" style={{ backgroundColor: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
               <div className="flex items-start justify-between gap-3">
@@ -1538,10 +1531,11 @@ export default function PortfolioPage() {
           </>
         )}
 
-        {mobileActionsOpen && <MobileBottomSheet title="Portfolio actions" onClose={() => setMobileActionsOpen(false)}><div className="space-y-2"><button type="button" onClick={() => { setMobileActionsOpen(false); setShowAddModal(true); }} className="mobile-sheet-action primary w-full"><Plus className="h-4 w-4" /> Add Trade</button><button type="button" onClick={() => { setMobileActionsOpen(false); setShowImportModal(true); }} className="mobile-sheet-action secondary w-full"><FileImage className="h-4 w-4" /> Import Screenshot</button><button type="button" onClick={() => { setMobileActionsOpen(false); void handleRefreshOpenTrades(); }} disabled={refreshing || openTrades.length === 0} className="mobile-sheet-action secondary w-full disabled:opacity-40"><RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} /> Refresh Open Trades</button></div></MobileBottomSheet>}
+        {mobileActionsOpen && <MobileBottomSheet title="Portfolio actions" onClose={() => setMobileActionsOpen(false)}><div className="space-y-2"><button type="button" onClick={() => { setMobileActionsOpen(false); setShowAddModal(true); }} className="mobile-sheet-action primary w-full"><Plus className="h-4 w-4" /> Add Trade</button><button type="button" onClick={() => { setMobileActionsOpen(false); setShowImportModal(true); }} className="mobile-sheet-action secondary w-full"><FileImage className="h-4 w-4" /> Import Screenshot</button><button type="button" onClick={() => { setMobileActionsOpen(false); setShowDataBackup(true); }} className="mobile-sheet-action secondary w-full"><Download className="h-4 w-4" /> Data Backup</button><button type="button" onClick={() => { setMobileActionsOpen(false); void handleRefreshOpenTrades(); }} disabled={refreshing || openTrades.length === 0} className="mobile-sheet-action secondary w-full disabled:opacity-40"><RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} /> Refresh Open Trades</button></div></MobileBottomSheet>}
         {(showAddModal || editingTrade) && <TradeModal trade={editingTrade} onClose={() => { setShowAddModal(false); setEditingTrade(null); }} onSave={handleSaveTrade} onDelete={handleDeleteTrade} />}
         {drawerSelection && <ErrorBoundary title="Option sheet unavailable" message="Close it and try again."><Suspense fallback={null}><OptionDetailDrawer option={drawerSelection.option} ticker={drawerSelection.ticker} expirationLabel={drawerSelection.expirationLabel} dte={drawerSelection.dte} underlyingPrice={drawerSelection.underlyingPrice} onClose={() => setDrawerSelection(null)} /></Suspense></ErrorBoundary>}
         {showImportModal && <Suspense fallback={null}><PortfolioScreenshotImportModal trades={trades} onClose={() => setShowImportModal(false)} onApply={async nextTrades => { const archived = await archiveExpiredOpenTrades(nextTrades); persistTrades(archived.trades); setShowImportModal(false); }} /></Suspense>}
+        {showDataBackup && <Suspense fallback={null}><DataBackupModal onClose={() => setShowDataBackup(false)} onImported={handleBackupImported} /></Suspense>}
       </div>
     );
   }
@@ -1561,6 +1555,9 @@ export default function PortfolioPage() {
             </button>
             <button onClick={() => setShowImportModal(true)} className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium min-h-[44px] sm:min-h-0 whitespace-nowrap" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
               <FileImage className="w-3.5 h-3.5" /> Import Screenshot
+            </button>
+            <button onClick={() => setShowDataBackup(true)} className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium min-h-[44px] sm:min-h-0 whitespace-nowrap" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
+              <Download className="w-3.5 h-3.5" /> Data Backup
             </button>
             <button onClick={handleRefreshOpenTrades} disabled={refreshing || openTrades.length === 0} className="portfolio-refresh-action inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px] sm:min-h-0 whitespace-nowrap" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
               {refreshing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
@@ -2009,6 +2006,11 @@ export default function PortfolioPage() {
               setShowImportModal(false);
             }}
           />
+        </Suspense>
+      )}
+      {showDataBackup && (
+        <Suspense fallback={<div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.72)' }}><div className="rounded-lg border px-4 py-3 text-sm" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', color: 'var(--text)' }}>Loading backup tools...</div></div>}>
+          <DataBackupModal onClose={() => setShowDataBackup(false)} onImported={handleBackupImported} />
         </Suspense>
       )}
     </div>

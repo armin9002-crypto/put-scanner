@@ -1,11 +1,14 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import {
+  LEGACY_THEME_STORAGE_KEY,
+  normalizeSavedTheme,
+  THEME_MIGRATION_KEY,
+  THEME_MIGRATION_VERSION,
+  THEME_STORAGE_KEY,
+  type Theme,
+} from './themePreference';
 
-export type Theme = 'dark' | 'dark-blue' | 'light' | 'sepia';
-
-const THEME_STORAGE_KEY = 'put_scanner_theme';
-const LEGACY_THEME_STORAGE_KEY = 'theme';
-const THEME_MIGRATION_VERSION = '2';
-const THEME_MIGRATION_KEY = 'theme_migration_version';
+export type { Theme } from './themePreference';
 
 interface ThemeContextValue {
   theme: Theme;
@@ -18,14 +21,6 @@ const ThemeContext = createContext<ThemeContextValue>({
   setTheme: () => {},
   cycleTheme: () => {},
 });
-
-function normalizeSavedTheme(value: string | null, migrated: boolean): Theme | null {
-  if (value === 'grey') return 'dark';
-  if (value === 'darkBlue' || value === 'dark-blue') return 'dark-blue';
-  if (value === 'dark') return migrated ? 'dark' : 'dark-blue';
-  if (value === 'light' || value === 'sepia') return value;
-  return null;
-}
 
 function readInitialTheme(): Theme {
   try {

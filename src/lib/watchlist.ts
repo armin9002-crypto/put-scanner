@@ -35,8 +35,8 @@ export interface WatchlistItem {
   snapshot?: WatchlistSnapshot;
 }
 
-const STORAGE_KEY = 'put_scanner_watchlist';
-const LEGACY_STORAGE_KEY = 'watchlist';
+export const WATCHLIST_STORAGE_KEY = 'put_scanner_watchlist';
+export const LEGACY_WATCHLIST_STORAGE_KEY = 'watchlist';
 
 function getStorage(): Storage | null {
   try {
@@ -233,7 +233,7 @@ export function dedupeWatchlistItems(items: WatchlistItem[]): WatchlistItem[] {
 }
 
 function readRawItems(storage: Storage): unknown[] {
-  const raw = storage.getItem(STORAGE_KEY) ?? storage.getItem(LEGACY_STORAGE_KEY);
+  const raw = storage.getItem(WATCHLIST_STORAGE_KEY) ?? storage.getItem(LEGACY_WATCHLIST_STORAGE_KEY);
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
@@ -248,8 +248,8 @@ export function saveWatchlist(items: WatchlistItem[]): void {
   if (!storage) return;
   try {
     const normalized = dedupeWatchlistItems(items.map(normalizeWatchlistItem).filter(Boolean) as WatchlistItem[]);
-    storage.setItem(STORAGE_KEY, JSON.stringify(normalized));
-    storage.removeItem(LEGACY_STORAGE_KEY);
+    storage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify(normalized));
+    storage.removeItem(LEGACY_WATCHLIST_STORAGE_KEY);
   } catch {
     // localStorage may be unavailable or full.
   }
@@ -260,8 +260,8 @@ export function getWatchlist(): WatchlistItem[] {
   if (!storage) return [];
   const normalized = dedupeWatchlistItems(readRawItems(storage).map(normalizeWatchlistItem).filter(Boolean) as WatchlistItem[]);
   try {
-    storage.setItem(STORAGE_KEY, JSON.stringify(normalized));
-    storage.removeItem(LEGACY_STORAGE_KEY);
+    storage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify(normalized));
+    storage.removeItem(LEGACY_WATCHLIST_STORAGE_KEY);
   } catch {
     // Best-effort migration only.
   }
