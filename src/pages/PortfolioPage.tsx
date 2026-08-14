@@ -65,6 +65,14 @@ import MobileBottomSheet from '../components/mobile/MobileBottomSheet';
 import MobileSegmentedControl from '../components/mobile/MobileSegmentedControl';
 import MobilePositionRow from '../components/mobile/MobilePositionRow';
 import MobileExpirationGroup from '../components/mobile/MobileExpirationGroup';
+import {
+  getPortfolioPositionHealthLevel,
+  sortExpirationPortfolioScheduleGroups,
+  sortFlatPortfolioSchedule,
+  sortUnderlyingPortfolioScheduleGroups,
+  type PortfolioScheduleSortDirection,
+  type PortfolioScheduleSortField,
+} from '../lib/portfolioScheduleSorting';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 const PortfolioScreenshotImportModal = lazy(() => import('../components/PortfolioScreenshotImportModal'));
@@ -96,32 +104,35 @@ interface CloseCandidate {
   reasons: string[];
 }
 
-type SortField = 'ticker' | 'expiration' | 'dte' | 'strike' | 'contracts' | 'premium' | 'risk' | 'pnl' | 'delta' | 'currentAy';
-type SortDir = 'asc' | 'desc';
 type PortfolioScheduleGroup = PortfolioExpirationScheduleGroup | PortfolioUnderlyingScheduleGroup;
 
-function compareScheduleTrades(a: PortfolioTrade, b: PortfolioTrade, field: SortField, direction: SortDir, markBasis: MarkBasis): number {
-  const dir = direction === 'asc' ? 1 : -1;
-  const value = (trade: PortfolioTrade): number | string => {
-    switch (field) {
-      case 'ticker': return trade.ticker;
-      case 'expiration': return trade.expiration;
-      case 'dte': return calculateRemainingDte(trade) ?? 999999;
-      case 'strike': return trade.strike;
-      case 'contracts': return trade.contracts;
-      case 'premium': return calculatePremiumCollected(trade) ?? -1;
-      case 'risk': return calculateEquityAtRisk(trade) ?? -1;
-      case 'pnl': return calculateTotalGainLoss(trade, markBasis) ?? -999999999;
-      case 'delta': return trade.latestMarketData?.delta ?? 999999;
-      case 'currentAy': return calculateCurrentAnnualizedYield(trade, markBasis) ?? -999999999;
-      default: return trade.expiration;
-    }
-  };
-  const aValue = value(a);
-  const bValue = value(b);
-  if (typeof aValue === 'string' && typeof bValue === 'string') return aValue.localeCompare(bValue) * dir;
-  return ((aValue as number) - (bValue as number)) * dir;
-}
+const PORTFOLIO_SCHEDULE_SORT_OPTIONS: Array<{ value: PortfolioScheduleSortField; label: string }> = [
+  { value: 'ticker', label: 'Ticker' },
+  { value: 'expiration', label: 'Expiry' },
+  { value: 'dte', label: 'DTE' },
+  { value: 'health', label: 'Health' },
+  { value: 'strike', label: 'Strike' },
+  { value: 'contracts', label: 'Contracts' },
+  { value: 'soldPrice', label: 'Sold Price' },
+  { value: 'premium', label: 'Premium Collected' },
+  { value: 'grossRisk', label: 'Gross Risk' },
+  { value: 'netCapitalRisk', label: 'Net Capital at Risk' },
+  { value: 'currentMark', label: 'Current Mark' },
+  { value: 'currentValue', label: 'Current Value' },
+  { value: 'pnl', label: 'Total Gain/Loss' },
+  { value: 'percentCaptured', label: '% Captured' },
+  { value: 'delta', label: 'Delta' },
+  { value: 'breakeven', label: 'Breakeven' },
+  { value: 'underlying', label: 'Underlying' },
+  { value: 'distanceToStrike', label: 'Distance to Strike' },
+  { value: 'iv', label: 'IV' },
+  { value: 'entryVix', label: 'VIX @ Entry' },
+  { value: 'openInterest', label: 'Open Interest' },
+  { value: 'originalNy', label: 'Original NY' },
+  { value: 'originalAy', label: 'Original AY' },
+  { value: 'currentNy', label: 'Current NY' },
+  { value: 'currentAy', label: 'Current AY' },
+];
 
 function todayIso(): string {
   return new Date().toISOString().split('T')[0];
@@ -362,7 +373,6 @@ interface PositionHealth {
 
 function getPositionHealth(trade: PortfolioTrade): PositionHealth {
   const underlying = trade.latestMarketData?.underlyingPrice ?? trade.entrySnapshot?.underlyingPrice ?? null;
-  const strike = trade.strike;
   const breakeven = calculateBreakeven(trade);
   const distanceToStrike = calculateDistanceToStrike(trade);
   const delta = trade.latestMarketData?.delta ?? null;
@@ -378,9 +388,10 @@ function getPositionHealth(trade: PortfolioTrade): PositionHealth {
     isFiniteNumber(delta) ? `delta ${formatDelta(delta)}` : null,
     isFiniteNumber(dte) ? formatDteValue(dte) : null,
   ].filter(Boolean).join(', ');
+  const level = getPortfolioPositionHealthLevel(trade);
 
   // Compact health tiers prioritize capital danger first, then distance, delta, and near-expiry pressure.
-  if (!isFiniteNumber(underlying) || !isFiniteNumber(strike) || !isFiniteNumber(breakeven)) {
+  if (level === 'Unknown') {
     return {
       label: 'Unknown',
       color: 'var(--text-dim)',
@@ -389,7 +400,7 @@ function getPositionHealth(trade: PortfolioTrade): PositionHealth {
       title: `Unknown: missing underlying or breakeven data${context ? ` (${context})` : ''}`,
     };
   }
-  if (underlying <= breakeven || (underlying < strike && isFiniteNumber(absDelta) && absDelta >= 0.35)) {
+  if (level === 'Threatened') {
     return {
       label: 'Threatened',
       color: 'var(--red)',
@@ -398,7 +409,7 @@ function getPositionHealth(trade: PortfolioTrade): PositionHealth {
       title: `Threatened: underlying ${formatCurrency(underlying)} vs breakeven ${formatCurrency(breakeven)}${triggerContext ? ` (${triggerContext})` : ''}`,
     };
   }
-  if ((isFiniteNumber(distanceToStrike) && distanceToStrike <= 0.10) || (isFiniteNumber(absDelta) && absDelta >= 0.30)) {
+  if (level === 'Risky') {
     return {
       label: 'Risky',
       color: 'var(--orange)',
@@ -407,10 +418,7 @@ function getPositionHealth(trade: PortfolioTrade): PositionHealth {
       title: `Risky: close to strike or high delta${triggerContext ? ` (${triggerContext})` : ''}`,
     };
   }
-  if (
-    (isFiniteNumber(distanceToStrike) && distanceToStrike <= 0.20) ||
-    (isFiniteNumber(absDelta) && absDelta > 0.20)
-  ) {
+  if (level === 'Elevated') {
     return {
       label: 'Elevated',
       color: 'var(--orange)',
@@ -419,11 +427,7 @@ function getPositionHealth(trade: PortfolioTrade): PositionHealth {
       title: `Elevated: closer to strike or delta rising${triggerContext ? ` (${triggerContext})` : ''}`,
     };
   }
-  if (
-    (isFiniteNumber(distanceToStrike) && distanceToStrike <= 0.25) ||
-    (isFiniteNumber(absDelta) && absDelta > 0.15) ||
-    (isFiniteNumber(dte) && dte <= 14 && isFiniteNumber(distanceToStrike) && distanceToStrike <= 0.25)
-  ) {
+  if (level === 'Monitor') {
     return {
       label: 'Monitor',
       color: 'var(--yellow)',
@@ -1089,8 +1093,8 @@ export default function PortfolioPage() {
   const [showNominalYield, setShowNominalYield] = useState(false);
   const [showNotesErrors, setShowNotesErrors] = useState(false);
   const [showOpenInterestVolume, setShowOpenInterestVolume] = useState(false);
-  const [sortField, setSortField] = useState<SortField>('expiration');
-  const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const [sortField, setSortField] = useState<PortfolioScheduleSortField>('expiration');
+  const [sortDir, setSortDir] = useState<PortfolioScheduleSortDirection>('asc');
   const [groupMode, setGroupMode] = useState<PortfolioGroupMode>(readPortfolioGroupMode);
   const [collapsedExpiryGroups, setCollapsedExpiryGroups] = useState<Record<string, boolean>>(readCollapsedExpirationGroups);
   const [collapsedUnderlyingGroups, setCollapsedUnderlyingGroups] = useState<Record<string, boolean>>(readCollapsedUnderlyingGroups);
@@ -1152,22 +1156,16 @@ export default function PortfolioPage() {
 
   const expirationGroups = useMemo(() => {
     const groups = buildExpirationScheduleGroups(openTrades, markBasis);
-    const groupDir = sortField === 'expiration' && sortDir === 'desc' ? -1 : 1;
-    return groups
-      .sort((a, b) => a.expiration.localeCompare(b.expiration) * groupDir)
-      .map(group => ({
-        ...group,
-        trades: sortField === 'expiration' ? [...group.trades] : [...group.trades].sort((a, b) => compareScheduleTrades(a, b, sortField, sortDir, markBasis)),
-      }));
+    return sortExpirationPortfolioScheduleGroups(groups, sortField, sortDir, markBasis);
   }, [openTrades, sortField, sortDir, markBasis]);
 
-  const underlyingGroups = useMemo(() => buildUnderlyingScheduleGroups(openTrades, markBasis).map(group => ({
-    ...group,
-    trades: [...group.trades].sort((a, b) => compareScheduleTrades(a, b, sortField, sortDir, markBasis)),
-  })), [openTrades, sortField, sortDir, markBasis]);
+  const underlyingGroups = useMemo(() => sortUnderlyingPortfolioScheduleGroups(
+    buildUnderlyingScheduleGroups(openTrades, markBasis), sortField, sortDir, markBasis
+  ), [openTrades, sortField, sortDir, markBasis]);
 
-  const flatScheduleTrades = useMemo(() => buildFlatScheduleTrades(openTrades)
-    .sort((a, b) => compareScheduleTrades(a, b, sortField, sortDir, markBasis)), [openTrades, sortField, sortDir, markBasis]);
+  const flatScheduleTrades = useMemo(() => sortFlatPortfolioSchedule(
+    buildFlatScheduleTrades(openTrades), sortField, sortDir, markBasis
+  ), [openTrades, sortField, sortDir, markBasis]);
   const scheduleGroups = useMemo<PortfolioScheduleGroup[]>(() => (
     groupMode === 'expiration' ? expirationGroups : groupMode === 'underlying' ? underlyingGroups : []
   ), [expirationGroups, groupMode, underlyingGroups]);
@@ -1471,17 +1469,23 @@ export default function PortfolioPage() {
     });
   }, []);
 
-  const sortButton = (field: SortField, label: string, align = 'text-right') => (
-    <th className={`px-2 py-2 text-[11px] font-medium whitespace-nowrap ${align}`} style={{ color: 'var(--text-muted)' }}>
-      <button onClick={() => {
+  const sortButton = (field: PortfolioScheduleSortField, label: string, align = 'text-right', title?: string) => {
+    const active = sortField === field;
+    const nextDirection = active && sortDir === 'asc' ? 'descending' : 'ascending';
+    return (
+    <th scope="col" aria-sort={active ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} className={`px-2 py-2 text-[11px] font-medium whitespace-nowrap ${align}`} style={{ color: 'var(--text-muted)' }}>
+      <button type="button" title={title} aria-label={`${label}, ${active ? `sorted ${sortDir === 'asc' ? 'ascending' : 'descending'}` : 'not sorted'}. Activate to sort ${nextDirection}.`} onClick={() => {
         if (sortField === field) setSortDir(dir => dir === 'asc' ? 'desc' : 'asc');
         else {
           setSortField(field);
           setSortDir('asc');
         }
-      }} className="hover:opacity-80">{label}</button>
+      }} className={`inline-flex items-center gap-1 hover:opacity-80 ${align === 'text-left' ? '' : 'justify-end'}`}>
+        <span>{label}</span><span aria-hidden="true" style={{ color: active ? 'var(--accent)' : 'var(--text-dim)' }}>{active ? (sortDir === 'asc' ? '↑' : '↓') : '↕'}</span>
+      </button>
     </th>
-  );
+    );
+  };
 
   const renderMobileScheduleTrade = (trade: PortfolioTrade) => <MobilePositionRow key={trade.id} ticker={trade.ticker} strike={formatCurrency(trade.strike)} contracts={trade.contracts} expiration={formatDteValue(calculateRemainingDte(trade))} pnl={formatCurrency(calculateTotalGainLoss(trade, markBasis), 0)} captured={formatPctValue(calculatePercentCaptured(trade, markBasis))} mark={formatOptionPrice(calculateCurrentOptionMark(trade, markBasis))} delta={formatDelta(trade.latestMarketData?.delta)} distance={formatPctValue(calculateDistanceToStrike(trade))} entryVix={isFiniteNumber(trade.entryVixClose) ? trade.entryVixClose.toFixed(2) : DASH} health={getPositionHealth(trade)} onOpen={() => openDrawer(trade)} onEdit={() => setEditingTrade(trade)} />;
 
@@ -1507,7 +1511,17 @@ export default function PortfolioPage() {
               <DataFreshness updatedAt={lastRefreshed} status={refreshing ? 'updating' : refreshWarning ? 'failed' : lastRefreshed ? 'cached' : 'stale'} label="Portfolio marks" />
             </section>
 
-            <div ref={scheduleRef} className="border-b px-3.5 py-2" style={{ borderColor: 'var(--border)' }}><div className="mb-2 flex items-center justify-between"><h2 className="text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Open Positions</h2><span className="font-mono text-[11px]" style={{ color: 'var(--text-muted)' }}>{openTrades.length} trades</span></div><div className="flex items-center gap-2"><span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Group</span><div className="min-w-0 flex-1"><MobileSegmentedControl value={groupMode} onChange={setGroupMode} label="Group portfolio positions" options={[{ value: 'expiration', label: 'Expiry' }, { value: 'underlying', label: 'Underlying' }, { value: 'none', label: 'None' }]} /></div></div></div>
+            <div ref={scheduleRef} className="border-b px-3.5 py-2" style={{ borderColor: 'var(--border)' }}>
+              <div className="mb-2 flex items-center justify-between"><h2 className="text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Open Positions</h2><span className="font-mono text-[11px]" style={{ color: 'var(--text-muted)' }}>{openTrades.length} trades</span></div>
+              <div className="flex items-center gap-2"><span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Group</span><div className="min-w-0 flex-1"><MobileSegmentedControl value={groupMode} onChange={setGroupMode} label="Group portfolio positions" options={[{ value: 'expiration', label: 'Expiry' }, { value: 'underlying', label: 'Underlying' }, { value: 'none', label: 'None' }]} /></div></div>
+              <div className="mt-2 flex items-center gap-2">
+                <label htmlFor="mobile-portfolio-sort" className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Sort</label>
+                <select id="mobile-portfolio-sort" value={sortField} onChange={event => setSortField(event.target.value as PortfolioScheduleSortField)} className="mobile-control-field min-w-0 flex-1">
+                  {PORTFOLIO_SCHEDULE_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+                <button type="button" onClick={() => setSortDir(direction => direction === 'asc' ? 'desc' : 'asc')} className="pressable mobile-control-button min-w-11 px-3" aria-label={`Sort ${sortDir === 'asc' ? 'ascending; activate for descending' : 'descending; activate for ascending'}`} title={sortDir === 'asc' ? 'Ascending' : 'Descending'}>{sortDir === 'asc' ? '↑' : '↓'}</button>
+              </div>
+            </div>
             {openTrades.length === 0 ? <div className="px-4 py-10 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No open positions.</div> : groupMode === 'none' ? <div className="space-y-2 px-2 py-2">{flatScheduleTrades.map(renderMobileScheduleTrade)}</div> : <div className="space-y-2 px-2 py-2">{scheduleGroups.map(group => {
               const key = scheduleGroupKey(group);
               const expanded = activeCollapsedGroups[key] !== true;
@@ -1754,27 +1768,27 @@ export default function PortfolioPage() {
                       {sortButton('ticker', 'Ticker', 'text-left')}
                       {sortButton('expiration', 'Expiry')}
                       {sortButton('dte', 'DTE')}
-                      <th className="px-2 py-2 text-[11px] font-medium text-left" style={{ color: 'var(--text-muted)' }}>Health</th>
+                      {sortButton('health', 'Health', 'text-left')}
                       {sortButton('strike', 'Strike')}
                       {sortButton('contracts', 'Contracts')}
-                      <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>Sold Price</th>
-                      <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>Premium Collected</th>
-                      {sortButton('risk', 'Gross Risk')}
-                      <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>Net Capital at Risk</th>
-                      <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>Current Mark</th>
-                      <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>Current Value</th>
+                      {sortButton('soldPrice', 'Sold Price')}
+                      {sortButton('premium', 'Premium Collected')}
+                      {sortButton('grossRisk', 'Gross Risk')}
+                      {sortButton('netCapitalRisk', 'Net Capital at Risk')}
+                      {sortButton('currentMark', 'Current Mark')}
+                      {sortButton('currentValue', 'Current Value')}
                       {sortButton('pnl', 'Total Gain/Loss')}
-                      <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>% Captured</th>
+                      {sortButton('percentCaptured', '% Captured')}
                       {sortButton('delta', 'Delta')}
-                      <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>Breakeven</th>
-                      <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>Underlying</th>
-                      <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>Distance to Strike</th>
-                      <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>IV</th>
-                      <th className="px-2 py-2 text-[11px] font-medium text-right whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>VIX @ Entry</th>
-                      {showOpenInterestVolume && <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>OI / Volume</th>}
-                      {showNominalYield && <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>Original NY</th>}
-                      <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>Original AY</th>
-                      {showNominalYield && <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>Current NY</th>}
+                      {sortButton('breakeven', 'Breakeven')}
+                      {sortButton('underlying', 'Underlying')}
+                      {sortButton('distanceToStrike', 'Distance to Strike')}
+                      {sortButton('iv', 'IV')}
+                      {sortButton('entryVix', 'VIX @ Entry')}
+                      {showOpenInterestVolume && sortButton('openInterest', 'OI / Volume', 'text-right', 'Sorts by Open Interest')}
+                      {showNominalYield && sortButton('originalNy', 'Original NY')}
+                      {sortButton('originalAy', 'Original AY')}
+                      {showNominalYield && sortButton('currentNy', 'Current NY')}
                       {sortButton('currentAy', 'Current AY')}
                       {showNotesErrors && <th className="px-2 py-2 text-[11px] font-medium text-left min-w-[160px]" style={{ color: 'var(--text-muted)' }}>Notes / Errors</th>}
                       <th className="px-2 py-2 text-[11px] font-medium text-left" style={{ color: 'var(--text-muted)' }}>Actions</th>

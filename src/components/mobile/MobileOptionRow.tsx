@@ -66,7 +66,7 @@ export default function MobileOptionRow(props: MobileOptionRowProps) {
           </div>
         </div>
         <div className="mt-1.5 grid grid-cols-4 gap-1 border-y py-1.5" style={{ borderColor: 'var(--border)' }}>
-          {([['Bid', props.bid], ['Mid', mid], ['Ask', props.ask], ['Last', props.last]] as const).map(([label, value]) => (
+          {([['Last', props.last], ['Bid', props.bid], ['Mid', mid], ['Ask', props.ask]] as const).map(([label, value]) => (
             <div key={label} className="min-w-0 text-center"><div className="text-[10px]" style={{ color: 'var(--text-dim)' }}>{label}</div><div className="truncate font-mono text-[12px] font-semibold tabular-nums" style={{ color: label === 'Bid' ? 'var(--green)' : 'var(--text)' }}>{money(value)}</div></div>
           ))}
         </div>

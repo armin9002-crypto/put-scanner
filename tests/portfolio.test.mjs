@@ -6,6 +6,13 @@ import { isExpiredUnresolvedOpenTrade, markExpirationPricePending, resolveExpire
 import { resolveEntryVixFromPoints, resolvePortfolioEntryVix, selectEntryVixClose, unresolvedEntryVixDates } from '../src/lib/portfolioEntryVix.ts';
 import { persistPortfolioGroupMode, readCollapsedExpirationGroups, readCollapsedUnderlyingGroups, readPortfolioGroupMode, setAllExpirationGroupsCollapsed, toggleCollapsedExpirationGroup } from '../src/lib/portfolioSchedulePreferences.ts';
 import { normalizePortfolioTrade } from '../src/lib/portfolioStorage.ts';
+import {
+  getPortfolioPositionHealthLevel,
+  getPortfolioScheduleSortValue,
+  sortExpirationPortfolioScheduleGroups,
+  sortFlatPortfolioSchedule,
+  sortUnderlyingPortfolioScheduleGroups,
+} from '../src/lib/portfolioScheduleSorting.ts';
 
 const trade = (overrides = {}) => ({
   id: 't1', ticker: 'TST', optionType: 'put', strike: 50, expiration: '2027-01-15', contracts: 2,
@@ -70,6 +77,84 @@ test('None mode contains every open trade once and reconciles unchanged overall 
     const blendedDelta = groups.reduce((sum, group) => sum + group.weightedAverageDelta * group.grossRisk, 0) / groups.reduce((sum, group) => sum + group.grossRisk, 0);
     assert.equal(blendedDelta, markTotals.weightedAverageDelta);
   }
+});
+
+test('every meaningful Portfolio Schedule field sorts by its raw value with missing values last', () => {
+  const lower = trade({
+    id: 'lower', ticker: 'AAA', expiration: '2027-01-15', strike: 50, contracts: 1, soldPrice: 1,
+    entryVixClose: 15,
+    latestMarketData: { underlyingPrice: 80, optionBid: 0.1, optionAsk: 0.2, optionLast: 0.15, delta: -0.1, iv: 0.2, volume: 900, openInterest: 100 },
+  });
+  const higher = trade({
+    id: 'higher', ticker: 'ZZZ', expiration: '2028-01-21', strike: 100, contracts: 3, soldPrice: 4,
+    entryVixClose: 25,
+    latestMarketData: { underlyingPrice: 105, optionBid: 1.5, optionAsk: 2, optionLast: 1.8, delta: -0.3, iv: 0.5, volume: 10, openInterest: 500 },
+  });
+  const missing = trade({
+    id: 'missing', ticker: ' ', expiration: 'invalid', strike: Number.NaN, contracts: Number.NaN, soldPrice: Number.NaN,
+    entryVixClose: Number.NaN, entrySnapshot: {}, latestMarketData: {},
+  });
+  const fields = [
+    'ticker', 'expiration', 'dte', 'health', 'strike', 'contracts', 'soldPrice', 'premium', 'grossRisk',
+    'netCapitalRisk', 'currentMark', 'currentValue', 'pnl', 'percentCaptured', 'delta', 'breakeven',
+    'underlying', 'distanceToStrike', 'iv', 'entryVix', 'openInterest', 'originalNy', 'originalAy',
+    'currentNy', 'currentAy',
+  ];
+
+  for (const field of fields) {
+    assert.notEqual(getPortfolioScheduleSortValue(lower, field, 'ask'), null, `${field} lower fixture`);
+    assert.notEqual(getPortfolioScheduleSortValue(higher, field, 'ask'), null, `${field} higher fixture`);
+    assert.equal(getPortfolioScheduleSortValue(missing, field, 'ask'), null, `${field} missing fixture`);
+    const ascending = sortFlatPortfolioSchedule([missing, higher, lower], field, 'asc', 'ask');
+    const descending = sortFlatPortfolioSchedule([missing, lower, higher], field, 'desc', 'ask');
+    assert.equal(ascending.at(-1).id, 'missing', `${field} ascending null placement`);
+    assert.equal(descending.at(-1).id, 'missing', `${field} descending null placement`);
+    assert.deepEqual(descending.slice(0, 2).map(item => item.id), ascending.slice(0, 2).map(item => item.id).reverse(), `${field} direction`);
+  }
+});
+
+test('Health sorting follows risk severity rather than alphabetical labels', () => {
+  const healthTrade = (id, underlying, delta = -0.1) => trade({ id, latestMarketData: { underlyingPrice: underlying, optionAsk: 1.4, delta } });
+  const fixtures = [
+    healthTrade('healthy', 70),
+    healthTrade('monitor', 65),
+    healthTrade('elevated', 62),
+    healthTrade('risky', 55),
+    healthTrade('threatened', 47),
+    trade({ id: 'unknown', latestMarketData: {} }),
+  ];
+  assert.deepEqual(fixtures.map(getPortfolioPositionHealthLevel), ['Healthy', 'Monitor', 'Elevated', 'Risky', 'Threatened', 'Unknown']);
+  assert.deepEqual(sortFlatPortfolioSchedule(fixtures, 'health', 'asc', 'ask').map(item => item.id), ['healthy', 'monitor', 'elevated', 'risky', 'threatened', 'unknown']);
+  assert.deepEqual(sortFlatPortfolioSchedule(fixtures, 'health', 'desc', 'ask').map(item => item.id), ['threatened', 'risky', 'elevated', 'monitor', 'healthy', 'unknown']);
+});
+
+test('group sorting changes only the relevant group order and keeps child rows attached', () => {
+  const trades = [
+    trade({ id: 'boil-late-low', ticker: 'BOIL', expiration: '2028-01-21', soldPrice: 1 }),
+    trade({ id: 'boil-late-high', ticker: 'BOIL', expiration: '2028-01-21', soldPrice: 3 }),
+    trade({ id: 'tqqq-early', ticker: 'TQQQ', expiration: '2027-01-15', soldPrice: 2 }),
+  ];
+  const expiryGroups = buildExpirationScheduleGroups(trades, 'ask');
+  const expiryDescending = sortExpirationPortfolioScheduleGroups(expiryGroups, 'expiration', 'desc', 'ask');
+  assert.deepEqual(expiryDescending.map(group => group.expiration), ['2028-01-21', '2027-01-15']);
+  assert.deepEqual(expiryDescending.flatMap(group => group.trades.map(item => item.id)).sort(), trades.map(item => item.id).sort());
+  const expiryRows = sortExpirationPortfolioScheduleGroups(expiryGroups, 'soldPrice', 'desc', 'ask');
+  assert.deepEqual(expiryRows.map(group => group.expiration), ['2027-01-15', '2028-01-21']);
+  assert.deepEqual(expiryRows[1].trades.map(item => item.id), ['boil-late-high', 'boil-late-low']);
+
+  const tickerGroups = buildUnderlyingScheduleGroups(trades, 'ask');
+  const tickerDescending = sortUnderlyingPortfolioScheduleGroups(tickerGroups, 'ticker', 'desc', 'ask');
+  assert.deepEqual(tickerDescending.map(group => group.ticker), ['TQQQ', 'BOIL']);
+  assert.deepEqual(tickerDescending.flatMap(group => group.trades.map(item => item.id)).sort(), trades.map(item => item.id).sort());
+  const tickerRows = sortUnderlyingPortfolioScheduleGroups(tickerGroups, 'soldPrice', 'desc', 'ask');
+  assert.deepEqual(tickerRows.map(group => group.ticker), ['BOIL', 'TQQQ']);
+  assert.deepEqual(tickerRows[0].trades.map(item => item.id), ['boil-late-high', 'boil-late-low']);
+});
+
+test('OI / Volume sorting deliberately uses Open Interest as its primary value', () => {
+  const highVolume = trade({ id: 'high-volume', latestMarketData: { underlyingPrice: 60, optionAsk: 1.4, volume: 10_000, openInterest: 100 } });
+  const highOi = trade({ id: 'high-oi', latestMarketData: { underlyingPrice: 60, optionAsk: 1.4, volume: 1, openInterest: 500 } });
+  assert.deepEqual(sortFlatPortfolioSchedule([highVolume, highOi], 'openInterest', 'desc', 'ask').map(item => item.id), ['high-oi', 'high-volume']);
 });
 
 test('expiration collapse state is independent per group and safely parsed', () => {

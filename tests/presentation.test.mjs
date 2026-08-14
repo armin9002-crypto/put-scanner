@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { formatOptionLastTradeDate } from '../src/lib/format.ts';
 import { formatScannerDailyChangePercent } from '../src/lib/scannerPresentation.ts';
 import { getOptionLastTradeFreshness } from '../src/lib/optionLastTradeFreshness.ts';
@@ -35,4 +36,15 @@ test('Last Trade freshness keeps thresholds and maps recent activity to success 
   assert.deepEqual(getOptionLastTradeFreshness(timestamp(3), now), { freshness: 'stale', ageDays: 3, label: 'Stale', color: 'var(--yellow)' });
   assert.deepEqual(getOptionLastTradeFreshness(timestamp(8), now), { freshness: 'very_stale', ageDays: 8, label: 'Very stale', color: 'var(--red)' });
   assert.deepEqual(getOptionLastTradeFreshness(null, now), { freshness: 'unavailable', ageDays: null, label: null, color: 'var(--text-muted)' });
+});
+
+test('ETF option quotes stay in LAST, BID, ASK order on desktop and LAST, BID, MID, ASK on mobile', () => {
+  const optionsSource = readFileSync(new URL('../src/pages/OptionsPage.tsx', import.meta.url), 'utf8');
+  const mobileSource = readFileSync(new URL('../src/components/mobile/MobileOptionRow.tsx', import.meta.url), 'utf8');
+  const desktopFields = ["{ field: 'last'", "{ field: 'bid'", "{ field: 'ask'"];
+  const mobileFields = ["['Last', props.last]", "['Bid', props.bid]", "['Mid', mid]", "['Ask', props.ask]"];
+  assert.ok(desktopFields.every(field => optionsSource.includes(field)));
+  assert.deepEqual(desktopFields.map(field => optionsSource.indexOf(field)), [...desktopFields.map(field => optionsSource.indexOf(field))].sort((a, b) => a - b));
+  assert.ok(mobileFields.every(field => mobileSource.includes(field)));
+  assert.deepEqual(mobileFields.map(field => mobileSource.indexOf(field)), [...mobileFields.map(field => mobileSource.indexOf(field))].sort((a, b) => a - b));
 });
