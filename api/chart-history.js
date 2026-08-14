@@ -108,7 +108,7 @@ export default async function handler(req, res) {
   const config = hasDateRange
     ? {
       interval: '1d',
-      maxPoints: 32,
+      maxPoints: 10000,
       cacheControl: 'public, s-maxage=86400, stale-while-revalidate=604800',
       period1: start,
       period2: end,

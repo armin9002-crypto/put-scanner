@@ -1,4 +1,4 @@
-import { calculateOriginalAnnualizedYield, calculatePremiumCollected } from './portfolioMetrics.ts';
+import { calculateNetCapitalAtRisk, calculateOriginalAnnualizedYield, calculatePremiumCollected } from './portfolioMetrics.ts';
 import type { PortfolioTrade } from './portfolioStorage';
 
 export type HistoryOutcome = 'all' | 'expired_worthless' | 'closed' | 'expired_itm' | 'assigned';
@@ -29,6 +29,21 @@ export function historyDaysHeld(trade: PortfolioTrade): number | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(end)) return null;
   const days = Math.round((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${trade.soldDate}T00:00:00Z`)) / 86_400_000);
   return Number.isFinite(days) && days >= 0 ? days : null;
+}
+
+export function historyRealizedIrr(trade: PortfolioTrade): number | null {
+  const realizedPnl = historyRealizedPnl(trade);
+  const originalNetCapitalAtRisk = calculateNetCapitalAtRisk(trade);
+  const resolvedDate = trade.closeDate ?? trade.resolvedDate ?? trade.expiration;
+  const daysHeld = /^\d{4}-\d{2}-\d{2}$/.test(trade.soldDate) && /^\d{4}-\d{2}-\d{2}$/.test(resolvedDate)
+    ? Math.round((Date.parse(`${resolvedDate}T00:00:00Z`) - Date.parse(`${trade.soldDate}T00:00:00Z`)) / 86_400_000)
+    : null;
+  if (realizedPnl == null || originalNetCapitalAtRisk == null || originalNetCapitalAtRisk <= 0 || daysHeld == null || daysHeld <= 0) return null;
+  const realizedReturn = realizedPnl / originalNetCapitalAtRisk;
+  if (realizedReturn === -1) return -1;
+  if (1 + realizedReturn <= 0) return null;
+  const annualized = Math.pow(1 + realizedReturn, 365.25 / daysHeld) - 1;
+  return Number.isFinite(annualized) ? annualized : null;
 }
 
 export function filterHistoryTrades(trades: PortfolioTrade[], outcome: HistoryOutcome): PortfolioTrade[] {

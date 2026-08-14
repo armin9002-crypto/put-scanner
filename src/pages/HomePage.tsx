@@ -7,7 +7,7 @@ import ExpirationFilter, { buildExpirationOptions } from '../components/Expirati
 import SparklineChart from '../components/SparklineChart';
 import ErrorBoundary from '../components/ErrorBoundary';
 import DataFreshness, { type DataFreshnessStatus } from '../components/DataFreshness';
-import { Search, Loader2, RefreshCw, SlidersHorizontal, ChevronDown } from 'lucide-react';
+import { Search, Loader2, RefreshCw, SlidersHorizontal } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import {
   cacheScannerOptionSnapshot,
@@ -534,103 +534,21 @@ export default function HomePage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(360px,500px)_minmax(0,1fr)] xl:grid-cols-[minmax(420px,520px)_minmax(0,1fr)] lg:items-start gap-3 mb-4">
           {/* Filters */}
-          <div className="scanner-filter-card w-full rounded-xl p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-            <button
-              type="button"
-              className="pressable flex min-h-11 w-full items-center justify-between gap-3 sm:hidden"
-              aria-expanded={mobileFiltersOpen}
-              aria-controls="scanner-filter-controls"
-              onClick={() => setMobileFiltersOpen(current => !current)}
-            >
-              <span className="flex min-w-0 items-center gap-2 text-left">
-                <span className="flex h-9 w-9 flex-none items-center justify-center rounded-lg" style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)' }}>
-                  <SlidersHorizontal className="h-4 w-4" />
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Expiration & filters</span>
-                  <span className="block truncate text-sm font-semibold" style={{ color: 'var(--text)' }}>{expDropdownOptions.find(option => option.value === expFilter)?.label ?? 'Any expiration'}</span>
-                </span>
-              </span>
-              <ChevronDown className={`h-4 w-4 flex-none transition-transform ${mobileFiltersOpen ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} />
-            </button>
-
-            <div id="scanner-filter-controls" className={`scanner-filter-controls ${mobileFiltersOpen ? 'is-open' : ''}`}>
-            <div className="grid grid-cols-1 sm:grid-cols-[auto_minmax(200px,1fr)] gap-3 sm:items-end">
-              <div>
-                <span className="block text-xs font-medium uppercase tracking-wider mb-1.5" style={{ color: 'var(--text-muted)' }}>Leverage</span>
-                <div className="grid grid-cols-3 gap-1.5 sm:flex">
-                  {LEVERAGE_OPTIONS.map(opt => (
-                    <button
-                      key={opt}
-                      onClick={() => setLeverageFilter(opt)}
-                      className="pressable px-3 py-2 sm:py-1 rounded-lg text-sm font-medium transition-all min-h-[44px] sm:min-h-0"
-                      style={{
-                        backgroundColor: leverageFilter === opt ? 'var(--accent)' : 'var(--surface-alt)',
-                        color: leverageFilter === opt ? 'white' : 'var(--text-muted)',
-                        border: leverageFilter === opt ? 'none' : '1px solid var(--border)',
-                      }}
-                    >
-                      {opt}
-                    </button>
-                  ))}
+          <div className="scanner-filter-card scanner-desktop-controls w-full rounded-xl p-2" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+            <div className="grid grid-cols-[86px_minmax(96px,1fr)_70px_62px] items-end gap-1">
+              <div className="min-w-0">
+                <span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Leverage</span>
+                <div className="flex gap-1">
+                  {LEVERAGE_OPTIONS.map(opt => <button key={opt} onClick={() => setLeverageFilter(opt)} className="pressable h-8 w-[26px] rounded-md px-0 text-[11px] font-medium" style={{ backgroundColor: leverageFilter === opt ? 'var(--accent)' : 'var(--surface-alt)', color: leverageFilter === opt ? 'white' : 'var(--text-muted)', border: `1px solid ${leverageFilter === opt ? 'var(--accent)' : 'var(--border)'}` }}>{opt}</button>)}
                 </div>
               </div>
-
-              <ExpirationFilter
-                value={expFilter}
-                onChange={handleExpirationChange}
-                options={expDropdownOptions}
-                loadingDates={false}
-                datesLoaded
-              />
+              <ExpirationFilter value={expFilter} onChange={handleExpirationChange} options={expDropdownOptions} loadingDates={false} datesLoaded />
+              <label className="min-w-0"><span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Sort</span><select value={scannerSort} onChange={event => setScannerSort(event.target.value as ScannerSort)} className="h-8 w-full rounded-md px-1.5 text-[11px] outline-none" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>{SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+              <label className="min-w-0"><span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Liquidity</span><select value={liquidityFilter} onChange={event => setLiquidityFilter(event.target.value as ScannerLiquidityFilter)} className="h-8 w-full rounded-md px-1.5 text-[11px] outline-none" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}><option value="all">All</option><option value="mediumPlus">Medium+</option><option value="liquidPlus">Liquid+</option></select></label>
             </div>
-
-            <div className="mt-3">
-              <div className="mb-1.5 flex items-center justify-between gap-2">
-                <span className="block text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Type</span>
-                <button
-                  type="button"
-                  onClick={() => void updateVisibleOptionSnapshots()}
-                  disabled={snapshotUpdateRunningRef.current}
-                  className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-medium whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-60"
-                  style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}
-                  title="Update missing or stale IV60 and liquidity snapshots for visible ETFs"
-                >
-                  {snapshotProgress && !snapshotProgress.complete && <Loader2 className="h-3 w-3 animate-spin" />}
-                  {snapshotProgressLabel(snapshotProgress)}
-                </button>
-              </div>
-              <div className="grid grid-cols-2 min-[430px]:grid-cols-3 sm:flex gap-1.5 min-w-0">
-                {TYPE_OPTIONS.map(opt => (
-                  <button
-                    key={opt}
-                    onClick={() => setTypeFilter(opt)}
-                    className="pressable px-2.5 py-2 sm:px-3 sm:py-1 rounded-lg text-sm font-medium transition-all min-h-[44px] sm:min-h-0 truncate"
-                    style={{
-                      backgroundColor: typeFilter === opt ? 'var(--accent)' : 'var(--surface-alt)',
-                      color: typeFilter === opt ? 'white' : 'var(--text-muted)',
-                      border: typeFilter === opt ? 'none' : '1px solid var(--border)',
-                    }}
-                  >
-                    {opt}
-                  </button>
-                ))}
-              </div>
-              <div className="mt-2 grid grid-cols-2 gap-1.5">
-                <label className="min-w-0">
-                  <span className="mb-1 block text-[10px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Sort</span>
-                  <select value={scannerSort} onChange={event => setScannerSort(event.target.value as ScannerSort)} className="h-9 w-full rounded-lg px-2 text-xs outline-none" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
-                    {SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                  </select>
-                </label>
-                <label className="min-w-0">
-                  <span className="mb-1 block text-[10px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Liquidity</span>
-                  <select value={liquidityFilter} onChange={event => setLiquidityFilter(event.target.value as ScannerLiquidityFilter)} className="h-9 w-full rounded-lg px-2 text-xs outline-none" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
-                    <option value="all">All</option><option value="mediumPlus">Medium+</option><option value="liquidPlus">Liquid+</option>
-                  </select>
-                </label>
-              </div>
-            </div>
+            <div className="mt-1.5 flex min-w-0 items-end justify-between gap-1.5 border-t pt-1.5" style={{ borderColor: 'var(--border)' }}>
+              <div className="min-w-0 flex-1"><span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Type</span><div className="grid min-w-0 grid-cols-5 gap-1">{TYPE_OPTIONS.map(opt => <button key={opt} title={opt} onClick={() => setTypeFilter(opt)} className="pressable h-8 min-w-0 truncate rounded-md px-1 text-[10px] font-medium" style={{ backgroundColor: typeFilter === opt ? 'var(--accent)' : 'var(--surface-alt)', color: typeFilter === opt ? 'white' : 'var(--text-muted)', border: `1px solid ${typeFilter === opt ? 'var(--accent)' : 'var(--border)'}` }}>{opt === 'Broad Index' ? 'Broad' : opt === 'Commodity' ? 'Commod.' : opt}</button>)}</div></div>
+              <button type="button" onClick={() => void updateVisibleOptionSnapshots()} disabled={snapshotUpdateRunningRef.current} className="inline-flex h-8 flex-none items-center gap-1 rounded-md px-2 text-[10px] font-medium whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-60" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)', color: 'var(--text-muted)' }} title="Update missing or stale IV60 and liquidity snapshots for visible ETFs">{snapshotProgress && !snapshotProgress.complete && <Loader2 className="h-3 w-3 animate-spin" />}{snapshotProgressLabel(snapshotProgress)}</button>
             </div>
           </div>
 

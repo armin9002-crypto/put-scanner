@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildExpirationScheduleGroups } from '../src/lib/portfolioAnalytics.ts';
+import { buildExpirationScheduleGroups, buildUnderlyingScheduleGroups } from '../src/lib/portfolioAnalytics.ts';
 import { calculateCurrentOptionMark, calculatePortfolioMarkSummary, calculatePortfolioSummary } from '../src/lib/portfolioMetrics.ts';
 import { isExpiredUnresolvedOpenTrade, markExpirationPricePending, resolveExpiredTradeWithClose, selectExpirationClose } from '../src/lib/portfolioExpirationArchive.ts';
-import { readCollapsedExpirationGroups, setAllExpirationGroupsCollapsed, toggleCollapsedExpirationGroup } from '../src/lib/portfolioSchedulePreferences.ts';
+import { resolveEntryVixFromPoints, resolvePortfolioEntryVix, selectEntryVixClose, unresolvedEntryVixDates } from '../src/lib/portfolioEntryVix.ts';
+import { readCollapsedExpirationGroups, readCollapsedUnderlyingGroups, readPortfolioGroupMode, setAllExpirationGroupsCollapsed, toggleCollapsedExpirationGroup } from '../src/lib/portfolioSchedulePreferences.ts';
+import { normalizePortfolioTrade } from '../src/lib/portfolioStorage.ts';
 
 const trade = (overrides = {}) => ({
   id: 't1', ticker: 'TST', optionType: 'put', strike: 50, expiration: '2027-01-15', contracts: 2,
@@ -34,12 +36,86 @@ test('expiration groups sort chronologically, exclude archives, and reconcile to
   assert.equal(groups.reduce((sum, group) => sum + group.premiumCollected, 0), 1_000);
 });
 
+test('underlying groups sort A-Z, reconcile the same totals, and expose useful ticker metadata', () => {
+  const trades = [
+    trade({ id: 'boil-late', ticker: 'BOIL', expiration: '2027-02-19', contracts: 3, latestMarketData: { underlyingPrice: 61, optionAsk: 1.4, delta: -0.2, refreshedAt: '2026-08-13T12:00:00Z' } }),
+    trade({ id: 'tqqq', ticker: 'TQQQ', contracts: 1 }),
+    trade({ id: 'boil-early', ticker: 'BOIL', contracts: 2 }),
+  ];
+  const expiryGroups = buildExpirationScheduleGroups(trades, 'ask');
+  const tickerGroups = buildUnderlyingScheduleGroups(trades, 'ask');
+  assert.deepEqual(tickerGroups.map(group => group.ticker), ['BOIL', 'TQQQ']);
+  assert.equal(tickerGroups[0].expirationCount, 2);
+  assert.equal(tickerGroups[0].contractCount, 5);
+  assert.equal(tickerGroups[0].underlyingPrice, 61);
+  assert.equal(tickerGroups.reduce((sum, group) => sum + group.premiumCollected, 0), expiryGroups.reduce((sum, group) => sum + group.premiumCollected, 0));
+  assert.equal(tickerGroups.reduce((sum, group) => sum + group.grossRisk, 0), expiryGroups.reduce((sum, group) => sum + group.grossRisk, 0));
+});
+
 test('expiration collapse state is independent per group and safely parsed', () => {
   const one = toggleCollapsedExpirationGroup({}, '2027-01-15');
   const two = toggleCollapsedExpirationGroup(one, '2027-02-19');
   assert.deepEqual(toggleCollapsedExpirationGroup(two, '2027-01-15'), { '2027-01-15': false, '2027-02-19': true });
   assert.deepEqual(setAllExpirationGroupsCollapsed(['a', 'b'], true), { a: true, b: true });
   assert.deepEqual(readCollapsedExpirationGroups({ getItem: () => '{"a":true,"bad":"yes"}' }), { a: true });
+  assert.deepEqual(readCollapsedUnderlyingGroups({ getItem: () => '{"BOIL":true}' }), { BOIL: true });
+  assert.equal(readPortfolioGroupMode({ getItem: () => 'underlying' }), 'underlying');
+  assert.equal(readPortfolioGroupMode({ getItem: () => 'unexpected' }), 'expiration');
+});
+
+test('entry VIX selects the official close or nearest prior trading close and persists once', () => {
+  const points = [
+    { timestamp: Date.parse('2026-06-18T00:00:00Z') / 1000, date: '2026-06-18', price: 20.5 },
+    { timestamp: Date.parse('2026-06-19T00:00:00Z') / 1000, date: '2026-06-19', price: 22.25 },
+    { timestamp: Date.parse('2026-06-22T00:00:00Z') / 1000, date: '2026-06-22', price: 24 },
+  ];
+  assert.deepEqual(selectEntryVixClose(points, '2026-06-19'), { close: 22.25, closeDate: '2026-06-19', source: 'historical_close' });
+  assert.deepEqual(selectEntryVixClose(points, '2026-06-21'), { close: 22.25, closeDate: '2026-06-19', source: 'nearest_prior_close' });
+  assert.equal(selectEntryVixClose(points, '2026-06-17'), null);
+
+  const openTrades = [trade({ id: 'exact', soldDate: '2026-06-19' }), trade({ id: 'weekend', soldDate: '2026-06-21' })];
+  assert.deepEqual(unresolvedEntryVixDates(openTrades), ['2026-06-19', '2026-06-21']);
+  const resolved = resolveEntryVixFromPoints(openTrades, points, '2026-06-23T00:00:00Z');
+  assert.equal(resolved.changed, true);
+  assert.equal(resolved.resolved, 2);
+  assert.equal(resolved.trades[1].entryVixSource, 'nearest_prior_close');
+  const normalized = normalizePortfolioTrade(resolved.trades[1]);
+  assert.equal(normalized.entryVixClose, 22.25);
+  assert.equal(normalized.entryVixDate, '2026-06-19');
+  const repeat = resolveEntryVixFromPoints(resolved.trades, points);
+  assert.equal(repeat.changed, false);
+  assert.equal(repeat.resolved, 0);
+  assert.deepEqual(unresolvedEntryVixDates(repeat.trades), []);
+});
+
+test('entry VIX batches many missing entry dates into one request and never refetches persisted values', async () => {
+  const originalFetch = globalThis.fetch;
+  let requests = 0;
+  globalThis.fetch = async () => {
+    requests += 1;
+    return new Response(JSON.stringify({
+      ticker: '^VIX',
+      timeframe: 'custom',
+      fetchedAt: Date.now(),
+      metadata: { interval: '1d' },
+      points: [
+        { timestamp: Date.parse('2025-01-02T00:00:00Z') / 1000, date: '2025-01-02', price: 17 },
+        { timestamp: Date.parse('2025-02-03T00:00:00Z') / 1000, date: '2025-02-03', price: 19 },
+      ],
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    const many = [trade({ id: 'jan', soldDate: '2025-01-02' }), trade({ id: 'feb', soldDate: '2025-02-03' })];
+    const first = await resolvePortfolioEntryVix(many);
+    assert.equal(requests, 1);
+    assert.equal(first.networkRequests, 1);
+    assert.equal(first.resolved, 2);
+    const second = await resolvePortfolioEntryVix(first.trades);
+    assert.equal(requests, 1);
+    assert.equal(second.networkRequests, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('expiration close selection prefers exact date then nearest prior trading day', () => {

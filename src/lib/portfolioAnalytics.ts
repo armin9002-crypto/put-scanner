@@ -70,6 +70,16 @@ export interface PortfolioExpirationScheduleGroup extends PortfolioExposureGroup
   contractCount: number;
 }
 
+export interface PortfolioUnderlyingScheduleGroup extends PortfolioExposureGroup {
+  ticker: string;
+  trades: PortfolioTrade[];
+  contractCount: number;
+  expirationCount: number;
+  minDte: number | null;
+  maxDte: number | null;
+  underlyingPrice: number | null;
+}
+
 export interface EtfMetadata {
   category: string;
   leverage: string;
@@ -263,6 +273,41 @@ export function buildExpirationScheduleGroups(
       contractCount: groupTrades.reduce((total, trade) => total + trade.contracts, 0),
     };
   });
+}
+
+export function buildUnderlyingScheduleGroups(
+  trades: PortfolioTrade[],
+  markBasis: MarkBasis
+): PortfolioUnderlyingScheduleGroup[] {
+  const grouped = new Map<string, PortfolioTrade[]>();
+  openTrades(trades).forEach(trade => {
+    const ticker = normalizeTicker(trade.ticker);
+    grouped.set(ticker, [...(grouped.get(ticker) ?? []), trade]);
+  });
+
+  return [...grouped.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([ticker, groupTrades]) => {
+      const orderedTrades = [...groupTrades].sort((a, b) => a.expiration.localeCompare(b.expiration));
+      const dtes = orderedTrades.map(getRemainingDte).filter(isFiniteNumber);
+      const underlyingPrice = orderedTrades
+        .map(trade => ({
+          price: getUnderlyingPrice(trade),
+          refreshedAt: Date.parse(trade.latestMarketData?.refreshedAt ?? '') || 0,
+        }))
+        .filter(item => isFiniteNumber(item.price))
+        .sort((a, b) => b.refreshedAt - a.refreshedAt)[0]?.price ?? null;
+      return {
+        ...toGroup(ticker, ticker, orderedTrades, markBasis),
+        ticker,
+        trades: orderedTrades,
+        contractCount: orderedTrades.reduce((total, trade) => total + trade.contracts, 0),
+        expirationCount: new Set(orderedTrades.map(trade => trade.expiration)).size,
+        minDte: dtes.length > 0 ? Math.min(...dtes) : null,
+        maxDte: dtes.length > 0 ? Math.max(...dtes) : null,
+        underlyingPrice,
+      };
+    });
 }
 
 export function groupByDteBucket(trades: PortfolioTrade[], markBasis: MarkBasis): PortfolioExposureGroup[] {

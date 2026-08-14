@@ -2,6 +2,7 @@ export type PortfolioTradeStatus = 'open' | 'closed' | 'expired' | 'assigned' | 
 export type PortfolioResolutionType = 'expired_worthless' | 'expired_itm' | 'expired_price_pending';
 export type PortfolioResolutionSource = 'expiration_close' | 'manual_expiration_close';
 export type PortfolioAvailabilityStatus = 'live' | 'expired' | 'unavailable' | 'refresh_failed' | 'stale' | 'imported_snapshot';
+export type PortfolioEntryVixSource = 'historical_close' | 'nearest_prior_close';
 
 export interface PortfolioTradeSnapshot {
   underlyingPrice?: number | null;
@@ -64,6 +65,9 @@ export interface PortfolioTrade {
   percentCaptured?: number;
   premiumCollected?: number;
   daysHeld?: number;
+  entryVixClose?: number;
+  entryVixDate?: string;
+  entryVixSource?: PortfolioEntryVixSource;
   resolutionSource?: PortfolioResolutionSource;
   resolutionWarning?: string;
   createdAt: string;
@@ -243,6 +247,11 @@ export function normalizePortfolioTrade(raw: unknown): PortfolioTrade | null {
   const percentCaptured = finiteNumber(raw.percentCaptured);
   const premiumCollected = nonNegativeNumber(raw.premiumCollected);
   const daysHeld = nonNegativeNumber(raw.daysHeld);
+  const entryVixClose = nonNegativeNumber(raw.entryVixClose);
+  const entryVixDate = normalizeIsoDate(raw.entryVixDate);
+  const entryVixSource = raw.entryVixSource === 'historical_close' || raw.entryVixSource === 'nearest_prior_close'
+    ? raw.entryVixSource as PortfolioEntryVixSource
+    : undefined;
   const resolutionType = typeof raw.resolutionType === 'string' && VALID_RESOLUTION_TYPES.includes(raw.resolutionType as PortfolioResolutionType)
     ? raw.resolutionType as PortfolioResolutionType
     : undefined;
@@ -272,6 +281,9 @@ export function normalizePortfolioTrade(raw: unknown): PortfolioTrade | null {
     percentCaptured: percentCaptured ?? undefined,
     premiumCollected: premiumCollected ?? undefined,
     daysHeld: daysHeld ?? undefined,
+    entryVixClose: entryVixClose ?? undefined,
+    entryVixDate: entryVixDate ?? undefined,
+    entryVixSource,
     resolutionSource,
     resolutionWarning: typeof raw.resolutionWarning === 'string' ? raw.resolutionWarning : undefined,
     createdAt,

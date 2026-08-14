@@ -11,6 +11,7 @@ import {
   type ScannerSnapshotDiagnostic,
   type SnapshotConfidence,
 } from '../lib/scannerOptionSnapshot';
+import { formatScannerDailyChangePercent } from '../lib/scannerPresentation';
 
 interface ETFCardProps {
   etf: ETFInfo;
@@ -330,11 +331,10 @@ export default function ETFCard({
                 <div className="text-base font-semibold font-mono tabular-nums leading-tight" style={{ color: 'var(--text)' }}>
                   ${priceData!.price!.toFixed(2)}
                 </div>
-                {priceData!.change != null && priceData!.changePct != null && (
+                {priceData!.changePct != null && (
                 <div className="flex items-center gap-1 text-xs font-mono tabular-nums leading-tight min-w-0" style={{ color: changePositive ? 'var(--green)' : 'var(--red)' }}>
                   {changePositive ? <TrendingUp className="w-3 h-3 flex-shrink-0" /> : <TrendingDown className="w-3 h-3 flex-shrink-0" />}
-                    <span className="truncate">{changePositive ? '+$' : '-$'}{Math.abs(priceData!.change).toFixed(2)}</span>
-                    <span className="truncate">({changePositive ? '+' : '-'}{Math.abs(priceData!.changePct).toFixed(2)}%)</span>
+                    <span className="truncate">{formatScannerDailyChangePercent(priceData!.changePct)}</span>
                   </div>
                 )}
               </>

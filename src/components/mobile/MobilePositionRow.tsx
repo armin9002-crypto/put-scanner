@@ -8,6 +8,7 @@ export default function MobilePositionRow({
   mark,
   delta,
   distance,
+  entryVix,
   health,
   onOpen,
   onEdit,
@@ -21,6 +22,7 @@ export default function MobilePositionRow({
   mark: string;
   delta: string;
   distance: string;
+  entryVix: string;
   health: { label: string; color: string; bg: string; border: string; title: string };
   onOpen: () => void;
   onEdit: () => void;
@@ -30,7 +32,7 @@ export default function MobilePositionRow({
       <button type="button" className="absolute inset-0 z-0 rounded-xl" onClick={onOpen} aria-label={`Open ${ticker} ${strike} put details`} />
       <div className="pointer-events-none relative z-10">
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0"><div className="font-mono text-[15px] font-bold" style={{ color: 'var(--text)' }}>{ticker} {strike} Put</div><div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{contracts} {contracts === 1 ? 'contract' : 'contracts'} · {expiration}</div></div>
+          <div className="min-w-0"><div className="font-mono text-[15px] font-bold" style={{ color: 'var(--text)' }}>{ticker} {strike} Put</div><div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{contracts} {contracts === 1 ? 'contract' : 'contracts'} · {expiration} · VIX {entryVix}</div></div>
           <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold" title={health.title} style={{ color: health.color, backgroundColor: health.bg, border: `1px solid ${health.border}` }}>{health.label}</span>
         </div>
         <div className="mt-2 grid grid-cols-2 gap-3 border-y py-2" style={{ borderColor: 'var(--border)' }}>

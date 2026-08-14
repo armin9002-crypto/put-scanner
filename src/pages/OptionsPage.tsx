@@ -8,7 +8,7 @@ import { addToWatchlist, removeFromWatchlist, isInWatchlist, makeWatchlistId } f
 import type { WatchlistItem } from '../lib/watchlist';
 import { addPortfolioTrade } from '../lib/portfolioStorage';
 import { calculateBidAskSpreadPercent, calculateMoneyness, calculateYieldPercent } from '../lib/optionMetrics';
-import { normalizeTimestampMs } from '../lib/format';
+import { formatOptionLastTradeDate, normalizeTimestampMs } from '../lib/format';
 import { getUnderlyingHoldingsProxy } from '../lib/underlyingHoldingsProxies';
 import { getLastScannerUrl, isScannerNavigationState } from '../lib/scannerNavigation';
 import SparklineChart from '../components/SparklineChart';
@@ -625,6 +625,7 @@ export default function OptionsPage() {
       const getValue = (put: EnrichedPut): number | string | null => {
         switch (sortField) {
           case 'strike': return put.strike;
+          case 'lastTradeDate': return put.lastTradeDate;
           case 'last': return put.last;
           case 'bid': return put.bid;
           case 'ask': return put.ask;
@@ -693,19 +694,20 @@ export default function OptionsPage() {
 
   // Column definitions
   const baseColumns: { field: SortField; label: string; fullLabel: string; align: string; widthClass: string; hideOnMobile?: boolean; hideOnTablet?: boolean }[] = [
-    { field: 'strike', label: 'Strike', fullLabel: 'Strike', align: 'text-left', widthClass: 'w-24' },
+    { field: 'strike', label: 'Strike', fullLabel: 'Strike', align: 'text-left', widthClass: 'w-[88px]' },
+    { field: 'lastTradeDate', label: 'Last Trade', fullLabel: 'Last Trade Date', align: 'text-right', widthClass: 'w-20', hideOnMobile: true },
     { field: 'last', label: 'Last', fullLabel: 'Last', align: 'text-right', widthClass: 'w-14', hideOnMobile: true },
     { field: 'bid', label: 'Bid', fullLabel: 'Bid', align: 'text-right', widthClass: 'w-14' },
     { field: 'ask', label: 'Ask', fullLabel: 'Ask', align: 'text-right', widthClass: 'w-14' },
-    { field: 'delta', label: 'Delta', fullLabel: 'Delta', align: 'text-right', widthClass: 'w-14' },
-    { field: 'otmItm', label: 'Moneyness', fullLabel: '% OTM / % ITM', align: 'text-right', widthClass: 'w-24', hideOnMobile: true },
-    { field: 'iv', label: 'IV', fullLabel: 'IV', align: 'text-right', widthClass: 'w-14', hideOnMobile: true },
-    { field: 'nomYieldBid', label: 'NY Bid', fullLabel: 'Nom. Yield (Bid)', align: 'text-right', widthClass: 'w-20', hideOnMobile: true, hideOnTablet: true },
-    { field: 'annYieldBid', label: 'AY Bid', fullLabel: 'Ann. Yield (Bid)', align: 'text-right', widthClass: 'w-20' },
-    { field: 'nomYieldAsk', label: 'NY Ask', fullLabel: 'Nom. Yield (Ask)', align: 'text-right', widthClass: 'w-20', hideOnMobile: true, hideOnTablet: true },
-    { field: 'annYieldAsk', label: 'AY Ask', fullLabel: 'Ann. Yield (Ask)', align: 'text-right', widthClass: 'w-20', hideOnMobile: true },
-    { field: 'nomYieldLast', label: 'NY Last', fullLabel: 'Nom. Yield (Last)', align: 'text-right', widthClass: 'w-20', hideOnMobile: true, hideOnTablet: true },
-    { field: 'annYieldLast', label: 'AY Last', fullLabel: 'Ann. Yield (Last)', align: 'text-right', widthClass: 'w-20', hideOnMobile: true, hideOnTablet: true },
+    { field: 'delta', label: 'Delta', fullLabel: 'Delta', align: 'text-right', widthClass: 'w-12' },
+    { field: 'otmItm', label: 'Moneyness', fullLabel: '% OTM / % ITM', align: 'text-right', widthClass: 'w-20', hideOnMobile: true },
+    { field: 'iv', label: 'IV', fullLabel: 'IV', align: 'text-right', widthClass: 'w-12', hideOnMobile: true },
+    { field: 'nomYieldBid', label: 'NY Bid', fullLabel: 'Nom. Yield (Bid)', align: 'text-right', widthClass: 'w-[72px]', hideOnMobile: true, hideOnTablet: true },
+    { field: 'annYieldBid', label: 'AY Bid', fullLabel: 'Ann. Yield (Bid)', align: 'text-right', widthClass: 'w-[72px]' },
+    { field: 'nomYieldAsk', label: 'NY Ask', fullLabel: 'Nom. Yield (Ask)', align: 'text-right', widthClass: 'w-[72px]', hideOnMobile: true, hideOnTablet: true },
+    { field: 'annYieldAsk', label: 'AY Ask', fullLabel: 'Ann. Yield (Ask)', align: 'text-right', widthClass: 'w-[72px]', hideOnMobile: true },
+    { field: 'nomYieldLast', label: 'NY Last', fullLabel: 'Nom. Yield (Last)', align: 'text-right', widthClass: 'w-[72px]', hideOnMobile: true, hideOnTablet: true },
+    { field: 'annYieldLast', label: 'AY Last', fullLabel: 'Ann. Yield (Last)', align: 'text-right', widthClass: 'w-[72px]', hideOnMobile: true, hideOnTablet: true },
   ];
 
   const volOIColumns: { field: SortField; label: string; fullLabel: string; align: string; widthClass: string; hideOnMobile?: boolean; hideOnTablet?: boolean }[] = [
@@ -1441,7 +1443,7 @@ export default function OptionsPage() {
                               />
                             </button>
                           </td>
-                          <td className="sticky-stack left-0 z-[2] px-1.5 sm:px-2 py-1.5 text-left text-xs whitespace-nowrap border-r w-24 relative" style={{ borderColor: 'var(--border)', backgroundColor: isSelected ? 'var(--accent-bg)' : bg }}>
+                          <td className="sticky-stack left-0 z-[2] px-1.5 sm:px-2 py-1.5 text-left text-xs whitespace-nowrap border-r w-[88px] relative" style={{ borderColor: 'var(--border)', backgroundColor: isSelected ? 'var(--accent-bg)' : bg }}>
                             <div className="flex items-center gap-1.5">
                               <span className="font-mono font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{formatPrice(put.strike)}</span>
                               {moneyness === 'itm' && (
@@ -1456,34 +1458,35 @@ export default function OptionsPage() {
                             </div>
                             <OptionQuickTooltip put={put} ticker={ticker ?? ''} expirationLabel={quickExpirationLabel} dte={quickDte} />
                           </td>
+                          <td className="w-20 px-1.5 py-1.5 text-right font-mono text-xs tabular-nums hidden md:table-cell" title={`${formatLastTradeDate(put.lastTradeDate)}${getLastTradeStaleLabel(put.lastTradeDate).label ? ` · ${getLastTradeStaleLabel(put.lastTradeDate).label}` : ''}`} style={{ color: getLastTradeStaleLabel(put.lastTradeDate).color }}>{formatOptionLastTradeDate(put.lastTradeDate)}</td>
                           <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums hidden md:table-cell w-14" style={{ color: 'var(--text)' }}>{formatPrice(put.last)}</td>
                           <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums w-14" style={{ color: 'var(--text)' }}>{formatPrice(put.bid)}</td>
                           <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums w-14" style={{ color: 'var(--text)' }}>{formatPrice(put.ask)}</td>
-                          <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums w-14" style={{ color: deltaColor(put.delta) }}>
+                          <td className="px-1.5 py-1.5 text-right text-xs font-mono tabular-nums w-12" style={{ color: deltaColor(put.delta) }}>
                             {put.delta.toFixed(2)}
                           </td>
-                          <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums hidden md:table-cell w-24" style={{ color: put.otmItmColor }}>
+                          <td className="px-1.5 py-1.5 text-right text-xs font-mono tabular-nums hidden md:table-cell w-20" style={{ color: put.otmItmColor }}>
                             {put.otmItmLabel || '—'}
                           </td>
-                          <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums hidden md:table-cell w-14" style={{ color: ivColor(put.impliedVolatility) }}>
+                          <td className="px-1.5 py-1.5 text-right text-xs font-mono tabular-nums hidden md:table-cell w-12" style={{ color: ivColor(put.impliedVolatility) }}>
                             {put.impliedVolatility != null ? put.impliedVolatility.toFixed(1) + '%' : '—'}
                           </td>
-                          <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums hidden lg:table-cell w-20" style={{ color: 'var(--text-secondary)' }}>
+                          <td className="w-[72px] px-1.5 py-1.5 text-right text-xs font-mono tabular-nums hidden lg:table-cell" style={{ color: 'var(--text-secondary)' }}>
                             {put.nomYieldBid != null ? formatYield(put.nomYieldBid) : '—'}
                           </td>
-                          <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums font-medium w-20" style={{ color: put.annYieldBid != null ? yieldColor(put.annYieldBid) : 'var(--text-dim)' }}>
+                          <td className="w-[72px] px-1.5 py-1.5 text-right text-xs font-mono tabular-nums font-medium" style={{ color: put.annYieldBid != null ? yieldColor(put.annYieldBid) : 'var(--text-dim)' }}>
                             {put.annYieldBid != null ? formatYield(put.annYieldBid) : '—'}
                           </td>
-                          <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums hidden lg:table-cell w-20" style={{ color: 'var(--text-secondary)' }}>
+                          <td className="w-[72px] px-1.5 py-1.5 text-right text-xs font-mono tabular-nums hidden lg:table-cell" style={{ color: 'var(--text-secondary)' }}>
                             {put.nomYieldAsk != null ? formatYield(put.nomYieldAsk) : '—'}
                           </td>
-                          <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums font-medium hidden md:table-cell w-20" style={{ color: put.annYieldAsk != null ? yieldColor(put.annYieldAsk) : 'var(--text-dim)' }}>
+                          <td className="w-[72px] px-1.5 py-1.5 text-right text-xs font-mono tabular-nums font-medium hidden md:table-cell" style={{ color: put.annYieldAsk != null ? yieldColor(put.annYieldAsk) : 'var(--text-dim)' }}>
                             {put.annYieldAsk != null ? formatYield(put.annYieldAsk) : '—'}
                           </td>
-                          <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums hidden lg:table-cell w-20" style={{ color: 'var(--text-secondary)' }}>
+                          <td className="w-[72px] px-1.5 py-1.5 text-right text-xs font-mono tabular-nums hidden lg:table-cell" style={{ color: 'var(--text-secondary)' }}>
                             {put.nomYieldLast != null ? formatYield(put.nomYieldLast) : '—'}
                           </td>
-                          <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums font-medium hidden lg:table-cell w-20" style={{ color: put.annYieldLast != null ? yieldColor(put.annYieldLast) : 'var(--text-dim)' }}>
+                          <td className="w-[72px] px-1.5 py-1.5 text-right text-xs font-mono tabular-nums font-medium hidden lg:table-cell" style={{ color: put.annYieldLast != null ? yieldColor(put.annYieldLast) : 'var(--text-dim)' }}>
                             {put.annYieldLast != null ? formatYield(put.annYieldLast) : '—'}
                           </td>
                           {showVolOI && (

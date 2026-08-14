@@ -130,6 +130,34 @@ function findReusableHistory(ticker: string, timeframe: ChartTimeframe): ChartHi
   return null;
 }
 
+export function findCachedDailyHistoryForDates(ticker: string, dates: string[]): ChartHistoryResponse | null {
+  const normalizedTicker = ticker.trim().toUpperCase();
+  const targets = [...new Set(dates.filter(date => /^\d{4}-\d{2}-\d{2}$/.test(date)))];
+  if (targets.length === 0) return null;
+  const candidates: ChartTimeframe[] = ['2Y', '1Y', 'YTD', '6M', '3M'];
+  for (const timeframe of candidates) {
+    const cached = peekMarketData<ChartHistoryResponse>({
+      key: cacheKey(normalizedTicker, timeframe),
+      softTtlMs: CHART_TTLS[timeframe],
+      hardTtlMs: CHART_HARD_TTLS[timeframe],
+      schemaVersion: 2,
+      validator: data => isValidChartHistory(data, timeframe) && data.metadata?.interval === '1d',
+    });
+    if (!cached || cached.meta.freshness === 'expired') continue;
+    const pointDates = cached.data.points.map(point => point.date.slice(0, 10)).sort();
+    const coversTargets = targets.every(target => {
+      const nearestPrior = [...pointDates].reverse().find(pointDate => pointDate <= target);
+      if (!nearestPrior) return false;
+      const gapDays = (Date.parse(`${target}T00:00:00Z`) - Date.parse(`${nearestPrior}T00:00:00Z`)) / 86_400_000;
+      return gapDays >= 0 && gapDays <= 7;
+    });
+    if (coversTargets) {
+      return { ...cached.data, freshness: cached.meta.freshness, staleFallbackUsed: false };
+    }
+  }
+  return null;
+}
+
 export async function getChartHistory(
   ticker: string,
   timeframe: ChartTimeframe,

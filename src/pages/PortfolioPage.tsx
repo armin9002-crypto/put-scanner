@@ -15,9 +15,12 @@ import {
   getTradeDistanceToStrike,
   getTradeGrossRisk,
   buildExpirationScheduleGroups,
+  buildUnderlyingScheduleGroups,
   groupByExpiration,
   groupByTicker,
+  type PortfolioExpirationScheduleGroup,
   type PortfolioExposureGroup,
+  type PortfolioUnderlyingScheduleGroup,
 } from '../lib/portfolioAnalytics';
 import {
   addPortfolioTrade,
@@ -53,8 +56,9 @@ import {
 import type { OptionDetail } from '../components/OptionDetailDrawer';
 import ErrorBoundary from '../components/ErrorBoundary';
 import DataFreshness from '../components/DataFreshness';
-import { persistCollapsedExpirationGroups, readCollapsedExpirationGroups, setAllExpirationGroupsCollapsed, toggleCollapsedExpirationGroup } from '../lib/portfolioSchedulePreferences';
-import { buildHistoryAnalytics, buildMonthlyRealizedPnl, filterHistoryTrades, historyDaysHeld, type HistoryOutcome } from '../lib/portfolioHistoryAnalytics';
+import { persistCollapsedExpirationGroups, persistCollapsedUnderlyingGroups, persistPortfolioGroupMode, readCollapsedExpirationGroups, readCollapsedUnderlyingGroups, readPortfolioGroupMode, setAllExpirationGroupsCollapsed, toggleCollapsedExpirationGroup, type PortfolioGroupMode } from '../lib/portfolioSchedulePreferences';
+import { buildHistoryAnalytics, buildMonthlyRealizedPnl, filterHistoryTrades, historyDaysHeld, historyRealizedIrr, type HistoryOutcome } from '../lib/portfolioHistoryAnalytics';
+import { resolvePortfolioEntryVix } from '../lib/portfolioEntryVix';
 import { useResponsiveMode } from '../lib/responsive';
 import MobileBottomSheet from '../components/mobile/MobileBottomSheet';
 import MobileSegmentedControl from '../components/mobile/MobileSegmentedControl';
@@ -93,6 +97,29 @@ interface CloseCandidate {
 
 type SortField = 'ticker' | 'expiration' | 'dte' | 'strike' | 'contracts' | 'premium' | 'risk' | 'pnl' | 'delta';
 type SortDir = 'asc' | 'desc';
+type PortfolioScheduleGroup = PortfolioExpirationScheduleGroup | PortfolioUnderlyingScheduleGroup;
+
+function compareScheduleTrades(a: PortfolioTrade, b: PortfolioTrade, field: SortField, direction: SortDir, markBasis: MarkBasis): number {
+  const dir = direction === 'asc' ? 1 : -1;
+  const value = (trade: PortfolioTrade): number | string => {
+    switch (field) {
+      case 'ticker': return trade.ticker;
+      case 'expiration': return trade.expiration;
+      case 'dte': return calculateRemainingDte(trade) ?? 999999;
+      case 'strike': return trade.strike;
+      case 'contracts': return trade.contracts;
+      case 'premium': return calculatePremiumCollected(trade) ?? -1;
+      case 'risk': return calculateEquityAtRisk(trade) ?? -1;
+      case 'pnl': return calculateTotalGainLoss(trade, markBasis) ?? -999999999;
+      case 'delta': return trade.latestMarketData?.delta ?? 999999;
+      default: return trade.expiration;
+    }
+  };
+  const aValue = value(a);
+  const bValue = value(b);
+  if (typeof aValue === 'string' && typeof bValue === 'string') return aValue.localeCompare(bValue) * dir;
+  return ((aValue as number) - (bValue as number)) * dir;
+}
 
 function todayIso(): string {
   return new Date().toISOString().split('T')[0];
@@ -112,6 +139,38 @@ function formatDteValue(value: number | null | undefined): string {
 function formatDays(value: number | null | undefined): string {
   if (!isFiniteNumber(value)) return DASH;
   return value === 1 ? '1 day' : `${value} days`;
+}
+
+function scheduleGroupKey(group: PortfolioScheduleGroup): string {
+  return 'expiration' in group ? group.expiration : group.ticker;
+}
+
+function scheduleGroupLabel(group: PortfolioScheduleGroup): string {
+  return 'expiration' in group ? formatFullDate(group.expiration) : group.ticker;
+}
+
+function scheduleGroupDte(group: PortfolioScheduleGroup): string {
+  if ('expiration' in group) return formatDteValue(group.dte);
+  if (!isFiniteNumber(group.minDte) || !isFiniteNumber(group.maxDte)) return DASH;
+  return group.minDte === group.maxDte ? formatDteValue(group.minDte) : `${group.minDte}–${group.maxDte} DTE`;
+}
+
+function scheduleGroupMetadata(group: PortfolioScheduleGroup): string {
+  if ('expiration' in group) return `${group.tradeCount} ${group.tradeCount === 1 ? 'position' : 'positions'} · ${group.contractCount} ${group.contractCount === 1 ? 'contract' : 'contracts'}`;
+  return `${group.tradeCount} ${group.tradeCount === 1 ? 'position' : 'positions'} · ${group.contractCount} ${group.contractCount === 1 ? 'contract' : 'contracts'} · ${group.expirationCount} ${group.expirationCount === 1 ? 'expiration' : 'expirations'}`;
+}
+
+function VixEntryTooltipContent({ trade }: { trade: PortfolioTrade }) {
+  return (
+    <div>
+      <div className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text)' }}>VIX at Trade Entry</div>
+      <TooltipRows rows={[
+        { label: 'Written', value: formatFullDate(trade.soldDate) },
+        { label: 'VIX Close', value: isFiniteNumber(trade.entryVixClose) ? trade.entryVixClose.toFixed(2) : DASH },
+        { label: 'Source', value: trade.entryVixSource === 'nearest_prior_close' ? `Nearest prior close · ${formatFullDate(trade.entryVixDate)}` : trade.entryVixSource === 'historical_close' ? `${formatFullDate(trade.entryVixDate)} closing value` : DASH },
+      ]} />
+    </div>
+  );
 }
 
 function parseDateOnly(value: string | null | undefined): Date | null {
@@ -879,6 +938,9 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
       notes,
       closePrice: status === 'closed' ? parsed.closePrice ?? undefined : trade?.closePrice,
       closeDate: status === 'closed' ? closeDate : trade?.closeDate,
+      entryVixClose: trade?.soldDate === soldDate ? trade.entryVixClose : undefined,
+      entryVixDate: trade?.soldDate === soldDate ? trade.entryVixDate : undefined,
+      entryVixSource: trade?.soldDate === soldDate ? trade.entryVixSource : undefined,
       createdAt: trade?.createdAt ?? new Date().toISOString(),
       updatedAt: trade?.updatedAt ?? new Date().toISOString(),
       entrySnapshot: trade?.entrySnapshot,
@@ -901,6 +963,9 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
       notes,
       closePrice: status === 'closed' ? parsed.closePrice ?? undefined : undefined,
       closeDate: status === 'closed' ? closeDate : undefined,
+      entryVixClose: trade?.soldDate === soldDate ? trade.entryVixClose : undefined,
+      entryVixDate: trade?.soldDate === soldDate ? trade.entryVixDate : undefined,
+      entryVixSource: trade?.soldDate === soldDate ? trade.entryVixSource : undefined,
       entrySnapshot: trade?.entrySnapshot,
       latestMarketData: trade?.latestMarketData,
     }, trade?.id);
@@ -1021,9 +1086,12 @@ export default function PortfolioPage() {
   const [markBasis, setMarkBasis] = useState<MarkBasis>(getInitialMarkBasis);
   const [showNominalYield, setShowNominalYield] = useState(false);
   const [showNotesErrors, setShowNotesErrors] = useState(false);
+  const [showOpenInterestVolume, setShowOpenInterestVolume] = useState(false);
   const [sortField, setSortField] = useState<SortField>('expiration');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const [groupMode, setGroupMode] = useState<PortfolioGroupMode>(readPortfolioGroupMode);
   const [collapsedExpiryGroups, setCollapsedExpiryGroups] = useState<Record<string, boolean>>(readCollapsedExpirationGroups);
+  const [collapsedUnderlyingGroups, setCollapsedUnderlyingGroups] = useState<Record<string, boolean>>(readCollapsedUnderlyingGroups);
   const [resolvingArchiveIds, setResolvingArchiveIds] = useState<Set<string>>(() => new Set());
   const [activeScheduleTicker, setActiveScheduleTicker] = useState<string | null>(null);
   const [highlightedExpiration, setHighlightedExpiration] = useState<string | null>(null);
@@ -1040,11 +1108,13 @@ export default function PortfolioPage() {
     setTrades(stored);
     const latest = Math.max(...stored.map(trade => trade.latestMarketData?.refreshedAt ? new Date(trade.latestMarketData.refreshedAt).getTime() : 0));
     if (latest > 0) setLastRefreshed(new Date(latest));
-    archiveExpiredOpenTrades(stored).then(result => {
-      if (!active || !result.changed) return;
-      savePortfolioTrades(result.trades);
-      setTrades(result.trades);
-    });
+    void (async () => {
+      const archived = await archiveExpiredOpenTrades(stored);
+      const withEntryVix = await resolvePortfolioEntryVix(archived.trades).catch(() => ({ trades: archived.trades, changed: false }));
+      if (!active) return;
+      if (archived.changed || withEntryVix.changed) savePortfolioTrades(withEntryVix.trades);
+      setTrades(withEntryVix.trades);
+    })();
     return () => {
       active = false;
     };
@@ -1066,55 +1136,53 @@ export default function PortfolioPage() {
     persistCollapsedExpirationGroups(collapsedExpiryGroups);
   }, [collapsedExpiryGroups]);
 
+  useEffect(() => {
+    persistCollapsedUnderlyingGroups(collapsedUnderlyingGroups);
+  }, [collapsedUnderlyingGroups]);
+
+  useEffect(() => {
+    persistPortfolioGroupMode(groupMode);
+  }, [groupMode]);
+
   useEffect(() => () => {
     if (highlightTimerRef.current) window.clearTimeout(highlightTimerRef.current);
   }, []);
 
   const expirationGroups = useMemo(() => {
     const groups = buildExpirationScheduleGroups(openTrades, markBasis);
-    const compareTrades = (a: PortfolioTrade, b: PortfolioTrade) => {
-      const dir = sortDir === 'asc' ? 1 : -1;
-      const value = (trade: PortfolioTrade): number | string => {
-        switch (sortField) {
-          case 'ticker': return trade.ticker;
-          case 'expiration': return trade.expiration;
-          case 'dte': return calculateRemainingDte(trade) ?? 999999;
-          case 'strike': return trade.strike;
-          case 'contracts': return trade.contracts;
-          case 'premium': return calculatePremiumCollected(trade) ?? -1;
-          case 'risk': return calculateEquityAtRisk(trade) ?? -1;
-          case 'pnl': return calculateTotalGainLoss(trade, markBasis) ?? -999999999;
-          case 'delta': return trade.latestMarketData?.delta ?? 999999;
-          default: return trade.expiration;
-        }
-      };
-      const aVal = value(a);
-      const bVal = value(b);
-      if (typeof aVal === 'string' && typeof bVal === 'string') return aVal.localeCompare(bVal) * dir;
-      return ((aVal as number) - (bVal as number)) * dir;
-    };
     const groupDir = sortField === 'expiration' && sortDir === 'desc' ? -1 : 1;
     return groups
       .sort((a, b) => a.expiration.localeCompare(b.expiration) * groupDir)
       .map(group => ({
         ...group,
-        trades: sortField === 'expiration' ? [...group.trades] : [...group.trades].sort(compareTrades),
+        trades: sortField === 'expiration' ? [...group.trades] : [...group.trades].sort((a, b) => compareScheduleTrades(a, b, sortField, sortDir, markBasis)),
       }));
   }, [openTrades, sortField, sortDir, markBasis]);
 
-  const allExpiryGroupsCollapsed = expirationGroups.length > 0
-    && expirationGroups.every(group => collapsedExpiryGroups[group.expiration] === true);
+  const underlyingGroups = useMemo(() => buildUnderlyingScheduleGroups(openTrades, markBasis).map(group => ({
+    ...group,
+    trades: [...group.trades].sort((a, b) => compareScheduleTrades(a, b, sortField, sortDir, markBasis)),
+  })), [openTrades, sortField, sortDir, markBasis]);
+
+  const scheduleGroups: PortfolioScheduleGroup[] = groupMode === 'expiration' ? expirationGroups : underlyingGroups;
+  const activeCollapsedGroups = groupMode === 'expiration' ? collapsedExpiryGroups : collapsedUnderlyingGroups;
+  const allScheduleGroupsCollapsed = scheduleGroups.length > 0
+    && scheduleGroups.every(group => activeCollapsedGroups[scheduleGroupKey(group)] === true);
 
   const toggleExpiryGroup = useCallback((expiration: string) => {
     setCollapsedExpiryGroups(current => toggleCollapsedExpirationGroup(current, expiration));
   }, []);
 
-  const toggleAllExpiryGroups = useCallback(() => {
-    setCollapsedExpiryGroups(() => setAllExpirationGroupsCollapsed(
-      expirationGroups.map(group => group.expiration),
-      !allExpiryGroupsCollapsed,
-    ));
-  }, [expirationGroups, allExpiryGroupsCollapsed]);
+  const toggleScheduleGroup = useCallback((key: string) => {
+    if (groupMode === 'expiration') setCollapsedExpiryGroups(current => toggleCollapsedExpirationGroup(current, key));
+    else setCollapsedUnderlyingGroups(current => toggleCollapsedExpirationGroup(current, key));
+  }, [groupMode]);
+
+  const toggleAllScheduleGroups = useCallback(() => {
+    const next = setAllExpirationGroupsCollapsed(scheduleGroups.map(scheduleGroupKey), !allScheduleGroupsCollapsed);
+    if (groupMode === 'expiration') setCollapsedExpiryGroups(next);
+    else setCollapsedUnderlyingGroups(next);
+  }, [scheduleGroups, allScheduleGroupsCollapsed, groupMode]);
 
   const scrollToSchedule = useCallback((selector?: string) => {
     window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
@@ -1136,6 +1204,7 @@ export default function PortfolioPage() {
   }, []);
 
   const drillToExpiration = useCallback((group: PortfolioExposureGroup) => {
+    setGroupMode('expiration');
     setActiveScheduleTicker(null);
     setHighlightedTradeId(null);
     setCollapsedExpiryGroups(current => ({ ...current, [group.key]: false }));
@@ -1145,21 +1214,22 @@ export default function PortfolioPage() {
 
   const drillToTicker = useCallback((group: PortfolioExposureGroup) => {
     const ticker = group.key.trim().toUpperCase();
-    const expirations = openTrades.filter(trade => trade.ticker.trim().toUpperCase() === ticker).map(trade => trade.expiration);
+    setGroupMode('underlying');
     setActiveScheduleTicker(ticker);
     setHighlightedExpiration(null);
     setHighlightedTradeId(null);
-    setCollapsedExpiryGroups(current => ({ ...current, ...Object.fromEntries(expirations.map(expiration => [expiration, false])) }));
-    scrollToSchedule(`[data-trade-ticker="${ticker}"]`);
-  }, [openTrades, scrollToSchedule]);
+    setCollapsedUnderlyingGroups(current => ({ ...current, [ticker]: false }));
+    scrollToSchedule(`[data-group-key="${ticker}"]`);
+  }, [scrollToSchedule]);
 
   const drillToTrade = useCallback((trade: PortfolioTrade) => {
     setActiveScheduleTicker(null);
     setHighlightedExpiration(null);
-    setCollapsedExpiryGroups(current => ({ ...current, [trade.expiration]: false }));
+    if (groupMode === 'expiration') setCollapsedExpiryGroups(current => ({ ...current, [trade.expiration]: false }));
+    else setCollapsedUnderlyingGroups(current => ({ ...current, [trade.ticker.trim().toUpperCase()]: false }));
     startTransientHighlight('trade', trade.id);
     scrollToSchedule(`[data-trade-id="${trade.id}"]`);
-  }, [scrollToSchedule, startTransientHighlight]);
+  }, [groupMode, scrollToSchedule, startTransientHighlight]);
 
   const persistTrades = useCallback((next: PortfolioTrade[]) => {
     savePortfolioTrades(next);
@@ -1182,16 +1252,21 @@ export default function PortfolioPage() {
   }, []);
 
   const handleRefreshOpenTrades = useCallback(async () => {
-    const current = loadPortfolioTrades();
-    const archived = await archiveExpiredOpenTrades(current);
-    if (archived.changed) savePortfolioTrades(archived.trades);
-    const sweepTrades = archived.trades;
-    const open = sweepTrades.filter(trade => trade.status === 'open');
-    setTrades(sweepTrades);
-    if (open.length === 0) return;
-
     setRefreshing(true);
     setRefreshWarning(false);
+    const current = loadPortfolioTrades();
+    const archived = await archiveExpiredOpenTrades(current);
+    const withEntryVix = await resolvePortfolioEntryVix(archived.trades).catch(() => ({ trades: archived.trades, changed: false }));
+    if (archived.changed || withEntryVix.changed) savePortfolioTrades(withEntryVix.trades);
+    const sweepTrades = withEntryVix.trades;
+    const open = sweepTrades.filter(trade => trade.status === 'open');
+    setTrades(sweepTrades);
+    if (open.length === 0) {
+      setLastRefreshed(new Date());
+      setRefreshing(false);
+      return;
+    }
+
     const nowIso = new Date().toISOString();
     const tickers = [...new Set(open.map(trade => trade.ticker))];
     const batchPriceResult = await fetchBatchPricesResult(tickers, { mode: 'revalidate' }).catch(() => null);
@@ -1420,11 +1495,12 @@ export default function PortfolioPage() {
               <DataFreshness updatedAt={lastRefreshed} status={refreshing ? 'updating' : refreshWarning ? 'failed' : lastRefreshed ? 'cached' : 'stale'} label="Portfolio marks" />
             </section>
 
-            <div ref={scheduleRef} className="flex min-h-[48px] items-center justify-between border-b px-3.5" style={{ borderColor: 'var(--border)' }}><h2 className="text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Open Positions</h2><span className="font-mono text-[11px]" style={{ color: 'var(--text-muted)' }}>{openTrades.length} trades</span></div>
-            {openTrades.length === 0 ? <div className="px-4 py-10 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No open positions.</div> : <div className="space-y-2 px-2 py-2">{expirationGroups.map(group => {
-              const expanded = collapsedExpiryGroups[group.expiration] !== true;
+            <div ref={scheduleRef} className="border-b px-3.5 py-2" style={{ borderColor: 'var(--border)' }}><div className="mb-2 flex items-center justify-between"><h2 className="text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Open Positions</h2><span className="font-mono text-[11px]" style={{ color: 'var(--text-muted)' }}>{openTrades.length} trades</span></div><div className="flex items-center gap-2"><span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Group</span><div className="min-w-0 flex-1"><MobileSegmentedControl value={groupMode} onChange={setGroupMode} label="Group portfolio positions" options={[{ value: 'expiration', label: 'Expiry' }, { value: 'underlying', label: 'Underlying' }]} /></div></div></div>
+            {openTrades.length === 0 ? <div className="px-4 py-10 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No open positions.</div> : <div className="space-y-2 px-2 py-2">{scheduleGroups.map(group => {
+              const key = scheduleGroupKey(group);
+              const expanded = activeCollapsedGroups[key] !== true;
               const captured = group.premiumCollected > 0 && group.totalGainLoss != null ? group.totalGainLoss / group.premiumCollected : null;
-              return <MobileExpirationGroup key={group.expiration} label={formatFullDate(group.expiration)} dte={formatDteValue(group.dte)} positions={group.tradeCount} contracts={group.contractCount} risk={formatCurrency(group.grossRisk, 0)} pnl={formatCurrency(group.totalGainLoss, 0)} captured={formatPctValue(captured)} expanded={expanded} onToggle={() => toggleExpiryGroup(group.expiration)}>{group.trades.map(trade => <MobilePositionRow key={trade.id} ticker={trade.ticker} strike={formatCurrency(trade.strike)} contracts={trade.contracts} expiration={formatDteValue(calculateRemainingDte(trade))} pnl={formatCurrency(calculateTotalGainLoss(trade, markBasis), 0)} captured={formatPctValue(calculatePercentCaptured(trade, markBasis))} mark={formatOptionPrice(calculateCurrentOptionMark(trade, markBasis))} delta={formatDelta(trade.latestMarketData?.delta)} distance={formatPctValue(calculateDistanceToStrike(trade))} health={getPositionHealth(trade)} onOpen={() => openDrawer(trade)} onEdit={() => setEditingTrade(trade)} />)}</MobileExpirationGroup>;
+              return <MobileExpirationGroup key={key} label={scheduleGroupLabel(group)} dte={groupMode === 'underlying' && 'expirationCount' in group ? `${group.expirationCount} ${group.expirationCount === 1 ? 'expiry' : 'expiries'}` : scheduleGroupDte(group)} positions={group.tradeCount} contracts={group.contractCount} risk={formatCurrency(group.grossRisk, 0)} pnl={formatCurrency(group.totalGainLoss, 0)} captured={formatPctValue(captured)} expanded={expanded} onToggle={() => toggleScheduleGroup(key)}>{group.trades.map(trade => <MobilePositionRow key={trade.id} ticker={trade.ticker} strike={formatCurrency(trade.strike)} contracts={trade.contracts} expiration={formatDteValue(calculateRemainingDte(trade))} pnl={formatCurrency(calculateTotalGainLoss(trade, markBasis), 0)} captured={formatPctValue(calculatePercentCaptured(trade, markBasis))} mark={formatOptionPrice(calculateCurrentOptionMark(trade, markBasis))} delta={formatDelta(trade.latestMarketData?.delta)} distance={formatPctValue(calculateDistanceToStrike(trade))} entryVix={isFiniteNumber(trade.entryVixClose) ? trade.entryVixClose.toFixed(2) : DASH} health={getPositionHealth(trade)} onOpen={() => openDrawer(trade)} onEdit={() => setEditingTrade(trade)} />)}</MobileExpirationGroup>;
             })}</div>}
 
             {openTrades.length > 0 && <section className="border-t px-3.5 py-4" style={{ borderColor: 'var(--border)' }}><h2 className="mb-2 text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Analytics</h2><MobileSegmentedControl value={mobileAnalytics} onChange={setMobileAnalytics} label="Portfolio analytics" options={[{ value: 'maturity', label: 'Maturity' }, { value: 'ticker', label: 'Exposure' }, { value: 'attention', label: 'Attention' }, { value: 'close', label: 'Close' }]} /><div className="mt-2">{mobileAnalytics === 'maturity' && <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openTrades, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." onGroupClick={drillToExpiration} />}{mobileAnalytics === 'ticker' && <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openTrades, markBasis)} totalGrossRisk={sumValues(openTrades.map(calculateEquityAtRisk))} maxItems={8} onGroupClick={drillToTicker} />}{mobileAnalytics === 'attention' && <NeedsAttentionList items={buildNeedsAttention(openTrades).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} />}{mobileAnalytics === 'close' && <CloseCandidatesCard candidates={buildCloseCandidates(openTrades, markBasis).slice(0, 5)} onNavigate={drillToTrade} />}</div></section>}
@@ -1570,10 +1646,17 @@ export default function PortfolioPage() {
                 {activeScheduleTicker && <span className="inline-flex items-center gap-1 rounded px-2 py-1 text-[10px]" style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)', border: '1px solid var(--accent-border)' }}>Showing: {activeScheduleTicker}<button type="button" onClick={() => setActiveScheduleTicker(null)} className="font-bold" aria-label="Clear ticker highlight">× Clear</button></span>}
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                <div className="inline-flex items-center gap-1 rounded-lg p-0.5" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }} role="group" aria-label="Group positions by">
+                  <span className="px-1.5 text-[9px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Group by</span>
+                  {([['expiration', 'Expiry'], ['underlying', 'Underlying']] as const).map(([value, label]) => (
+                    <button key={value} type="button" onClick={() => setGroupMode(value)} aria-pressed={groupMode === value} className="rounded-md px-2 py-1 text-[10px] font-semibold" style={{ backgroundColor: groupMode === value ? 'var(--accent-bg)' : 'transparent', color: groupMode === value ? 'var(--accent-light)' : 'var(--text-muted)' }}>{label}</button>
+                  ))}
+                </div>
                 <DisplayToggle checked={showNominalYield} onChange={setShowNominalYield} label="Show Nominal Yield" />
+                <DisplayToggle checked={showOpenInterestVolume} onChange={setShowOpenInterestVolume} label="Show OI / Volume" />
                 <DisplayToggle checked={showNotesErrors} onChange={setShowNotesErrors} label="Show Notes / Errors" />
-                {expirationGroups.length > 0 && <button onClick={toggleAllExpiryGroups} className="rounded-lg px-2 py-1.5 text-[11px] whitespace-nowrap" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
-                  {allExpiryGroupsCollapsed ? 'Expand All' : 'Collapse All'}
+                {scheduleGroups.length > 0 && <button onClick={toggleAllScheduleGroups} className="rounded-lg px-2 py-1.5 text-[11px] whitespace-nowrap" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+                  {allScheduleGroupsCollapsed ? 'Expand All' : 'Collapse All'}
                 </button>}
               </div>
             </div>
@@ -1675,7 +1758,8 @@ export default function PortfolioPage() {
                       <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>Underlying</th>
                       <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>Distance to Strike</th>
                       <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>IV</th>
-                      <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>OI / Volume</th>
+                      <th className="px-2 py-2 text-[11px] font-medium text-right whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>VIX @ Entry</th>
+                      {showOpenInterestVolume && <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>OI / Volume</th>}
                       {showNominalYield && <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>Original NY</th>}
                       <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>Original AY</th>
                       {showNominalYield && <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>Current NY</th>}
@@ -1685,20 +1769,22 @@ export default function PortfolioPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {expirationGroups.map(group => {
-                      const collapsed = collapsedExpiryGroups[group.expiration] === true;
+                    {scheduleGroups.map(group => {
+                      const groupKey = scheduleGroupKey(group);
+                      const collapsed = activeCollapsedGroups[groupKey] === true;
                       const captured = group.premiumCollected > 0 && group.totalGainLoss != null ? group.totalGainLoss / group.premiumCollected : null;
-                      return <Fragment key={group.expiration}>
-                        <tr data-expiration={group.expiration} className="scroll-mt-20 transition-colors duration-500 motion-reduce:transition-none" style={{ backgroundColor: highlightedExpiration === group.expiration ? 'var(--accent-bg)' : 'var(--surface-alt)', borderTop: `1px solid ${highlightedExpiration === group.expiration ? 'var(--accent)' : 'var(--accent-border)'}`, borderBottom: '1px solid var(--border)', color: 'var(--text)' }}>
+                      const isHighlighted = 'expiration' in group && highlightedExpiration === group.expiration;
+                      return <Fragment key={groupKey}>
+                        <tr data-group-key={groupKey} data-expiration={'expiration' in group ? group.expiration : undefined} className="scroll-mt-20 transition-colors duration-500 motion-reduce:transition-none" style={{ backgroundColor: isHighlighted ? 'var(--accent-bg)' : 'var(--surface-alt)', borderTop: `1px solid ${isHighlighted ? 'var(--accent)' : 'var(--accent-border)'}`, borderBottom: '1px solid var(--border)', color: 'var(--text)' }}>
                           <td className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
-                            <button onClick={() => toggleExpiryGroup(group.expiration)} aria-expanded={!collapsed} className="inline-flex items-center gap-1 hover:opacity-80">
+                            <button onClick={() => toggleScheduleGroup(groupKey)} aria-expanded={!collapsed} className="inline-flex items-center gap-1 hover:opacity-80">
                               {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                              <span className="uppercase tracking-wide">{formatFullDate(group.expiration)}</span>
+                              <span className="uppercase tracking-wide">{scheduleGroupLabel(group)}</span>
                             </button>
                           </td>
                           <td className="px-2 py-1.5 text-right font-mono tabular-nums">{DASH}</td>
-                          <td className="px-2 py-1.5 text-right font-mono tabular-nums whitespace-nowrap">{formatDteValue(group.dte)}</td>
-                          <td className="px-2 py-1.5 text-left whitespace-nowrap">{group.tradeCount} {group.tradeCount === 1 ? 'position' : 'positions'}</td>
+                          <td className="px-2 py-1.5 text-right font-mono tabular-nums whitespace-nowrap">{scheduleGroupDte(group)}</td>
+                          <td className="px-2 py-1.5 text-left whitespace-nowrap">{scheduleGroupMetadata(group)}</td>
                           <td className="px-2 py-1.5 text-right">{DASH}</td>
                           <td className="px-2 py-1.5 text-right font-mono tabular-nums font-semibold">{group.contractCount}</td>
                           <td className="px-2 py-1.5 text-right">{DASH}</td>
@@ -1711,15 +1797,16 @@ export default function PortfolioPage() {
                           <td className="px-2 py-1.5 text-right font-mono tabular-nums font-semibold" style={{ color: pnlColor(captured) }}>{formatPctValue(captured)}</td>
                           <td className="px-2 py-1.5 text-right font-mono tabular-nums font-semibold" style={{ color: pnlColor(group.weightedAverageDelta) }}>{formatDelta(group.weightedAverageDelta)}</td>
                           <td className="px-2 py-1.5 text-right">{DASH}</td>
+                          <td className="px-2 py-1.5 text-right font-mono tabular-nums">{'underlyingPrice' in group ? formatCurrency(group.underlyingPrice) : DASH}</td>
                           <td className="px-2 py-1.5 text-right">{DASH}</td>
                           <td className="px-2 py-1.5 text-right">{DASH}</td>
                           <td className="px-2 py-1.5 text-right">{DASH}</td>
-                          <td className="px-2 py-1.5 text-right">{DASH}</td>
+                          {showOpenInterestVolume && <td className="px-2 py-1.5 text-right">{DASH}</td>}
                           {showNominalYield && <td className="px-2 py-1.5 text-right font-mono tabular-nums font-semibold">{formatPctValue(group.originalNY)}</td>}
                           <td className="px-2 py-1.5 text-right font-mono tabular-nums font-semibold">{formatPctValue(group.originalAY)}</td>
                           {showNominalYield && <td className="px-2 py-1.5 text-right font-mono tabular-nums font-semibold">{formatPctValue(group.currentNY)}</td>}
                           <td className="px-2 py-1.5 text-right font-mono tabular-nums font-semibold">{formatPctValue(group.currentAY)}</td>
-                          {showNotesErrors && <td className="px-2 py-1.5 text-left text-[10px]" style={{ color: 'var(--text-dim)' }}>Expiration subtotal</td>}
+                          {showNotesErrors && <td className="px-2 py-1.5 text-left text-[10px]" style={{ color: 'var(--text-dim)' }}>{groupMode === 'expiration' ? 'Expiration' : 'Underlying'} subtotal</td>}
                           <td className="px-2 py-1.5 text-left">{DASH}</td>
                         </tr>
                         {!collapsed && group.trades.map((trade, index) => {
@@ -1764,7 +1851,10 @@ export default function PortfolioPage() {
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(trade.latestMarketData?.underlyingPrice ?? trade.entrySnapshot?.underlyingPrice)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: percentColor(calculateDistanceToStrike(trade)) }}>{formatPctValue(calculateDistanceToStrike(trade))}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatPercentPoints(trade.latestMarketData?.iv, 1)}</td>
-                          <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{isFiniteNumber(trade.latestMarketData?.openInterest) || isFiniteNumber(trade.latestMarketData?.volume) ? `${trade.latestMarketData?.openInterest ?? DASH} / ${trade.latestMarketData?.volume ?? DASH}` : DASH}</td>
+                          <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">
+                            {isFiniteNumber(trade.entryVixClose) ? <HoverTooltip content={<VixEntryTooltipContent trade={trade} />} ariaLabel={`${trade.ticker} VIX at entry details`}>{trade.entryVixClose.toFixed(2)}</HoverTooltip> : DASH}
+                          </td>
+                          {showOpenInterestVolume && <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{isFiniteNumber(trade.latestMarketData?.openInterest) || isFiniteNumber(trade.latestMarketData?.volume) ? `${trade.latestMarketData?.openInterest ?? DASH} / ${trade.latestMarketData?.volume ?? DASH}` : DASH}</td>}
                           {showNominalYield && <td className="px-2 py-1 text-right font-mono tabular-nums">{formatPctValue(calculateOriginalNominalYield(trade))}</td>}
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatPctValue(calculateOriginalAnnualizedYield(trade))}</td>
                           {showNominalYield && <td className="px-2 py-1 text-right font-mono tabular-nums">{formatPctValue(calculateCurrentNominalYield(trade, markBasis))}</td>}
@@ -1816,6 +1906,7 @@ export default function PortfolioPage() {
                       <td className="px-2 py-2 text-right font-mono tabular-nums">{DASH}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums">{DASH}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums">{DASH}</td>
+                      {showOpenInterestVolume && <td className="px-2 py-2 text-right font-mono tabular-nums">{DASH}</td>}
                       {showNominalYield && <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold">{formatPctValue(scheduleTotals.originalNominalYield)}</td>}
                       <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold">{formatPctValue(scheduleTotals.originalAnnualizedYield)}</td>
                       {showNominalYield && <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold">{formatPctValue(scheduleTotals.currentNominalYield)}</td>}
@@ -1979,6 +2070,7 @@ function ArchiveHistorySection({
           const resolving = resolvingIds.has(trade.id);
           const realizedPnl = getArchivedRealizedPnl(trade);
           const percentCaptured = getArchivedPercentCaptured(trade);
+          const realizedIrr = historyRealizedIrr(trade);
           return (
             <article key={`history-${trade.id}`} className="rounded-xl p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
               <div className="flex items-start justify-between gap-3">
@@ -1992,6 +2084,7 @@ function ArchiveHistorySection({
                 <Metric label="Premium" value={formatCurrency(getArchivedPremium(trade))} color="var(--green)" />
                 <Metric label="Realized P&L" value={formatCurrency(realizedPnl)} color={pnlColor(realizedPnl)} />
                 <Metric label="Captured" value={formatPctValue(percentCaptured)} color={pnlColor(percentCaptured)} />
+                <Metric label="Realized IRR" value={formatPctValue(realizedIrr)} color={pnlColor(realizedIrr)} />
                 <Metric label="Final value" value={formatCurrency(getArchivedFinalValue(trade))} />
               </div>
               {trade.resolutionWarning && <p className="mt-2 text-[11px]" style={{ color: 'var(--yellow)' }}>{trade.resolutionWarning}</p>}
@@ -2010,8 +2103,8 @@ function ArchiveHistorySection({
           <table className="min-w-max w-full text-[12px] leading-none">
             <thead>
               <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
-                {['Ticker', 'Expiration', 'Strike', 'Contracts', 'Written Date', 'Days Held', 'Sold Price', 'Expiration Close', 'Final Value', 'Premium Collected', 'Realized P&L', '% Captured', 'Outcome', 'Actions'].map((label, index) => (
-                  <th key={label} className={`px-2 py-2 text-[11px] font-medium whitespace-nowrap ${index === 0 || label === 'Outcome' || label === 'Actions' ? 'text-left' : 'text-right'}`} style={{ color: 'var(--text-muted)' }}>{label}</th>
+                {['Ticker', 'Expiration', 'Strike', 'Contracts', 'Written Date', 'Days Held', 'Sold Price', 'Expiration Close', 'Final Value', 'Premium Collected', 'Realized P&L', 'Realized IRR', '% Captured', 'Outcome', 'Actions'].map((label, index) => (
+                  <th key={label} title={label === 'Realized IRR' ? 'Compounded annualized return on original net capital at risk over actual calendar days held.' : undefined} className={`px-2 py-2 text-[11px] font-medium whitespace-nowrap ${index === 0 || label === 'Outcome' || label === 'Actions' ? 'text-left' : 'text-right'}`} style={{ color: 'var(--text-muted)' }}>{label}</th>
                 ))}
               </tr>
             </thead>
@@ -2022,8 +2115,9 @@ function ArchiveHistorySection({
                 const resolving = resolvingIds.has(trade.id);
                 const realizedPnl = getArchivedRealizedPnl(trade);
                 const percentCaptured = getArchivedPercentCaptured(trade);
+                const realizedIrr = historyRealizedIrr(trade);
                 return (
-                  <tr key={trade.id} title={`${trade.ticker} ${formatCurrency(trade.strike)} Put\nWritten: ${formatFullDate(trade.soldDate)}\nResolved: ${formatFullDate(trade.closeDate ?? trade.resolvedDate ?? trade.expiration)}\nDays held: ${formatDays(historyDaysHeld(trade))}\nSold: ${formatOptionPrice(trade.soldPrice)}\nClose: ${formatOptionPrice(trade.closePrice)}\nUnderlying expiration close: ${formatCurrency(trade.expirationClosePrice)}\nFinal value: ${formatCurrency(getArchivedFinalValue(trade))}\nPremium: ${formatCurrency(getArchivedPremium(trade))}\nRealized P&L: ${formatCurrency(realizedPnl)}\nCaptured: ${formatPctValue(percentCaptured)}\nOriginal AY: ${formatPctValue(calculateOriginalAnnualizedYield(trade))}\nOutcome: ${getArchiveOutcomeLabel(trade)}`} style={{ borderBottom: '1px solid var(--border)', backgroundColor: index % 2 ? 'var(--row-alt)' : 'transparent' }}>
+                  <tr key={trade.id} title={`${trade.ticker} ${formatCurrency(trade.strike)} Put\nWritten: ${formatFullDate(trade.soldDate)}\nResolved: ${formatFullDate(trade.closeDate ?? trade.resolvedDate ?? trade.expiration)}\nDays held: ${formatDays(historyDaysHeld(trade))}\nSold: ${formatOptionPrice(trade.soldPrice)}\nClose: ${formatOptionPrice(trade.closePrice)}\nUnderlying expiration close: ${formatCurrency(trade.expirationClosePrice)}\nFinal value: ${formatCurrency(getArchivedFinalValue(trade))}\nPremium: ${formatCurrency(getArchivedPremium(trade))}\nRealized P&L: ${formatCurrency(realizedPnl)}\nRealized IRR: ${formatPctValue(realizedIrr)}\nCaptured: ${formatPctValue(percentCaptured)}\nOriginal AY: ${formatPctValue(calculateOriginalAnnualizedYield(trade))}\nOutcome: ${getArchiveOutcomeLabel(trade)}`} style={{ borderBottom: '1px solid var(--border)', backgroundColor: index % 2 ? 'var(--row-alt)' : 'transparent' }}>
                     <td className="px-2 py-1 text-left font-mono font-bold whitespace-nowrap" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatFullDate(trade.expiration)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatCurrency(trade.strike)}</td>
@@ -2035,6 +2129,7 @@ function ArchiveHistorySection({
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(getArchivedFinalValue(trade))}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(getArchivedPremium(trade))}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(realizedPnl) }}>{formatCurrency(realizedPnl)}</td>
+                    <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(realizedIrr) }}>{formatPctValue(realizedIrr)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(percentCaptured) }}>{formatPctValue(percentCaptured)}</td>
                     <td className="px-2 py-1 text-left whitespace-nowrap">
                       <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold leading-none" title={trade.resolutionWarning ?? getArchiveOutcomeLabel(trade)} style={{ color: getArchiveOutcomeColor(trade), backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>

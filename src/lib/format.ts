@@ -1,4 +1,4 @@
-import { isFiniteNumber } from './optionMetrics';
+import { isFiniteNumber } from './optionMetrics.ts';
 
 export const EMPTY_VALUE = '—';
 
@@ -50,6 +50,17 @@ export function formatDate(value: number | string | Date | null | undefined): st
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return EMPTY_VALUE;
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+export function formatOptionLastTradeDate(value: number | null | undefined): string {
+  const timestamp = normalizeTimestampMs(value);
+  if (timestamp == null) return EMPTY_VALUE;
+  return new Date(timestamp).toLocaleDateString('en-US', {
+    month: '2-digit',
+    day: '2-digit',
+    year: '2-digit',
+    timeZone: 'UTC',
+  });
 }
 
 export function normalizeTimestampMs(value: number | null | undefined): number | null {

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { passesScannerLiquidityFilter, sortScannerEtfs } from '../src/lib/scannerDiscovery.ts';
-import { buildHistoryAnalytics, buildMonthlyRealizedPnl, filterHistoryTrades, historyDaysHeld, historyRealizedPnl } from '../src/lib/portfolioHistoryAnalytics.ts';
+import { buildHistoryAnalytics, buildMonthlyRealizedPnl, filterHistoryTrades, historyDaysHeld, historyRealizedIrr, historyRealizedPnl } from '../src/lib/portfolioHistoryAnalytics.ts';
 
 const etfs = ['BBB', 'AAA', 'CCC'].map(ticker => ({ ticker, name: ticker, leverage: '3x', underlying: ticker, type: 'Sector' }));
 const snapshot = (label, score, iv) => ({ liquidityLabel: label, liquidityScore: score, atmPutIv: iv });
@@ -58,4 +58,14 @@ test('history days held excludes missing dates and monthly P&L groups by resolut
   const months = buildMonthlyRealizedPnl([august, september]);
   assert.deepEqual(months.map(month => month.month), ['2026-08', '2026-09']);
   assert.deepEqual(months.map(month => month.trades), [1, 1]);
+});
+
+test('realized IRR compounds realized return on net risk over actual calendar days', () => {
+  const winner = trade({ soldDate: '2026-01-01', closeDate: '2027-01-01', daysHeld: 7, status: 'closed', resolutionType: undefined, closePrice: 1 });
+  const expected = Math.pow(1 + 100 / 4_800, 365.25 / 365) - 1;
+  assert.ok(Math.abs(historyRealizedIrr(winner) - expected) < 1e-12);
+  assert.equal(historyRealizedIrr(trade({ daysHeld: 365, realizedPnl: -4_800 })), -1);
+  assert.equal(historyRealizedIrr(trade({ daysHeld: 365, realizedPnl: -5_000 })), null);
+  assert.equal(historyRealizedIrr(trade({ soldDate: '2026-08-21', resolvedDate: '2026-08-21', daysHeld: 99 })), null);
+  assert.equal(historyRealizedIrr(trade({ soldDate: '' })), null);
 });
