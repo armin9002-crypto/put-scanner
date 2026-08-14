@@ -9,7 +9,7 @@ Put Scanner currently has two primary user-data stores: a single unversioned por
 
 The most serious migration blocker is destructive read-time normalization. A malformed portfolio or watchlist value is treated as an empty array, and the empty/filtered result can then be written back during a normal read. Invalid individual records are also silently discarded. Cloud synchronization must not be placed on top of those semantics.
 
-The repository already contains the `@supabase/supabase-js` dependency and three migrations, but no runtime code imports the client and no Put Scanner feature depends on it. The migrations create a separate project-management product named Flowboard. They must not be run against a Put Scanner project.
+At the time of the Stage 1 audit, the repository contained the `@supabase/supabase-js` dependency and three migrations, but no runtime code imported the client and no Put Scanner feature depended on it. The migrations created a separate project-management product named Flowboard. Stage 1.5 removed those SQL files from the active migration path; see `docs/LEGACY_SUPABASE_ARTIFACTS.md`.
 
 Stage 1 adds a local-only, versioned export/import flow. It makes no API calls, excludes market caches and transient quote fields, validates an import before writing, requires a pre-import recovery download, replaces rather than merges data, and rolls back completed key writes if a later storage write fails.
 
@@ -118,7 +118,7 @@ The generic market-data broker supports `sessionStorage`, but no current product
 
 No IndexedDB use or application-owned persistent cookies were found. `api/_lib/yahoo.js` handles Yahoo response cookies only inside server-side option-session acquisition; those are warm-function memory state, not browser persistence.
 
-## Existing Supabase artifacts
+## Supabase artifacts found in Stage 1
 
 Found:
 
@@ -129,7 +129,7 @@ Found:
 
 No source or API file imports Supabase, creates a client, reads Supabase environment variables, or depends on these tables. Running these migrations would create unrelated Flowboard project-management objects and auth triggers in a Put Scanner database.
 
-Recommendation: do not run them. Before Stage 2, archive them outside the active Supabase migration path or delete them in a dedicated cleanup commit after confirming they have no historical value. Remove the unused client dependency in that same cleanup if Stage 2 will pin/install the desired version deliberately; otherwise retain but do not initialize it until the Put Scanner schema/RLS design is reviewed. New Put Scanner migrations must start from a clean, product-specific baseline.
+Stage 1.5 disposition: the three Flowboard SQL files were deleted from `supabase/migrations/` after the dependency check above and remain recoverable in Git history. The unused package dependency remains uninitialized. New Put Scanner migrations must start from a clean, product-specific baseline. See `docs/LEGACY_SUPABASE_ARTIFACTS.md`.
 
 ## Storage risks
 

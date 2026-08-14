@@ -107,16 +107,19 @@ test('export creates the versioned format with every durable namespace and no ma
     appVersion: '1.2.3',
   });
   assert.equal(backup.format, 'put-scanner-backup');
-  assert.equal(backup.schemaVersion, 1);
+  assert.equal(backup.schemaVersion, 2);
   assert.equal(backup.exportedAt, '2026-08-13T23:42:00.000Z');
   assert.equal(backup.appVersion, '1.2.3');
   assert.deepEqual(Object.keys(backup.data).sort(), ['portfolio', 'preferences', 'watchlist']);
-  assert.equal(backup.data.portfolio.length, 2);
-  assert.equal(backup.data.watchlist.length, 1);
-  assert.equal(backup.data.preferences.theme, 'sepia');
-  assert.equal(backup.data.preferences.portfolioMarkBasis, 'bid');
-  assert.equal(backup.data.preferences.portfolioGroupMode, 'underlying');
-  assert.equal(backup.data.preferences.showNominalYield, true);
+  assert.equal(backup.data.portfolio.schemaVersion, 1);
+  assert.equal(backup.data.watchlist.schemaVersion, 1);
+  assert.equal(backup.data.preferences.schemaVersion, 1);
+  assert.equal(backup.data.portfolio.data.length, 2);
+  assert.equal(backup.data.watchlist.data.length, 1);
+  assert.equal(backup.data.preferences.data.theme, 'sepia');
+  assert.equal(backup.data.preferences.data.portfolioMarkBasis, 'bid');
+  assert.equal(backup.data.preferences.data.portfolioGroupMode, 'underlying');
+  assert.equal(backup.data.preferences.data.showNominalYield, true);
 
   const serialized = serializePutScannerBackup(backup);
   assert.doesNotMatch(serialized, /SECRET_CACHE_SENTINEL|SECRET_SNAPSHOT_SENTINEL|SECRET_CHART_SENTINEL/);
@@ -142,17 +145,47 @@ test('valid import roundtrip reproduces durable state without network calls or d
     applyPutScannerBackup(destination, exported);
     const roundtrip = createPutScannerBackup(destination, { now: new Date('2026-08-14T00:00:00.000Z') });
     assert.deepEqual(roundtrip.data, exported.data);
-    assert.equal(JSON.parse(destination.getItem(PORTFOLIO_STORAGE_KEY)).length, 2);
+    assert.equal(JSON.parse(destination.getItem(PORTFOLIO_STORAGE_KEY)).data.length, 2);
     assert.equal(requests, 0);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
+test('a pre-Stage-1.5 schema v1 backup migrates explicitly and imports safely', () => {
+  const { latestMarketData: _market, ...durableTrade } = openTrade();
+  const { snapshot: _snapshot, status: _status, updatedAt: _updatedAt, ...durableWatch } = watchlistItem();
+  const legacyBackup = {
+    format: 'put-scanner-backup',
+    schemaVersion: 1,
+    exportedAt: '2026-08-13T23:42:00.000Z',
+    appVersion: '0.0.0',
+    data: {
+      portfolio: [durableTrade],
+      watchlist: [durableWatch],
+      preferences: { theme: 'light', portfolioMarkBasis: 'last' },
+    },
+  };
+
+  const migrated = validatePutScannerBackup(legacyBackup);
+  assert.equal(migrated.schemaVersion, 2);
+  assert.equal(migrated.data.portfolio.schemaVersion, 1);
+  assert.equal(migrated.data.portfolio.updatedAt, null);
+  assert.equal(migrated.data.portfolio.data[0].id, 'trade-open');
+  assert.equal(migrated.data.preferences.data.theme, 'light');
+
+  const destination = new MemoryStorage();
+  applyPutScannerBackup(destination, legacyBackup);
+  const storedPortfolio = JSON.parse(destination.getItem(PORTFOLIO_STORAGE_KEY));
+  assert.equal(storedPortfolio.schemaVersion, 1);
+  assert.equal(storedPortfolio.data[0].id, 'trade-open');
+  assert.equal('latestMarketData' in storedPortfolio.data[0], false);
+});
+
 test('malformed JSON, wrong formats, and unsupported future schemas are rejected', () => {
   assert.throws(() => parsePutScannerBackup('{broken'), /not valid JSON/);
   assert.throws(() => validatePutScannerBackup({ format: 'other', schemaVersion: 1 }), /not a Put Scanner backup/);
-  assert.throws(() => validatePutScannerBackup({ format: 'put-scanner-backup', schemaVersion: 2 }), /newer than this app supports/);
+  assert.throws(() => validatePutScannerBackup({ format: 'put-scanner-backup', schemaVersion: 3 }), /newer than this app supports/);
 });
 
 test('validation failures do not alter current state', () => {
@@ -164,13 +197,13 @@ test('validation failures do not alter current state', () => {
     exportedAt: '2026-08-13T23:42:00.000Z',
     appVersion: '1.0.0',
     data: { portfolio: 'not-an-array', watchlist: [], preferences: {} },
-  }), /data\.portfolio must be an array/);
+  }), /data\.portfolio: Portfolio data must be an array/);
   assert.deepEqual(storage.values, before);
 });
 
 test('missing optional preferences preserve the browser preferences already in place', () => {
   const backup = createPutScannerBackup(seededStorage());
-  backup.data.preferences = {};
+  backup.data.preferences.data = {};
   const destination = new MemoryStorage({
     [PORTFOLIO_STORAGE_KEY]: '[]',
     [WATCHLIST_STORAGE_KEY]: '[]',

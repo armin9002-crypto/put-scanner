@@ -1,29 +1,46 @@
 import { SHOW_NOMINAL_YIELD_KEY } from './optionTablePreferences.ts';
-import { PORTFOLIO_MARK_BASIS_KEY, PORTFOLIO_MARK_BASIS_OPTIONS } from './portfolioMarkPreference.ts';
+import { PORTFOLIO_MARK_BASIS_KEY } from './portfolioMarkPreference.ts';
 import {
   PORTFOLIO_EXPIRY_GROUPS_KEY,
   PORTFOLIO_GROUP_MODE_KEY,
   PORTFOLIO_UNDERLYING_GROUPS_KEY,
-  type PortfolioGroupMode,
 } from './portfolioSchedulePreferences.ts';
-import { normalizePortfolioTrade, PORTFOLIO_STORAGE_KEY, type PortfolioTrade } from './portfolioStorage.ts';
+import {
+  createPortfolioStorageEnvelope,
+  migratePortfolioState,
+  PORTFOLIO_STORAGE_KEY,
+  readPortfolioTrades,
+  serializePortfolioStorageEnvelope,
+  toDurablePortfolioState,
+  type DurablePortfolioTrade,
+} from './portfolioStorage.ts';
 import {
   LEGACY_THEME_STORAGE_KEY,
-  normalizeSavedTheme,
   THEME_MIGRATION_KEY,
   THEME_MIGRATION_VERSION,
   THEME_STORAGE_KEY,
-  type Theme,
 } from './themePreference.ts';
 import {
-  LEGACY_WATCHLIST_STORAGE_KEY,
-  normalizeWatchlistItem,
+  createWatchlistStorageEnvelope,
+  migrateWatchlistState,
+  readWatchlist,
+  serializeWatchlistStorageEnvelope,
+  toDurableWatchlistState,
   WATCHLIST_STORAGE_KEY,
-  type WatchlistItem,
+  type DurableWatchlistItem,
 } from './watchlist.ts';
+import {
+  createPreferencesEnvelope,
+  migratePreferencesState,
+  readDurablePreferences,
+  validatePreferencesEnvelope,
+  type DurablePreferences,
+  type DurablePreferencesEnvelopeV1,
+} from './durablePreferences.ts';
+import type { DurableStateEnvelope } from './durableStorage.ts';
 
 export const PUT_SCANNER_BACKUP_FORMAT = 'put-scanner-backup';
-export const PUT_SCANNER_BACKUP_SCHEMA_VERSION = 1;
+export const PUT_SCANNER_BACKUP_SCHEMA_VERSION = 2 as const;
 
 export interface BackupStorage {
   getItem(key: string): string | null;
@@ -31,17 +48,8 @@ export interface BackupStorage {
   removeItem(key: string): void;
 }
 
-export type DurablePortfolioTrade = Omit<PortfolioTrade, 'latestMarketData'>;
-export type DurableWatchlistItem = Omit<WatchlistItem, 'snapshot' | 'status' | 'updatedAt'>;
-
-export interface BackupPreferences {
-  theme?: Theme;
-  portfolioMarkBasis?: 'last' | 'bid' | 'ask';
-  portfolioGroupMode?: PortfolioGroupMode;
-  collapsedExpirationGroups?: Record<string, boolean>;
-  collapsedUnderlyingGroups?: Record<string, boolean>;
-  showNominalYield?: boolean;
-}
+export type BackupPreferences = DurablePreferences;
+export type BackupNamespace<T> = DurableStateEnvelope<T, 1>;
 
 export interface PutScannerBackup {
   format: typeof PUT_SCANNER_BACKUP_FORMAT;
@@ -49,9 +57,21 @@ export interface PutScannerBackup {
   exportedAt: string;
   appVersion: string;
   data: {
-    portfolio: DurablePortfolioTrade[];
-    watchlist: DurableWatchlistItem[];
-    preferences: BackupPreferences;
+    portfolio: BackupNamespace<DurablePortfolioTrade[]>;
+    watchlist: BackupNamespace<DurableWatchlistItem[]>;
+    preferences: DurablePreferencesEnvelopeV1;
+  };
+}
+
+interface PutScannerBackupV1 {
+  format: typeof PUT_SCANNER_BACKUP_FORMAT;
+  schemaVersion: 1;
+  exportedAt: string;
+  appVersion: string;
+  data: {
+    portfolio: unknown;
+    watchlist: unknown;
+    preferences: unknown;
   };
 }
 
@@ -70,158 +90,51 @@ export class UserDataBackupError extends Error {
   }
 }
 
-const THEMES: Theme[] = ['dark', 'dark-blue', 'light', 'sepia'];
-const GROUP_MODES: PortfolioGroupMode[] = ['expiration', 'underlying', 'none'];
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function readStoredArray(storage: BackupStorage, primaryKey: string, legacyKey?: string): unknown[] {
-  const raw = storage.getItem(primaryKey) ?? (legacyKey ? storage.getItem(legacyKey) : null);
-  if (raw == null) return [];
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) throw new UserDataBackupError(`Stored data in ${primaryKey} is not an array.`);
-    return parsed;
-  } catch (error) {
-    if (error instanceof UserDataBackupError) throw error;
-    throw new UserDataBackupError(`Stored data in ${primaryKey} is corrupted. Export was stopped to avoid creating an incomplete backup.`);
-  }
-}
-
-function durablePortfolioTrade(trade: PortfolioTrade): DurablePortfolioTrade {
-  const copy: Partial<PortfolioTrade> = { ...trade };
-  delete copy.latestMarketData;
-  return copy as DurablePortfolioTrade;
-}
-
-function durableWatchlistItem(item: WatchlistItem): DurableWatchlistItem {
-  const copy: Partial<WatchlistItem> = { ...item };
-  delete copy.snapshot;
-  delete copy.status;
-  delete copy.updatedAt;
-  return copy as DurableWatchlistItem;
-}
-
 function validatePortfolio(value: unknown, context: string): DurablePortfolioTrade[] {
-  if (!Array.isArray(value)) throw new UserDataBackupError(`${context} must be an array.`);
-  return value.map((entry, index) => {
-    if (!isRecord(entry) || typeof entry.id !== 'string' || !entry.id.trim()) {
-      throw new UserDataBackupError(`${context}[${index}] is missing a trade id.`);
-    }
-    if (typeof entry.createdAt !== 'string' || typeof entry.updatedAt !== 'string') {
-      throw new UserDataBackupError(`${context}[${index}] is missing trade timestamps.`);
-    }
-    const normalized = normalizePortfolioTrade(entry);
-    if (!normalized) throw new UserDataBackupError(`${context}[${index}] is not a valid put trade.`);
-    return durablePortfolioTrade(normalized);
-  });
+  const migrated = migratePortfolioState(1, value);
+  if (migrated.status !== 'ok') {
+    throw new UserDataBackupError(migrated.status === 'error' ? `${context}: ${migrated.error}` : `${context} has an unsupported schema.`);
+  }
+  return migrated.state.data;
 }
 
 function validateWatchlist(value: unknown, context: string): DurableWatchlistItem[] {
-  if (!Array.isArray(value)) throw new UserDataBackupError(`${context} must be an array.`);
-  return value.map((entry, index) => {
-    if (!isRecord(entry) || typeof entry.id !== 'string' || !entry.id.trim()) {
-      throw new UserDataBackupError(`${context}[${index}] is missing a watchlist id.`);
-    }
-    if (typeof entry.note !== 'string' || typeof entry.addedAt !== 'number' || typeof entry.savedAt !== 'number') {
-      throw new UserDataBackupError(`${context}[${index}] is missing watchlist metadata.`);
-    }
-    const normalized = normalizeWatchlistItem(entry);
-    if (!normalized) throw new UserDataBackupError(`${context}[${index}] is not a valid saved contract.`);
-    return durableWatchlistItem(normalized);
-  });
+  const migrated = migrateWatchlistState(1, value);
+  if (migrated.status !== 'ok') {
+    throw new UserDataBackupError(migrated.status === 'error' ? `${context}: ${migrated.error}` : `${context} has an unsupported schema.`);
+  }
+  return migrated.state.data;
 }
 
-function booleanRecord(value: unknown, context: string): Record<string, boolean> {
-  if (!isRecord(value) || Object.values(value).some(entry => typeof entry !== 'boolean')) {
-    throw new UserDataBackupError(`${context} must contain only boolean values.`);
+function validatePreferences(value: unknown, context = 'data.preferences'): BackupPreferences {
+  const migrated = migratePreferencesState(1, value);
+  if (migrated.status !== 'ok') {
+    throw new UserDataBackupError(migrated.status === 'error' ? `${context}: ${migrated.error}` : `${context} has an unsupported schema.`);
   }
-  return { ...value } as Record<string, boolean>;
+  return migrated.data;
 }
 
-function validatePreferences(value: unknown): BackupPreferences {
-  if (value == null) return {};
-  if (!isRecord(value)) throw new UserDataBackupError('data.preferences must be an object when present.');
-  const preferences: BackupPreferences = {};
-
-  if (value.theme !== undefined) {
-    if (!THEMES.includes(value.theme as Theme)) throw new UserDataBackupError('data.preferences.theme is invalid.');
-    preferences.theme = value.theme as Theme;
-  }
-  if (value.portfolioMarkBasis !== undefined) {
-    if (!PORTFOLIO_MARK_BASIS_OPTIONS.includes(value.portfolioMarkBasis as 'last' | 'bid' | 'ask')) {
-      throw new UserDataBackupError('data.preferences.portfolioMarkBasis is invalid.');
-    }
-    preferences.portfolioMarkBasis = value.portfolioMarkBasis as 'last' | 'bid' | 'ask';
-  }
-  if (value.portfolioGroupMode !== undefined) {
-    if (!GROUP_MODES.includes(value.portfolioGroupMode as PortfolioGroupMode)) {
-      throw new UserDataBackupError('data.preferences.portfolioGroupMode is invalid.');
-    }
-    preferences.portfolioGroupMode = value.portfolioGroupMode as PortfolioGroupMode;
-  }
-  if (value.collapsedExpirationGroups !== undefined) {
-    preferences.collapsedExpirationGroups = booleanRecord(value.collapsedExpirationGroups, 'data.preferences.collapsedExpirationGroups');
-  }
-  if (value.collapsedUnderlyingGroups !== undefined) {
-    preferences.collapsedUnderlyingGroups = booleanRecord(value.collapsedUnderlyingGroups, 'data.preferences.collapsedUnderlyingGroups');
-  }
-  if (value.showNominalYield !== undefined) {
-    if (typeof value.showNominalYield !== 'boolean') throw new UserDataBackupError('data.preferences.showNominalYield must be a boolean.');
-    preferences.showNominalYield = value.showNominalYield;
-  }
-  return preferences;
-}
-
-function parseBooleanRecordPreference(raw: string | null): Record<string, boolean> {
-  if (!raw) return {};
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    return isRecord(parsed)
-      ? Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, boolean] => typeof entry[1] === 'boolean'))
-      : {};
-  } catch {
-    return {};
-  }
-}
-
-function readTheme(storage: BackupStorage): Theme {
-  const migrated = storage.getItem(THEME_MIGRATION_KEY) === THEME_MIGRATION_VERSION;
-  const current = normalizeSavedTheme(storage.getItem(THEME_STORAGE_KEY), true);
-  if (current) return current;
-  const legacy = normalizeSavedTheme(storage.getItem(LEGACY_THEME_STORAGE_KEY), migrated);
-  if (legacy) return legacy;
-  return 'dark';
-}
-
-function readPreferences(storage: BackupStorage): BackupPreferences {
-  const markBasis = storage.getItem(PORTFOLIO_MARK_BASIS_KEY);
-  const groupMode = storage.getItem(PORTFOLIO_GROUP_MODE_KEY);
-  return {
-    theme: readTheme(storage),
-    portfolioMarkBasis: PORTFOLIO_MARK_BASIS_OPTIONS.includes(markBasis as 'last' | 'bid' | 'ask')
-      ? markBasis as 'last' | 'bid' | 'ask'
-      : 'ask',
-    portfolioGroupMode: GROUP_MODES.includes(groupMode as PortfolioGroupMode)
-      ? groupMode as PortfolioGroupMode
-      : 'expiration',
-    collapsedExpirationGroups: parseBooleanRecordPreference(storage.getItem(PORTFOLIO_EXPIRY_GROUPS_KEY)),
-    collapsedUnderlyingGroups: parseBooleanRecordPreference(storage.getItem(PORTFOLIO_UNDERLYING_GROUPS_KEY)),
-    showNominalYield: storage.getItem(SHOW_NOMINAL_YIELD_KEY) === 'true',
-  };
+function storedReadError(label: string, result: { status: 'corrupt'; error: string } | { status: 'unsupported_version'; version: number }): never {
+  throw new UserDataBackupError(result.status === 'corrupt'
+    ? `${label} could not be exported: ${result.error}`
+    : `${label} uses unsupported schema version ${result.version}. Export was stopped.`);
 }
 
 export function createPutScannerBackup(
   storage: BackupStorage,
   options: { now?: Date; appVersion?: string } = {},
 ): PutScannerBackup {
-  const portfolio = validatePortfolio(readStoredArray(storage, PORTFOLIO_STORAGE_KEY), 'stored portfolio');
-  const watchlist = validateWatchlist(
-    readStoredArray(storage, WATCHLIST_STORAGE_KEY, LEGACY_WATCHLIST_STORAGE_KEY),
-    'stored watchlist',
-  );
+  const portfolioRead = readPortfolioTrades(storage);
+  if (portfolioRead.status === 'corrupt' || portfolioRead.status === 'unsupported_version') storedReadError('Portfolio', portfolioRead);
+  const watchlistRead = readWatchlist(storage);
+  if (watchlistRead.status === 'corrupt' || watchlistRead.status === 'unsupported_version') storedReadError('Watchlist', watchlistRead);
+  const preferencesRead = readDurablePreferences(storage);
+  if (preferencesRead.status === 'corrupt' || preferencesRead.status === 'unsupported_version') storedReadError('Preferences', preferencesRead);
+
   const now = options.now ?? new Date();
   return {
     format: PUT_SCANNER_BACKUP_FORMAT,
@@ -229,9 +142,25 @@ export function createPutScannerBackup(
     exportedAt: now.toISOString(),
     appVersion: options.appVersion?.trim() || '0.0.0',
     data: {
-      portfolio,
-      watchlist,
-      preferences: readPreferences(storage),
+      portfolio: {
+        schemaVersion: 1,
+        updatedAt: portfolioRead.status === 'ok' ? portfolioRead.updatedAt : null,
+        revision: portfolioRead.status === 'ok' ? portfolioRead.revision : 0,
+        data: portfolioRead.status === 'ok' ? toDurablePortfolioState(portfolioRead.data) : [],
+      },
+      watchlist: {
+        schemaVersion: 1,
+        updatedAt: watchlistRead.status === 'ok' ? watchlistRead.updatedAt : null,
+        revision: watchlistRead.status === 'ok' ? watchlistRead.revision : 0,
+        data: watchlistRead.status === 'ok' ? toDurableWatchlistState(watchlistRead.data) : [],
+      },
+      preferences: createPreferencesEnvelope(
+        preferencesRead.status === 'ok' ? preferencesRead.data : {},
+        {
+          updatedAt: preferencesRead.status === 'ok' ? preferencesRead.updatedAt : null,
+          revision: preferencesRead.status === 'ok' ? preferencesRead.revision : 0,
+        },
+      ),
     },
   };
 }
@@ -243,7 +172,7 @@ export function validatePutScannerBackup(value: unknown): PutScannerBackup {
   if (value.schemaVersion > PUT_SCANNER_BACKUP_SCHEMA_VERSION) {
     throw new UserDataBackupError(`Backup schema version ${value.schemaVersion} is newer than this app supports.`);
   }
-  if (value.schemaVersion !== PUT_SCANNER_BACKUP_SCHEMA_VERSION) {
+  if (value.schemaVersion !== 1 && value.schemaVersion !== PUT_SCANNER_BACKUP_SCHEMA_VERSION) {
     throw new UserDataBackupError(`Backup schema version ${value.schemaVersion} is not supported.`);
   }
   if (typeof value.exportedAt !== 'string' || Number.isNaN(Date.parse(value.exportedAt))) {
@@ -254,15 +183,81 @@ export function validatePutScannerBackup(value: unknown): PutScannerBackup {
   }
   if (!isRecord(value.data)) throw new UserDataBackupError('Backup data is missing.');
 
+  if (value.schemaVersion === 1) {
+    const legacy = value as unknown as PutScannerBackupV1;
+    return {
+      format: PUT_SCANNER_BACKUP_FORMAT,
+      schemaVersion: PUT_SCANNER_BACKUP_SCHEMA_VERSION,
+      exportedAt: new Date(value.exportedAt).toISOString(),
+      appVersion: value.appVersion,
+      data: {
+        portfolio: {
+          schemaVersion: 1,
+          updatedAt: null,
+          revision: 0,
+          data: validatePortfolio(legacy.data.portfolio, 'data.portfolio'),
+        },
+        watchlist: {
+          schemaVersion: 1,
+          updatedAt: null,
+          revision: 0,
+          data: validateWatchlist(legacy.data.watchlist, 'data.watchlist'),
+        },
+        preferences: createPreferencesEnvelope(validatePreferences(legacy.data.preferences), { updatedAt: null, revision: 0 }),
+      },
+    };
+  }
+
+  if (!isRecord(value.data.portfolio)) throw new UserDataBackupError('data.portfolio envelope is missing.');
+  if (!isRecord(value.data.watchlist)) throw new UserDataBackupError('data.watchlist envelope is missing.');
+  if (value.data.portfolio.schemaVersion !== 1) throw new UserDataBackupError('data.portfolio schema version is unsupported.');
+  if (value.data.watchlist.schemaVersion !== 1) throw new UserDataBackupError('data.watchlist schema version is unsupported.');
+  if (typeof value.data.portfolio.revision !== 'number' || typeof value.data.watchlist.revision !== 'number') {
+    throw new UserDataBackupError('Backup namespace revision metadata is invalid.');
+  }
+  let portfolio: ReturnType<typeof createPortfolioStorageEnvelope>;
+  let watchlist: ReturnType<typeof createWatchlistStorageEnvelope>;
+  let preferences: DurablePreferencesEnvelopeV1;
+  try {
+    portfolio = createPortfolioStorageEnvelope(
+      validatePortfolio(value.data.portfolio.data, 'data.portfolio.data'),
+      {
+        updatedAt: value.data.portfolio.updatedAt as string | null,
+        revision: Number(value.data.portfolio.revision),
+      },
+    );
+    watchlist = createWatchlistStorageEnvelope(
+      validateWatchlist(value.data.watchlist.data, 'data.watchlist.data'),
+      {
+        updatedAt: value.data.watchlist.updatedAt as string | null,
+        revision: Number(value.data.watchlist.revision),
+      },
+    );
+    preferences = validatePreferencesEnvelope(value.data.preferences);
+  } catch (error) {
+    if (error instanceof UserDataBackupError) throw error;
+    throw new UserDataBackupError(error instanceof Error ? error.message : 'Backup namespace metadata is invalid.');
+  }
+
   return {
     format: PUT_SCANNER_BACKUP_FORMAT,
     schemaVersion: PUT_SCANNER_BACKUP_SCHEMA_VERSION,
     exportedAt: new Date(value.exportedAt).toISOString(),
     appVersion: value.appVersion,
     data: {
-      portfolio: validatePortfolio(value.data.portfolio, 'data.portfolio'),
-      watchlist: validateWatchlist(value.data.watchlist, 'data.watchlist'),
-      preferences: validatePreferences(value.data.preferences),
+      portfolio: {
+        schemaVersion: 1,
+        updatedAt: portfolio.updatedAt,
+        revision: portfolio.revision,
+        data: portfolio.data,
+      },
+      watchlist: {
+        schemaVersion: 1,
+        updatedAt: watchlist.updatedAt,
+        revision: watchlist.revision,
+        data: watchlist.data,
+      },
+      preferences,
     },
   };
 }
@@ -278,11 +273,21 @@ export function parsePutScannerBackup(text: string): PutScannerBackup {
 }
 
 function importWrites(backup: PutScannerBackup): Array<[string, string]> {
+  const portfolio = serializePortfolioStorageEnvelope(createPortfolioStorageEnvelope(
+    backup.data.portfolio.data,
+    { updatedAt: backup.data.portfolio.updatedAt, revision: backup.data.portfolio.revision },
+  ));
+  const watchlist = serializeWatchlistStorageEnvelope(createWatchlistStorageEnvelope(
+    backup.data.watchlist.data,
+    { updatedAt: backup.data.watchlist.updatedAt, revision: backup.data.watchlist.revision },
+  ));
+  if (portfolio.status === 'error') throw new UserDataBackupError(`Portfolio import could not be serialized: ${portfolio.error}`);
+  if (watchlist.status === 'error') throw new UserDataBackupError(`Watchlist import could not be serialized: ${watchlist.error}`);
   const writes: Array<[string, string]> = [
-    [PORTFOLIO_STORAGE_KEY, JSON.stringify(backup.data.portfolio)],
-    [WATCHLIST_STORAGE_KEY, JSON.stringify(backup.data.watchlist)],
+    [PORTFOLIO_STORAGE_KEY, portfolio.serialized],
+    [WATCHLIST_STORAGE_KEY, watchlist.serialized],
   ];
-  const preferences = backup.data.preferences;
+  const preferences = backup.data.preferences.data;
   if (preferences.theme !== undefined) {
     writes.push([THEME_STORAGE_KEY, preferences.theme]);
     writes.push([LEGACY_THEME_STORAGE_KEY, preferences.theme]);
@@ -325,12 +330,12 @@ export function applyPutScannerBackup(storage: BackupStorage, value: unknown): P
 }
 
 export function getPutScannerBackupSummary(backup: PutScannerBackup): BackupSummary {
-  const openPositions = backup.data.portfolio.filter(trade => trade.status === 'open').length;
+  const openPositions = backup.data.portfolio.data.filter(trade => trade.status === 'open').length;
   return {
     openPositions,
-    historicalPositions: backup.data.portfolio.length - openPositions,
-    watchlistItems: backup.data.watchlist.length,
-    preferencesIncluded: Object.keys(backup.data.preferences).length > 0,
+    historicalPositions: backup.data.portfolio.data.length - openPositions,
+    watchlistItems: backup.data.watchlist.data.length,
+    preferencesIncluded: Object.keys(backup.data.preferences.data).length > 0,
     exportedAt: backup.exportedAt,
   };
 }
