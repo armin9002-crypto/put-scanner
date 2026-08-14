@@ -14,7 +14,7 @@ import { Search, X, ChevronUp, ChevronDown, Loader2, AlertTriangle, RefreshCw, S
 import { useResponsiveMode } from '../lib/responsive';
 import MobileBottomSheet from '../components/mobile/MobileBottomSheet';
 import MobileOptionRow from '../components/mobile/MobileOptionRow';
-import { OPTION_QUOTE_TABLE_DISPLAY_ORDER, type OptionQuoteTableDisplayField } from '../lib/optionQuoteDisplay';
+import { OPTION_QUOTE_TABLE_DISPLAY_ORDER, OPTION_YIELD_DISPLAY_ORDER, isNominalYieldField, type OptionQuoteTableDisplayField, type OptionYieldDisplayField } from '../lib/optionQuoteDisplay';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 
@@ -828,6 +828,14 @@ export default function ScreenerPage() {
     bid: { field: 'bid', label: 'Bid', align: 'text-right' },
     ask: { field: 'ask', label: 'Ask', align: 'text-right', hideOnMobile: true },
   };
+  const yieldColumns: Record<OptionYieldDisplayField, ScreenerColumn> = {
+    nomYieldLast: { field: 'nomYieldLast', label: 'Nom. Yield Last', align: 'text-right', hideOnMobile: true, hideOnTablet: true },
+    annYieldLast: { field: 'annYieldLast', label: 'Ann. Yield Last', align: 'text-right', hideOnMobile: true, hideOnTablet: true },
+    nomYieldBid: { field: 'nomYieldBid', label: 'Nom. Yield Bid', align: 'text-right', hideOnMobile: true, hideOnTablet: true },
+    annYieldBid: { field: 'annYieldBid', label: 'Ann. Yield Bid', align: 'text-right' },
+    nomYieldAsk: { field: 'nomYieldAsk', label: 'Nom. Yield Ask', align: 'text-right', hideOnMobile: true, hideOnTablet: true },
+    annYieldAsk: { field: 'annYieldAsk', label: 'Ann. Yield Ask', align: 'text-right', hideOnMobile: true },
+  };
   const baseColumns: ScreenerColumn[] = [
     { field: 'ticker', label: 'Symbol', align: 'text-left' },
     { field: 'price', label: 'Price', align: 'text-right', hideOnMobile: true },
@@ -837,12 +845,7 @@ export default function ScreenerPage() {
     { field: 'delta', label: 'Delta', align: 'text-right' },
     ...OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => quoteColumns[field]),
     { field: 'iv', label: 'Imp Vol', align: 'text-right', hideOnMobile: true },
-    { field: 'nomYieldBid', label: 'Nom. Yield Bid', align: 'text-right', hideOnMobile: true, hideOnTablet: true },
-    { field: 'nomYieldAsk', label: 'Nom. Yield Ask', align: 'text-right', hideOnMobile: true, hideOnTablet: true },
-    { field: 'nomYieldLast', label: 'Nom. Yield Last', align: 'text-right', hideOnMobile: true, hideOnTablet: true },
-    { field: 'annYieldBid', label: 'Ann. Yield Bid', align: 'text-right' },
-    { field: 'annYieldAsk', label: 'Ann. Yield Ask', align: 'text-right', hideOnMobile: true },
-    { field: 'annYieldLast', label: 'Ann. Yield Last', align: 'text-right', hideOnMobile: true, hideOnTablet: true },
+    ...OPTION_YIELD_DISPLAY_ORDER.map(field => yieldColumns[field]),
     { field: 'ivRank', label: 'IV Rank', align: 'text-right', hideOnMobile: true },
   ];
 
@@ -1364,24 +1367,12 @@ export default function ScreenerPage() {
                       <td className="px-2 py-1 text-right font-mono hidden md:table-cell" style={{ color: ivColor(row.iv) }}>
                         {row.iv != null ? row.iv.toFixed(1) + '%' : '—'}
                       </td>
-                      <td className="px-2 py-1 text-right font-mono hidden lg:table-cell" style={{ color: 'var(--text-secondary)' }}>
-                        {row.nomYieldBid != null ? row.nomYieldBid.toFixed(2) + '%' : '—'}
-                      </td>
-                      <td className="px-2 py-1 text-right font-mono hidden lg:table-cell" style={{ color: 'var(--text-secondary)' }}>
-                        {row.nomYieldAsk != null ? row.nomYieldAsk.toFixed(2) + '%' : '—'}
-                      </td>
-                      <td className="px-2 py-1 text-right font-mono hidden lg:table-cell" style={{ color: 'var(--text-secondary)' }}>
-                        {row.nomYieldLast != null ? row.nomYieldLast.toFixed(2) + '%' : '—'}
-                      </td>
-                      <td className="px-2 py-1 text-right font-mono font-medium" style={{ color: annYieldColor(row.annYieldBid) }}>
-                        {row.annYieldBid != null ? row.annYieldBid.toFixed(2) + '%' : '—'}
-                      </td>
-                      <td className="px-2 py-1 text-right font-mono hidden md:table-cell" style={{ color: annYieldColor(row.annYieldAsk) }}>
-                        {row.annYieldAsk != null ? row.annYieldAsk.toFixed(2) + '%' : '—'}
-                      </td>
-                      <td className="px-2 py-1 text-right font-mono hidden lg:table-cell" style={{ color: annYieldColor(row.annYieldLast) }}>
-                        {row.annYieldLast != null ? row.annYieldLast.toFixed(2) + '%' : '—'}
-                      </td>
+                      {OPTION_YIELD_DISPLAY_ORDER.map(field => {
+                        const value = row[field];
+                        const column = yieldColumns[field];
+                        const nominal = isNominalYieldField(field);
+                        return <td key={field} className={`px-2 py-1 text-right font-mono ${nominal ? '' : 'font-medium'} ${column.hideOnMobile ? 'hidden md:table-cell' : ''} ${column.hideOnTablet ? 'hidden lg:table-cell' : ''}`} style={{ color: nominal ? 'var(--text-secondary)' : annYieldColor(value) }}>{value != null ? value.toFixed(2) + '%' : '—'}</td>;
+                      })}
                       <td className="px-2 py-1 text-right font-mono hidden md:table-cell" style={{ color: row.ivRank != null ? ivRankColor(row.ivRank) : 'var(--text-dim)' }}>
                         {row.ivRank != null ? row.ivRank.toFixed(0) + '%' : '—'}
                       </td>

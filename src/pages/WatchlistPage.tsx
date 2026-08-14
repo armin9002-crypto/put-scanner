@@ -18,7 +18,7 @@ import type { OptionDetail } from '../components/OptionDetailDrawer';
 import { Star, RefreshCw, Loader2, ChevronUp, ChevronDown, AlertTriangle } from 'lucide-react';
 import { useResponsiveMode } from '../lib/responsive';
 import MobileOptionRow from '../components/mobile/MobileOptionRow';
-import { OPTION_QUOTE_DISPLAY_LABELS, OPTION_QUOTE_TABLE_DISPLAY_ORDER, type OptionQuoteTableDisplayField } from '../lib/optionQuoteDisplay';
+import { OPTION_QUOTE_DISPLAY_LABELS, OPTION_QUOTE_TABLE_DISPLAY_ORDER, OPTION_YIELD_DISPLAY_LABELS, OPTION_YIELD_DISPLAY_ORDER, isNominalYieldField, type OptionQuoteTableDisplayField, type OptionYieldDisplayField } from '../lib/optionQuoteDisplay';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 
@@ -382,6 +382,9 @@ export default function WatchlistPage() {
     bid: { field: 'bid', label: 'Bid', align: 'text-right' },
     ask: { field: 'ask', label: 'Ask', align: 'text-right' },
   };
+  const yieldColumns: Record<OptionYieldDisplayField, WatchlistColumn> = Object.fromEntries(
+    OPTION_YIELD_DISPLAY_ORDER.map(field => [field, { field, label: OPTION_YIELD_DISPLAY_LABELS[field].short, align: 'text-right' }]),
+  ) as Record<OptionYieldDisplayField, WatchlistColumn>;
   const columns: WatchlistColumn[] = [
     { field: 'ticker', label: 'Ticker', align: 'text-left' },
     { field: 'strike', label: 'Strike', align: 'text-right' },
@@ -390,12 +393,7 @@ export default function WatchlistPage() {
     { field: 'delta', label: 'Delta', align: 'text-right' },
     { field: 'moneyness', label: 'Moneyness', align: 'text-right' },
     { field: 'iv', label: 'IV', align: 'text-right' },
-    { field: 'nomYieldBid', label: 'NY Bid', align: 'text-right' },
-    { field: 'annYieldBid', label: 'AY Bid', align: 'text-right' },
-    { field: 'nomYieldAsk', label: 'NY Ask', align: 'text-right' },
-    { field: 'annYieldAsk', label: 'AY Ask', align: 'text-right' },
-    { field: 'nomYieldLast', label: 'NY Last', align: 'text-right' },
-    { field: 'annYieldLast', label: 'AY Last', align: 'text-right' },
+    ...OPTION_YIELD_DISPLAY_ORDER.map(field => yieldColumns[field]),
     { field: 'added', label: 'Added', align: 'text-right' },
   ];
 
@@ -661,12 +659,11 @@ export default function WatchlistPage() {
                         <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={{ ...mutedStyle, color: deltaColor(row.delta) }}>{isFiniteNumber(row.delta) ? row.delta.toFixed(2) : '—'}</td>
                         <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={{ ...mutedStyle, color: row.moneynessColor }}>{row.moneynessLabel}</td>
                         <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={{ ...mutedStyle, color: ivColor(row.iv) }}>{isFiniteNumber(row.iv) ? row.iv.toFixed(1) + '%' : '—'}</td>
-                        <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={mutedStyle}>{formatPercentValue(row.nomYieldBid)}</td>
-                        <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap font-medium" style={{ ...mutedStyle, color: annYieldColor(row.annYieldBid) }}>{formatPercentValue(row.annYieldBid)}</td>
-                        <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={mutedStyle}>{formatPercentValue(row.nomYieldAsk)}</td>
-                        <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap font-medium" style={{ ...mutedStyle, color: annYieldColor(row.annYieldAsk) }}>{formatPercentValue(row.annYieldAsk)}</td>
-                        <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={mutedStyle}>{formatPercentValue(row.nomYieldLast)}</td>
-                        <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap font-medium" style={{ ...mutedStyle, color: annYieldColor(row.annYieldLast) }}>{formatPercentValue(row.annYieldLast)}</td>
+                        {OPTION_YIELD_DISPLAY_ORDER.map(field => {
+                          const value = row[field];
+                          const nominal = isNominalYieldField(field);
+                          return <td key={field} className={`px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap ${nominal ? '' : 'font-medium'}`} style={nominal ? mutedStyle : { ...mutedStyle, color: annYieldColor(value) }}>{formatPercentValue(value)}</td>;
+                        })}
                         <td className="px-1.5 py-0.5 text-right text-[10px] whitespace-nowrap" style={{ ...mutedStyle, color: 'var(--text-dim)' }}>{formatDate(row.addedAt)}</td>
                         <td className="px-1.5 py-0.5 text-left min-w-[130px]" style={mutedStyle}>
                           {editingNote === row.id ? (

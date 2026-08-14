@@ -16,8 +16,12 @@ import { getLastScannerUrl, isScannerNavigationState } from '../lib/scannerNavig
 import {
   OPTION_QUOTE_DISPLAY_LABELS,
   OPTION_QUOTE_TABLE_DISPLAY_ORDER,
+  OPTION_YIELD_DISPLAY_LABELS,
+  OPTION_YIELD_DISPLAY_ORDER,
+  isNominalYieldField,
   orderedOptionQuoteEntries,
   type OptionQuoteTableDisplayField,
+  type OptionYieldDisplayField,
 } from '../lib/optionQuoteDisplay';
 import SparklineChart from '../components/SparklineChart';
 import ErrorBoundary from '../components/ErrorBoundary';
@@ -709,6 +713,14 @@ export default function OptionsPage() {
     bid: { field: 'bid', label: 'Bid', fullLabel: 'Bid', align: 'text-right', widthClass: 'w-14' },
     ask: { field: 'ask', label: 'Ask', fullLabel: 'Ask', align: 'text-right', widthClass: 'w-14' },
   };
+  const yieldColumns: Record<OptionYieldDisplayField, OptionTableColumn> = {
+    nomYieldLast: { field: 'nomYieldLast', label: OPTION_YIELD_DISPLAY_LABELS.nomYieldLast.short, fullLabel: OPTION_YIELD_DISPLAY_LABELS.nomYieldLast.full, align: 'text-right', widthClass: 'w-[72px]', hideOnMobile: true, hideOnTablet: true },
+    annYieldLast: { field: 'annYieldLast', label: OPTION_YIELD_DISPLAY_LABELS.annYieldLast.short, fullLabel: OPTION_YIELD_DISPLAY_LABELS.annYieldLast.full, align: 'text-right', widthClass: 'w-[72px]', hideOnMobile: true, hideOnTablet: true },
+    nomYieldBid: { field: 'nomYieldBid', label: OPTION_YIELD_DISPLAY_LABELS.nomYieldBid.short, fullLabel: OPTION_YIELD_DISPLAY_LABELS.nomYieldBid.full, align: 'text-right', widthClass: 'w-[72px]', hideOnMobile: true, hideOnTablet: true },
+    annYieldBid: { field: 'annYieldBid', label: OPTION_YIELD_DISPLAY_LABELS.annYieldBid.short, fullLabel: OPTION_YIELD_DISPLAY_LABELS.annYieldBid.full, align: 'text-right', widthClass: 'w-[72px]' },
+    nomYieldAsk: { field: 'nomYieldAsk', label: OPTION_YIELD_DISPLAY_LABELS.nomYieldAsk.short, fullLabel: OPTION_YIELD_DISPLAY_LABELS.nomYieldAsk.full, align: 'text-right', widthClass: 'w-[72px]', hideOnMobile: true, hideOnTablet: true },
+    annYieldAsk: { field: 'annYieldAsk', label: OPTION_YIELD_DISPLAY_LABELS.annYieldAsk.short, fullLabel: OPTION_YIELD_DISPLAY_LABELS.annYieldAsk.full, align: 'text-right', widthClass: 'w-[72px]', hideOnMobile: true },
+  };
   const baseColumns: OptionTableColumn[] = [
     { field: 'strike', label: 'Strike', fullLabel: 'Strike', align: 'text-left', widthClass: 'w-[88px]' },
     { field: 'lastTradeDate', label: 'Last Trade', fullLabel: 'Last Trade Date', align: 'text-right', widthClass: 'w-20', hideOnMobile: true },
@@ -716,12 +728,7 @@ export default function OptionsPage() {
     { field: 'delta', label: 'Delta', fullLabel: 'Delta', align: 'text-right', widthClass: 'w-12' },
     { field: 'otmItm', label: 'Moneyness', fullLabel: '% OTM / % ITM', align: 'text-right', widthClass: 'w-20', hideOnMobile: true },
     { field: 'iv', label: 'IV', fullLabel: 'IV', align: 'text-right', widthClass: 'w-12', hideOnMobile: true },
-    { field: 'nomYieldBid', label: 'NY Bid', fullLabel: 'Nom. Yield (Bid)', align: 'text-right', widthClass: 'w-[72px]', hideOnMobile: true, hideOnTablet: true },
-    { field: 'annYieldBid', label: 'AY Bid', fullLabel: 'Ann. Yield (Bid)', align: 'text-right', widthClass: 'w-[72px]' },
-    { field: 'nomYieldAsk', label: 'NY Ask', fullLabel: 'Nom. Yield (Ask)', align: 'text-right', widthClass: 'w-[72px]', hideOnMobile: true, hideOnTablet: true },
-    { field: 'annYieldAsk', label: 'AY Ask', fullLabel: 'Ann. Yield (Ask)', align: 'text-right', widthClass: 'w-[72px]', hideOnMobile: true },
-    { field: 'nomYieldLast', label: 'NY Last', fullLabel: 'Nom. Yield (Last)', align: 'text-right', widthClass: 'w-[72px]', hideOnMobile: true, hideOnTablet: true },
-    { field: 'annYieldLast', label: 'AY Last', fullLabel: 'Ann. Yield (Last)', align: 'text-right', widthClass: 'w-[72px]', hideOnMobile: true, hideOnTablet: true },
+    ...OPTION_YIELD_DISPLAY_ORDER.map(field => yieldColumns[field]),
   ];
 
   const volOIColumns: OptionTableColumn[] = [
@@ -733,6 +740,7 @@ export default function OptionsPage() {
   const visibleYieldColumns = showNominalYield
     ? baseColumns
     : baseColumns.filter(column => !column.field.startsWith('nomYield'));
+  const visibleYieldFields = OPTION_YIELD_DISPLAY_ORDER.filter(field => showNominalYield || !isNominalYieldField(field));
   const columns = showVolOI ? [...visibleYieldColumns, ...volOIColumns] : visibleYieldColumns;
   const colCount = columns.length;
   const hasEmptyOptions = !loading && !!optionsData && (
@@ -1496,24 +1504,12 @@ export default function OptionsPage() {
                           <td className="px-1.5 py-1.5 text-right text-xs font-mono tabular-nums hidden md:table-cell w-12" style={{ color: ivColor(put.impliedVolatility) }}>
                             {put.impliedVolatility != null ? put.impliedVolatility.toFixed(1) + '%' : '—'}
                           </td>
-                          {showNominalYield && <td className="w-[72px] px-1.5 py-1.5 text-right text-xs font-mono tabular-nums hidden lg:table-cell" style={{ color: 'var(--text-secondary)' }}>
-                            {put.nomYieldBid != null ? formatYield(put.nomYieldBid) : '—'}
-                          </td>}
-                          <td className="w-[72px] px-1.5 py-1.5 text-right text-xs font-mono tabular-nums font-medium" style={{ color: put.annYieldBid != null ? yieldColor(put.annYieldBid) : 'var(--text-dim)' }}>
-                            {put.annYieldBid != null ? formatYield(put.annYieldBid) : '—'}
-                          </td>
-                          {showNominalYield && <td className="w-[72px] px-1.5 py-1.5 text-right text-xs font-mono tabular-nums hidden lg:table-cell" style={{ color: 'var(--text-secondary)' }}>
-                            {put.nomYieldAsk != null ? formatYield(put.nomYieldAsk) : '—'}
-                          </td>}
-                          <td className="w-[72px] px-1.5 py-1.5 text-right text-xs font-mono tabular-nums font-medium hidden md:table-cell" style={{ color: put.annYieldAsk != null ? yieldColor(put.annYieldAsk) : 'var(--text-dim)' }}>
-                            {put.annYieldAsk != null ? formatYield(put.annYieldAsk) : '—'}
-                          </td>
-                          {showNominalYield && <td className="w-[72px] px-1.5 py-1.5 text-right text-xs font-mono tabular-nums hidden lg:table-cell" style={{ color: 'var(--text-secondary)' }}>
-                            {put.nomYieldLast != null ? formatYield(put.nomYieldLast) : '—'}
-                          </td>}
-                          <td className="w-[72px] px-1.5 py-1.5 text-right text-xs font-mono tabular-nums font-medium hidden lg:table-cell" style={{ color: put.annYieldLast != null ? yieldColor(put.annYieldLast) : 'var(--text-dim)' }}>
-                            {put.annYieldLast != null ? formatYield(put.annYieldLast) : '—'}
-                          </td>
+                          {visibleYieldFields.map(field => {
+                            const value = put[field];
+                            const column = yieldColumns[field];
+                            const nominal = isNominalYieldField(field);
+                            return <td key={field} className={`${column.widthClass} px-1.5 py-1.5 text-right text-xs font-mono tabular-nums ${nominal ? '' : 'font-medium'} ${column.hideOnMobile ? 'hidden md:table-cell' : ''} ${column.hideOnTablet ? 'hidden lg:table-cell' : ''}`} style={{ color: nominal ? 'var(--text-secondary)' : value != null ? yieldColor(value) : 'var(--text-dim)' }}>{value != null ? formatYield(value) : '—'}</td>;
+                          })}
                           {showVolOI && (
                             <>
                               <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums hidden md:table-cell w-16" style={{ color: 'var(--text-secondary)' }}>
