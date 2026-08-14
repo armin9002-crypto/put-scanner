@@ -14,6 +14,7 @@ import { Search, X, ChevronUp, ChevronDown, Loader2, AlertTriangle, RefreshCw, S
 import { useResponsiveMode } from '../lib/responsive';
 import MobileBottomSheet from '../components/mobile/MobileBottomSheet';
 import MobileOptionRow from '../components/mobile/MobileOptionRow';
+import { OPTION_QUOTE_TABLE_DISPLAY_ORDER, type OptionQuoteTableDisplayField } from '../lib/optionQuoteDisplay';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 
@@ -821,16 +822,20 @@ export default function ScreenerPage() {
       : <ChevronDown className="w-3 h-3" style={{ color: 'var(--accent)' }} />;
   }
 
-  const baseColumns: { field: ScreenerSortField; label: string; align: string; hideOnMobile?: boolean; hideOnTablet?: boolean }[] = [
+  type ScreenerColumn = { field: ScreenerSortField; label: string; align: string; hideOnMobile?: boolean; hideOnTablet?: boolean };
+  const quoteColumns: Record<OptionQuoteTableDisplayField, ScreenerColumn> = {
+    last: { field: 'last', label: 'Last', align: 'text-right', hideOnMobile: true },
+    bid: { field: 'bid', label: 'Bid', align: 'text-right' },
+    ask: { field: 'ask', label: 'Ask', align: 'text-right', hideOnMobile: true },
+  };
+  const baseColumns: ScreenerColumn[] = [
     { field: 'ticker', label: 'Symbol', align: 'text-left' },
     { field: 'price', label: 'Price', align: 'text-right', hideOnMobile: true },
     { field: 'expDate', label: 'Exp Date', align: 'text-right' },
     { field: 'strike', label: 'Strike', align: 'text-right' },
     { field: 'moneyness', label: 'Moneyness', align: 'text-right', hideOnMobile: true },
     { field: 'delta', label: 'Delta', align: 'text-right' },
-    { field: 'bid', label: 'Bid', align: 'text-right' },
-    { field: 'last', label: 'Last', align: 'text-right', hideOnMobile: true },
-    { field: 'ask', label: 'Ask', align: 'text-right', hideOnMobile: true },
+    ...OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => quoteColumns[field]),
     { field: 'iv', label: 'Imp Vol', align: 'text-right', hideOnMobile: true },
     { field: 'nomYieldBid', label: 'Nom. Yield Bid', align: 'text-right', hideOnMobile: true, hideOnTablet: true },
     { field: 'nomYieldAsk', label: 'Nom. Yield Ask', align: 'text-right', hideOnMobile: true, hideOnTablet: true },
@@ -841,7 +846,7 @@ export default function ScreenerPage() {
     { field: 'ivRank', label: 'IV Rank', align: 'text-right', hideOnMobile: true },
   ];
 
-  const volOIColumns: { field: ScreenerSortField; label: string; align: string; hideOnMobile?: boolean; hideOnTablet?: boolean }[] = [
+  const volOIColumns: ScreenerColumn[] = [
     { field: 'volume', label: 'Volume', align: 'text-right', hideOnMobile: true },
     { field: 'openInterest', label: 'Open Int', align: 'text-right', hideOnMobile: true },
     { field: 'volOI', label: 'Vol/OI', align: 'text-right', hideOnMobile: true, hideOnTablet: true },
@@ -884,7 +889,7 @@ export default function ScreenerPage() {
 
         <div className="flex min-h-[46px] items-center gap-2 border-b px-3.5" style={{ borderColor: 'var(--border)' }}>
           <h2 className="mr-auto text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Results <span className="font-mono font-normal" style={{ color: 'var(--text-muted)' }}>{loaded ? sortedRows.length : '—'}</span></h2>
-          <select value={sortField} onChange={event => setSortField(event.target.value as ScreenerSortField)} className="min-h-11 min-w-0 rounded-lg px-2 text-[12px] outline-none" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} aria-label="Sort screener results"><option value="annYieldBid">Annualized yield</option><option value="ticker">Ticker</option><option value="expDate">Expiration</option><option value="strike">Strike</option><option value="delta">Delta</option><option value="bid">Bid</option><option value="iv">IV</option><option value="openInterest">Open interest</option></select>
+          <select value={sortField} onChange={event => setSortField(event.target.value as ScreenerSortField)} className="min-h-11 min-w-0 rounded-lg px-2 text-[12px] outline-none" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} aria-label="Sort screener results"><option value="annYieldBid">Annualized yield</option><option value="ticker">Ticker</option><option value="expDate">Expiration</option><option value="strike">Strike</option><option value="delta">Delta</option><option value="last">Last</option><option value="bid">Bid</option><option value="ask">Ask</option><option value="iv">IV</option><option value="openInterest">Open interest</option></select>
           <button type="button" onClick={() => setSortDir(current => current === 'asc' ? 'desc' : 'asc')} className="pressable flex h-11 w-11 items-center justify-center rounded-lg text-sm font-semibold" aria-label={`Sort ${sortDir === 'asc' ? 'descending' : 'ascending'}`} style={{ color: 'var(--accent-light)' }}>{sortDir === 'asc' ? '↑' : '↓'}</button>
         </div>
 
@@ -1190,7 +1195,9 @@ export default function ScreenerPage() {
               <option value="expDate">Expiration</option>
               <option value="strike">Strike</option>
               <option value="delta">Delta</option>
+              <option value="last">Last</option>
               <option value="bid">Bid</option>
+              <option value="ask">Ask</option>
               <option value="iv">IV</option>
               <option value="openInterest">Open interest</option>
             </select>
@@ -1238,10 +1245,10 @@ export default function ScreenerPage() {
               </div>
               <div className="mt-2 grid grid-cols-4 gap-1.5 border-t pt-2" style={{ borderColor: 'var(--border)' }}>
                 {[
+                  ['Last', `$${formatPrice(row.last)}`, 'var(--text)'],
                   ['Bid', `$${formatPrice(row.bid)}`, 'var(--green)'],
+                  ['Ask', `$${formatPrice(row.ask)}`, 'var(--text)'],
                   ['AY Bid', row.annYieldBid != null ? `${row.annYieldBid.toFixed(1)}%` : '—', annYieldColor(row.annYieldBid)],
-                  ['Delta', row.delta.toFixed(2), deltaColor(row.delta)],
-                  ['IV', row.iv != null ? `${row.iv.toFixed(1)}%` : '—', ivColor(row.iv)],
                 ].map(([label, value, color]) => (
                   <div key={label} className="min-w-0 rounded-lg p-2 text-center" style={{ backgroundColor: 'var(--surface-alt)' }}>
                     <div className="truncate text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>{label}</div>
@@ -1249,6 +1256,7 @@ export default function ScreenerPage() {
                   </div>
                 ))}
               </div>
+              <p className="mt-2 text-[11px] font-mono" style={{ color: 'var(--text-muted)' }}>Δ {row.delta.toFixed(2)} · IV {row.iv != null ? `${row.iv.toFixed(1)}%` : '—'}</p>
               {showVolOI && <p className="mt-2 text-[11px] font-mono" style={{ color: 'var(--text-muted)' }}>Vol {formatNumber(row.volume)} · OI {formatNumber(row.openInterest)} · Vol/OI {row.volOI?.toFixed(2) ?? '—'}</p>}
             </article>
           ))}
@@ -1352,9 +1360,7 @@ export default function ScreenerPage() {
                       <td className="px-2 py-1 text-right font-mono" style={{ color: deltaColor(row.delta) }}>
                         {row.delta.toFixed(2)}
                       </td>
-                      <td className="px-2 py-1 text-right font-mono" style={{ color: 'var(--text)' }}>{formatPrice(row.bid)}</td>
-                      <td className="px-2 py-1 text-right font-mono hidden md:table-cell" style={{ color: 'var(--text)' }}>{formatPrice(row.last)}</td>
-                      <td className="px-2 py-1 text-right font-mono hidden md:table-cell" style={{ color: 'var(--text)' }}>{formatPrice(row.ask)}</td>
+                      {OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => <td key={field} className={`px-2 py-1 text-right font-mono ${field === 'bid' ? '' : 'hidden md:table-cell'}`} style={{ color: 'var(--text)' }}>{formatPrice(row[field])}</td>)}
                       <td className="px-2 py-1 text-right font-mono hidden md:table-cell" style={{ color: ivColor(row.iv) }}>
                         {row.iv != null ? row.iv.toFixed(1) + '%' : '—'}
                       </td>

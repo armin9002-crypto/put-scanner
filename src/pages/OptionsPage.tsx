@@ -13,6 +13,12 @@ import { getOptionLastTradeFreshness } from '../lib/optionLastTradeFreshness';
 import { persistShowNominalYield, readShowNominalYield } from '../lib/optionTablePreferences';
 import { getUnderlyingHoldingsProxy } from '../lib/underlyingHoldingsProxies';
 import { getLastScannerUrl, isScannerNavigationState } from '../lib/scannerNavigation';
+import {
+  OPTION_QUOTE_DISPLAY_LABELS,
+  OPTION_QUOTE_TABLE_DISPLAY_ORDER,
+  orderedOptionQuoteEntries,
+  type OptionQuoteTableDisplayField,
+} from '../lib/optionQuoteDisplay';
 import SparklineChart from '../components/SparklineChart';
 import ErrorBoundary from '../components/ErrorBoundary';
 import MobileOptionRow from '../components/mobile/MobileOptionRow';
@@ -216,6 +222,12 @@ function formatSpreadPercent(bid: number | null, ask: number | null): string {
 function OptionQuickTooltip({ put, ticker, expirationLabel, dte }: { put: EnrichedPut; ticker: string; expirationLabel: string; dte: number | null }) {
   const stale = getOptionLastTradeFreshness(put.lastTradeDate);
   const lastTradeDate = formatLastTradeDate(put.lastTradeDate);
+  const quoteText = orderedOptionQuoteEntries({
+    last: put.last,
+    bid: put.bid,
+    mid: getMidPrice(put.bid, put.ask),
+    ask: put.ask,
+  }).map(({ label, value }) => `${label} ${formatPrice(value)}`).join(' · ');
   return (
     <div
       className="pointer-events-none absolute left-0 top-[calc(100%+4px)] z-50 hidden w-[320px] rounded-lg px-3 py-2 text-left text-xs opacity-0 shadow-xl transition-opacity group-hover:block group-hover:opacity-100 group-focus-within:block group-focus-within:opacity-100"
@@ -225,7 +237,7 @@ function OptionQuickTooltip({ put, ticker, expirationLabel, dte }: { put: Enrich
         {ticker} ${formatPrice(put.strike)} Put · {expirationLabel || '—'} · {dte != null ? `${dte} DTE` : '— DTE'}
       </div>
       <div className="font-mono text-[11px] tabular-nums" style={{ color: 'var(--text-secondary)' }}>
-        Bid {formatPrice(put.bid)} · Ask {formatPrice(put.ask)} · Mid {formatPrice(getMidPrice(put.bid, put.ask))} · Last {formatPrice(put.last)}
+        {quoteText}
       </div>
       <div className="mt-1 flex flex-wrap gap-x-1.5 font-mono text-[11px] tabular-nums" style={{ color: stale.color }}>
         <span>Last Trade Date: {lastTradeDate}</span>
@@ -335,14 +347,12 @@ function MobileOptionCard({
       </div>
 
       <div className="mobile-option-card-grid mt-3 grid grid-cols-3 gap-2">
-        <MobileStat label="Bid" value={formatPrice(put.bid)} color="var(--green)" />
-        <MobileStat label="Ask" value={formatPrice(put.ask)} />
-        <MobileStat label="AY Bid" value={put.annYieldBid != null ? formatYield(put.annYieldBid) : '—'} color={put.annYieldBid != null ? yieldColor(put.annYieldBid) : 'var(--text-dim)'} />
+        {OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => <MobileStat key={field} label={OPTION_QUOTE_DISPLAY_LABELS[field]} value={formatPrice(put[field])} color={field === 'bid' ? 'var(--green)' : undefined} />)}
       </div>
       <div className={`mobile-secondary-grid mt-2 grid gap-2 ${showNominalYield ? 'grid-cols-4' : 'grid-cols-3'}`}>
         <MobileStat label="Delta" value={put.delta.toFixed(2)} color={deltaColor(put.delta)} />
         <MobileStat label="IV" value={put.impliedVolatility != null ? `${put.impliedVolatility.toFixed(1)}%` : '—'} color={ivColor(put.impliedVolatility)} />
-        <MobileStat label="Last" value={formatPrice(put.last)} />
+        <MobileStat label="AY Bid" value={put.annYieldBid != null ? formatYield(put.annYieldBid) : '—'} color={put.annYieldBid != null ? yieldColor(put.annYieldBid) : 'var(--text-dim)'} />
         {showNominalYield && <MobileStat label="NY Bid" value={put.nomYieldBid != null ? formatYield(put.nomYieldBid) : '—'} />}
       </div>
       {showVolOI && (
@@ -693,12 +703,16 @@ export default function OptionsPage() {
   }
 
   // Column definitions
-  const baseColumns: { field: SortField; label: string; fullLabel: string; align: string; widthClass: string; hideOnMobile?: boolean; hideOnTablet?: boolean }[] = [
+  type OptionTableColumn = { field: SortField; label: string; fullLabel: string; align: string; widthClass: string; hideOnMobile?: boolean; hideOnTablet?: boolean };
+  const quoteColumns: Record<OptionQuoteTableDisplayField, OptionTableColumn> = {
+    last: { field: 'last', label: 'Last', fullLabel: 'Last', align: 'text-right', widthClass: 'w-14', hideOnMobile: true },
+    bid: { field: 'bid', label: 'Bid', fullLabel: 'Bid', align: 'text-right', widthClass: 'w-14' },
+    ask: { field: 'ask', label: 'Ask', fullLabel: 'Ask', align: 'text-right', widthClass: 'w-14' },
+  };
+  const baseColumns: OptionTableColumn[] = [
     { field: 'strike', label: 'Strike', fullLabel: 'Strike', align: 'text-left', widthClass: 'w-[88px]' },
     { field: 'lastTradeDate', label: 'Last Trade', fullLabel: 'Last Trade Date', align: 'text-right', widthClass: 'w-20', hideOnMobile: true },
-    { field: 'last', label: 'Last', fullLabel: 'Last', align: 'text-right', widthClass: 'w-14', hideOnMobile: true },
-    { field: 'bid', label: 'Bid', fullLabel: 'Bid', align: 'text-right', widthClass: 'w-14' },
-    { field: 'ask', label: 'Ask', fullLabel: 'Ask', align: 'text-right', widthClass: 'w-14' },
+    ...OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => quoteColumns[field]),
     { field: 'delta', label: 'Delta', fullLabel: 'Delta', align: 'text-right', widthClass: 'w-12' },
     { field: 'otmItm', label: 'Moneyness', fullLabel: '% OTM / % ITM', align: 'text-right', widthClass: 'w-20', hideOnMobile: true },
     { field: 'iv', label: 'IV', fullLabel: 'IV', align: 'text-right', widthClass: 'w-12', hideOnMobile: true },
@@ -710,7 +724,7 @@ export default function OptionsPage() {
     { field: 'annYieldLast', label: 'AY Last', fullLabel: 'Ann. Yield (Last)', align: 'text-right', widthClass: 'w-[72px]', hideOnMobile: true, hideOnTablet: true },
   ];
 
-  const volOIColumns: { field: SortField; label: string; fullLabel: string; align: string; widthClass: string; hideOnMobile?: boolean; hideOnTablet?: boolean }[] = [
+  const volOIColumns: OptionTableColumn[] = [
     { field: 'volume', label: 'Volume', fullLabel: 'Volume', align: 'text-right', widthClass: 'w-16', hideOnMobile: true },
     { field: 'openInterest', label: 'OI', fullLabel: 'Open Interest', align: 'text-right', widthClass: 'w-16', hideOnMobile: true },
     { field: 'volOI', label: 'Vol/OI', fullLabel: 'Volume / Open Interest', align: 'text-right', widthClass: 'w-14', hideOnMobile: true },
@@ -844,8 +858,7 @@ export default function OptionsPage() {
 
   const mobileSortOptions: Array<{ field: SortField; label: string }> = [
     { field: 'strike', label: 'Strike' },
-    { field: 'bid', label: 'Bid' },
-    { field: 'ask', label: 'Ask' },
+    ...OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => ({ field, label: OPTION_QUOTE_DISPLAY_LABELS[field] })),
     { field: 'delta', label: 'Delta' },
     { field: 'annYieldBid', label: 'AY Bid' },
     { field: 'iv', label: 'IV' },
@@ -1473,9 +1486,7 @@ export default function OptionsPage() {
                             <OptionQuickTooltip put={put} ticker={ticker ?? ''} expirationLabel={quickExpirationLabel} dte={quickDte} />
                           </td>
                           <td className="w-20 px-1.5 py-1.5 text-right font-mono text-xs tabular-nums hidden md:table-cell" title={`${formatLastTradeDate(put.lastTradeDate)}${getOptionLastTradeFreshness(put.lastTradeDate).label ? ` · ${getOptionLastTradeFreshness(put.lastTradeDate).label}` : ''}`} style={{ color: getOptionLastTradeFreshness(put.lastTradeDate).color }}>{formatOptionLastTradeDate(put.lastTradeDate)}</td>
-                          <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums hidden md:table-cell w-14" style={{ color: 'var(--text)' }}>{formatPrice(put.last)}</td>
-                          <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums w-14" style={{ color: 'var(--text)' }}>{formatPrice(put.bid)}</td>
-                          <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums w-14" style={{ color: 'var(--text)' }}>{formatPrice(put.ask)}</td>
+                          {OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => <td key={field} className={`px-2 py-1.5 text-right text-xs font-mono tabular-nums w-14 ${field === 'last' ? 'hidden md:table-cell' : ''}`} style={{ color: 'var(--text)' }}>{formatPrice(put[field])}</td>)}
                           <td className="px-1.5 py-1.5 text-right text-xs font-mono tabular-nums w-12" style={{ color: deltaColor(put.delta) }}>
                             {put.delta.toFixed(2)}
                           </td>

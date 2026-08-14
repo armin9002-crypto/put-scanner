@@ -12,6 +12,7 @@ import { getYahooProviderHealth, invalidateYahooSession, yahooFetch } from '../a
 import { getChartHistory } from '../src/lib/chartHistory.ts';
 import optionsHandler from '../api/options.js';
 import pricesHandler from '../api/prices.js';
+import { OPTION_QUOTE_DISPLAY_ORDER, OPTION_QUOTE_TABLE_DISPLAY_ORDER, orderedOptionQuoteEntries } from '../src/lib/optionQuoteDisplay.ts';
 
 const EPSILON = 1e-9;
 
@@ -261,6 +262,9 @@ const januaryScheduleGroup = scheduleGroupsAsk[0];
 const scheduleGroupsBid = buildExpirationScheduleGroups(scheduleTrades, 'bid');
 
 const checks = [
+  () => assert('quote details use Last/Bid/Mid/Ask order', OPTION_QUOTE_DISPLAY_ORDER.join('/') === 'last/bid/mid/ask'),
+  () => assert('quote tables use Last/Bid/Ask order', OPTION_QUOTE_TABLE_DISPLAY_ORDER.join('/') === 'last/bid/ask'),
+  () => assert('ordered quote values stay attached to their labels', orderedOptionQuoteEntries({ last: 4, bid: 3, mid: 2, ask: 1 }).map(entry => `${entry.field}:${entry.value}`).join('|') === 'last:4|bid:3|mid:2|ask:1'),
   () => assertClose('breakeven uses premium per share', calculateBreakeven(50, 2), 48),
   () => assertClose('downside cushion is decimal', calculateDownsideCushion(60, 48), 0.2),
   () => assertClose('nominal yield is decimal', calculateNominalYield(2, 50), 0.04),

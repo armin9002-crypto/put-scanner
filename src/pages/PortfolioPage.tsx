@@ -73,12 +73,13 @@ import {
   type PortfolioScheduleSortDirection,
   type PortfolioScheduleSortField,
 } from '../lib/portfolioScheduleSorting';
+import { OPTION_QUOTE_TABLE_DISPLAY_ORDER, orderedOptionQuoteEntries } from '../lib/optionQuoteDisplay';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 const PortfolioScreenshotImportModal = lazy(() => import('../components/PortfolioScreenshotImportModal'));
 const DASH = '\u2014';
 const PORTFOLIO_MARK_BASIS_KEY = 'put_scanner_portfolio_mark_basis';
-const MARK_BASIS_OPTIONS: MarkBasis[] = ['bid', 'ask', 'last'];
+const MARK_BASIS_OPTIONS: MarkBasis[] = [...OPTION_QUOTE_TABLE_DISPLAY_ORDER];
 
 interface TradeModalProps {
   trade: PortfolioTrade | null;
@@ -310,10 +311,12 @@ function CurrentMarkTooltipContent({ trade, markBasis }: { trade: PortfolioTrade
       <div className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text)' }}>Current Mark Details</div>
       <TooltipRows rows={[
         { label: 'Mark Basis', value: formatMarkBasis(markBasis) },
-        { label: 'Bid', value: formatOptionPrice(trade.latestMarketData?.optionBid) },
-        { label: 'Ask', value: formatOptionPrice(trade.latestMarketData?.optionAsk) },
-        { label: 'Mid', value: formatOptionPrice(getPortfolioMidMark(trade)) },
-        { label: 'Last', value: formatOptionPrice(trade.latestMarketData?.optionLast) },
+        ...orderedOptionQuoteEntries({
+          last: trade.latestMarketData?.optionLast,
+          bid: trade.latestMarketData?.optionBid,
+          mid: getPortfolioMidMark(trade),
+          ask: trade.latestMarketData?.optionAsk,
+        }).map(({ label, value }) => ({ label, value: formatOptionPrice(value) })),
         {
           label: 'Last Trade Date',
           value: `${formatFullDate(trade.latestMarketData?.lastTradeDate)}${stale.label ? ` · ${stale.label}` : ''}`,
@@ -497,7 +500,7 @@ function MarkBasisToggle({ markBasis, onChange }: { markBasis: MarkBasis; onChan
     <div className="mark-basis-toggle flex items-center gap-1.5 min-w-0 whitespace-nowrap">
       <span className="text-[10px] uppercase tracking-wider font-semibold whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>Mark book at</span>
       <div className="inline-flex rounded-lg overflow-hidden w-fit" style={{ border: '1px solid var(--border)' }}>
-        {MARK_BASIS_OPTIONS.map(option => (
+        {MARK_BASIS_OPTIONS.map((option, index) => (
           <button
             key={option}
             onClick={() => onChange(option)}
@@ -505,7 +508,7 @@ function MarkBasisToggle({ markBasis, onChange }: { markBasis: MarkBasis; onChan
             style={{
               backgroundColor: markBasis === option ? 'var(--accent)' : 'var(--surface-alt)',
               color: markBasis === option ? 'white' : 'var(--text-muted)',
-              borderRight: option !== 'last' ? '1px solid var(--border)' : '0',
+              borderRight: index < MARK_BASIS_OPTIONS.length - 1 ? '1px solid var(--border)' : '0',
             }}
           >
             {option.charAt(0).toUpperCase() + option.slice(1)}

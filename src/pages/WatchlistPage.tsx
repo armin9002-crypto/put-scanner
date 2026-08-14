@@ -18,6 +18,7 @@ import type { OptionDetail } from '../components/OptionDetailDrawer';
 import { Star, RefreshCw, Loader2, ChevronUp, ChevronDown, AlertTriangle } from 'lucide-react';
 import { useResponsiveMode } from '../lib/responsive';
 import MobileOptionRow from '../components/mobile/MobileOptionRow';
+import { OPTION_QUOTE_DISPLAY_LABELS, OPTION_QUOTE_TABLE_DISPLAY_ORDER, type OptionQuoteTableDisplayField } from '../lib/optionQuoteDisplay';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 
@@ -375,13 +376,17 @@ export default function WatchlistPage() {
       : <ChevronDown className="w-3 h-3" style={{ color: 'var(--accent)' }} />;
   }
 
-  const columns: { field: SortField; label: string; align: string }[] = [
+  type WatchlistColumn = { field: SortField; label: string; align: string };
+  const quoteColumns: Record<OptionQuoteTableDisplayField, WatchlistColumn> = {
+    last: { field: 'last', label: 'Last', align: 'text-right' },
+    bid: { field: 'bid', label: 'Bid', align: 'text-right' },
+    ask: { field: 'ask', label: 'Ask', align: 'text-right' },
+  };
+  const columns: WatchlistColumn[] = [
     { field: 'ticker', label: 'Ticker', align: 'text-left' },
     { field: 'strike', label: 'Strike', align: 'text-right' },
     { field: 'expiry', label: 'Expiry', align: 'text-right' },
-    { field: 'last', label: 'Last', align: 'text-right' },
-    { field: 'bid', label: 'Bid', align: 'text-right' },
-    { field: 'ask', label: 'Ask', align: 'text-right' },
+    ...OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => quoteColumns[field]),
     { field: 'delta', label: 'Delta', align: 'text-right' },
     { field: 'moneyness', label: 'Moneyness', align: 'text-right' },
     { field: 'iv', label: 'IV', align: 'text-right' },
@@ -525,8 +530,8 @@ export default function WatchlistPage() {
                         <div className="font-mono" style={{ color: 'var(--text)' }}>{formatMoney(row.currentPrice)}</div>
                       </div>
                       <div>
-                        <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Bid / Ask</div>
-                        <div className="font-mono" style={{ color: 'var(--text)' }}>{formatMoney(row.bid)} / {formatMoney(row.ask)}</div>
+                        <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Last / Bid / Ask</div>
+                        <div className="font-mono" style={{ color: 'var(--text)' }}>{formatMoney(row.last)} / {formatMoney(row.bid)} / {formatMoney(row.ask)}</div>
                       </div>
                       <div className="text-right">
                         <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Ann Yld Bid</div>
@@ -652,9 +657,7 @@ export default function WatchlistPage() {
                         <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={mutedStyle}>
                           {row.expiryFormatted} {isFiniteNumber(row.dte) ? `(${row.dte} DTE)` : ''}
                         </td>
-                        <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={mutedStyle}>{formatMoney(row.last)}</td>
-                        <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={mutedStyle}>{formatMoney(row.bid)}</td>
-                        <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={mutedStyle}>{formatMoney(row.ask)}</td>
+                        {OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => <td key={field} className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={mutedStyle} title={OPTION_QUOTE_DISPLAY_LABELS[field]}>{formatMoney(row[field])}</td>)}
                         <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={{ ...mutedStyle, color: deltaColor(row.delta) }}>{isFiniteNumber(row.delta) ? row.delta.toFixed(2) : '—'}</td>
                         <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={{ ...mutedStyle, color: row.moneynessColor }}>{row.moneynessLabel}</td>
                         <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={{ ...mutedStyle, color: ivColor(row.iv) }}>{isFiniteNumber(row.iv) ? row.iv.toFixed(1) + '%' : '—'}</td>

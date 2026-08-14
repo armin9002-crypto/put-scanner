@@ -1,5 +1,6 @@
 import { Star } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { orderedOptionQuoteEntries } from '../../lib/optionQuoteDisplay';
 
 export interface MobileOptionRowProps {
   ticker?: string;
@@ -40,6 +41,7 @@ function percent(value: number | null | undefined): string {
 
 export default function MobileOptionRow(props: MobileOptionRowProps) {
   const mid = props.mid ?? (props.bid != null && props.ask != null && props.bid > 0 && props.ask > 0 ? (props.bid + props.ask) / 2 : null);
+  const quoteEntries = orderedOptionQuoteEntries({ last: props.last, bid: props.bid, mid, ask: props.ask });
   const title = `${props.ticker ? `${props.ticker} ` : ''}$${money(props.strike)} Put`;
   return (
     <article className="pressable mobile-option-row">
@@ -66,8 +68,8 @@ export default function MobileOptionRow(props: MobileOptionRowProps) {
           </div>
         </div>
         <div className="mt-1.5 grid grid-cols-4 gap-1 border-y py-1.5" style={{ borderColor: 'var(--border)' }}>
-          {([['Last', props.last], ['Bid', props.bid], ['Mid', mid], ['Ask', props.ask]] as const).map(([label, value]) => (
-            <div key={label} className="min-w-0 text-center"><div className="text-[10px]" style={{ color: 'var(--text-dim)' }}>{label}</div><div className="truncate font-mono text-[12px] font-semibold tabular-nums" style={{ color: label === 'Bid' ? 'var(--green)' : 'var(--text)' }}>{money(value)}</div></div>
+          {quoteEntries.map(({ field, label, value }) => (
+            <div key={field} className="min-w-0 text-center"><div className="text-[10px]" style={{ color: 'var(--text-dim)' }}>{label}</div><div className="truncate font-mono text-[12px] font-semibold tabular-nums" style={{ color: field === 'bid' ? 'var(--green)' : 'var(--text)' }}>{money(value)}</div></div>
           ))}
         </div>
         <div className={`mt-1.5 grid gap-1 text-[10px] ${props.showNominalYield ? 'grid-cols-5' : 'grid-cols-4'}`}>

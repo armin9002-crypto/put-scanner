@@ -10,6 +10,7 @@ import {
 } from '../lib/optionMetrics';
 import { formatCurrency, formatNumber, formatPercent, normalizeTimestampMs } from '../lib/format';
 import { useResponsiveMode } from '../lib/responsive';
+import { orderedOptionQuoteEntries } from '../lib/optionQuoteDisplay';
 
 export interface OptionDetail {
   strike: number;
@@ -244,12 +245,7 @@ export default function OptionDetailDrawer({
   };
 
   if (isPhone) {
-    const quoteOptions = [
-      ['Bid', bid],
-      ['Mid', mid],
-      ['Ask', ask],
-      ['Last', usableLast],
-    ] as const;
+    const quoteOptions = orderedOptionQuoteEntries({ last: usableLast, bid, mid, ask });
     const addToPortfolio = () => {
       if (!onAddToPortfolio || activeSoldPrice == null || validContracts == null) return;
       onAddToPortfolio({ option, soldPrice: activeSoldPrice, contracts: validContracts, underlyingPrice });
@@ -271,9 +267,9 @@ export default function OptionDetailDrawer({
           <div className="space-y-5 px-4 py-4">
             <section>
               <div className="mobile-segmented" role="group" aria-label="Select sold price quote">
-                {quoteOptions.map(([label, value]) => {
+                {quoteOptions.map(({ field, label, value }) => {
                   const selected = isFiniteNumber(value) && activeSoldPrice === value;
-                  return <button type="button" key={label} disabled={!isFiniteNumber(value)} onClick={() => setSoldPriceFromQuote(value)} className="pressable mobile-segmented__item disabled:opacity-35" data-selected={selected ? 'true' : 'false'} aria-pressed={selected}>{label}</button>;
+                  return <button type="button" key={field} disabled={!isFiniteNumber(value)} onClick={() => setSoldPriceFromQuote(value)} className="pressable mobile-segmented__item disabled:opacity-35" data-selected={selected ? 'true' : 'false'} aria-pressed={selected}>{label}</button>;
                 })}
               </div>
               <div className="mt-3 flex items-end justify-between border-b pb-3" style={{ borderColor: 'var(--border)' }}>
@@ -309,8 +305,7 @@ export default function OptionDetailDrawer({
             <details className="border-t pt-3" style={{ borderColor: 'var(--border)' }}>
               <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Market details <span style={{ color: 'var(--text-dim)' }}>+</span></summary>
               <div className="divide-y pb-4" style={{ borderColor: 'var(--border)' }}>
-                <DetailRow label="Bid / Ask" value={`${formatCurrency(bid)} / ${formatCurrency(ask)}`} />
-                <DetailRow label="Mid / Last" value={`${formatCurrency(mid)} / ${formatCurrency(option.last)}`} />
+                {orderedOptionQuoteEntries({ last: option.last, bid, mid, ask }).map(({ field, label, value }) => <DetailRow key={field} label={label} value={formatCurrency(value)} />)}
                 <DetailRow label="Last Trade Date" value={lastTradeInfo.date} color={lastTradeInfo.color} />
                 <DetailRow label="Last Trade Age" value={lastTradeInfo.age} color={lastTradeInfo.color} />
                 <DetailRow label="Spread" value={`${formatCurrency(spread)} · ${formatPercent(spreadPct)}`} />
@@ -407,16 +402,11 @@ export default function OptionDetailDrawer({
               </label>
             </div>
             <div className="grid grid-cols-4 gap-1 mb-3 rounded-xl p-1" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }} role="group" aria-label="Use market quote as sold price">
-              {[
-                ['Bid', bid],
-                ['Mid', mid],
-                ['Ask', ask],
-                ['Last', usableLast],
-              ].map(([label, value]) => (
+              {orderedOptionQuoteEntries({ last: usableLast, bid, mid, ask }).map(({ field, label, value }) => (
                 <button
-                  key={label as string}
-                  onClick={() => setSoldPriceFromQuote(value as number | null)}
-                  disabled={!isFiniteNumber(value as number | null)}
+                  key={field}
+                  onClick={() => setSoldPriceFromQuote(value)}
+                  disabled={!isFiniteNumber(value)}
                   className="pressable min-h-[44px] rounded-lg px-2 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-[40px]"
                   style={{ backgroundColor: activeSoldPrice === value ? 'var(--accent)' : 'transparent', color: activeSoldPrice === value ? 'white' : 'var(--accent-light)' }}
                 >
@@ -456,10 +446,7 @@ export default function OptionDetailDrawer({
           </Section>
 
           <Section title="Market Quote">
-            <DetailRow label="Bid" value={formatCurrency(bid)} />
-            <DetailRow label="Ask" value={formatCurrency(ask)} />
-            <DetailRow label="Mid" value={formatCurrency(mid)} />
-            <DetailRow label="Last" value={formatCurrency(option.last)} />
+            {orderedOptionQuoteEntries({ last: option.last, bid, mid, ask }).map(({ field, label, value }) => <DetailRow key={field} label={label} value={formatCurrency(value)} />)}
             <DetailRow label="Last Trade Date" value={lastTradeInfo.date} color={lastTradeInfo.color} />
             <DetailRow label="Last Trade" value={lastTradeInfo.trade} color={lastTradeInfo.color} />
             <DetailRow label="Last Trade Age" value={lastTradeInfo.age} color={lastTradeInfo.color} />
