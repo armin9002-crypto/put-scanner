@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildExpirationScheduleGroups, buildUnderlyingScheduleGroups } from '../src/lib/portfolioAnalytics.ts';
+import { buildExpirationScheduleGroups, buildFlatScheduleTrades, buildUnderlyingScheduleGroups } from '../src/lib/portfolioAnalytics.ts';
 import { calculateCurrentOptionMark, calculatePortfolioMarkSummary, calculatePortfolioSummary } from '../src/lib/portfolioMetrics.ts';
 import { isExpiredUnresolvedOpenTrade, markExpirationPricePending, resolveExpiredTradeWithClose, selectExpirationClose } from '../src/lib/portfolioExpirationArchive.ts';
 import { resolveEntryVixFromPoints, resolvePortfolioEntryVix, selectEntryVixClose, unresolvedEntryVixDates } from '../src/lib/portfolioEntryVix.ts';
-import { readCollapsedExpirationGroups, readCollapsedUnderlyingGroups, readPortfolioGroupMode, setAllExpirationGroupsCollapsed, toggleCollapsedExpirationGroup } from '../src/lib/portfolioSchedulePreferences.ts';
+import { persistPortfolioGroupMode, readCollapsedExpirationGroups, readCollapsedUnderlyingGroups, readPortfolioGroupMode, setAllExpirationGroupsCollapsed, toggleCollapsedExpirationGroup } from '../src/lib/portfolioSchedulePreferences.ts';
 import { normalizePortfolioTrade } from '../src/lib/portfolioStorage.ts';
 
 const trade = (overrides = {}) => ({
@@ -52,6 +52,26 @@ test('underlying groups sort A-Z, reconcile the same totals, and expose useful t
   assert.equal(tickerGroups.reduce((sum, group) => sum + group.grossRisk, 0), expiryGroups.reduce((sum, group) => sum + group.grossRisk, 0));
 });
 
+test('None mode contains every open trade once and reconciles unchanged overall totals', () => {
+  const trades = [trade({ id: 'one', ticker: 'SOXL' }), trade({ id: 'two', ticker: 'LABU', expiration: '2027-02-19' }), trade({ id: 'closed', status: 'closed' })];
+  const flat = buildFlatScheduleTrades(trades);
+  assert.deepEqual(flat.map(item => item.id), ['one', 'two']);
+  assert.equal(new Set(flat.map(item => item.id)).size, flat.length);
+  const totals = calculatePortfolioSummary(flat);
+  const markTotals = calculatePortfolioMarkSummary(flat, 'ask');
+  const expiryGroups = buildExpirationScheduleGroups(trades, 'ask');
+  const underlyingGroups = buildUnderlyingScheduleGroups(trades, 'ask');
+  for (const groups of [expiryGroups, underlyingGroups]) {
+    assert.equal(groups.reduce((sum, group) => sum + group.premiumCollected, 0), totals.totalPremiumCollected);
+    assert.equal(groups.reduce((sum, group) => sum + group.grossRisk, 0), totals.totalEquityAtRisk);
+    assert.equal(groups.reduce((sum, group) => sum + group.netCapitalAtRisk, 0), totals.totalNetCapitalAtRisk);
+    assert.equal(groups.reduce((sum, group) => sum + group.currentValue, 0), markTotals.totalCurrentValue);
+    assert.equal(groups.reduce((sum, group) => sum + group.totalGainLoss, 0), markTotals.totalGainLoss);
+    const blendedDelta = groups.reduce((sum, group) => sum + group.weightedAverageDelta * group.grossRisk, 0) / groups.reduce((sum, group) => sum + group.grossRisk, 0);
+    assert.equal(blendedDelta, markTotals.weightedAverageDelta);
+  }
+});
+
 test('expiration collapse state is independent per group and safely parsed', () => {
   const one = toggleCollapsedExpirationGroup({}, '2027-01-15');
   const two = toggleCollapsedExpirationGroup(one, '2027-02-19');
@@ -59,8 +79,14 @@ test('expiration collapse state is independent per group and safely parsed', () 
   assert.deepEqual(setAllExpirationGroupsCollapsed(['a', 'b'], true), { a: true, b: true });
   assert.deepEqual(readCollapsedExpirationGroups({ getItem: () => '{"a":true,"bad":"yes"}' }), { a: true });
   assert.deepEqual(readCollapsedUnderlyingGroups({ getItem: () => '{"BOIL":true}' }), { BOIL: true });
+  assert.equal(readPortfolioGroupMode({ getItem: () => 'expiration' }), 'expiration');
   assert.equal(readPortfolioGroupMode({ getItem: () => 'underlying' }), 'underlying');
+  assert.equal(readPortfolioGroupMode({ getItem: () => 'none' }), 'none');
+  assert.equal(readPortfolioGroupMode({ getItem: () => null }), 'expiration');
   assert.equal(readPortfolioGroupMode({ getItem: () => 'unexpected' }), 'expiration');
+  let persistedMode = null;
+  persistPortfolioGroupMode('none', { setItem: (_key, value) => { persistedMode = value; } });
+  assert.equal(persistedMode, 'none');
 });
 
 test('entry VIX selects the official close or nearest prior trading close and persists once', () => {

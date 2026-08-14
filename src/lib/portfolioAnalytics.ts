@@ -310,6 +310,10 @@ export function buildUnderlyingScheduleGroups(
     });
 }
 
+export function buildFlatScheduleTrades(trades: PortfolioTrade[]): PortfolioTrade[] {
+  return [...openTrades(trades)];
+}
+
 export function groupByDteBucket(trades: PortfolioTrade[], markBasis: MarkBasis): PortfolioExposureGroup[] {
   return DTE_BUCKETS.map(bucket => {
     const grouped = openTrades(trades).filter(trade => bucket.match(getRemainingDte(trade)));

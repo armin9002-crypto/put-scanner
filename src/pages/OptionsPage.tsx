@@ -9,6 +9,8 @@ import type { WatchlistItem } from '../lib/watchlist';
 import { addPortfolioTrade } from '../lib/portfolioStorage';
 import { calculateBidAskSpreadPercent, calculateMoneyness, calculateYieldPercent } from '../lib/optionMetrics';
 import { formatOptionLastTradeDate, normalizeTimestampMs } from '../lib/format';
+import { getOptionLastTradeFreshness } from '../lib/optionLastTradeFreshness';
+import { persistShowNominalYield, readShowNominalYield } from '../lib/optionTablePreferences';
 import { getUnderlyingHoldingsProxy } from '../lib/underlyingHoldingsProxies';
 import { getLastScannerUrl, isScannerNavigationState } from '../lib/scannerNavigation';
 import SparklineChart from '../components/SparklineChart';
@@ -206,26 +208,13 @@ function formatLastTradeDate(value: number | null | undefined): string {
   });
 }
 
-function getLastTradeStaleLabel(value: number | null | undefined): { label: string | null; color: string } {
-  const timestamp = normalizeTimestampMs(value);
-  if (timestamp == null) return { label: null, color: 'var(--text-muted)' };
-  const tradeDate = new Date(timestamp);
-  const now = new Date();
-  const tradeMidnight = new Date(tradeDate.getFullYear(), tradeDate.getMonth(), tradeDate.getDate()).getTime();
-  const nowMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const ageDays = Math.max(0, Math.floor((nowMidnight - tradeMidnight) / (24 * 60 * 60 * 1000)));
-  if (ageDays > 7) return { label: 'Very stale', color: 'var(--red)' };
-  if (ageDays > 2) return { label: 'Stale', color: 'var(--yellow)' };
-  return { label: null, color: 'var(--text-muted)' };
-}
-
 function formatSpreadPercent(bid: number | null, ask: number | null): string {
   const spread = calculateBidAskSpreadPercent(bid, ask);
   return spread != null ? `${(spread * 100).toFixed(1)}%` : '—';
 }
 
 function OptionQuickTooltip({ put, ticker, expirationLabel, dte }: { put: EnrichedPut; ticker: string; expirationLabel: string; dte: number | null }) {
-  const stale = getLastTradeStaleLabel(put.lastTradeDate);
+  const stale = getOptionLastTradeFreshness(put.lastTradeDate);
   const lastTradeDate = formatLastTradeDate(put.lastTradeDate);
   return (
     <div
@@ -238,7 +227,7 @@ function OptionQuickTooltip({ put, ticker, expirationLabel, dte }: { put: Enrich
       <div className="font-mono text-[11px] tabular-nums" style={{ color: 'var(--text-secondary)' }}>
         Bid {formatPrice(put.bid)} · Ask {formatPrice(put.ask)} · Mid {formatPrice(getMidPrice(put.bid, put.ask))} · Last {formatPrice(put.last)}
       </div>
-      <div className="mt-1 flex flex-wrap gap-x-1.5 font-mono text-[11px] tabular-nums" style={{ color: stale.label ? stale.color : 'var(--text-muted)' }}>
+      <div className="mt-1 flex flex-wrap gap-x-1.5 font-mono text-[11px] tabular-nums" style={{ color: stale.color }}>
         <span>Last Trade Date: {lastTradeDate}</span>
         {stale.label && <span>· {stale.label}</span>}
       </div>
@@ -269,6 +258,7 @@ function MobileOptionCard({
   moneyness,
   watched,
   showVolOI,
+  showNominalYield,
   onToggleWatchlist,
   onSelect,
 }: {
@@ -276,6 +266,7 @@ function MobileOptionCard({
   moneyness: 'itm' | 'otm' | 'atm';
   watched: boolean;
   showVolOI: boolean;
+  showNominalYield: boolean;
   onToggleWatchlist: () => void;
   onSelect: () => void;
 }) {
@@ -348,10 +339,11 @@ function MobileOptionCard({
         <MobileStat label="Ask" value={formatPrice(put.ask)} />
         <MobileStat label="AY Bid" value={put.annYieldBid != null ? formatYield(put.annYieldBid) : '—'} color={put.annYieldBid != null ? yieldColor(put.annYieldBid) : 'var(--text-dim)'} />
       </div>
-      <div className="mobile-secondary-grid mt-2 grid grid-cols-3 gap-2">
+      <div className={`mobile-secondary-grid mt-2 grid gap-2 ${showNominalYield ? 'grid-cols-4' : 'grid-cols-3'}`}>
         <MobileStat label="Delta" value={put.delta.toFixed(2)} color={deltaColor(put.delta)} />
         <MobileStat label="IV" value={put.impliedVolatility != null ? `${put.impliedVolatility.toFixed(1)}%` : '—'} color={ivColor(put.impliedVolatility)} />
         <MobileStat label="Last" value={formatPrice(put.last)} />
+        {showNominalYield && <MobileStat label="NY Bid" value={put.nomYieldBid != null ? formatYield(put.nomYieldBid) : '—'} />}
       </div>
       {showVolOI && (
         <div className="mobile-secondary-grid mt-2 grid grid-cols-3 gap-2 border-t pt-2" style={{ borderColor: 'var(--border)' }}>
@@ -417,6 +409,7 @@ export default function OptionsPage() {
   const [sortField, setSortField] = useState<SortField>('strike');
   const [sortDir, setSortDir] = useState<SortDirection>('asc');
   const [showVolOI, setShowVolOI] = useState(false);
+  const [showNominalYield, setShowNominalYield] = useState(readShowNominalYield);
   const [ivRankData, setIvRankData] = useState<IVRankData | null>(null);
   const [watchlistIds, setWatchlistIds] = useState<Set<string>>(new Set());
   const [showScannerPreselectBadge, setShowScannerPreselectBadge] = useState(false);
@@ -498,6 +491,13 @@ export default function OptionsPage() {
     setSelectedOption(null);
     loadData();
   }, [ticker, expiryParam, loadData]);
+
+  useEffect(() => {
+    persistShowNominalYield(showNominalYield);
+    if (!showNominalYield) {
+      setSortField(current => current === 'nomYieldBid' ? 'annYieldBid' : current === 'nomYieldAsk' ? 'annYieldAsk' : current === 'nomYieldLast' ? 'annYieldLast' : current);
+    }
+  }, [showNominalYield]);
 
   // Refresh watchlist state when selectedExp changes
   useEffect(() => {
@@ -716,7 +716,10 @@ export default function OptionsPage() {
     { field: 'volOI', label: 'Vol/OI', fullLabel: 'Volume / Open Interest', align: 'text-right', widthClass: 'w-14', hideOnMobile: true },
   ];
 
-  const columns = showVolOI ? [...baseColumns, ...volOIColumns] : baseColumns;
+  const visibleYieldColumns = showNominalYield
+    ? baseColumns
+    : baseColumns.filter(column => !column.field.startsWith('nomYield'));
+  const columns = showVolOI ? [...visibleYieldColumns, ...volOIColumns] : visibleYieldColumns;
   const colCount = columns.length;
   const hasEmptyOptions = !loading && !!optionsData && (
     optionsData.expirations.length === 0 || optionsData.puts.length === 0
@@ -890,10 +893,10 @@ export default function OptionsPage() {
       setSelectedOption(null);
     };
     const mobileStaleText = (value: number | null | undefined) => {
-      const timestamp = normalizeTimestampMs(value);
-      if (timestamp == null) return null;
-      const ageDays = Math.max(0, Math.floor((Date.now() - timestamp) / (24 * 60 * 60 * 1000)));
-      return ageDays > 2 ? `Last ${ageDays}d ago` : null;
+      const freshness = getOptionLastTradeFreshness(value);
+      return freshness.freshness === 'stale' || freshness.freshness === 'very_stale'
+        ? `Last ${freshness.ageDays}d ago`
+        : null;
     };
 
     return (
@@ -919,6 +922,7 @@ export default function OptionsPage() {
 
         <div className="flex min-h-[46px] items-center gap-2 border-b px-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
           <span className="mr-auto text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Puts <span className="font-mono font-normal" style={{ color: 'var(--text-muted)' }}>{sortedPuts.length}</span></span>
+          <label className="flex min-h-11 items-center gap-1 text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}><input type="checkbox" checked={showNominalYield} onChange={event => setShowNominalYield(event.target.checked)} className="rounded" /> NY</label>
           <select value={sortField} onChange={event => setSortField(event.target.value as SortField)} className="min-h-11 rounded-lg px-2 text-[12px] outline-none" aria-label="Sort option chain" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>{mobileSortOptions.map(option => <option key={option.field} value={option.field}>{option.label}</option>)}</select>
           <button type="button" onClick={() => setSortDir(current => current === 'asc' ? 'desc' : 'asc')} className="pressable flex h-11 min-w-11 items-center justify-center rounded-lg text-[11px] font-semibold" aria-label={`Sort ${sortDir === 'asc' ? 'descending' : 'ascending'}`} style={{ color: 'var(--accent-light)' }}>{sortDir === 'asc' ? '↑' : '↓'}</button>
         </div>
@@ -930,7 +934,7 @@ export default function OptionsPage() {
             {loading && enrichedPuts.length === 0 ? Array.from({ length: 6 }).map((_, index) => <div key={index} className="mobile-option-row animate-pulse"><div className="h-4 w-24 rounded" style={{ backgroundColor: 'var(--border)' }} /><div className="mt-4 h-8 w-full rounded" style={{ backgroundColor: 'var(--border)' }} /><div className="mt-3 h-3 w-4/5 rounded" style={{ backgroundColor: 'var(--border)' }} /></div>) : sortedPuts.map(put => {
               const expirationIso = selectedExp ? new Date(selectedExp * 1000).toISOString().split('T')[0] : '';
               const watchlistId = makeWatchlistId(ticker ?? '', expirationIso, put.strike);
-              return <MobileOptionRow key={put.strike} strike={put.strike} bid={put.bid} ask={put.ask} mid={getMidPrice(put.bid, put.ask)} last={put.last} annualYield={put.annYieldBid} delta={put.delta} impliedVolatility={put.impliedVolatility} openInterest={put.openInterest} moneynessLabel={put.otmItmLabel} moneynessColor={put.otmItmColor} staleText={mobileStaleText(put.lastTradeDate)} watched={watchlistIds.has(watchlistId)} onToggleWatchlist={() => toggleWatchlist(put)} onSelect={() => setSelectedOption(put)} />;
+              return <MobileOptionRow key={put.strike} strike={put.strike} bid={put.bid} ask={put.ask} mid={getMidPrice(put.bid, put.ask)} last={put.last} annualYield={put.annYieldBid} nominalYield={put.nomYieldBid} showNominalYield={showNominalYield} delta={put.delta} impliedVolatility={put.impliedVolatility} openInterest={put.openInterest} moneynessLabel={put.otmItmLabel} moneynessColor={put.otmItmColor} staleText={mobileStaleText(put.lastTradeDate)} watched={watchlistIds.has(watchlistId)} onToggleWatchlist={() => toggleWatchlist(put)} onSelect={() => setSelectedOption(put)} />;
             })}
           </div>
         )}
@@ -1077,6 +1081,15 @@ export default function OptionsPage() {
 
             {/* Right side: last updated + refresh + vol/OI toggle */}
             <div data-mobile-controls className="flex w-full flex-wrap items-center gap-2 text-xs sm:ml-auto sm:w-auto sm:gap-3 min-w-0" style={{ color: 'var(--text-muted)' }}>
+              <label className="flex items-center gap-1.5 text-xs cursor-pointer min-h-[44px] sm:min-h-0" style={{ color: 'var(--text-muted)' }}>
+                <input
+                  type="checkbox"
+                  checked={showNominalYield}
+                  onChange={event => setShowNominalYield(event.target.checked)}
+                  className="rounded"
+                />
+                Show Nominal Yield
+              </label>
               <label className="flex items-center gap-1.5 text-xs cursor-pointer min-h-[44px] sm:min-h-0" style={{ color: 'var(--text-muted)' }}>
                 <input
                   type="checkbox"
@@ -1313,6 +1326,7 @@ export default function OptionsPage() {
                       moneyness={getMoneyness(put.strike)}
                       watched={watchlistIds.has(wlId)}
                       showVolOI={showVolOI}
+                      showNominalYield={showNominalYield}
                       onToggleWatchlist={() => toggleWatchlist(put)}
                       onSelect={() => setSelectedOption(put)}
                     />
@@ -1458,7 +1472,7 @@ export default function OptionsPage() {
                             </div>
                             <OptionQuickTooltip put={put} ticker={ticker ?? ''} expirationLabel={quickExpirationLabel} dte={quickDte} />
                           </td>
-                          <td className="w-20 px-1.5 py-1.5 text-right font-mono text-xs tabular-nums hidden md:table-cell" title={`${formatLastTradeDate(put.lastTradeDate)}${getLastTradeStaleLabel(put.lastTradeDate).label ? ` · ${getLastTradeStaleLabel(put.lastTradeDate).label}` : ''}`} style={{ color: getLastTradeStaleLabel(put.lastTradeDate).color }}>{formatOptionLastTradeDate(put.lastTradeDate)}</td>
+                          <td className="w-20 px-1.5 py-1.5 text-right font-mono text-xs tabular-nums hidden md:table-cell" title={`${formatLastTradeDate(put.lastTradeDate)}${getOptionLastTradeFreshness(put.lastTradeDate).label ? ` · ${getOptionLastTradeFreshness(put.lastTradeDate).label}` : ''}`} style={{ color: getOptionLastTradeFreshness(put.lastTradeDate).color }}>{formatOptionLastTradeDate(put.lastTradeDate)}</td>
                           <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums hidden md:table-cell w-14" style={{ color: 'var(--text)' }}>{formatPrice(put.last)}</td>
                           <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums w-14" style={{ color: 'var(--text)' }}>{formatPrice(put.bid)}</td>
                           <td className="px-2 py-1.5 text-right text-xs font-mono tabular-nums w-14" style={{ color: 'var(--text)' }}>{formatPrice(put.ask)}</td>
@@ -1471,21 +1485,21 @@ export default function OptionsPage() {
                           <td className="px-1.5 py-1.5 text-right text-xs font-mono tabular-nums hidden md:table-cell w-12" style={{ color: ivColor(put.impliedVolatility) }}>
                             {put.impliedVolatility != null ? put.impliedVolatility.toFixed(1) + '%' : '—'}
                           </td>
-                          <td className="w-[72px] px-1.5 py-1.5 text-right text-xs font-mono tabular-nums hidden lg:table-cell" style={{ color: 'var(--text-secondary)' }}>
+                          {showNominalYield && <td className="w-[72px] px-1.5 py-1.5 text-right text-xs font-mono tabular-nums hidden lg:table-cell" style={{ color: 'var(--text-secondary)' }}>
                             {put.nomYieldBid != null ? formatYield(put.nomYieldBid) : '—'}
-                          </td>
+                          </td>}
                           <td className="w-[72px] px-1.5 py-1.5 text-right text-xs font-mono tabular-nums font-medium" style={{ color: put.annYieldBid != null ? yieldColor(put.annYieldBid) : 'var(--text-dim)' }}>
                             {put.annYieldBid != null ? formatYield(put.annYieldBid) : '—'}
                           </td>
-                          <td className="w-[72px] px-1.5 py-1.5 text-right text-xs font-mono tabular-nums hidden lg:table-cell" style={{ color: 'var(--text-secondary)' }}>
+                          {showNominalYield && <td className="w-[72px] px-1.5 py-1.5 text-right text-xs font-mono tabular-nums hidden lg:table-cell" style={{ color: 'var(--text-secondary)' }}>
                             {put.nomYieldAsk != null ? formatYield(put.nomYieldAsk) : '—'}
-                          </td>
+                          </td>}
                           <td className="w-[72px] px-1.5 py-1.5 text-right text-xs font-mono tabular-nums font-medium hidden md:table-cell" style={{ color: put.annYieldAsk != null ? yieldColor(put.annYieldAsk) : 'var(--text-dim)' }}>
                             {put.annYieldAsk != null ? formatYield(put.annYieldAsk) : '—'}
                           </td>
-                          <td className="w-[72px] px-1.5 py-1.5 text-right text-xs font-mono tabular-nums hidden lg:table-cell" style={{ color: 'var(--text-secondary)' }}>
+                          {showNominalYield && <td className="w-[72px] px-1.5 py-1.5 text-right text-xs font-mono tabular-nums hidden lg:table-cell" style={{ color: 'var(--text-secondary)' }}>
                             {put.nomYieldLast != null ? formatYield(put.nomYieldLast) : '—'}
-                          </td>
+                          </td>}
                           <td className="w-[72px] px-1.5 py-1.5 text-right text-xs font-mono tabular-nums font-medium hidden lg:table-cell" style={{ color: put.annYieldLast != null ? yieldColor(put.annYieldLast) : 'var(--text-dim)' }}>
                             {put.annYieldLast != null ? formatYield(put.annYieldLast) : '—'}
                           </td>

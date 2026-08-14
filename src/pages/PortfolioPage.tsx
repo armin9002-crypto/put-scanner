@@ -14,6 +14,7 @@ import {
   getTradeDistanceToBreakeven,
   getTradeDistanceToStrike,
   getTradeGrossRisk,
+  buildFlatScheduleTrades,
   buildExpirationScheduleGroups,
   buildUnderlyingScheduleGroups,
   groupByExpiration,
@@ -95,7 +96,7 @@ interface CloseCandidate {
   reasons: string[];
 }
 
-type SortField = 'ticker' | 'expiration' | 'dte' | 'strike' | 'contracts' | 'premium' | 'risk' | 'pnl' | 'delta';
+type SortField = 'ticker' | 'expiration' | 'dte' | 'strike' | 'contracts' | 'premium' | 'risk' | 'pnl' | 'delta' | 'currentAy';
 type SortDir = 'asc' | 'desc';
 type PortfolioScheduleGroup = PortfolioExpirationScheduleGroup | PortfolioUnderlyingScheduleGroup;
 
@@ -112,6 +113,7 @@ function compareScheduleTrades(a: PortfolioTrade, b: PortfolioTrade, field: Sort
       case 'risk': return calculateEquityAtRisk(trade) ?? -1;
       case 'pnl': return calculateTotalGainLoss(trade, markBasis) ?? -999999999;
       case 'delta': return trade.latestMarketData?.delta ?? 999999;
+      case 'currentAy': return calculateCurrentAnnualizedYield(trade, markBasis) ?? -999999999;
       default: return trade.expiration;
     }
   };
@@ -1164,9 +1166,16 @@ export default function PortfolioPage() {
     trades: [...group.trades].sort((a, b) => compareScheduleTrades(a, b, sortField, sortDir, markBasis)),
   })), [openTrades, sortField, sortDir, markBasis]);
 
-  const scheduleGroups: PortfolioScheduleGroup[] = groupMode === 'expiration' ? expirationGroups : underlyingGroups;
-  const activeCollapsedGroups = groupMode === 'expiration' ? collapsedExpiryGroups : collapsedUnderlyingGroups;
-  const allScheduleGroupsCollapsed = scheduleGroups.length > 0
+  const flatScheduleTrades = useMemo(() => buildFlatScheduleTrades(openTrades)
+    .sort((a, b) => compareScheduleTrades(a, b, sortField, sortDir, markBasis)), [openTrades, sortField, sortDir, markBasis]);
+  const scheduleGroups = useMemo<PortfolioScheduleGroup[]>(() => (
+    groupMode === 'expiration' ? expirationGroups : groupMode === 'underlying' ? underlyingGroups : []
+  ), [expirationGroups, groupMode, underlyingGroups]);
+  const desktopScheduleSections: Array<PortfolioScheduleGroup | { flat: true; trades: PortfolioTrade[] }> = groupMode === 'none'
+    ? [{ flat: true, trades: flatScheduleTrades }]
+    : scheduleGroups;
+  const activeCollapsedGroups = groupMode === 'expiration' ? collapsedExpiryGroups : groupMode === 'underlying' ? collapsedUnderlyingGroups : {};
+  const allScheduleGroupsCollapsed = groupMode !== 'none' && scheduleGroups.length > 0
     && scheduleGroups.every(group => activeCollapsedGroups[scheduleGroupKey(group)] === true);
 
   const toggleExpiryGroup = useCallback((expiration: string) => {
@@ -1175,10 +1184,11 @@ export default function PortfolioPage() {
 
   const toggleScheduleGroup = useCallback((key: string) => {
     if (groupMode === 'expiration') setCollapsedExpiryGroups(current => toggleCollapsedExpirationGroup(current, key));
-    else setCollapsedUnderlyingGroups(current => toggleCollapsedExpirationGroup(current, key));
+    else if (groupMode === 'underlying') setCollapsedUnderlyingGroups(current => toggleCollapsedExpirationGroup(current, key));
   }, [groupMode]);
 
   const toggleAllScheduleGroups = useCallback(() => {
+    if (groupMode === 'none') return;
     const next = setAllExpirationGroupsCollapsed(scheduleGroups.map(scheduleGroupKey), !allScheduleGroupsCollapsed);
     if (groupMode === 'expiration') setCollapsedExpiryGroups(next);
     else setCollapsedUnderlyingGroups(next);
@@ -1226,7 +1236,7 @@ export default function PortfolioPage() {
     setActiveScheduleTicker(null);
     setHighlightedExpiration(null);
     if (groupMode === 'expiration') setCollapsedExpiryGroups(current => ({ ...current, [trade.expiration]: false }));
-    else setCollapsedUnderlyingGroups(current => ({ ...current, [trade.ticker.trim().toUpperCase()]: false }));
+    else if (groupMode === 'underlying') setCollapsedUnderlyingGroups(current => ({ ...current, [trade.ticker.trim().toUpperCase()]: false }));
     startTransientHighlight('trade', trade.id);
     scrollToSchedule(`[data-trade-id="${trade.id}"]`);
   }, [groupMode, scrollToSchedule, startTransientHighlight]);
@@ -1473,6 +1483,8 @@ export default function PortfolioPage() {
     </th>
   );
 
+  const renderMobileScheduleTrade = (trade: PortfolioTrade) => <MobilePositionRow key={trade.id} ticker={trade.ticker} strike={formatCurrency(trade.strike)} contracts={trade.contracts} expiration={formatDteValue(calculateRemainingDte(trade))} pnl={formatCurrency(calculateTotalGainLoss(trade, markBasis), 0)} captured={formatPctValue(calculatePercentCaptured(trade, markBasis))} mark={formatOptionPrice(calculateCurrentOptionMark(trade, markBasis))} delta={formatDelta(trade.latestMarketData?.delta)} distance={formatPctValue(calculateDistanceToStrike(trade))} entryVix={isFiniteNumber(trade.entryVixClose) ? trade.entryVixClose.toFixed(2) : DASH} health={getPositionHealth(trade)} onOpen={() => openDrawer(trade)} onEdit={() => setEditingTrade(trade)} />;
+
   if (isPhone) {
     return (
       <div className="mobile-route-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
@@ -1495,12 +1507,12 @@ export default function PortfolioPage() {
               <DataFreshness updatedAt={lastRefreshed} status={refreshing ? 'updating' : refreshWarning ? 'failed' : lastRefreshed ? 'cached' : 'stale'} label="Portfolio marks" />
             </section>
 
-            <div ref={scheduleRef} className="border-b px-3.5 py-2" style={{ borderColor: 'var(--border)' }}><div className="mb-2 flex items-center justify-between"><h2 className="text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Open Positions</h2><span className="font-mono text-[11px]" style={{ color: 'var(--text-muted)' }}>{openTrades.length} trades</span></div><div className="flex items-center gap-2"><span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Group</span><div className="min-w-0 flex-1"><MobileSegmentedControl value={groupMode} onChange={setGroupMode} label="Group portfolio positions" options={[{ value: 'expiration', label: 'Expiry' }, { value: 'underlying', label: 'Underlying' }]} /></div></div></div>
-            {openTrades.length === 0 ? <div className="px-4 py-10 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No open positions.</div> : <div className="space-y-2 px-2 py-2">{scheduleGroups.map(group => {
+            <div ref={scheduleRef} className="border-b px-3.5 py-2" style={{ borderColor: 'var(--border)' }}><div className="mb-2 flex items-center justify-between"><h2 className="text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Open Positions</h2><span className="font-mono text-[11px]" style={{ color: 'var(--text-muted)' }}>{openTrades.length} trades</span></div><div className="flex items-center gap-2"><span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Group</span><div className="min-w-0 flex-1"><MobileSegmentedControl value={groupMode} onChange={setGroupMode} label="Group portfolio positions" options={[{ value: 'expiration', label: 'Expiry' }, { value: 'underlying', label: 'Underlying' }, { value: 'none', label: 'None' }]} /></div></div></div>
+            {openTrades.length === 0 ? <div className="px-4 py-10 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No open positions.</div> : groupMode === 'none' ? <div className="space-y-2 px-2 py-2">{flatScheduleTrades.map(renderMobileScheduleTrade)}</div> : <div className="space-y-2 px-2 py-2">{scheduleGroups.map(group => {
               const key = scheduleGroupKey(group);
               const expanded = activeCollapsedGroups[key] !== true;
               const captured = group.premiumCollected > 0 && group.totalGainLoss != null ? group.totalGainLoss / group.premiumCollected : null;
-              return <MobileExpirationGroup key={key} label={scheduleGroupLabel(group)} dte={groupMode === 'underlying' && 'expirationCount' in group ? `${group.expirationCount} ${group.expirationCount === 1 ? 'expiry' : 'expiries'}` : scheduleGroupDte(group)} positions={group.tradeCount} contracts={group.contractCount} risk={formatCurrency(group.grossRisk, 0)} pnl={formatCurrency(group.totalGainLoss, 0)} captured={formatPctValue(captured)} expanded={expanded} onToggle={() => toggleScheduleGroup(key)}>{group.trades.map(trade => <MobilePositionRow key={trade.id} ticker={trade.ticker} strike={formatCurrency(trade.strike)} contracts={trade.contracts} expiration={formatDteValue(calculateRemainingDte(trade))} pnl={formatCurrency(calculateTotalGainLoss(trade, markBasis), 0)} captured={formatPctValue(calculatePercentCaptured(trade, markBasis))} mark={formatOptionPrice(calculateCurrentOptionMark(trade, markBasis))} delta={formatDelta(trade.latestMarketData?.delta)} distance={formatPctValue(calculateDistanceToStrike(trade))} entryVix={isFiniteNumber(trade.entryVixClose) ? trade.entryVixClose.toFixed(2) : DASH} health={getPositionHealth(trade)} onOpen={() => openDrawer(trade)} onEdit={() => setEditingTrade(trade)} />)}</MobileExpirationGroup>;
+              return <MobileExpirationGroup key={key} label={scheduleGroupLabel(group)} dte={groupMode === 'underlying' && 'expirationCount' in group ? `${group.expirationCount} ${group.expirationCount === 1 ? 'expiry' : 'expiries'}` : scheduleGroupDte(group)} positions={group.tradeCount} contracts={group.contractCount} risk={formatCurrency(group.grossRisk, 0)} pnl={formatCurrency(group.totalGainLoss, 0)} captured={formatPctValue(captured)} expanded={expanded} onToggle={() => toggleScheduleGroup(key)}>{group.trades.map(renderMobileScheduleTrade)}</MobileExpirationGroup>;
             })}</div>}
 
             {openTrades.length > 0 && <section className="border-t px-3.5 py-4" style={{ borderColor: 'var(--border)' }}><h2 className="mb-2 text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Analytics</h2><MobileSegmentedControl value={mobileAnalytics} onChange={setMobileAnalytics} label="Portfolio analytics" options={[{ value: 'maturity', label: 'Maturity' }, { value: 'ticker', label: 'Exposure' }, { value: 'attention', label: 'Attention' }, { value: 'close', label: 'Close' }]} /><div className="mt-2">{mobileAnalytics === 'maturity' && <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openTrades, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." onGroupClick={drillToExpiration} />}{mobileAnalytics === 'ticker' && <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openTrades, markBasis)} totalGrossRisk={sumValues(openTrades.map(calculateEquityAtRisk))} maxItems={8} onGroupClick={drillToTicker} />}{mobileAnalytics === 'attention' && <NeedsAttentionList items={buildNeedsAttention(openTrades).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} />}{mobileAnalytics === 'close' && <CloseCandidatesCard candidates={buildCloseCandidates(openTrades, markBasis).slice(0, 5)} onNavigate={drillToTrade} />}</div></section>}
@@ -1648,8 +1660,8 @@ export default function PortfolioPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <div className="inline-flex items-center gap-1 rounded-lg p-0.5" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }} role="group" aria-label="Group positions by">
                   <span className="px-1.5 text-[9px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Group by</span>
-                  {([['expiration', 'Expiry'], ['underlying', 'Underlying']] as const).map(([value, label]) => (
-                    <button key={value} type="button" onClick={() => setGroupMode(value)} aria-pressed={groupMode === value} className="rounded-md px-2 py-1 text-[10px] font-semibold" style={{ backgroundColor: groupMode === value ? 'var(--accent-bg)' : 'transparent', color: groupMode === value ? 'var(--accent-light)' : 'var(--text-muted)' }}>{label}</button>
+                  {([['expiration', 'Expiry'], ['underlying', 'Underlying'], ['none', 'None']] as const).map(([value, label]) => (
+                    <button key={value} type="button" onClick={() => setGroupMode(value)} aria-pressed={groupMode === value} className="min-h-8 rounded-md px-2 py-1 text-[10px] font-semibold" style={{ backgroundColor: groupMode === value ? 'var(--accent-bg)' : 'transparent', color: groupMode === value ? 'var(--accent-light)' : 'var(--text-muted)' }}>{label}</button>
                   ))}
                 </div>
                 <DisplayToggle checked={showNominalYield} onChange={setShowNominalYield} label="Show Nominal Yield" />
@@ -1763,19 +1775,20 @@ export default function PortfolioPage() {
                       {showNominalYield && <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>Original NY</th>}
                       <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>Original AY</th>
                       {showNominalYield && <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>Current NY</th>}
-                      <th className="px-2 py-2 text-[11px] font-medium text-right" style={{ color: 'var(--text-muted)' }}>Current AY</th>
+                      {sortButton('currentAy', 'Current AY')}
                       {showNotesErrors && <th className="px-2 py-2 text-[11px] font-medium text-left min-w-[160px]" style={{ color: 'var(--text-muted)' }}>Notes / Errors</th>}
                       <th className="px-2 py-2 text-[11px] font-medium text-left" style={{ color: 'var(--text-muted)' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {scheduleGroups.map(group => {
-                      const groupKey = scheduleGroupKey(group);
-                      const collapsed = activeCollapsedGroups[groupKey] === true;
-                      const captured = group.premiumCollected > 0 && group.totalGainLoss != null ? group.totalGainLoss / group.premiumCollected : null;
-                      const isHighlighted = 'expiration' in group && highlightedExpiration === group.expiration;
+                    {desktopScheduleSections.map(section => {
+                      const group = 'flat' in section ? null : section;
+                      const groupKey = group ? scheduleGroupKey(group) : 'flat';
+                      const collapsed = group ? activeCollapsedGroups[groupKey] === true : false;
+                      const captured = group && group.premiumCollected > 0 && group.totalGainLoss != null ? group.totalGainLoss / group.premiumCollected : null;
+                      const isHighlighted = group != null && 'expiration' in group && highlightedExpiration === group.expiration;
                       return <Fragment key={groupKey}>
-                        <tr data-group-key={groupKey} data-expiration={'expiration' in group ? group.expiration : undefined} className="scroll-mt-20 transition-colors duration-500 motion-reduce:transition-none" style={{ backgroundColor: isHighlighted ? 'var(--accent-bg)' : 'var(--surface-alt)', borderTop: `1px solid ${isHighlighted ? 'var(--accent)' : 'var(--accent-border)'}`, borderBottom: '1px solid var(--border)', color: 'var(--text)' }}>
+                        {group && <tr data-group-key={groupKey} data-expiration={'expiration' in group ? group.expiration : undefined} className="scroll-mt-20 transition-colors duration-500 motion-reduce:transition-none" style={{ backgroundColor: isHighlighted ? 'var(--accent-bg)' : 'var(--surface-alt)', borderTop: `1px solid ${isHighlighted ? 'var(--accent)' : 'var(--accent-border)'}`, borderBottom: '1px solid var(--border)', color: 'var(--text)' }}>
                           <td className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
                             <button onClick={() => toggleScheduleGroup(groupKey)} aria-expanded={!collapsed} className="inline-flex items-center gap-1 hover:opacity-80">
                               {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
@@ -1808,8 +1821,8 @@ export default function PortfolioPage() {
                           <td className="px-2 py-1.5 text-right font-mono tabular-nums font-semibold">{formatPctValue(group.currentAY)}</td>
                           {showNotesErrors && <td className="px-2 py-1.5 text-left text-[10px]" style={{ color: 'var(--text-dim)' }}>{groupMode === 'expiration' ? 'Expiration' : 'Underlying'} subtotal</td>}
                           <td className="px-2 py-1.5 text-left">{DASH}</td>
-                        </tr>
-                        {!collapsed && group.trades.map((trade, index) => {
+                        </tr>}
+                        {(!group || !collapsed) && section.trades.map((trade, index) => {
                       const totalGainLoss = calculateTotalGainLoss(trade, markBasis);
                       const currentValue = calculateCurrentPositionValue(trade, markBasis);
                       const currentMark = calculateCurrentOptionMark(trade, markBasis);

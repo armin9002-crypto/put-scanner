@@ -1,7 +1,7 @@
 export const PORTFOLIO_EXPIRY_GROUPS_KEY = 'put_scanner_portfolio_expiry_groups:v1';
 export const PORTFOLIO_UNDERLYING_GROUPS_KEY = 'put_scanner_portfolio_underlying_groups:v1';
 export const PORTFOLIO_GROUP_MODE_KEY = 'put_scanner_portfolio_group_mode:v1';
-export type PortfolioGroupMode = 'expiration' | 'underlying';
+export type PortfolioGroupMode = 'expiration' | 'underlying' | 'none';
 
 function readCollapsedGroups(key: string, storage: Pick<Storage, 'getItem'> | null): Record<string, boolean> {
   if (!storage) return {};
@@ -33,7 +33,10 @@ export function persistCollapsedUnderlyingGroups(value: Record<string, boolean>,
 }
 
 export function readPortfolioGroupMode(storage: Pick<Storage, 'getItem'> | null = typeof localStorage === 'undefined' ? null : localStorage): PortfolioGroupMode {
-  try { return storage?.getItem(PORTFOLIO_GROUP_MODE_KEY) === 'underlying' ? 'underlying' : 'expiration'; } catch { return 'expiration'; }
+  try {
+    const value = storage?.getItem(PORTFOLIO_GROUP_MODE_KEY);
+    return value === 'underlying' || value === 'none' ? value : 'expiration';
+  } catch { return 'expiration'; }
 }
 
 export function persistPortfolioGroupMode(value: PortfolioGroupMode, storage: Pick<Storage, 'setItem'> | null = typeof localStorage === 'undefined' ? null : localStorage): void {
