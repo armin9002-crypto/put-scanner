@@ -19,6 +19,7 @@ import { Star, RefreshCw, Loader2, ChevronUp, ChevronDown, AlertTriangle } from 
 import { useResponsiveMode } from '../lib/responsive';
 import MobileOptionRow from '../components/mobile/MobileOptionRow';
 import { OPTION_QUOTE_DISPLAY_LABELS, OPTION_QUOTE_TABLE_DISPLAY_ORDER, OPTION_YIELD_DISPLAY_LABELS, OPTION_YIELD_DISPLAY_ORDER, isNominalYieldField, type OptionQuoteTableDisplayField, type OptionYieldDisplayField } from '../lib/optionQuoteDisplay';
+import { acquireOptionChains, canonicalOptionChainKey } from '../lib/optionChainRequests';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 
@@ -262,7 +263,7 @@ export default function WatchlistPage() {
 
   const rows = useMemo(() => items.map(buildRow), [items]);
 
-  const handleRefresh = useCallback(async () => {
+  const handleRefresh = useCallback(async (explicit = true) => {
     const currentItems = getWatchlist();
     if (currentItems.length === 0) {
       setItems([]);
@@ -273,30 +274,27 @@ export default function WatchlistPage() {
     setLoading(true);
 
     const uniqueTickers = [...new Set(currentItems.map(item => item.ticker))];
-    const batchResult = await fetchBatchPrices(uniqueTickers, { mode: 'revalidate' }).catch(() => null);
+    const refreshMode = explicit ? 'revalidate' : 'cache-first';
+    const batchResult = await fetchBatchPrices(uniqueTickers, { mode: refreshMode }).catch(() => null);
 
-    const requestKeys = [...new Set(currentItems
+    const requestItems = currentItems
       .filter(item => {
         const rawDte = calculateDte(item.expiry);
         return !isFiniteNumber(rawDte) || rawDte > 0;
       })
-      .map(item => `${item.ticker}|${item.expiryTimestamp}`))];
-
-    const optionResults = await Promise.allSettled(
-      requestKeys.map(async key => {
-        const [ticker, timestamp] = key.split('|');
-        return { key, data: await fetchOptions(ticker, Number(timestamp), { source: 'Watchlist:refreshAll', refreshMode: 'revalidate' }) };
-      })
-    );
-
-    const optionsByKey = new Map<string, OptionsChainData | null>();
-    optionResults.forEach((result, index) => {
-      const key = requestKeys[index];
-      optionsByKey.set(key, result.status === 'fulfilled' ? result.value.data : null);
+      .map(item => ({ ticker: item.ticker, expirationTimestamp: item.expiryTimestamp }));
+    const acquired = await acquireOptionChains<OptionsChainData>(requestItems, {
+      source: explicit ? 'Watchlist:refreshAll' : 'Watchlist:autoRefresh',
+      limit: 3,
+      fetchChain: (ticker, timestamp) => fetchOptions(ticker, timestamp, {
+        source: explicit ? 'Watchlist:refreshAll' : 'Watchlist:autoRefresh',
+        refreshMode,
+      }),
     });
+    const optionsByKey = acquired.byKey;
 
     const refreshed = currentItems.map(item => {
-      const key = `${item.ticker}|${item.expiryTimestamp}`;
+      const key = canonicalOptionChainKey(item.ticker, item.expiryTimestamp);
       const hasRequest = optionsByKey.has(key);
       const optData = optionsByKey.get(key) ?? null;
       const price = batchResult?.[item.ticker]?.price ?? optData?.currentPrice ?? item.snapshot?.underlyingPrice ?? null;
@@ -313,7 +311,7 @@ export default function WatchlistPage() {
     if (initialLoadDone.current) return;
     if (items.length === 0) return;
     initialLoadDone.current = true;
-    handleRefresh();
+    void handleRefresh(false);
   }, [items.length, handleRefresh]);
 
   const handleRemove = useCallback((id: string) => {
@@ -404,7 +402,7 @@ export default function WatchlistPage() {
           <div className="mr-auto"><div className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{items.length} saved {items.length === 1 ? 'contract' : 'contracts'}</div><div className="text-[10px]" style={{ color: 'var(--text-dim)' }}>{lastRefreshed ? `Updated ${lastRefreshed.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Saved snapshots'}</div></div>
           <select value={sortField} onChange={event => setSortField(event.target.value as SortField)} className="min-h-11 min-w-0 max-w-[94px] rounded-lg px-2 text-[12px] outline-none" aria-label="Sort watchlist" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}><option value="dte">DTE</option><option value="ticker">Ticker</option><option value="annYieldBid">AY Bid</option><option value="strike">Strike</option><option value="delta">Delta</option><option value="iv">IV</option><option value="added">Added</option></select>
           <button type="button" onClick={() => setSortDir(current => current === 'asc' ? 'desc' : 'asc')} className="pressable flex h-11 w-11 flex-none items-center justify-center rounded-lg text-sm font-semibold" aria-label={`Sort ${sortDir === 'asc' ? 'descending' : 'ascending'}`} style={{ color: 'var(--accent-light)' }}>{sortDir === 'asc' ? '↑' : '↓'}</button>
-          <button type="button" onClick={handleRefresh} disabled={loading || items.length === 0} className="pressable flex h-11 w-11 items-center justify-center rounded-lg disabled:opacity-40" aria-label="Refresh watchlist" style={{ color: 'var(--accent-light)' }}>{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}</button>
+          <button type="button" onClick={() => void handleRefresh(true)} disabled={loading || items.length === 0} className="pressable flex h-11 w-11 items-center justify-center rounded-lg disabled:opacity-40" aria-label="Refresh watchlist" style={{ color: 'var(--accent-light)' }}>{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}</button>
         </div>
         {items.length === 0 ? <div className="px-6 py-16 text-center"><Star className="mx-auto mb-3 h-7 w-7" style={{ color: 'var(--text-dim)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No saved puts</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Star a contract from an option chain to save it here.</p></div> : (
           <div className="mobile-financial-list">{sortedRows.map(row => (
@@ -428,7 +426,7 @@ export default function WatchlistPage() {
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Saved puts — click refresh to update prices.</p>
           </div>
           <button
-            onClick={handleRefresh}
+            onClick={() => void handleRefresh(true)}
             disabled={loading || items.length === 0}
             className="pressable flex flex-none items-center justify-center gap-1.5 px-3 py-2 sm:py-1.5 text-white text-xs font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all min-h-[44px] sm:min-h-0"
             style={{ backgroundColor: 'var(--accent)' }}

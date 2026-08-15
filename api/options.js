@@ -23,14 +23,13 @@ export default async function handler(req, res) {
   try {
     const data = await fetchYahooOptions(ticker, date, { fresh });
 
-    res.setHeader(
-      'Cache-Control',
-      fresh
+    const cacheControl = fresh
         ? 'no-store'
         : date
           ? 'public, s-maxage=600, stale-while-revalidate=1800'
-          : 'public, s-maxage=300, stale-while-revalidate=900'
-    );
+          : 'public, s-maxage=300, stale-while-revalidate=900';
+    res.setHeader('Cache-Control', cacheControl);
+    res.setHeader('X-PutScanner-Cache-Strategy', cacheControl);
     return res.status(200).json(data);
   } catch(e) {
     return res.status(e?.status || 500).json({ error: e?.message || 'Failed to fetch options' });

@@ -2,6 +2,8 @@ import { cachedRequest, makeCacheKey } from './dataCache.ts';
 import { isFiniteNumber } from './optionMetrics.ts';
 import { calculatePremiumCollected } from './portfolioMetrics.ts';
 import type { PortfolioResolutionSource, PortfolioTrade } from './portfolioStorage';
+import { findCachedDailyHistoryForDates, type ChartPoint } from './chartHistory.ts';
+import { mapWithConcurrency } from '../../shared/concurrency.js';
 
 interface HistoricalClosePoint {
   timestamp: number;
@@ -190,32 +192,52 @@ export function markExpirationPricePending(trade: PortfolioTrade, warning = 'Exp
   };
 }
 
-export async function archiveExpiredOpenTrades(trades: PortfolioTrade[], options: { now?: Date } = {}): Promise<{ trades: PortfolioTrade[]; changed: boolean }> {
+export async function archiveExpiredOpenTrades(trades: PortfolioTrade[], options: {
+  now?: Date;
+  concurrency?: number;
+  findRichHistory?: (ticker: string, dates: string[]) => { points: ChartPoint[] } | null;
+  fetchClose?: (ticker: string, expiration: string) => Promise<ExpirationCloseResult | null>;
+} = {}): Promise<{ trades: PortfolioTrade[]; changed: boolean }> {
   const now = options.now ?? new Date();
   const nowIso = now.toISOString();
   const expired = trades.filter(trade => isExpiredUnresolvedOpenTrade(trade, now));
   if (expired.length === 0) return { trades, changed: false };
 
-  const closeByKey = new Map<string, Promise<ExpirationCloseResult | null>>();
-  const resolveClose = (trade: PortfolioTrade) => {
-    const key = `${trade.ticker.trim().toUpperCase()}|${trade.expiration}`;
-    const existing = closeByKey.get(key);
-    if (existing) return existing;
-    const request = getExpirationClosePrice(trade.ticker, trade.expiration).catch(() => null);
-    closeByKey.set(key, request);
-    return request;
-  };
+  const closeByKey = new Map<string, ExpirationCloseResult | null>();
+  const datesByTicker = new Map<string, Set<string>>();
+  expired.forEach(trade => {
+    const ticker = trade.ticker.trim().toUpperCase();
+    const dates = datesByTicker.get(ticker) ?? new Set<string>();
+    dates.add(trade.expiration);
+    datesByTicker.set(ticker, dates);
+  });
+  const findRichHistory = options.findRichHistory ?? findCachedDailyHistoryForDates;
+  datesByTicker.forEach((dates, ticker) => {
+    const history = findRichHistory(ticker, [...dates]);
+    if (!history) return;
+    dates.forEach(expiration => closeByKey.set(`${ticker}|${expiration}`, selectExpirationClose(history.points, expiration)));
+  });
+
+  const requirements = [...datesByTicker.entries()].flatMap(([ticker, dates]) => [...dates]
+    .map(expiration => ({ ticker, expiration, key: `${ticker}|${expiration}` }))
+    .filter(requirement => !closeByKey.has(requirement.key)));
+  const fetchClose = options.fetchClose ?? getExpirationClosePrice;
+  const settled = await mapWithConcurrency(requirements, options.concurrency ?? 3, requirement => fetchClose(requirement.ticker, requirement.expiration));
+  settled.forEach((result, index) => closeByKey.set(
+    requirements[index].key,
+    result.status === 'fulfilled' ? result.value : null,
+  ));
 
   const byId = new Map<string, PortfolioTrade>();
-  await Promise.all(expired.map(async trade => {
-    const result = await resolveClose(trade);
+  expired.forEach(trade => {
+    const result = closeByKey.get(`${trade.ticker.trim().toUpperCase()}|${trade.expiration}`) ?? null;
     byId.set(
       trade.id,
       result
         ? resolveExpiredTradeWithClose(trade, result.closePrice, result.closeDate, 'expiration_close', result.warning, nowIso)
         : markExpirationPricePending(trade, 'Expiration close unavailable', nowIso)
     );
-  }));
+  });
 
   return {
     changed: byId.size > 0,

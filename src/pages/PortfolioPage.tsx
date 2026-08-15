@@ -2,6 +2,8 @@ import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useS
 import { AlertTriangle, Briefcase, ChevronDown, ChevronRight, Download, Edit2, FileImage, Loader2, MoreHorizontal, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { calculatePutDelta, fetchBatchPricesResult, fetchOptions } from '../lib/api';
+import type { OptionsChainData } from '../lib/types';
+import { acquireOptionChains, canonicalOptionChainKey } from '../lib/optionChainRequests';
 import { formatCurrency, formatDate, formatOptionPrice, formatPercent, formatPercentPoints, normalizeTimestampMs } from '../lib/format';
 import { calculateDte, calculateMoneyness, calculateYieldPercent, isFiniteNumber } from '../lib/optionMetrics';
 import {
@@ -1276,24 +1278,20 @@ export default function PortfolioPage() {
     const batchPriceResult = await fetchBatchPricesResult(tickers, { mode: 'revalidate' }).catch(() => null);
     const batchPrices = batchPriceResult?.data ?? null;
     if (batchPriceResult?.staleFallbackUsed) setRefreshWarning(true);
-    const requestKeys = [...new Set(open.map(trade => {
+    const requestItems = open.map(trade => {
       const timestamp = isoToUnixSeconds(trade.expiration);
-      return timestamp == null ? null : `${trade.ticker}|${timestamp}`;
-    }).filter(Boolean) as string[])];
-
-    const optionResults = await Promise.allSettled(requestKeys.map(async key => {
-      const [ticker, timestamp] = key.split('|');
-      return { key, data: await fetchOptions(ticker, Number(timestamp), { source: 'Portfolio:refreshOpenTrades', refreshMode: 'revalidate' }) };
-    }));
-    const optionsByKey = new Map(optionResults.map((result, index) => [
-      requestKeys[index],
-      result.status === 'fulfilled' ? result.value.data : null,
-    ]));
-    const failedKeys = new Set(optionResults.flatMap((result, index) => (
-      result.status === 'rejected' || result.value.data.chainMeta?.staleFallbackUsed
-        ? [requestKeys[index]]
-        : []
-    )));
+      return timestamp == null ? null : { ticker: trade.ticker, expirationTimestamp: timestamp };
+    }).filter((item): item is { ticker: string; expirationTimestamp: number } => item != null);
+    const acquired = await acquireOptionChains<OptionsChainData>(requestItems, {
+      source: 'Portfolio:refreshOpenTrades',
+      limit: 3,
+      fetchChain: (ticker, timestamp) => fetchOptions(ticker, timestamp, { source: 'Portfolio:refreshOpenTrades', refreshMode: 'revalidate' }),
+    });
+    const optionsByKey = acquired.byKey;
+    const failedKeys = new Set(acquired.failedKeys);
+    acquired.byKey.forEach((data, key) => {
+      if (data?.chainMeta?.staleFallbackUsed) failedKeys.add(key);
+    });
 
     const refreshed = sweepTrades.map(trade => {
       if (trade.status !== 'open') return trade;
@@ -1312,7 +1310,7 @@ export default function PortfolioPage() {
       }
 
       const timestamp = isoToUnixSeconds(trade.expiration);
-      const key = timestamp == null ? '' : `${trade.ticker}|${timestamp}`;
+      const key = timestamp == null ? '' : canonicalOptionChainKey(trade.ticker, timestamp);
       const optData = optionsByKey.get(key) ?? null;
       const failed = failedKeys.has(key);
       const underlying = batchPrices?.[trade.ticker]?.price ?? optData?.currentPrice ?? trade.latestMarketData?.underlyingPrice ?? trade.entrySnapshot?.underlyingPrice ?? null;

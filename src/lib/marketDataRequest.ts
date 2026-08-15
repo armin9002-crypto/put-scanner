@@ -205,6 +205,7 @@ export async function requestMarketData<T>(options: MarketDataRequestOptions<T>)
   const health = healthFor(options.endpoint);
   const circuitOpen = health.circuitOpenUntil != null && health.circuitOpenUntil > Date.now();
   if (circuitOpen && mode !== 'fresh') {
+    recordRequestDiagnostic(options.endpoint, 'circuitRejected', options.source);
     if (cached && cachedFreshness !== 'expired' && options.allowStaleOnError !== false) {
       recordRequestDiagnostic(options.endpoint, 'staleFallback', options.source);
       return resultFromRecord(cached.record, 'stale-fallback');

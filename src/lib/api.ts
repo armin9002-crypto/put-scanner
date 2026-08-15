@@ -6,6 +6,8 @@ import { cacheScannerOptionChain } from './scannerOptionSnapshot';
 import { peekMarketData, requestMarketData, type DataFreshness, type RefreshMode } from './marketDataRequest';
 import { normalizeFiniteNumber } from './marketDataNormalize';
 import { normalizeOptionChainData } from './yahooOptionAdapter';
+import { recordResponseDebugHeaders } from './requestDiagnostics';
+import { mapWithConcurrency } from '../../shared/concurrency.js';
 
 const API_BASE = '/api';
 
@@ -58,6 +60,7 @@ export async function fetchBatchPricesResult(tickers: string[], options: { mode?
     validator: data => isValidBatchResponse(data, normalizedTickers),
     fetcher: async signal => {
       const res = await fetch(`${API_BASE}/prices?tickers=${encodeURIComponent(normalizedTickers.join(','))}`, { signal });
+      recordResponseDebugHeaders('prices', res, 'fetchBatchPrices');
       if (!res.ok) {
         const error = new Error('Failed to fetch batch prices') as Error & { status: number };
         error.status = res.status;
@@ -143,6 +146,7 @@ export async function fetchOptions(ticker: string, date?: number, options: Fetch
     if (fresh) url += `&fresh=1&_=${Date.now()}`;
 
     const res = await fetch(url, { signal, ...(fresh ? { cache: 'no-store' as RequestCache } : {}) });
+    recordResponseDebugHeaders('options', res, source);
     if (!res.ok) {
       const error = new Error(`Failed to fetch options for ${normalizedTicker}`) as Error & { status: number };
       error.status = res.status;
@@ -331,22 +335,5 @@ export async function fetchWithConcurrencyLimit<T>(
   tasks: (() => Promise<T>)[],
   limit = 5
 ): Promise<PromiseSettledResult<T>[]> {
-  const results: Promise<T>[] = [];
-  const executing: Promise<void>[] = [];
-
-  for (const task of tasks) {
-    const p = task();
-    results.push(p);
-    const e: Promise<void> = p.then(() => {
-      executing.splice(executing.indexOf(e), 1);
-    }).catch(() => {
-      executing.splice(executing.indexOf(e), 1);
-    });
-    executing.push(e);
-    if (executing.length >= limit) {
-      await Promise.race(executing);
-    }
-  }
-
-  return Promise.allSettled(results);
+  return mapWithConcurrency(tasks, limit, task => task());
 }

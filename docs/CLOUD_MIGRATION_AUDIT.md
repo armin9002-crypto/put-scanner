@@ -174,7 +174,44 @@ Additional findings:
 - Provider circuits exist in both the client broker and Yahoo helper. They reduce retry storms after failures but do not cap healthy high-volume fan-out.
 - Browser-to-Supabase account data should not traverse Vercel. Preserve Browser ↔ Vercel ↔ Yahoo only for market-data functions.
 
-Priority recommendations for later infrastructure stages: batch ETF Pulse server-side or precompute it; eliminate automatic Watchlist revalidation or add bounded concurrency/stale-first behavior; consolidate Screener option/IV workflows; add per-user and global rate limits; instrument Vercel cache hit/upstream request counts; and load-test with realistic cold/warm mixes before 500 active users.
+Priority recommendations for later infrastructure stages: consolidate Screener option/IV workflows; add authenticated per-user and global provider limits; and load-test with realistic cold/warm mixes before 500 active users. ETF Pulse batching, Watchlist stale-first behavior, bounded refresh concurrency, and request instrumentation were implemented in Stage 1.6A below.
+
+## Stage 1.6A market-data scalability foundation
+
+These are deterministic request-planner results, not live-Yahoo load-test results and not Vercel bill estimates. No provider was hammered to produce them.
+
+### Measured before/after request flows
+
+| Scenario | Before Stage 1.6A | After Stage 1.6A | Cache behavior |
+| --- | --- | --- | --- |
+| ETF Pulse, cold browser | 44 browserâ†’Vercel `/api/chart-history` calls; client maximum 5; up to 44 Yahoo calls with aggregate concurrency 5 | 1 browserâ†’Vercel `/api/etf-pulse` call; a cold dataset build schedules 44 unique Yahoo histories with maximum concurrency 6 | Full datasets are shared at the CDN for 1h with 6h SWR. Existing calculated rows remain local for 6h/24h hard stale fallback. A warm local row cache makes 0 calls. |
+| ETF Pulse, warm CDN | Browser still made up to 44 history URLs, though each could be an edge hit | 1 browser request and expected 0 Yahoo work | The combined URL is common to all users. Explicit Refresh uses `no-store`; partial builds receive only 1m CDN freshness plus 1h SWR. |
+| Watchlist, 10 contracts / 5 unique chains | 1 revalidated batch-price request followed by 5 deduplicated chain requests launched together; maximum option concurrency 5 | Cold: still at most 1 + 5 exact requests, but option concurrency is 3. Automatic page entry is cache-first, so fresh client records cause 0 Vercel calls for those records. Explicit Refresh remains revalidate. | Exact `TICKER|expirationTimestamp` keys prevent contract-level duplicates. Stale-on-error retains existing snapshots. |
+| Portfolio explicit refresh, 20 trades / 6 unique chains | 1 batch-price request + 6 deduplicated option calls; maximum option concurrency 6 | Same 7 request units when fully cold, with maximum option concurrency 3 | This remains an explicit revalidation action. One returned chain is applied to every matching position. |
+| Portfolio initial repair, 5 expiration records + 5 missing VIX dates | Up to 5 expiration history calls started together, followed by one VIX range request: up to 6 browser/Yahoo calls, maximum expiration concurrency 5 | Rich cached daily history is checked once per ticker and can resolve multiple dates with 0 expiration calls. Remaining exact immutable lookups are deduplicated and capped at 3; VIX remains one covering range request. Worst-case request count remains 6, but the burst is bounded. | Successfully resolved expiration closes and VIX-at-entry values remain durable and are not fetched again. |
+
+The ETF endpoint returns the same 2Y daily points that the prior per-ticker endpoint returned. Existing client `buildEtfPulseRow` code still computes RSI, returns, moving averages, realized volatility, drawdowns, heatmap inputs, and momentum state; the calculation path was not copied to the server. SPY, QQQ, and all 42 configured ETFs appear once in the shared universe.
+
+The endpoint has a 60-second function duration configuration. With a six-worker pool and a 6-second per-history timeout, 44 histories require eight waves and have an approximate timeout-bound acquisition envelope of 48 seconds plus small serialization overhead. Individual failures become explicit per-ticker errors rather than failing the whole batch. This fits Vercel's documented 60-second Hobby maximum when Fluid Compute is disabled and is below the current Fluid Compute default; it does not depend on warm function memory for correctness.
+
+### 100 / 500 / 1,000-user ETF Pulse projection
+
+| Cold browsers opening during a cache window | Browserâ†’Vercel request units, old | Browserâ†’Vercel request units, Stage 1.6A | Yahoo work with one shared CDN fill | Conservative five independent edge/region fills | Worst case if CDN reuse is completely ineffective |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 44 | 1 | 44 | 44 | 44 |
+| 100 | 4,400 | 100 | 44 | 220 | 4,400 |
+| 500 | 22,000 | 500 | 44 | 220 | 22,000 |
+| 1,000 | 44,000 | 1,000 | 44 | 220 | 44,000 |
+
+The last column is deliberately pessimistic: every combined endpoint request is treated as a distinct CDN miss. Even then, each function invocation limits Yahoo concurrency to six; the primary cross-user benefit comes from the shared `s-maxage=3600, stale-while-revalidate=21600` response. Explicit user refreshes bypass that shared cache and are excluded from the normal-open projection.
+
+Watchlist and Portfolio cold request totals do not magically disappear because exact option expiration datasets remain separate. Their improvement is removal of request bursts, exact chain reuse, and cache-first automatic Watchlist entry. At 1,000 simultaneous cold Watchlists with five unique chains, the upper browser request count remains 6,000, but each browser has at most three option calls active and shared option CDN entries can eliminate corresponding Yahoo work. Portfolio's explicit 20-trade/six-chain case remains 7,000 browser request units at 1,000 manual refreshes, also capped at three option calls per browser.
+
+### Debug instrumentation and future authenticated limits
+
+Development diagnostics now separate browser network requests, Vercel responses, Yahoo attempts reported by safe headers, memory/persistent cache hits, stale fallbacks, in-flight dedupes, chain dedupes, maximum observed concurrency, failures, and circuit-breaker rejections. Safe responses may include `X-PutScanner-Upstream-Requests`, `X-PutScanner-Cache-Strategy`, `X-PutScanner-Dataset-Version`, concurrency, and circuit-rejection counts. No cookies, Yahoo crumb, secrets, auth material, or stack traces are exposed.
+
+True per-user limits remain deferred until authentication exists. A later authenticated design should start with a three-request option-chain burst, a rolling per-user manual option-refresh allowance, approximately one ETF Pulse cache-bypassing refresh per minute, and separate lower-frequency Screener allowances. Global provider concurrency/queues, CDN-aware metrics, 429 backoff, and the existing circuit breakers should accompany those limits. Exact quotas must be set from production cache-hit and latency observations, not IP identity or assumptions made in this stage.
 
 ## Backup format and safety behavior
 

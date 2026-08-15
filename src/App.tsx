@@ -251,7 +251,7 @@ function NetworkDiagnosticsPanel() {
           <div key={endpoint} className="grid grid-cols-[78px_1fr] gap-2">
             <span style={{ color: 'var(--text)' }}>{endpoint}</span>
             <span>
-              a:{entry.attempted} n:{entry.networkRequests} m:{entry.memoryHits} p:{entry.persistentCacheHits} d:{entry.inFlightDedupes} s:{entry.staleFallbacks} f:{entry.failures}
+              a:{entry.attempted} n:{entry.networkRequests} v:{entry.serverEndpointResponses} y:{entry.yahooUpstreamAttempts} m:{entry.memoryHits} p:{entry.persistentCacheHits} d:{entry.inFlightDedupes} c:{entry.chainsDeduplicated} x:{entry.maxObservedConcurrency} s:{entry.staleFallbacks} cb:{entry.circuitBreakerRejections} f:{entry.failures}
             </span>
           </div>
         ))}
