@@ -4,6 +4,8 @@
 
 This is a human-reviewed abandonment procedure, not an automatic migration. Never use it after real account data exists. Before doing anything, verify that `public.user_state` contains no production user state and that no later migration depends on it.
 
+Normal browser roles have no DELETE policy or DELETE table privilege. This owner-level pre-production rollback is not a browser data operation and must not be reused as an account-deletion mechanism. A future deliberately designed account-deletion workflow may remove an Auth user and rely on the `auth.users(id) ON DELETE CASCADE` foreign key; signing out does not delete account state.
+
 The Stage 2A migration creates only:
 
 - `public.user_state`

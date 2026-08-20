@@ -38,29 +38,31 @@ test('Stage 2A migration is a single clean Put Scanner baseline', async () => {
   assert.equal(/create\s+(?:unique\s+)?index/.test(sql), false);
 });
 
-test('RLS is deny-by-default and every own-row operation is explicit', async () => {
+test('RLS permits only the three required own-row operations', async () => {
   const sql = compact(await migrationSource());
   assert.match(sql, /alter table public\.user_state enable row level security/);
-  assert.equal((sql.match(/create policy /g) ?? []).length, 4);
-  for (const operation of ['select', 'insert', 'update', 'delete']) {
+  assert.equal((sql.match(/create policy /g) ?? []).length, 3);
+  for (const operation of ['select', 'insert', 'update']) {
     assert.match(sql, new RegExp(`create policy "user_state_${operation}_own"`));
   }
-  assert.equal((sql.match(/create policy [^;]+?to authenticated/g) ?? []).length, 4);
+  assert.doesNotMatch(sql, /user_state_delete_own|for delete/);
+  assert.equal((sql.match(/create policy [^;]+?to authenticated/g) ?? []).length, 3);
   assert.doesNotMatch(sql, /to anon/);
   assert.doesNotMatch(sql, /using\s*\(\s*true\s*\)/);
   assert.match(
     sql,
     /create policy "user_state_update_own"[\s\S]*?for update[\s\S]*?using \([\s\S]*?auth\.uid\(\)[\s\S]*?\) with check \([\s\S]*?auth\.uid\(\)/,
   );
-  assert.equal((sql.match(/is_anonymous/g) ?? []).length, 5);
+  assert.equal((sql.match(/is_anonymous/g) ?? []).length, 4);
 });
 
 test('table privileges expose payload operations but not managed metadata writes', async () => {
   const sql = compact(await migrationSource());
   assert.match(sql, /revoke all privileges on table public\.user_state from public, anon, authenticated/);
-  assert.match(sql, /grant select, delete on table public\.user_state to authenticated/);
+  assert.match(sql, /grant select on table public\.user_state to authenticated/);
   assert.match(sql, /grant insert \(user_id, namespace, schema_version, payload\) on table public\.user_state to authenticated/);
   assert.match(sql, /grant update \(schema_version, payload\) on table public\.user_state to authenticated/);
+  assert.doesNotMatch(sql, /grant [^;]*delete/);
   assert.doesNotMatch(sql, /grant (?:all|insert|update)[^;]*(?:revision|created_at|updated_at)/);
 });
 
@@ -85,7 +87,8 @@ test('controlled SQL security test covers isolation, CAS, anonymity, and rollbac
   assert.match(sql, /set local role anon/);
   assert.match(sql, /cross-user insert/);
   assert.match(sql, /cross-user update/);
-  assert.match(sql, /cross-user delete/);
+  assert.match(sql, /own-row browser delete unexpectedly succeeded/);
+  assert.match(sql, /cross-user browser delete unexpectedly succeeded/);
   assert.match(sql, /stale compare-and-swap/);
   assert.match(sql, /is_anonymous', true/);
   assert.match(sql, /trigger allowed user_id mutation/);

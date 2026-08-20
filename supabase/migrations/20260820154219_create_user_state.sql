@@ -111,19 +111,10 @@ with check (
   and coalesce(((select auth.jwt()) ->> 'is_anonymous')::boolean, false) = false
 );
 
-create policy "user_state_delete_own"
-on public.user_state
-for delete
-to authenticated
-using (
-  (select auth.uid()) = user_id
-  and coalesce(((select auth.jwt()) ->> 'is_anonymous')::boolean, false) = false
-);
-
 -- Supabase may apply broad default privileges to new public-schema objects.
 -- Make this table opt-in and expose only the columns future browser sync requires.
 revoke all privileges on table public.user_state from public, anon, authenticated;
-grant select, delete on table public.user_state to authenticated;
+grant select on table public.user_state to authenticated;
 grant insert (user_id, namespace, schema_version, payload)
   on table public.user_state to authenticated;
 grant update (schema_version, payload)

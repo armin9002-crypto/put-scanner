@@ -38,7 +38,7 @@ begin
 end;
 $$;
 
--- Catalog checks: RLS, four narrowly-scoped policies, grants, and trigger mode.
+-- Catalog checks: RLS, three narrowly-scoped policies, grants, and trigger mode.
 do $$
 declare
   policy_count integer;
@@ -58,12 +58,20 @@ begin
     and policyname in (
       'user_state_select_own',
       'user_state_insert_own',
-      'user_state_update_own',
-      'user_state_delete_own'
+      'user_state_update_own'
     )
     and roles = array['authenticated']::name[];
-  if policy_count <> 4 then
-    raise exception 'expected four authenticated-only user_state policies, found %', policy_count;
+  if policy_count <> 3 then
+    raise exception 'expected three authenticated-only user_state policies, found %', policy_count;
+  end if;
+
+  if exists (
+    select 1 from pg_catalog.pg_policies
+    where schemaname = 'public'
+      and tablename = 'user_state'
+      and cmd = 'DELETE'
+  ) then
+    raise exception 'user_state must not expose a DELETE policy';
   end if;
 
   if exists (
@@ -82,14 +90,27 @@ begin
     raise exception 'anon unexpectedly has a user_state table privilege';
   end if;
 
+  if exists (
+    select 1
+    from pg_catalog.pg_class c
+    cross join lateral pg_catalog.aclexplode(
+      coalesce(c.relacl, pg_catalog.acldefault('r', c.relowner))
+    ) acl
+    where c.oid = 'public.user_state'::regclass
+      and acl.grantee = 0
+      and acl.privilege_type in ('SELECT', 'INSERT', 'UPDATE', 'DELETE')
+  ) then
+    raise exception 'PUBLIC unexpectedly has a user_state CRUD privilege';
+  end if;
+
   if not has_table_privilege('authenticated', 'public.user_state', 'SELECT')
-    or not has_table_privilege('authenticated', 'public.user_state', 'DELETE')
     or not has_column_privilege('authenticated', 'public.user_state', 'payload', 'INSERT')
     or not has_column_privilege('authenticated', 'public.user_state', 'payload', 'UPDATE') then
     raise exception 'authenticated is missing an intended user_state privilege';
   end if;
 
-  if has_column_privilege('authenticated', 'public.user_state', 'revision', 'INSERT')
+  if has_table_privilege('authenticated', 'public.user_state', 'DELETE')
+    or has_column_privilege('authenticated', 'public.user_state', 'revision', 'INSERT')
     or has_column_privilege('authenticated', 'public.user_state', 'revision', 'UPDATE')
     or has_column_privilege('authenticated', 'public.user_state', 'created_at', 'UPDATE')
     or has_column_privilege('authenticated', 'public.user_state', 'user_id', 'UPDATE')
@@ -248,12 +269,22 @@ begin
     raise exception 'cross-user update unexpectedly succeeded';
   end if;
 
-  delete from public.user_state
-  where user_id = current_setting('put_scanner.test_user_b')::uuid;
-  get diagnostics changed_count = row_count;
-  if changed_count <> 0 then
-    raise exception 'cross-user delete unexpectedly succeeded';
-  end if;
+  begin
+    delete from public.user_state
+    where user_id = current_setting('put_scanner.test_user_a')::uuid
+      and namespace = 'portfolio';
+    raise exception 'own-row browser DELETE unexpectedly succeeded';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  begin
+    delete from public.user_state
+    where user_id = current_setting('put_scanner.test_user_b')::uuid;
+    raise exception 'cross-user browser DELETE unexpectedly succeeded';
+  exception
+    when insufficient_privilege then null;
+  end;
 
   begin
     update public.user_state

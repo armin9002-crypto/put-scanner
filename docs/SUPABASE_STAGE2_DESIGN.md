@@ -26,17 +26,21 @@ The `public.user_state_before_write()` trigger is `SECURITY INVOKER`, has a pinn
 
 A future client can perform compare-and-swap by updating `schema_version` and `payload` with filters for its user, namespace, and expected revision. If another device has already advanced the revision, zero rows are updated and the stale client must resolve the conflict instead of overwriting cloud state. Sync code is deliberately not implemented in Stage 2A.
 
+Namespace rows normally remain stable after creation. An intentionally empty Portfolio or Watchlist is represented by updating its payload to a valid empty document such as `{ "data": [] }`; it is not represented by physically deleting the namespace row. The same stable-row rule applies to Preferences, using its valid empty/default document shape.
+
 ## RLS and privileges
 
-RLS is enabled explicitly. Four policies allow permanent authenticated users to select, insert, update, and delete only rows where `(select auth.uid()) = user_id`. UPDATE has both `USING` and `WITH CHECK`. Policies also deny Supabase anonymous-auth users through the signed `is_anonymous` JWT claim; the unauthenticated `anon` database role has no table privileges or policy.
+RLS is enabled explicitly. Three policies allow permanent authenticated users to select, insert, and update only rows where `(select auth.uid()) = user_id`. UPDATE has both `USING` and `WITH CHECK`. There is no browser-facing DELETE policy. Policies also deny Supabase anonymous-auth users through the signed `is_anonymous` JWT claim; the unauthenticated `anon` database role has no table privileges or policy.
 
 Privileges are independently least-privilege:
 
 - `anon` and `public`: no table privileges.
-- `authenticated`: SELECT and DELETE on the table; INSERT only for `user_id`, `namespace`, `schema_version`, and `payload`; UPDATE only for `schema_version` and `payload`.
+- `authenticated`: SELECT on the table; INSERT only for `user_id`, `namespace`, `schema_version`, and `payload`; UPDATE only for `schema_version` and `payload`; no DELETE.
 - Revision and timestamps are trigger-managed. Identity columns cannot be updated through the Data API and are also protected by the trigger.
 
 RLS and grants are separate controls: a role must pass both. No `USING (true)` policy exists. No `SECURITY DEFINER` function is required.
+
+Account deletion is a separate, deliberately designed administrative workflow. A future process may delete the Auth user and rely on the existing `auth.users(id) ON DELETE CASCADE` foreign key to remove that account's namespace rows. Signing out never deletes cloud data, and normal browser synchronization cannot physically delete `user_state` rows.
 
 ## API-key architecture
 
