@@ -332,13 +332,21 @@ Export and import contain no `fetch`, API client, Supabase client, or navigation
 
 ## Recommended cloud namespace model
 
-Use three user-owned namespaces, with market data excluded:
+Stage 2A supersedes the audit's preliminary normalized-row recommendation. At the
+current scale, use one `public.user_state` table with exactly one document row per
+`(user_id, namespace)` for `portfolio`, `watchlist`, and `preferences`. The three
+documents preserve the established durable local envelopes, make backup/restore
+and future first-sync comparison explicit, and keep the initial RLS surface small.
+They must exclude all live quotes, market snapshots, device caches, session state,
+and debug flags listed above. Revisit per-trade/per-contract normalization only if
+measured document contention or payload growth warrants the added merge surface.
 
-1. `portfolio`: preferably one row per stable trade ID with durable fields, `user_id`, timestamps, schema version, and deletion/version metadata. This supports conflict handling without rewriting a user’s entire history blob.
-2. `watchlist`: one row per `(user_id, ticker, option_type, expiration, strike)` with note/save timestamps and a unique constraint. Never store live quote snapshots in the account row.
-3. `preferences`: one versioned per-user document or row for small account-portable display preferences. Device/session/debug settings remain local.
-
-All account tables require deny-by-default RLS scoped to `auth.uid()`. The browser should communicate directly with Supabase for account state. Vercel must not proxy ordinary account synchronization.
+The Stage 2A design uses a database-managed revision for optimistic concurrency,
+immutable row identity, explicit authenticated-role privileges, and deny-by-default
+own-row RLS. The browser may eventually use a publishable project key plus a user
+session, but ordinary account sync must not use a secret/service-role key or bypass
+RLS. No runtime connection is introduced in Stage 2A. See
+`docs/SUPABASE_STAGE2_DESIGN.md` for the reviewed design and capacity model.
 
 ## Recommended implementation sequence
 
