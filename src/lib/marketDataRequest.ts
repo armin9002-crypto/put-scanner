@@ -37,7 +37,7 @@ interface MarketDataRequestOptions<T> {
   priority?: RequestPriority;
   allowStaleOnError?: boolean;
   timeoutMs?: number;
-  storage?: 'local' | 'session';
+  storage?: 'local' | 'session' | 'none';
   validator: (data: T) => boolean;
   fetcher: (signal: AbortSignal) => Promise<T>;
 }
@@ -54,7 +54,8 @@ const providerHealth = new Map<RequestEndpoint, ProviderHealth>();
 const FAILURE_THRESHOLD = 3;
 const CIRCUIT_COOLDOWN_MS = 45_000;
 
-function getStorage(type: 'local' | 'session'): Storage | null {
+function getStorage(type: 'local' | 'session' | 'none'): Storage | null {
+  if (type === 'none') return null;
   try {
     return type === 'session'
       ? typeof sessionStorage === 'undefined' ? null : sessionStorage
@@ -180,7 +181,7 @@ export function peekMarketData<T>(options: {
   hardTtlMs: number;
   schemaVersion: number;
   validator: (data: T) => boolean;
-  storage?: 'local' | 'session';
+  storage?: 'local' | 'session' | 'none';
 }): MarketDataRequestResult<T> | null {
   const cached = readRecord(options as MarketDataRequestOptions<T>);
   return cached ? resultFromRecord(cached.record, cached.source) : null;
@@ -189,6 +190,19 @@ export function peekMarketData<T>(options: {
 export function clearMarketDataCache(key: string, storageType: 'local' | 'session' = 'local'): void {
   memoryCache.delete(key);
   try { getStorage(storageType)?.removeItem(key); } catch { /* ignore */ }
+}
+
+export function primeMarketDataCache<T>(options: {
+  key: string;
+  softTtlMs: number;
+  hardTtlMs: number;
+  schemaVersion: number;
+  validator: (data: T) => boolean;
+  storage?: 'local' | 'session' | 'none';
+}, data: T, fetchedAt = Date.now()): boolean {
+  if (!options.validator(data)) return false;
+  writeRecord(options as MarketDataRequestOptions<T>, data, fetchedAt);
+  return true;
 }
 
 export async function requestMarketData<T>(options: MarketDataRequestOptions<T>): Promise<MarketDataRequestResult<T>> {

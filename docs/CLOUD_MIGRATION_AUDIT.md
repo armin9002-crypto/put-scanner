@@ -213,6 +213,84 @@ Development diagnostics now separate browser network requests, Vercel responses,
 
 True per-user limits remain deferred until authentication exists. A later authenticated design should start with a three-request option-chain burst, a rolling per-user manual option-refresh allowance, approximately one ETF Pulse cache-bypassing refresh per minute, and separate lower-frequency Screener allowances. Global provider concurrency/queues, CDN-aware metrics, 429 backoff, and the existing circuit breakers should accompany those limits. Exact quotas must be set from production cache-hit and latency observations, not IP identity or assumptions made in this stage.
 
+## Stage 1.6B Screener scalability architecture
+
+This section records the Stage 1.6B code audit and deterministic fixture measurements. Request totals are planning units, not a live-Yahoo load test, Vercel billing estimate, or guarantee of edge-cache behavior.
+
+### Stage 1.6A baseline measured before this change
+
+The Screener remains a manual workflow: Load/Run is the only action that starts a scan. Its fixed universe contains 42 ETFs. A full scan first requested one undated `/api/options` chain for every selected ETF (client concurrency 3), then requested `/api/ivrank` once per ETF (client concurrency 3), and finally requested up to two globally selected expirations per ticker (client concurrency 3), skipping only a chain already held under the same ticker/expiration key. `/api/ivrank` independently acquired the initial Yahoo option chain again before its one-year weekly chart, so the browser did not expose the full upstream duplication.
+
+The global expiration union was sorted ascending. `all` selected its first two dates, `lte_30dte` selected its first two dates at or below 30 DTE, and an exact-date filter selected that date. A ticker contributed rows only when it advertised the selected global date. Prices were not separate Screener calls: each option response supplied the underlying price. Delta, moneyness, NY/AY, liquidity filters, IV-rank filtering, display choices, and sorting ran in the browser.
+
+Normal Load was cache-first, not forced revalidation. Exact option keys were reused within a tab, but the separate IV endpoint still repeated the initial Yahoo option dataset. Changing a non-structural filter or sort after Load issued zero requests. Changing ETF/expiration inputs also issued zero requests until the user explicitly clicked Load again. On a cold page, the expiration picker separately prefetched seven undated chains at concurrency 3, while VIX used one independent history request.
+
+Deterministic baseline planners:
+
+| Scan | Browser→Vercel plan | Comparable cold Yahoo core datasets, excluding variable session bootstrap |
+| --- | ---: | ---: |
+| Small, 3 ETFs, normal nearest coverage | 3 initial options + 3 IV + about 3 dated options = about 9 | 3 initial options + 3 IV options + 3 IV charts + about 3 dated options = about 12 |
+| Full, normal case | 42 initial + 42 IV + about 42 dated = about 126 | 42 initial + 42 repeated IV options + 42 IV charts + about 42 dated = about 168 |
+| Full, widest permitted case | 42 initial + 42 IV + up to 84 dated = up to 168 | 42 initial + 42 repeated IV options + 42 IV charts + up to 84 dated = up to 210 |
+
+The baseline maximum client concurrency was 3 in each scan phase. The comparable healthy Yahoo core concurrency was also 3 inside those requests, although the independent page-entry VIX/expiration work could briefly add another request and cold serverless session acquisition/retry behavior was instance-dependent. The successful `/api/options` CDN policy was 5 minutes with 10 minutes SWR for initial chains and 10 minutes with 30 minutes SWR for dated chains; `/api/ivrank` used 1 hour with 6 hours SWR.
+
+### Implemented acquisition plan and request budget
+
+The 42-symbol fixed order is divided into 14 stable chunks of 3. A selected ETF requests its entire fixed chunk, so different users converge on the same public URLs. The only URL inputs are `chunk` and, for an exact expiration, `date`. No user/account state or client-only filter enters a cache key. `all` and `lte_30dte` intentionally share the `nearest` acquisition key: acquiring each ticker's initial chain and its own first two advertised expirations is sufficient to reconstruct the existing globally earliest-two selection. If a ticker offered a globally selected date, that date must be among that ticker's own earliest two; dates earlier for that ticker would themselves precede it in the global union.
+
+The browser runs no more than 2 batch functions concurrently. Each function uses the Stage 1.6A shared worker pool with no more than 3 active Yahoo operations. Therefore one scan is attributable for at most 2 × 3 = 6 concurrent Yahoo acquisitions. The server first acquires each chunk's three initial chains, then concurrently acquires IV history and any missing second/exact chain. IV rank consumes the already-acquired initial option payload, removing its prior duplicate option call. `/api/options` remains unchanged and available to every other product surface.
+
+| Full scan budget | Before | Stage 1.6B |
+| --- | ---: | ---: |
+| Browser→Vercel request units, normal | about 126 | 14 |
+| Browser→Vercel request units, widest | up to 168 | 14 |
+| Maximum browser scan concurrency | 3 | 2 batch functions |
+| Comparable cold Yahoo core datasets, normal | about 168 | normally at most 126: 84 option chains + 42 IV charts |
+| Comparable timeout-bound/anomalous core maximum | up to 210 | up to 168 if Yahoo's undated response is not one of its advertised first two and two additional chains are needed |
+| Maximum attributable Yahoo core concurrency | normally 3, with independent entry work possible | 6 across two functions; 3 inside each function |
+
+Actual diagnostic Yahoo-attempt headers count session-page/crumb work and authentication retries as well as core datasets, so those observed totals can exceed the comparable core counts above. They are reported, not inferred to be globally unique.
+
+Complete batch responses use `public, s-maxage=300, stale-while-revalidate=900`, matching the existing initial-option freshness expectation while extending safe shared reuse. Partial batches use `private, no-store`. The browser broker holds complete batch results for 5 minutes and permits a 45-minute stale-on-error fallback; partial results are held only as recovery material and revalidated on the next run. Exact in-flight and warm keys dedupe in one runtime. The consolidated expiration-picker endpoint replaces seven browser calls with one, uses server concurrency 3, and has a 2-hour shared freshness window with 6-hour SWR. VIX remains separate.
+
+Acquisition-relevant controls are ETF selection (which fixed chunks are needed) and exact expiration date (which dated chain is needed). `all` versus `lte_30dte` does not need different upstream data because the shared nearest-two dataset preserves both algorithms. Delta, moneyness, annualized/nominal yield, OI, volume, IV rank, Volume/OI display, result sort, and option-drawer behavior are client-only and never change batch URLs.
+
+### Correctness, failure, cancellation, and diagnostics
+
+The server returns a compact Yahoo-shaped subset containing only the quote, expiration dates, selected chain expiration, and put fields consumed by the existing adapter. The browser runs that payload through the existing option normalizer and a single extracted copy of the pre-existing put-delta formula; row construction retains the existing DTE, Delta fallback/clamping, moneyness, NY/AY, IV-rank, eligibility, and sorting inputs. Deterministic fixtures cover direct and calculated Delta, bid/ask/last values, last-trade date, IV, OI, volume, Volume/OI, moneyness, DTE, NY/AY, filter inclusion, exact-date result count, and sorting fields.
+
+A failed ticker becomes an explicit partial-batch error without erasing successful tickers or batches. Successful exact chains are primed into the normal client option cache. A whole failed batch leaves other completed batches usable. A subsequent Run reuses complete cached work and revalidates partial keys, so rows are reconstructed from maps keyed by ticker and expiration without duplication. Progressive row publication was not added: the existing global expiration selection is only stable after all initial expiration lists arrive, so preserving the current end-of-scan display avoids rows that disappear or reorder during acquisition. Existing progress is updated as batches finish.
+
+Every Run receives a new generation token and AbortController. Starting a later run invalidates and aborts scheduling for the older run; only the current generation may publish progress, rows, warnings, or loading state. Shared in-flight broker work may finish and be reused, but stale run state cannot overwrite the newer scan.
+
+Debug diagnostics now expose scan ID, planned ETF/batch/chain counts, unique chains, browser calls, Vercel responses, reported Yahoo attempts, response bytes, dataset/cache strategy, maximum client and server concurrency, failures, circuit rejections, cache hits, in-flight dedupes, stale fallback, and elapsed time. No Yahoo cookies, crumb, URLs, user state, or secrets are exposed.
+
+### Payload and duration guardrails
+
+A representative deterministic chunk with 3 tickers, 2 chains each, and 100 puts per chain serializes to 107,922 bytes. Fourteen such responses transfer about 1,510,908 bytes (1.44 MiB) for a full cold browser scan before HTTP compression. Each response has a 750,000-byte server guard, well below the [Vercel Functions documented 4.5 MB request/response payload limit](https://vercel.com/docs/functions/limitations).
+
+The deterministic mocked cold-batch fixture completes below one second (normally tens of milliseconds on the development machine), but that is a scheduling/serialization check rather than a Yahoo latency measurement. Each real core Yahoo operation has a 6-second timeout, including session acquisition. In the normal three-ticker plan the conservative timeout waves are: session plus initial option wave (up to 12 seconds), followed by two phase-two waves (up to 12 seconds); a crumb fallback or authentication retry can add bounded work. The function ceiling and browser broker timeout are 60 and 58 seconds respectively, configured using [Vercel's per-function duration setting](https://vercel.com/docs/functions/configuring-functions/duration). This keeps normal cold work comfortably below the configured ceiling, isolates a slow chunk from the remaining 13, and avoids one all-universe function. Runtime observations must still be collected in production diagnostics before raising chunk size.
+
+### 100 / 500 / 1,000-user Screener projections
+
+This first table models the same full-scan action per browser. It does not assume all users are simultaneous. “One shared fill” is the idealized case where those requests reach the same fresh edge entry; five fills is a conservative multi-edge/region planning case; ineffective cache is deliberately pessimistic.
+
+| Full scans | Browser→Vercel, baseline normal (widest) | Browser→Vercel, Stage 1.6B | Yahoo core work, one shared normal fill | Yahoo core work, five independent fills | Yahoo core work if batch caching is ineffective |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 126 (168) | 14 | 126 | 126 | 126 |
+| 100 | 12,600 (16,800) | 1,400 | 126 | 630 | 12,600 |
+| 500 | 63,000 (84,000) | 7,000 | 126 | 630 | 63,000 |
+| 1,000 | 126,000 (168,000) | 14,000 | 126 | 630 | 126,000 |
+
+Warm shared-CDN scans still use 14 browser/Vercel invocation units but are expected to create zero Yahoo work until revalidation. The pessimistic Stage 1.6B Yahoo total is lower than the old normal 168-per-scan core total because IV charts reuse the batch's initial options, but it is not a promise of cache effectiveness. Exact expiration dates have separate public keys.
+
+A realistic planning scenario is 1,000 registered users, 20% daily active, and 1.5 manual Screener runs per active user: 300 runs/day and 4,200 browser/Vercel batch requests/day. If those runs occupy 30 distinct five-minute activity windows and each chunk is independently filled in two regions per window, the planning estimate is 14 chunks × 9 normal core datasets × 30 windows × 2 regions = 7,560 Yahoo core acquisitions/day. One region fill per active window would be 3,780; completely ineffective caching would be 37,800. These assumptions are deliberately visible and should be replaced with production cache-hit and latency measurements.
+
+No IP quota or unauthenticated per-user limiter is introduced. After authentication, begin evaluation with one active Screener run per account, a burst of one, and a provisional allowance around three manual runs per ten minutes, plus a global provider queue and existing circuit breakers. Final authenticated limits belong to Stage 3/6 and must be derived from observed behavior.
+
+Stage 1.6B did not redesign the Screener, change a financial formula/filter/sort, alter durable Portfolio or Watchlist state, or add Supabase/authentication. The in-app local browser facility was attempted on 2026-08-20 but could not establish a permitted session, so no visual/browser-pass claim is made. Automated type, deterministic Screener, full-app regression, responsive, lint, and production-build checks remain the verification boundary recorded by the commit.
+
 ## Backup format and safety behavior
 
 Schema version 1:

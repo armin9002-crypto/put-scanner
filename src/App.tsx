@@ -5,7 +5,7 @@ import { ThemeProvider, useTheme } from './lib/theme';
 import { useResponsiveMode } from './lib/responsive';
 import ErrorBoundary from './components/ErrorBoundary';
 import MobilePageHeader from './components/mobile/MobilePageHeader';
-import { getRequestDiagnosticsSnapshot, isRequestDiagnosticsEnabled, type RequestDiagnosticsSnapshot } from './lib/requestDiagnostics';
+import { getRequestDiagnosticsSnapshot, getScreenerScanDiagnostics, isRequestDiagnosticsEnabled, type RequestDiagnosticsSnapshot, type ScreenerScanDiagnostics } from './lib/requestDiagnostics';
 
 const HomePage = lazy(() => import('./pages/HomePage'));
 const OptionsPage = lazy(() => import('./pages/OptionsPage'));
@@ -223,13 +223,17 @@ function RouteLoadingFallback() {
 function NetworkDiagnosticsPanel() {
   const [enabled, setEnabled] = useState(false);
   const [snapshot, setSnapshot] = useState<RequestDiagnosticsSnapshot | null>(null);
+  const [screenerScan, setScreenerScan] = useState<ScreenerScanDiagnostics | null>(null);
 
   useEffect(() => {
     const active = isRequestDiagnosticsEnabled();
     setEnabled(active);
     if (!active) return undefined;
 
-    const update = () => setSnapshot(getRequestDiagnosticsSnapshot());
+    const update = () => {
+      setSnapshot(getRequestDiagnosticsSnapshot());
+      setScreenerScan(getScreenerScanDiagnostics());
+    };
     update();
     const id = window.setInterval(update, 1000);
     return () => window.clearInterval(id);
@@ -251,11 +255,16 @@ function NetworkDiagnosticsPanel() {
           <div key={endpoint} className="grid grid-cols-[78px_1fr] gap-2">
             <span style={{ color: 'var(--text)' }}>{endpoint}</span>
             <span>
-              a:{entry.attempted} n:{entry.networkRequests} v:{entry.serverEndpointResponses} y:{entry.yahooUpstreamAttempts} m:{entry.memoryHits} p:{entry.persistentCacheHits} d:{entry.inFlightDedupes} c:{entry.chainsDeduplicated} x:{entry.maxObservedConcurrency} s:{entry.staleFallbacks} cb:{entry.circuitBreakerRejections} f:{entry.failures}
+              a:{entry.attempted} n:{entry.networkRequests} v:{entry.serverEndpointResponses} y:{entry.yahooUpstreamAttempts} m:{entry.memoryHits} p:{entry.persistentCacheHits} d:{entry.inFlightDedupes} c:{entry.chainsDeduplicated} pc:{entry.plannedChains} rb:{entry.responseBytes} x:{entry.maxObservedConcurrency} s:{entry.staleFallbacks} cb:{entry.circuitBreakerRejections} f:{entry.failures} ver:{entry.lastDatasetVersion ?? '-'} k:{Object.keys(entry.cacheStrategies).join(',') || '-'}
             </span>
           </div>
         ))}
       </div>
+      {screenerScan?.scanId && (
+        <div className="mt-2 max-w-[36rem] border-t pt-2 font-mono tabular-nums" style={{ borderColor: 'var(--border)' }}>
+          screener etf:{screenerScan.plannedEtfs} b:{screenerScan.browserBatchRequests}/{screenerScan.plannedBatches} v:{screenerScan.vercelBatchResponses} y:{screenerScan.reportedYahooUpstreamAttempts} chains:{screenerScan.uniqueChains}/{screenerScan.plannedOptionChains} cx:{screenerScan.maxClientBatchConcurrency} sx:{screenerScan.maxServerYahooConcurrency} cb:{screenerScan.circuitBreakerRejections} f:{screenerScan.failures} ms:{screenerScan.elapsedMs ?? '…'}
+        </div>
+      )}
       <div className="mt-1 max-w-64 text-[10px]">
         Enable in production with localStorage key put_scanner_debug_network=true.
       </div>

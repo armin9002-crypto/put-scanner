@@ -71,12 +71,17 @@ export async function yahooFetch(url, options = {}) {
     throw error;
   }
 
+  options.onAttempt?.({ endpoint, url });
+
   const controller = new AbortController();
+  const abortFromCaller = () => controller.abort(options.signal?.reason);
+  if (options.signal?.aborted) abortFromCaller();
+  else options.signal?.addEventListener('abort', abortFromCaller, { once: true });
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 10_000);
   try {
     const response = await fetch(url, {
       ...options.fetchOptions,
-      signal: options.signal ?? controller.signal,
+      signal: controller.signal,
       headers: {
         'User-Agent': YAHOO_USER_AGENT,
         Accept: 'application/json',
@@ -91,6 +96,7 @@ export async function yahooFetch(url, options = {}) {
     throw error;
   } finally {
     clearTimeout(timeout);
+    options.signal?.removeEventListener('abort', abortFromCaller);
   }
 }
 
@@ -104,11 +110,14 @@ function extractCookies(response) {
   return raw.split(',').map(cookie => cookie.split(';')[0]).filter(Boolean).join('; ');
 }
 
-async function acquireYahooSession(ticker, force = false) {
+async function acquireYahooSession(ticker, force = false, options = {}) {
   if (!force && sessionCache && Date.now() - sessionCache.obtainedAt < SESSION_TTL_MS) return sessionCache;
   const pageResponse = await yahooFetch(`https://finance.yahoo.com/quote/${encodeURIComponent(ticker)}/options/`, {
     endpoint: 'session',
     overrideCircuit: force,
+    onAttempt: options.onAttempt,
+    timeoutMs: options.timeoutMs,
+    signal: options.signal,
     fetchOptions: {
       headers: {
         Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -126,6 +135,9 @@ async function acquireYahooSession(ticker, force = false) {
     const crumbResponse = await yahooFetch('https://query1.finance.yahoo.com/v1/test/getcrumb', {
       endpoint: 'session',
       overrideCircuit: force,
+      onAttempt: options.onAttempt,
+      timeoutMs: options.timeoutMs,
+      signal: options.signal,
       fetchOptions: { headers: { Cookie: cookie } },
     });
     if (crumbResponse.ok) crumb = (await crumbResponse.text()).trim();
@@ -138,10 +150,10 @@ async function acquireYahooSession(ticker, force = false) {
   return sessionCache;
 }
 
-export async function getYahooSession(ticker, force = false) {
+export async function getYahooSession(ticker, force = false, options = {}) {
   if (!force && sessionCache && Date.now() - sessionCache.obtainedAt < SESSION_TTL_MS) return sessionCache;
   if (!force && sessionInFlight) return sessionInFlight;
-  const request = acquireYahooSession(ticker, force);
+  const request = acquireYahooSession(ticker, force, options);
   if (!force) sessionInFlight = request;
   try {
     return await request;
@@ -152,13 +164,16 @@ export async function getYahooSession(ticker, force = false) {
 
 export async function fetchYahooOptions(ticker, date = null, options = {}) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const session = await getYahooSession(ticker, attempt > 0);
+    const session = await getYahooSession(ticker, attempt > 0, { onAttempt: options.onAttempt, timeoutMs: options.timeoutMs, signal: options.signal });
     let url = `https://query2.finance.yahoo.com/v7/finance/options/${encodeURIComponent(ticker)}?crumb=${encodeURIComponent(session.crumb)}`;
     if (date) url += `&date=${date}`;
     if (options.fresh) url += `&_=${Date.now()}`;
     const response = await yahooFetch(url, {
       endpoint: 'options',
       overrideCircuit: options.fresh === true && attempt === 0,
+      timeoutMs: options.timeoutMs,
+      signal: options.signal,
+      onAttempt: options.onAttempt,
       fetchOptions: { headers: { Cookie: session.cookie } },
     });
     if ((response.status === 401 || response.status === 403) && attempt === 0) {

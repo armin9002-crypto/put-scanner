@@ -6,8 +6,12 @@ import { cacheScannerOptionChain } from './scannerOptionSnapshot';
 import { peekMarketData, requestMarketData, type DataFreshness, type RefreshMode } from './marketDataRequest';
 import { normalizeFiniteNumber } from './marketDataNormalize';
 import { normalizeOptionChainData } from './yahooOptionAdapter';
+import { getOptionsCacheKey, isValidOptionsChain, OPTIONS_HARD_TTL_MS, OPTIONS_SOFT_TTL_MS, primeOptionsMarketDataCache } from './optionChainCache';
 import { recordResponseDebugHeaders } from './requestDiagnostics';
 import { mapWithConcurrency } from '../../shared/concurrency.js';
+import { calculatePutDelta } from './putDelta';
+
+export { calculatePutDelta } from './putDelta';
 
 const API_BASE = '/api';
 
@@ -20,8 +24,8 @@ interface FetchOptionsOptions {
 
 const BATCH_PRICE_SOFT_TTL = 3 * 60 * 1000;
 const BATCH_PRICE_HARD_TTL = 45 * 60 * 1000;
-const OPTIONS_SOFT_TTL = 15 * 60 * 1000;
-const OPTIONS_HARD_TTL = 2 * 60 * 60 * 1000;
+const OPTIONS_SOFT_TTL = OPTIONS_SOFT_TTL_MS;
+const OPTIONS_HARD_TTL = OPTIONS_HARD_TTL_MS;
 
 function isValidBatchResponse(data: BatchPriceData, requestedTickers: string[]): boolean {
   if (!data || typeof data !== 'object') return false;
@@ -78,8 +82,11 @@ export async function fetchBatchPrices(tickers: string[], options: { mode?: Refr
   return (await fetchBatchPricesResult(tickers, options)).data;
 }
 
-function getOptionsCacheKey(ticker: string, date?: number): string {
-  return `options_v2_${ticker.trim().toUpperCase()}_${date ?? 'initial'}`;
+export function primeOptionsChainCache(ticker: string, date: number | undefined, data: OptionsChainData): boolean {
+  const normalizedTicker = ticker.trim().toUpperCase();
+  const primed = primeOptionsMarketDataCache(normalizedTicker, date, data);
+  if (primed) cacheScannerOptionChain(normalizedTicker, data);
+  return primed;
 }
 
 function withCacheSource(data: OptionsChainData, cacheKey: string, stale = false, staleFallbackUsed = false): OptionsChainData {
@@ -116,10 +123,7 @@ export async function fetchOptions(ticker: string, date?: number, options: Fetch
   const source = options.source ?? 'fetchOptions';
   const fresh = options.fresh === true;
   const mode: RefreshMode = fresh ? 'fresh' : options.refreshMode ?? (options.bypassCache ? 'revalidate' : 'cache-first');
-  const validator = (value: OptionsChainData) => value != null
-    && Array.isArray(value.expirations)
-    && Array.isArray(value.puts)
-    && Number.isFinite(value.currentPrice);
+  const validator = isValidOptionsChain;
   const previousCached = peekMarketData({
     key: cacheKey,
     softTtlMs: OPTIONS_SOFT_TTL,
@@ -170,22 +174,6 @@ export async function fetchOptions(ticker: string, date?: number, options: Fetch
     : withCacheSource(result.data, cacheKey, result.meta.freshness === 'stale' || result.meta.staleFallbackUsed, result.meta.staleFallbackUsed);
   cacheScannerOptionChain(normalizedTicker, normalized);
   return normalized;
-}
-
-function normalCDF(x: number): number {
-  const a1 = 0.254829592, a2 = -0.284496736, a3 = 1.421413741;
-  const a4 = -1.453152027, a5 = 1.061405429, p = 0.3275911;
-  const sign = x < 0 ? -1 : 1;
-  const ax = Math.abs(x) / Math.sqrt(2);
-  const t = 1.0 / (1.0 + p * ax);
-  const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-ax * ax);
-  return 0.5 * (1.0 + sign * y);
-}
-
-export function calculatePutDelta(S: number, K: number, T: number, r: number, sigma: number): number {
-  if (T <= 0 || sigma <= 0) return -0.5;
-  const d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * Math.sqrt(T));
-  return normalCDF(d1) - 1;
 }
 
 export function blackScholesPutDelta(

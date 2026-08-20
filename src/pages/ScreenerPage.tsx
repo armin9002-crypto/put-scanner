@@ -1,11 +1,12 @@
 import { lazy, Suspense, useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ETF_LIST } from '../lib/etfs';
-import type { ETFInfo, OptionsChainData } from '../lib/types';
-import { fetchOptions, fetchSparkline, fetchWithConcurrencyLimit, calculatePutDelta, formatPrice, formatNumber, fetchIVRank } from '../lib/api';
+import type { ETFInfo } from '../lib/types';
+import { fetchSparkline, formatPrice, formatNumber } from '../lib/api';
 import type { SparklineData } from '../lib/api';
 import { getExpirationsCache, setExpirationsCache } from '../lib/cache';
-import { calculateMoneyness, calculateYieldPercent } from '../lib/optionMetrics';
+import { createLatestScreenerScanGate, fetchScreenerExpirations, runScreenerBatchScan } from '../lib/screenerAcquisition';
+import { applyScreenerFilters, buildScreenerRows, type ScreenerRow } from '../lib/screenerRows';
 import SparklineChart from '../components/SparklineChart';
 import ExpirationFilter, { buildExpirationOptions, formatExpirationDropdownLabel } from '../components/ExpirationFilter';
 import ErrorBoundary from '../components/ErrorBoundary';
@@ -17,36 +18,6 @@ import MobileOptionRow from '../components/mobile/MobileOptionRow';
 import { OPTION_QUOTE_TABLE_DISPLAY_ORDER, OPTION_YIELD_DISPLAY_ORDER, isNominalYieldField, type OptionQuoteTableDisplayField, type OptionYieldDisplayField } from '../lib/optionQuoteDisplay';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
-
-// --- Types ---
-
-interface ScreenerRow {
-  ticker: string;
-  currentPrice: number;
-  expDate: number;
-  expLabel: string;
-  dte: number;
-  strike: number;
-  moneynessPct: number;
-  moneynessLabel: string;
-  moneynessColor: string;
-  delta: number;
-  bid: number | null;
-  last: number | null;
-  lastTradeDate: number | null;
-  ask: number | null;
-  iv: number | null;
-  nomYieldBid: number | null;
-  nomYieldAsk: number | null;
-  nomYieldLast: number | null;
-  annYieldBid: number | null;
-  annYieldAsk: number | null;
-  annYieldLast: number | null;
-  volume: number | null;
-  openInterest: number | null;
-  volOI: number | null;
-  ivRank: number | null;
-}
 
 type ScreenerSortField = 'ticker' | 'price' | 'expDate' | 'strike' | 'moneyness' | 'delta' | 'bid' | 'last' | 'ask' | 'iv' | 'nomYieldBid' | 'nomYieldAsk' | 'nomYieldLast' | 'annYieldBid' | 'annYieldAsk' | 'annYieldLast' | 'volume' | 'openInterest' | 'volOI' | 'ivRank';
 type SortDir = 'asc' | 'desc';
@@ -69,8 +40,6 @@ interface DrawerSelection {
   dte: number | null;
   underlyingPrice: number | null;
 }
-
-const PREFETCH_ETFS = ['TQQQ', 'LABU', 'SSO', 'SOXL', 'UPRO', 'TNA', 'FAS'];
 
 // --- Filter options ---
 
@@ -167,119 +136,6 @@ const IVRANK_OPTIONS = [
 
 // --- Helpers ---
 
-function matchDeltaAbs(delta: number, filter: string): boolean {
-  if (filter === 'all') return true;
-  if (!Number.isFinite(delta)) return false;
-  const abs = Math.abs(delta);
-  switch (filter) {
-    case 'below_0.05': return abs < 0.05;
-    case 'below_0.10': return abs < 0.10;
-    case 'below_0.15': return abs < 0.15;
-    case 'below_0.20': return abs < 0.20;
-    case 'below_0.25': return abs < 0.25;
-    case 'below_0.30': return abs < 0.30;
-    case 'below_0.40': return abs < 0.40;
-    case 'delta_0.05_to_0.10': return abs >= 0.05 && abs < 0.10;
-    case '0.05_to_0.15': return abs >= 0.05 && abs <= 0.15;
-    case '0.10_to_0.20': return abs >= 0.10 && abs <= 0.20;
-    case '0.15_to_0.25': return abs >= 0.15 && abs <= 0.25;
-    case '0.20_to_0.30': return abs >= 0.20 && abs <= 0.30;
-    case '0.30_to_0.50': return abs >= 0.30 && abs <= 0.50;
-    case 'above_0.50': return abs > 0.50;
-    default: return true;
-  }
-}
-
-function matchMoneyness(moneynessPct: number, filter: string): boolean {
-  if (filter === 'all') return true;
-  if (!Number.isFinite(moneynessPct)) return false;
-  const isOTM = moneynessPct > 0;
-  const isITM = moneynessPct < 0;
-  const absM = Math.abs(moneynessPct);
-  switch (filter) {
-    case 'otm_only': return isOTM;
-    case 'itm_only': return isITM;
-    case '5+_otm': return isOTM && absM >= 5;
-    case '10+_otm': return isOTM && absM >= 10;
-    case '15+_otm': return isOTM && absM >= 15;
-    case '20+_otm': return isOTM && absM >= 20;
-    case '25+_otm': return isOTM && absM >= 25;
-    case '30+_otm': return isOTM && absM >= 30;
-    case '40+_otm': return isOTM && absM >= 40;
-    case '50+_otm': return isOTM && absM >= 50;
-    case '60+_otm': return isOTM && absM >= 60;
-    case '0-10_otm': return isOTM && absM >= 0 && absM <= 10;
-    case '10-20_otm': return isOTM && absM >= 10 && absM <= 20;
-    case '20-30_otm': return isOTM && absM >= 20 && absM <= 30;
-    case '30-40_otm': return isOTM && absM >= 30 && absM < 40;
-    case '40-50_otm': return isOTM && absM >= 40 && absM < 50;
-    case '50-60_otm': return isOTM && absM >= 50 && absM < 60;
-    case 'any_itm': return isITM;
-    case '0-10_itm': return isITM && absM >= 0 && absM <= 10;
-    case '10+_itm': return isITM && absM >= 10;
-    default: return true;
-  }
-}
-
-function matchYield(y: number | null, filter: string): boolean {
-  if (filter === 'all') return true;
-  if (y == null || !Number.isFinite(y)) return false;
-  switch (filter) {
-    case '5_to_10': return y >= 5 && y < 10;
-    case '5_to_15': return y >= 5 && y < 15;
-    case '10_to_15': return y >= 10 && y < 15;
-    case '10_to_20': return y >= 10 && y < 20;
-    case '15_to_20': return y >= 15 && y < 20;
-    default: {
-      const threshold = parseFloat(filter.replace('>', ''));
-      return Number.isFinite(threshold) ? y > threshold : true;
-    }
-  }
-}
-
-function matchOI(oi: number | null, filter: string): boolean {
-  if (filter === 'all') return true;
-  if (oi == null || !Number.isFinite(oi)) return false;
-  const threshold = parseFloat(filter.replace('>', ''));
-  return Number.isFinite(threshold) ? oi > threshold : true;
-}
-
-function matchVol(vol: number | null, filter: string): boolean {
-  if (filter === 'all') return true;
-  if (vol == null || !Number.isFinite(vol)) return false;
-  const threshold = parseFloat(filter.replace('>', ''));
-  return Number.isFinite(threshold) ? vol > threshold : true;
-}
-
-function matchIvRank(ivRank: number | null, filter: string): boolean {
-  if (filter === 'all') return true;
-  if (ivRank == null || !Number.isFinite(ivRank)) return false;
-  switch (filter) {
-    case 'below_20': return ivRank < 20;
-    case 'below_40': return ivRank < 40;
-    case 'below_60': return ivRank < 60;
-    case 'above_50': return ivRank >= 50;
-    case 'above_70': return ivRank >= 70;
-    case 'above_80': return ivRank >= 80;
-    case 'above_90': return ivRank >= 90;
-    case '20_to_50': return ivRank >= 20 && ivRank <= 50;
-    case '50_to_80': return ivRank >= 50 && ivRank <= 80;
-    default: return true;
-  }
-}
-
-function applyScreenerFilters(rows: ScreenerRow[], criteria: Pick<ScreenerCriteria, 'deltaFilter' | 'moneynessFilter' | 'yieldFilter' | 'oiFilter' | 'volFilter' | 'ivRankFilter'>): ScreenerRow[] {
-  return rows.filter(row => {
-    if (!matchDeltaAbs(row.delta, criteria.deltaFilter)) return false;
-    if (!matchMoneyness(row.moneynessPct, criteria.moneynessFilter)) return false;
-    if (!matchYield(row.annYieldBid, criteria.yieldFilter)) return false;
-    if (!matchOI(row.openInterest, criteria.oiFilter)) return false;
-    if (!matchVol(row.volume, criteria.volFilter)) return false;
-    if (!matchIvRank(row.ivRank, criteria.ivRankFilter)) return false;
-    return true;
-  });
-}
-
 function optionDetailFromScreenerRow(row: ScreenerRow): OptionDetail {
   return {
     strike: row.strike,
@@ -302,18 +158,6 @@ function optionDetailFromScreenerRow(row: ScreenerRow): OptionDetail {
     otmItmLabel: row.moneynessLabel,
     otmItmColor: row.moneynessColor,
   };
-}
-
-function getExpsToFetchForFilter(allExps: { date: number; dte: number }[], expFilter: string): { date: number; dte: number }[] {
-  if (expFilter === 'all') return allExps.slice(0, 2);
-  if (expFilter === 'lte_30dte') {
-    return allExps.filter(e => e.dte <= 30).slice(0, 2);
-  }
-  if (expFilter.startsWith('date_')) {
-    const targetDate = Number.parseInt(expFilter.replace('date_', ''), 10);
-    return allExps.filter(e => e.date === targetDate);
-  }
-  return allExps.slice(0, 2);
 }
 
 function selectedEtfKey(etfs: ETFInfo[]): string {
@@ -355,14 +199,6 @@ function ivRankColor(rank: number): string {
   if (rank >= 50) return 'var(--orange)';
   if (rank >= 30) return 'var(--yellow)';
   return 'var(--green)';
-}
-
-function formatExpDate(ts: number, dte: number): string {
-  const d = new Date(ts * 1000);
-  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(d.getUTCDate()).padStart(2, '0');
-  const yy = String(d.getUTCFullYear() % 100).padStart(2, '0');
-  return `${mm}/${dd}/${yy} (${dte})`;
 }
 
 function vixColor(vix: number): string {
@@ -408,6 +244,7 @@ export default function ScreenerPage() {
   const [lastLoadedCriteria, setLastLoadedCriteria] = useState<ScreenerCriteria | null>(null);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [slowWarning, setSlowWarning] = useState(false);
+  const [scanFailureCount, setScanFailureCount] = useState(0);
   const [selectedOption, setSelectedOption] = useState<DrawerSelection | null>(null);
 
   // Confirmation dialog
@@ -417,9 +254,11 @@ export default function ScreenerPage() {
   const [sortField, setSortField] = useState<ScreenerSortField>('annYieldBid');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
 
-  // Cache for raw options data (client-side re-filtering)
-  const cacheRef = useRef<Map<string, OptionsChainData>>(new Map());
+  // Raw rows support network-free changes to non-structural filters.
   const rawRowsRef = useRef<ScreenerRow[]>([]);
+  const scanGateRef = useRef(createLatestScreenerScanGate());
+
+  useEffect(() => () => scanGateRef.current.cancel(), []);
 
   // VIX data — manual refresh only
   const [vixData, setVixData] = useState<SparklineData | null>(null);
@@ -452,42 +291,22 @@ export default function ScreenerPage() {
     let cancelled = false;
     (async () => {
       setLoadingDates(true);
-      const tasks = PREFETCH_ETFS.map(ticker => async () => {
-        try {
-          const cacheKey = `${ticker}:initial`;
-          if (cacheRef.current.has(cacheKey)) {
-            return cacheRef.current.get(cacheKey)!;
-          }
-          const data = await fetchOptions(ticker);
-          cacheRef.current.set(cacheKey, data);
-          return data;
-        } catch {
-          return null;
-        }
-      });
-
-      const results = await fetchWithConcurrencyLimit(tasks, 3);
-      if (cancelled) return;
-
-      const allExps = new Map<number, { date: number; label: string; dte: number }>();
-      for (const result of results) {
-        if (result.status !== 'fulfilled' || !result.value) continue;
-        const data = result.value;
-        for (const exp of data.expirations) {
-          if (!allExps.has(exp.date)) {
-            allExps.set(exp.date, {
-              date: exp.date,
-              label: formatExpirationDropdownLabel(exp.date),
-              dte: exp.dte,
-            });
-          }
+      try {
+        const expirations = await fetchScreenerExpirations();
+        if (cancelled) return;
+        const sorted = expirations.map(expiration => ({
+          ...expiration,
+          label: formatExpirationDropdownLabel(expiration.date),
+        }));
+        setAvailableExps(sorted);
+        setExpirationsCache(sorted);
+      } catch { /* keep the date filter usable with its generic options */ }
+      finally {
+        if (!cancelled) {
+          setDatesLoaded(true);
+          setLoadingDates(false);
         }
       }
-      const sorted = Array.from(allExps.values()).sort((a, b) => a.date - b.date);
-      setAvailableExps(sorted);
-      setDatesLoaded(true);
-      setLoadingDates(false);
-      setExpirationsCache(sorted);
     })();
     return () => { cancelled = true; };
   }, []);
@@ -519,23 +338,8 @@ export default function ScreenerPage() {
 
   // Nearest only shortcut
   const selectNearestOnly = () => {
-    const nearestDates = new Map<number, number>();
-    for (const [key, data] of cacheRef.current.entries()) {
-      if (!key.endsWith(':initial')) continue;
-      if (data.expirations.length > 0) {
-        const nearest = data.expirations[0];
-        if (!nearestDates.has(nearest.date) || nearest.dte < nearestDates.get(nearest.date)!) {
-          nearestDates.set(nearest.date, nearest.dte);
-        }
-      }
-    }
-    let best: { date: number; dte: number } | null = null;
-    for (const [date, dte] of nearestDates.entries()) {
-      if (!best || dte < best.dte) best = { date, dte };
-    }
-    if (best) {
-      setExpFilter(`date_${best.date}`);
-    }
+    const nearest = availableExps[0];
+    if (nearest) setExpFilter(`date_${nearest.date}`);
   };
 
   // Clear filters — reset to lte_30dte default
@@ -594,169 +398,49 @@ export default function ScreenerPage() {
 
   // Load data
   const executeLoad = useCallback(async (criteria: ScreenerCriteria) => {
+    const scan = scanGateRef.current.begin();
     setShowConfirm(false);
     setLoading(true);
     setSlowWarning(false);
+    setScanFailureCount(0);
     setRows([]);
-
-    // Phase 1: Fetch initial data for each ETF with concurrency limit (Opt 4)
-    const initialResults = new Map<string, OptionsChainData>();
-    const tasks1 = criteria.selectedETFs.map(etf => async () => {
-      try {
-        const cacheKey = `${etf.ticker}:initial`;
-        const cached = cacheRef.current.get(cacheKey);
-        if (cached) {
-          initialResults.set(etf.ticker, cached);
-          return;
-        }
-        const data = await fetchOptions(etf.ticker);
-        cacheRef.current.set(cacheKey, data);
-        initialResults.set(etf.ticker, data);
-      } catch { /* skip */ }
-      finally {
-        setProgress(prev => ({ ...prev, current: prev.current + 1 }));
-      }
-    });
-
     setProgress({ current: 0, total: criteria.selectedETFs.length });
     const startTime = Date.now();
     const slowCheck = setInterval(() => {
-      if (Date.now() - startTime > 30000) setSlowWarning(true);
+      if (scan.isCurrent() && Date.now() - startTime > 30000) setSlowWarning(true);
     }, 1000);
 
     try {
-    await fetchWithConcurrencyLimit(tasks1, 3);
+      const acquired = await runScreenerBatchScan({
+        scanId: scan.id,
+        selectedTickers: criteria.selectedETFs.map(etf => etf.ticker),
+        expFilter: criteria.expFilter,
+        signal: scan.signal,
+        onProgress: (current, total) => {
+          if (scan.isCurrent()) setProgress({ current, total });
+        },
+      });
+      if (!scan.isCurrent()) return;
 
-    // Phase 1.5: Fetch IV Rank for each ETF (non-blocking, best-effort)
-    const ivRankMap = new Map<string, number | null>();
-    const ivRankTasks = criteria.selectedETFs.map(etf => async () => {
-      try {
-        const data = await fetchIVRank(etf.ticker);
-        ivRankMap.set(etf.ticker, data.ivRank);
-      } catch {
-        ivRankMap.set(etf.ticker, null);
-      }
-    });
-    await fetchWithConcurrencyLimit(ivRankTasks, 3);
+      const built = buildScreenerRows(acquired, criteria.expFilter);
+      const sortedExps = built.expirations.map(expiration => ({
+        ...expiration,
+        label: formatExpirationDropdownLabel(expiration.date),
+      }));
+      setAvailableExps(sortedExps);
+      setDatesLoaded(true);
+      setExpirationsCache(sortedExps);
+      rawRowsRef.current = built.rows;
+      setRows(applyScreenerFilters(built.rows, criteria));
+      setScanFailureCount(acquired.errors.length);
+      setLoaded(true);
+      setLastLoadedCriteria(criteria);
 
-    // Collect all unique expirations
-    const allExps = new Map<number, { date: number; label: string; dte: number }>();
-    for (const [, data] of initialResults) {
-      for (const exp of data.expirations) {
-        if (!allExps.has(exp.date)) {
-          allExps.set(exp.date, { date: exp.date, label: formatExpirationDropdownLabel(exp.date), dte: exp.dte });
-        }
-      }
-    }
-    const sortedExps = Array.from(allExps.values()).sort((a, b) => a.date - b.date);
-    setAvailableExps(sortedExps);
-    setDatesLoaded(true);
-    setExpirationsCache(sortedExps);
-
-    // Phase 2: Determine which expirations to fetch based on filter (max 2)
-    const expsToFetch = getExpsToFetchForFilter(sortedExps, criteria.expFilter);
-
-    const fetchTasks: (() => Promise<void>)[] = [];
-    let totalFetches = initialResults.size;
-
-    for (const [ticker, initialData] of initialResults) {
-      const initialExpDate = initialData.expirations[0]?.date;
-      const additionalExps = expsToFetch.filter(e => e.date !== initialExpDate);
-
-      for (const exp of additionalExps) {
-        fetchTasks.push(async () => {
-          try {
-            const cacheKey = `${ticker}:${exp.date}`;
-            if (!cacheRef.current.has(cacheKey)) {
-              const data = await fetchOptions(ticker, exp.date);
-              cacheRef.current.set(cacheKey, data);
-            }
-          } catch { /* skip */ }
-          finally {
-            setProgress(prev => ({ ...prev, current: prev.current + 1 }));
-          }
-        });
-      }
-      totalFetches += additionalExps.length;
-    }
-
-    setProgress({ current: initialResults.size, total: totalFetches });
-    if (fetchTasks.length > 0) {
-      await fetchWithConcurrencyLimit(fetchTasks, 3);
-    }
-
-    clearInterval(slowCheck);
-
-    // Phase 3: Build ALL rows (unfiltered) and store for client-side re-filtering
-    const allRows: ScreenerRow[] = [];
-
-    for (const [ticker, initialData] of initialResults) {
-      const currentPrice = initialData.currentPrice;
-      const etfExps = expsToFetch.filter(e =>
-        initialData.expirations.some(ie => ie.date === e.date)
-      );
-
-      for (const exp of etfExps) {
-        const cacheKey = `${ticker}:${exp.date}`;
-        const data = cacheRef.current.has(cacheKey)
-          ? cacheRef.current.get(cacheKey)!
-          : (exp.date === initialData.expirations[0]?.date ? initialData : null);
-
-        if (!data) continue;
-        const price = data.currentPrice || currentPrice;
-        const dte = Math.max(1, exp.dte);
-
-        for (const p of data.puts) {
-          let delta: number;
-          if (p.delta != null && p.delta !== 0) {
-            delta = p.delta;
-          } else {
-            const sigma = p.impliedVolatility != null && p.impliedVolatility > 0
-              ? p.impliedVolatility / 100 : 0.80;
-            delta = calculatePutDelta(price, p.strike, dte / 365, 0.045, sigma);
-          }
-          if (delta > 0) delta = -delta;
-          if (delta > -0.01 && delta <= 0) delta = -0.01;
-
-          const moneyness = calculateMoneyness(price, p.strike);
-          const moneynessPct = moneyness.pct ?? 0;
-          const moneynessLabel = moneyness.label === '—' ? '—' : moneyness.label.replace(/(\d+\.\d)%/, match => Number.parseFloat(match).toFixed(2) + '%');
-          const moneynessColor = moneyness.color;
-
-          const bidYield = calculateYieldPercent(p.bid, p.strike, dte);
-          const askYield = calculateYieldPercent(p.ask, p.strike, dte);
-          const lastYield = calculateYieldPercent(p.last, p.strike, dte);
-
-          const volOI = (p.volume != null && p.volume > 0 && p.openInterest != null && p.openInterest > 0)
-            ? p.volume / p.openInterest : null;
-
-          allRows.push({
-            ticker, currentPrice: price,
-            expDate: exp.date, expLabel: formatExpDate(exp.date, dte), dte,
-            strike: p.strike, moneynessPct, moneynessLabel, moneynessColor,
-            delta, bid: p.bid, last: p.last, lastTradeDate: p.lastTradeDate, ask: p.ask,
-            iv: p.impliedVolatility,
-            nomYieldBid: bidYield.nominal,
-            nomYieldAsk: askYield.nominal,
-            nomYieldLast: lastYield.nominal,
-            annYieldBid: bidYield.annualized,
-            annYieldAsk: askYield.annualized,
-            annYieldLast: lastYield.annualized,
-            volume: p.volume, openInterest: p.openInterest, volOI,
-            ivRank: ivRankMap.get(ticker) ?? null,
-          });
-        }
-      }
-    }
-
-    rawRowsRef.current = allRows;
-
-    setRows(applyScreenerFilters(allRows, criteria));
-    setLoaded(true);
-    setLastLoadedCriteria(criteria);
+    } catch (error) {
+      if (scan.isCurrent() && (error as Error)?.name !== 'AbortError') setScanFailureCount(1);
     } finally {
       clearInterval(slowCheck);
-      setLoading(false);
+      if (scan.isCurrent()) setLoading(false);
     }
   }, []);
 
@@ -888,6 +572,7 @@ export default function ScreenerPage() {
           <button type="button" onClick={() => void handleLoad()} disabled={loading} className="mobile-sheet-action primary mt-3 w-full disabled:opacity-50">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}{loading ? `Scanning ${progress.current}/${progress.total}` : 'Run Screener'}</button>
           {loading && progress.total > 0 && <div className="mt-2 h-1 overflow-hidden rounded-full" style={{ backgroundColor: 'var(--border)' }}><div className="h-full rounded-full" style={{ width: `${progressPct}%`, backgroundColor: 'var(--accent)' }} /></div>}
           {slowWarning && <p className="mt-2 flex items-center gap-1 text-[11px]" style={{ color: 'var(--yellow)' }}><AlertTriangle className="h-3.5 w-3.5" /> Narrow filters for a faster scan.</p>}
+          {scanFailureCount > 0 && <p className="mt-2 flex items-center gap-1 text-[11px]" style={{ color: 'var(--yellow)' }}><AlertTriangle className="h-3.5 w-3.5" /> Partial results: {scanFailureCount} market-data operation{scanFailureCount === 1 ? '' : 's'} could not be completed.</p>}
         </div>
 
         <div className="flex min-h-[46px] items-center gap-2 border-b px-3.5" style={{ borderColor: 'var(--border)' }}>
@@ -908,7 +593,7 @@ export default function ScreenerPage() {
           </div>
         </MobileBottomSheet>}
 
-        {showConfirm && <MobileBottomSheet title="Scan all ETFs?" description="This uses approximately 40–80 existing market-data requests." onClose={() => setShowConfirm(false)} footer={<div className="grid grid-cols-2 gap-2"><button type="button" onClick={() => setShowConfirm(false)} className="mobile-sheet-action secondary">Cancel</button><button type="button" onClick={() => executeLoad({ ...currentCriteria, selectedETFs: ETF_LIST })} className="mobile-sheet-action primary">Run scan</button></div>}><p className="text-sm leading-6" style={{ color: 'var(--text-muted)' }}>Select specific ETFs for a faster result, or continue to scan the full universe.</p></MobileBottomSheet>}
+        {showConfirm && <MobileBottomSheet title="Scan all ETFs?" description="This uses 14 shared market-data batch requests." onClose={() => setShowConfirm(false)} footer={<div className="grid grid-cols-2 gap-2"><button type="button" onClick={() => setShowConfirm(false)} className="mobile-sheet-action secondary">Cancel</button><button type="button" onClick={() => executeLoad({ ...currentCriteria, selectedETFs: ETF_LIST })} className="mobile-sheet-action primary">Run scan</button></div>}><p className="text-sm leading-6" style={{ color: 'var(--text-muted)' }}>Select specific ETFs for a faster result, or continue to scan the full universe.</p></MobileBottomSheet>}
         {selectedOption && <ErrorBoundary title="Option sheet unavailable" message="Close it and try again."><Suspense fallback={null}><OptionDetailDrawer option={selectedOption.option} ticker={selectedOption.ticker} expirationLabel={selectedOption.expirationLabel} dte={selectedOption.dte} underlyingPrice={selectedOption.underlyingPrice} onClose={() => setSelectedOption(null)} /></Suspense></ErrorBoundary>}
       </div>
     );
@@ -978,7 +663,7 @@ export default function ScreenerPage() {
               </div>
             </div>
 
-            {/* Expiration - single-select dropdown (max 2 expiries enforced by getExpsToFetch) */}
+            {/* Expiration - single-select dropdown; nearest modes acquire at most two expiries. */}
             <div className="w-full sm:w-auto min-w-0">
               <ExpirationFilter
                 value={expFilter}
@@ -1136,6 +821,12 @@ export default function ScreenerPage() {
               This is taking longer than expected — try narrowing your filters
             </div>
           )}
+          {scanFailureCount > 0 && (
+            <div className="flex items-center gap-2 mt-3 text-xs" style={{ color: 'var(--yellow)' }}>
+              <AlertTriangle className="w-3.5 h-3.5" />
+              Partial results: {scanFailureCount} market-data operation{scanFailureCount === 1 ? '' : 's'} could not be completed.
+            </div>
+          )}
         </div>
 
         {/* Confirmation dialog */}
@@ -1144,7 +835,7 @@ export default function ScreenerPage() {
             <div className="mobile-confirm-sheet max-h-[85dvh] w-full max-w-sm overflow-y-auto rounded-t-2xl p-4 sm:rounded-xl sm:p-6" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
               <h3 className="text-sm font-semibold mb-2" style={{ color: 'var(--text)' }}>Scan All ETFs?</h3>
               <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
-                Scanning all ETFs will make approximately 40-80 API calls. Proceed?
+                Scanning all ETFs uses 14 shared market-data batch requests. Proceed?
               </p>
               <div className="flex gap-2 justify-end">
                 <button
