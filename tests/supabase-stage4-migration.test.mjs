@@ -559,15 +559,25 @@ async function filesUnder(directory) {
   return children.flat();
 }
 
-test('architectural dormancy makes normal runtime user_state calls impossible', async () => {
+test('architectural dormancy remains intact outside the double-gated development harness', async () => {
   const sourceFiles = (await filesUnder(path.join(root, 'src')))
     .filter(file => /\.(?:ts|tsx|js|jsx)$/.test(file));
   const cloudDirectory = `${path.sep}lib${path.sep}cloudState${path.sep}`;
-  const runtimeFiles = sourceFiles.filter(file => !file.includes(cloudDirectory));
+  const developmentEntryFiles = new Set([
+    path.join(root, 'src/components/AccountControl.tsx'),
+    path.join(root, 'src/components/CloudMigrationTestHarness.tsx'),
+  ]);
+  const runtimeFiles = sourceFiles.filter(file => (
+    !file.includes(cloudDirectory) && !developmentEntryFiles.has(file)
+  ));
   const runtimeSources = await Promise.all(runtimeFiles.map(file => readFile(file, 'utf8')));
   const runtime = runtimeSources.join('\n');
   assert.doesNotMatch(runtime, /(?:from|import\s*\()\s*['"][^'"]*cloudState/i);
   assert.doesNotMatch(runtime, /user_state|fetchAllUserState|fetchNamespace|initializeAllNamespaces|updateNamespaceIfRevisionMatches/);
+
+  const accountSource = await readFile(path.join(root, 'src/components/AccountControl.tsx'), 'utf8');
+  assert.match(accountSource, /import\.meta\.env\.DEV[\s\S]*?lazy\(\(\) => import\('\.\/CloudMigrationTestHarness'\)\)/);
+  assert.match(accountSource, /VITE_CLOUD_MIGRATION_TEST_MODE/);
 
   const namedRuntimePaths = [
     'src/main.tsx',
@@ -595,11 +605,11 @@ test('architectural dormancy makes normal runtime user_state calls impossible', 
   assert.match(cloud, /\.eq\('revision', expectedRevision\)/);
 });
 
-test('Stage 4A adds no migration, dashboard, auth, environment, or UI change', async () => {
+test('Stage 4 foundation still requires no migration, dashboard, or auth configuration change', async () => {
   const [migrationNames, status] = await Promise.all([
     readdir(path.join(root, 'supabase', 'migrations')),
     readFile(path.join(root, '.env.example'), 'utf8'),
   ]);
   assert.deepEqual(migrationNames, ['20260820154219_create_user_state.sql']);
-  assert.equal(status, 'VITE_SUPABASE_URL=\nVITE_SUPABASE_PUBLISHABLE_KEY=\n');
+  assert.equal(status, 'VITE_SUPABASE_URL=\nVITE_SUPABASE_PUBLISHABLE_KEY=\nVITE_CLOUD_MIGRATION_TEST_MODE=false\n');
 });

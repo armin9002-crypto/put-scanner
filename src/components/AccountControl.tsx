@@ -1,8 +1,17 @@
-import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { CircleUserRound, Loader2, LogOut, Mail, X } from 'lucide-react';
 import { useAuth } from '../lib/authContext';
 import { useResponsiveMode } from '../lib/responsive';
 import MobileBottomSheet from './mobile/MobileBottomSheet';
+import { isCloudMigrationTestModeEnabled } from '../lib/cloudState/devTestMode';
+
+const DevCloudMigrationTestHarness = import.meta.env.DEV
+  ? lazy(() => import('./CloudMigrationTestHarness'))
+  : null;
+const cloudMigrationTestModeEnabled = isCloudMigrationTestModeEnabled({
+  dev: import.meta.env.DEV,
+  flag: import.meta.env.VITE_CLOUD_MIGRATION_TEST_MODE,
+});
 
 function AccountPanel({ onSignedOut }: { onSignedOut: () => void }) {
   const { user, isAuthLoading, authError, signInWithEmail, signOut } = useAuth();
@@ -45,6 +54,11 @@ function AccountPanel({ onSignedOut }: { onSignedOut: () => void }) {
         <p className="text-xs leading-5" style={{ color: 'var(--text-muted)' }}>
           Cloud data sync is not enabled yet. Portfolio, Watchlist, and preferences remain local to this browser.
         </p>
+        {cloudMigrationTestModeEnabled && DevCloudMigrationTestHarness && (
+          <Suspense fallback={null}>
+            <DevCloudMigrationTestHarness userId={user.id} />
+          </Suspense>
+        )}
         {authError && <AccountError>{authError}</AccountError>}
         <button
           type="button"
