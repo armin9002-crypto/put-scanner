@@ -98,14 +98,12 @@ test('controlled SQL security test covers isolation, CAS, anonymity, and rollbac
   assert.doesNotMatch(sql, /create\s+(?:or\s+replace\s+)?(?:table|function|policy)/);
 });
 
-test('Stage 2A introduces no Supabase runtime initialization or browser secret', async () => {
+test('browser runtime contains no Supabase secret-role credential', async () => {
   const sourceFiles = (await filesUnder(path.join(root, 'src')))
     .filter((name) => /\.(?:js|jsx|ts|tsx)$/.test(name));
   const apiFiles = await filesUnder(path.join(root, 'api'));
   const combined = await Promise.all([...sourceFiles, ...apiFiles].map((name) => readFile(name, 'utf8')));
   const runtime = combined.join('\n');
-  assert.doesNotMatch(runtime, /@supabase\/supabase-js/);
-  assert.doesNotMatch(runtime, /\bcreateClient\s*\(/);
-  assert.doesNotMatch(runtime, /VITE_[A-Z0-9_]*SUPABASE/);
   assert.doesNotMatch(runtime, /(?:SUPABASE_SECRET_KEY|service_role|sb_secret_)/i);
+  assert.doesNotMatch(runtime, /VITE_[A-Z0-9_]*(?:SECRET|SERVICE_ROLE|DATABASE_PASSWORD)/i);
 });

@@ -2,7 +2,9 @@ import { Suspense, lazy, useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom';
 import { ShieldCheck, ScanLine, BarChart3, Moon, Sun, BookOpen, Star, Square, Briefcase, Activity } from 'lucide-react';
 import { ThemeProvider, useTheme } from './lib/theme';
+import { AuthProvider } from './lib/auth';
 import { useResponsiveMode } from './lib/responsive';
+import AccountControl from './components/AccountControl';
 import ErrorBoundary from './components/ErrorBoundary';
 import MobilePageHeader from './components/mobile/MobilePageHeader';
 import { getRequestDiagnosticsSnapshot, getScreenerScanDiagnostics, isRequestDiagnosticsEnabled, type RequestDiagnosticsSnapshot, type ScreenerScanDiagnostics } from './lib/requestDiagnostics';
@@ -60,7 +62,7 @@ function NavBar() {
             : 'Scanner';
 
     return (
-      <MobilePageHeader title={title} action={<ThemeToggle />} />
+      <MobilePageHeader title={title} action={<div className="flex items-center"><ThemeToggle /><AccountControl /></div>} />
     );
   }
 
@@ -144,8 +146,9 @@ function NavBar() {
             <span className="sm:inline">{pulseLabel}</span>
           </NavLink>
         </div>
-        <div className="ml-1 flex-shrink-0">
+        <div className="ml-1 flex flex-shrink-0 items-center">
           <ThemeToggle />
+          <AccountControl />
         </div>
       </div>
     </nav>
@@ -315,8 +318,10 @@ function LayoutDiagnosticsPanel() {
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <AppContent />
-    </ThemeProvider>
+    <AuthProvider>
+      <ThemeProvider>
+        <AppContent />
+      </ThemeProvider>
+    </AuthProvider>
   );
 }
