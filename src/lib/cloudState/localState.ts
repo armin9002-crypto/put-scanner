@@ -18,6 +18,8 @@ import {
 } from '../watchlist.ts';
 import type {
   CloudInitializationInput,
+  CloudNamespace,
+  CloudNamespaceDocument,
   CloudStateSet,
   LocalDataPresenceSummary,
 } from './types.ts';
@@ -33,6 +35,81 @@ export type CanonicalLocalStateReadResult =
   | { status: 'ok'; value: CanonicalLocalState }
   | { status: 'corrupt'; namespace: 'portfolio' | 'watchlist' | 'preferences'; message: string }
   | { status: 'unsupported_version'; namespace: 'portfolio' | 'watchlist' | 'preferences'; version: number };
+
+export interface CanonicalLocalNamespaceState<Namespace extends CloudNamespace = CloudNamespace> {
+  namespace: Namespace;
+  document: CloudNamespaceDocument<Namespace>;
+  localUpdatedAt: string | null;
+  localRevision: number;
+}
+
+export type CanonicalLocalNamespaceReadResult<Namespace extends CloudNamespace = CloudNamespace> =
+  | { status: 'ok'; value: CanonicalLocalNamespaceState<Namespace> }
+  | { status: 'corrupt'; namespace: Namespace; message: string }
+  | { status: 'unsupported_version'; namespace: Namespace; version: number };
+
+export function readCanonicalLocalNamespace<Namespace extends CloudNamespace>(
+  storage: StorageLike,
+  namespace: Namespace,
+): CanonicalLocalNamespaceReadResult<Namespace> {
+  if (namespace === 'portfolio') {
+    const result = readPortfolioTrades(storage);
+    if (result.status === 'corrupt') return { status: 'corrupt', namespace, message: result.error };
+    if (result.status === 'unsupported_version') {
+      return { status: 'unsupported_version', namespace, version: result.version };
+    }
+    return {
+      status: 'ok',
+      value: {
+        namespace,
+        document: {
+          schemaVersion: PORTFOLIO_DURABLE_SCHEMA_VERSION,
+          payload: { data: result.status === 'ok' ? toDurablePortfolioState(result.data) : [] },
+        } as CloudNamespaceDocument<Namespace>,
+        localUpdatedAt: result.status === 'ok' ? result.updatedAt : null,
+        localRevision: result.status === 'ok' ? result.revision : 0,
+      },
+    };
+  }
+
+  if (namespace === 'watchlist') {
+    const result = readWatchlist(storage);
+    if (result.status === 'corrupt') return { status: 'corrupt', namespace, message: result.error };
+    if (result.status === 'unsupported_version') {
+      return { status: 'unsupported_version', namespace, version: result.version };
+    }
+    return {
+      status: 'ok',
+      value: {
+        namespace,
+        document: {
+          schemaVersion: WATCHLIST_DURABLE_SCHEMA_VERSION,
+          payload: { data: result.status === 'ok' ? toDurableWatchlistState(result.data) : [] },
+        } as CloudNamespaceDocument<Namespace>,
+        localUpdatedAt: result.status === 'ok' ? result.updatedAt : null,
+        localRevision: result.status === 'ok' ? result.revision : 0,
+      },
+    };
+  }
+
+  const result = readDurablePreferences(storage);
+  if (result.status === 'corrupt') return { status: 'corrupt', namespace, message: result.error };
+  if (result.status === 'unsupported_version') {
+    return { status: 'unsupported_version', namespace, version: result.version };
+  }
+  return {
+    status: 'ok',
+    value: {
+      namespace,
+      document: {
+        schemaVersion: PREFERENCES_DURABLE_SCHEMA_VERSION,
+        payload: { data: result.status === 'ok' ? result.data : {} },
+      } as CloudNamespaceDocument<Namespace>,
+      localUpdatedAt: result.status === 'ok' ? result.updatedAt : null,
+      localRevision: result.status === 'ok' ? result.revision : 0,
+    },
+  };
+}
 
 export function countNonDefaultPreferences(preferences: DurablePreferences): number {
   let count = 0;

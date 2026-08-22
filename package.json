@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "responsive:check": "node scripts/responsive-checklist.mjs",
+    "sync:payload-report": "node scripts/stage5-payload-report.mjs",
     "selfcheck": "node scripts/selfcheck.mjs",
     "test": "node --test tests/*.test.mjs",
     "verify": "npm run typecheck && npm test && npm run selfcheck && npm run responsive:check && npm run build && npm run lint",

@@ -12,15 +12,22 @@ function readCollapsedGroups(key: string, storage: Pick<Storage, 'getItem'> | nu
   } catch { return {}; }
 }
 
-function persistCollapsedGroups(key: string, value: Record<string, boolean>, storage: Pick<Storage, 'setItem'> | null): void {
-  try { storage?.setItem(key, JSON.stringify(value)); } catch { /* best effort */ }
+type PreferenceWriteStorage = Pick<Storage, 'setItem'> & Partial<Pick<Storage, 'getItem'>>;
+
+function persistCollapsedGroups(key: string, value: Record<string, boolean>, storage: PreferenceWriteStorage | null): void {
+  try {
+    const serialized = JSON.stringify(value);
+    const previous = storage?.getItem?.(key);
+    storage?.setItem(key, serialized);
+    if (storage && previous !== serialized) emitDurableMutation('preferences');
+  } catch { /* best effort */ }
 }
 
 export function readCollapsedExpirationGroups(storage: Pick<Storage, 'getItem'> | null = typeof localStorage === 'undefined' ? null : localStorage): Record<string, boolean> {
   return readCollapsedGroups(PORTFOLIO_EXPIRY_GROUPS_KEY, storage);
 }
 
-export function persistCollapsedExpirationGroups(value: Record<string, boolean>, storage: Pick<Storage, 'setItem'> | null = typeof localStorage === 'undefined' ? null : localStorage): void {
+export function persistCollapsedExpirationGroups(value: Record<string, boolean>, storage: PreferenceWriteStorage | null = typeof localStorage === 'undefined' ? null : localStorage): void {
   persistCollapsedGroups(PORTFOLIO_EXPIRY_GROUPS_KEY, value, storage);
 }
 
@@ -28,7 +35,7 @@ export function readCollapsedUnderlyingGroups(storage: Pick<Storage, 'getItem'> 
   return readCollapsedGroups(PORTFOLIO_UNDERLYING_GROUPS_KEY, storage);
 }
 
-export function persistCollapsedUnderlyingGroups(value: Record<string, boolean>, storage: Pick<Storage, 'setItem'> | null = typeof localStorage === 'undefined' ? null : localStorage): void {
+export function persistCollapsedUnderlyingGroups(value: Record<string, boolean>, storage: PreferenceWriteStorage | null = typeof localStorage === 'undefined' ? null : localStorage): void {
   persistCollapsedGroups(PORTFOLIO_UNDERLYING_GROUPS_KEY, value, storage);
 }
 
@@ -39,8 +46,12 @@ export function readPortfolioGroupMode(storage: Pick<Storage, 'getItem'> | null 
   } catch { return 'expiration'; }
 }
 
-export function persistPortfolioGroupMode(value: PortfolioGroupMode, storage: Pick<Storage, 'setItem'> | null = typeof localStorage === 'undefined' ? null : localStorage): void {
-  try { storage?.setItem(PORTFOLIO_GROUP_MODE_KEY, value); } catch { /* best effort */ }
+export function persistPortfolioGroupMode(value: PortfolioGroupMode, storage: PreferenceWriteStorage | null = typeof localStorage === 'undefined' ? null : localStorage): void {
+  try {
+    const previous = storage?.getItem?.(PORTFOLIO_GROUP_MODE_KEY);
+    storage?.setItem(PORTFOLIO_GROUP_MODE_KEY, value);
+    if (storage && previous !== value) emitDurableMutation('preferences');
+  } catch { /* best effort */ }
 }
 
 export function toggleCollapsedExpirationGroup(value: Record<string, boolean>, expiration: string): Record<string, boolean> {
@@ -50,3 +61,4 @@ export function toggleCollapsedExpirationGroup(value: Record<string, boolean>, e
 export function setAllExpirationGroupsCollapsed(expirations: string[], collapsed: boolean): Record<string, boolean> {
   return Object.fromEntries(expirations.map(expiration => [expiration, collapsed]));
 }
+import { emitDurableMutation } from './cloudState/syncEvents.ts';

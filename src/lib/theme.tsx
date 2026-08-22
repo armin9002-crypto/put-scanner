@@ -7,6 +7,7 @@ import {
   THEME_STORAGE_KEY,
   type Theme,
 } from './themePreference';
+import { emitDurableMutation } from './cloudState/syncEvents';
 
 export type { Theme } from './themePreference';
 
@@ -43,9 +44,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const cssTheme = theme === 'dark-blue' ? 'dark-blue' : theme;
     document.documentElement.setAttribute('data-theme', cssTheme);
     try {
+      const previousTheme = localStorage.getItem(THEME_STORAGE_KEY);
       localStorage.setItem(THEME_STORAGE_KEY, theme);
       localStorage.setItem(LEGACY_THEME_STORAGE_KEY, theme);
       localStorage.setItem(THEME_MIGRATION_KEY, THEME_MIGRATION_VERSION);
+      if (previousTheme !== theme) emitDurableMutation('preferences');
     } catch {
       // Ignore unavailable storage.
     }

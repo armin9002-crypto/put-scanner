@@ -499,6 +499,7 @@ export function writeWatchlist(
 
   try {
     storage.setItem(WATCHLIST_STORAGE_KEY, serialized.serialized);
+    if (durableChanged) emitDurableMutation('watchlist');
     return { status: 'ok', written: true };
   } catch (error) {
     return { status: 'error', error: error instanceof Error ? error.message : 'Watchlist storage could not be written.' };
@@ -582,3 +583,4 @@ import {
   type StorageReadResult,
   type StorageWriteResult,
 } from './durableStorage.ts';
+import { emitDurableMutation } from './cloudState/syncEvents.ts';

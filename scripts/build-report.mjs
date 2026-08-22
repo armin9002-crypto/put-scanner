@@ -1,4 +1,4 @@
-import { readdir, stat } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -34,3 +34,17 @@ const largestJs = files.find(file => file.path.endsWith('.js'));
 if (largestJs && largestJs.size > MAIN_CHUNK_WARN_KB * 1024) {
   console.warn(`\nWarning: largest JS asset is ${formatKb(largestJs.size)}. Route splitting is active, but this chunk is still above ${MAIN_CHUNK_WARN_KB} kB.`);
 }
+
+const javascript = (await Promise.all(
+  files.filter(file => file.path.endsWith('.js')).map(file => readFile(file.path, 'utf8')),
+)).join('\n');
+const dormantSyncMarkers = [
+  'put_scanner_cloud_sync_engine:v1',
+  'Only verified eligible device metadata can enable sync.',
+  'Sync retry delays must be non-negative durations.',
+];
+const leakedMarker = dormantSyncMarkers.find(marker => javascript.includes(marker));
+if (leakedMarker) {
+  throw new Error(`Dormant Stage 5 sync engine entered the production bundle: ${leakedMarker}`);
+}
+console.log('\nDormant Stage 5 sync coordinator is excluded from production assets.');

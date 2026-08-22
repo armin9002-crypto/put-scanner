@@ -573,7 +573,11 @@ test('cloud-state access remains isolated to the explicit Account Data surfaces'
   ));
   const runtimeSources = await Promise.all(runtimeFiles.map(file => readFile(file, 'utf8')));
   const runtime = runtimeSources.join('\n');
-  assert.doesNotMatch(runtime, /(?:from|import\s*\()\s*['"][^'"]*cloudState/i);
+  const runtimeWithoutDormantMutationEvents = runtime.replace(
+    /^import\s+\{\s*emitDurableMutation\s*\}\s+from\s+['"][^'"]*cloudState\/syncEvents(?:\.ts)?['"];?\s*$/gmi,
+    '',
+  );
+  assert.doesNotMatch(runtimeWithoutDormantMutationEvents, /(?:from|import\s*\()\s*['"][^'"]*cloudState/i);
   assert.doesNotMatch(runtime, /user_state|fetchAllUserState|fetchNamespace|initializeAllNamespaces|updateNamespaceIfRevisionMatches/);
 
   const accountSource = await readFile(path.join(root, 'src/components/AccountControl.tsx'), 'utf8');
@@ -596,7 +600,11 @@ test('cloud-state access remains isolated to the explicit Account Data surfaces'
     'src/lib/watchlist.ts',
   ];
   const namedRuntime = (await Promise.all(namedRuntimePaths.map(file => readFile(path.join(root, file), 'utf8')))).join('\n');
-  assert.doesNotMatch(namedRuntime, /cloudState|user_state/);
+  const namedRuntimeWithoutDormantMutationEvents = namedRuntime.replace(
+    /^import\s+\{\s*emitDurableMutation\s*\}\s+from\s+['"][^'"]*cloudState\/syncEvents(?:\.ts)?['"];?\s*$/gmi,
+    '',
+  );
+  assert.doesNotMatch(namedRuntimeWithoutDormantMutationEvents, /cloudState|user_state/);
 
   const cloudSources = await Promise.all(
     sourceFiles.filter(file => file.includes(cloudDirectory)).map(file => readFile(file, 'utf8')),

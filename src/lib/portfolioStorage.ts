@@ -566,6 +566,7 @@ export function writePortfolioTrades(
 
   try {
     storage.setItem(PORTFOLIO_STORAGE_KEY, serialized.serialized);
+    if (durableChanged) emitDurableMutation('portfolio');
     return { status: 'ok', written: true };
   } catch (error) {
     return { status: 'error', error: error instanceof Error ? error.message : 'Portfolio storage could not be written.' };
@@ -631,3 +632,4 @@ import {
   type StorageReadResult,
   type StorageWriteResult,
 } from './durableStorage.ts';
+import { emitDurableMutation } from './cloudState/syncEvents.ts';

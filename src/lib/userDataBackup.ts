@@ -38,6 +38,7 @@ import {
   type DurablePreferencesEnvelopeV1,
 } from './durablePreferences.ts';
 import type { DurableStateEnvelope } from './durableStorage.ts';
+import { emitDurableMutation } from './cloudState/syncEvents.ts';
 
 export const PUT_SCANNER_BACKUP_FORMAT = 'put-scanner-backup';
 export const PUT_SCANNER_BACKUP_SCHEMA_VERSION = 2 as const;
@@ -306,6 +307,9 @@ export function applyPutScannerBackup(storage: BackupStorage, value: unknown): P
   const writes = importWrites(backup);
   const previous = new Map<string, string | null>();
   writes.forEach(([key]) => previous.set(key, storage.getItem(key)));
+  const changedKeys = new Set(writes.flatMap(([key, content]) => (
+    previous.get(key) === content ? [] : [key]
+  )));
 
   try {
     writes.forEach(([key, content]) => storage.setItem(key, content));
@@ -326,6 +330,18 @@ export function applyPutScannerBackup(storage: BackupStorage, value: unknown): P
       ? `Import failed before completion (${error.message}). Current data was restored.`
       : 'Import failed before completion. Current data was restored.');
   }
+  if (changedKeys.has(PORTFOLIO_STORAGE_KEY)) emitDurableMutation('portfolio');
+  if (changedKeys.has(WATCHLIST_STORAGE_KEY)) emitDurableMutation('watchlist');
+  if ([
+    THEME_STORAGE_KEY,
+    LEGACY_THEME_STORAGE_KEY,
+    THEME_MIGRATION_KEY,
+    PORTFOLIO_MARK_BASIS_KEY,
+    PORTFOLIO_GROUP_MODE_KEY,
+    PORTFOLIO_EXPIRY_GROUPS_KEY,
+    PORTFOLIO_UNDERLYING_GROUPS_KEY,
+    SHOW_NOMINAL_YIELD_KEY,
+  ].some(key => changedKeys.has(key))) emitDurableMutation('preferences');
   return backup;
 }
 
