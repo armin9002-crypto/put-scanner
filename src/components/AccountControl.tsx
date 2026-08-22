@@ -5,6 +5,7 @@ import { useResponsiveMode } from '../lib/responsive';
 import MobileBottomSheet from './mobile/MobileBottomSheet';
 import { isCloudMigrationTestModeEnabled } from '../lib/cloudState/devTestMode';
 
+const AccountDataSection = lazy(() => import('./AccountDataSection'));
 const DevCloudMigrationTestHarness = import.meta.env.DEV
   ? lazy(() => import('./CloudMigrationTestHarness'))
   : null;
@@ -52,8 +53,11 @@ function AccountPanel({ onSignedOut }: { onSignedOut: () => void }) {
           <div className="mt-1 break-all text-sm font-semibold" style={{ color: 'var(--text)' }}>{user.email ?? 'Put Scanner account'}</div>
         </div>
         <p className="text-xs leading-5" style={{ color: 'var(--text-muted)' }}>
-          Cloud data sync is not enabled yet. Portfolio, Watchlist, and preferences remain local to this browser.
+          Cloud data sync is not enabled yet. Account Data can create or restore a verified account copy through an explicit action.
         </p>
+        <Suspense fallback={null}>
+          <AccountDataSection userId={user.id} />
+        </Suspense>
         {cloudMigrationTestModeEnabled && DevCloudMigrationTestHarness && (
           <Suspense fallback={null}>
             <DevCloudMigrationTestHarness userId={user.id} />
@@ -171,7 +175,7 @@ function DesktopAccountDialog({ onClose }: { onClose: () => void }) {
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="relative z-10 w-full max-w-sm rounded-xl border p-5 shadow-2xl outline-none"
+        className="relative z-10 max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto rounded-xl border p-5 shadow-2xl outline-none"
         style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
       >
         <div className="mb-4 flex items-center justify-between gap-3 border-b pb-3" style={{ borderColor: 'var(--border)' }}>

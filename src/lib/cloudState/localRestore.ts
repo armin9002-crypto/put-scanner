@@ -57,7 +57,7 @@ export interface LocalRestoreTestHooks {
 }
 
 export type LocalRestoreResult =
-  | { ok: true; cloud: CloudStateSet }
+  | { ok: true; cloud: CloudStateSet; local: Extract<ReturnType<typeof readCanonicalLocalState>, { status: 'ok' }>['value'] }
   | {
       ok: false;
       code:
@@ -253,13 +253,12 @@ export function restoreCloudStateToLocal(
   }
 
   const restored = readCanonicalLocalState(storage);
-  const verified = restored.status === 'ok'
-    && initializationMatchesCloud(restored.value.documents, cloud)
-    && !options.testHooks?.forceVerificationMismatch;
-  if (!verified) {
+  if (restored.status !== 'ok'
+    || !initializationMatchesCloud(restored.value.documents, cloud)
+    || options.testHooks?.forceVerificationMismatch) {
     return restoreDurableLocalRecoverySnapshot(storage, recovery)
       ? failure('verification_failed', 'Local restore verification failed; every durable key was rolled back.')
       : failure('rollback_failed', 'Local restore verification failed and rollback could not be fully verified.');
   }
-  return { ok: true, cloud };
+  return { ok: true, cloud, local: restored.value };
 }

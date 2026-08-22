@@ -30,6 +30,7 @@ const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const sources = {
   app: read('src/App.tsx'),
   account: read('src/components/AccountControl.tsx'),
+  accountData: read('src/components/AccountDataSection.tsx'),
   css: read('src/index.css'),
   responsive: read('src/lib/responsive.ts'),
   optionQuoteDisplay: read('src/lib/optionQuoteDisplay.ts'),
@@ -53,6 +54,7 @@ const sources = {
 const guardrails = [
   ['phone navigation uses contextual headers and real links', sources.app.includes('<MobilePageHeader') && sources.app.includes('<NavLink')],
   ['Account stays in utility controls with a 44px mobile target and no sixth tab', sources.app.includes('<AccountControl />') && sources.account.includes('min-h-11 min-w-11') && !sources.app.includes("to: '/account'")],
+  ['Account Data remains compact, scrollable, and touch-safe on small screens', sources.account.includes('max-h-[calc(100dvh-2rem)]') && sources.account.includes('overflow-y-auto') && sources.accountData.includes('min-h-11 w-full') && sources.accountData.includes('grid grid-cols-2 gap-2')],
   ['option workflow owns its compact header and hides the tab bar', sources.options.includes('mobile-option-header') && sources.app.includes("location.pathname.startsWith('/options/')")],
   ['safe areas, dynamic viewport units, and native phone font are present', sources.css.includes('safe-area-inset-bottom') && sources.css.includes('100dvh') && sources.css.includes('-apple-system')],
   ['phone-landscape semantic breakpoint remains explicit', sources.responsive.includes('viewportHeight <= 520') && sources.responsive.includes('viewportWidth <= 950')],

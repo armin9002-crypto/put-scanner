@@ -559,16 +559,17 @@ async function filesUnder(directory) {
   return children.flat();
 }
 
-test('architectural dormancy remains intact outside the double-gated development harness', async () => {
+test('cloud-state access remains isolated to the explicit Account Data surfaces', async () => {
   const sourceFiles = (await filesUnder(path.join(root, 'src')))
     .filter(file => /\.(?:ts|tsx|js|jsx)$/.test(file));
   const cloudDirectory = `${path.sep}lib${path.sep}cloudState${path.sep}`;
-  const developmentEntryFiles = new Set([
+  const accountEntryFiles = new Set([
     path.join(root, 'src/components/AccountControl.tsx'),
+    path.join(root, 'src/components/AccountDataSection.tsx'),
     path.join(root, 'src/components/CloudMigrationTestHarness.tsx'),
   ]);
   const runtimeFiles = sourceFiles.filter(file => (
-    !file.includes(cloudDirectory) && !developmentEntryFiles.has(file)
+    !file.includes(cloudDirectory) && !accountEntryFiles.has(file)
   ));
   const runtimeSources = await Promise.all(runtimeFiles.map(file => readFile(file, 'utf8')));
   const runtime = runtimeSources.join('\n');
@@ -576,8 +577,12 @@ test('architectural dormancy remains intact outside the double-gated development
   assert.doesNotMatch(runtime, /user_state|fetchAllUserState|fetchNamespace|initializeAllNamespaces|updateNamespaceIfRevisionMatches/);
 
   const accountSource = await readFile(path.join(root, 'src/components/AccountControl.tsx'), 'utf8');
+  const accountDataSource = await readFile(path.join(root, 'src/components/AccountDataSection.tsx'), 'utf8');
   assert.match(accountSource, /import\.meta\.env\.DEV[\s\S]*?lazy\(\(\) => import\('\.\/CloudMigrationTestHarness'\)\)/);
   assert.match(accountSource, /VITE_CLOUD_MIGRATION_TEST_MODE/);
+  assert.match(accountSource, /<AccountDataSection userId=\{user\.id\}/);
+  assert.match(accountDataSource, /onClick=\{openAccountData\}/);
+  assert.doesNotMatch(accountDataSource, /useEffect|setInterval|onAuthStateChange|\.channel\s*\(/);
 
   const namedRuntimePaths = [
     'src/main.tsx',
