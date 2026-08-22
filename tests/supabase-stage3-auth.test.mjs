@@ -231,6 +231,6 @@ test('account UI is optional, truthful, and does not add a primary route or mobi
   const packageJson = JSON.parse(packageSource);
   assert.equal(packageJson.dependencies['@supabase/supabase-js'], '^2.57.4');
   assert.equal(packageJson.devDependencies.supabase, '^2.115.0');
-  assert.equal(envExample, 'VITE_SUPABASE_URL=\nVITE_SUPABASE_PUBLISHABLE_KEY=\nVITE_CLOUD_MIGRATION_TEST_MODE=false\n');
+  assert.equal(envExample, 'VITE_SUPABASE_URL=\nVITE_SUPABASE_PUBLISHABLE_KEY=\nVITE_CLOUD_MIGRATION_TEST_MODE=false\nVITE_CLOUD_SYNC_TEST_MODE=false\nVITE_CLOUD_SYNC_TEST_EMAIL=\n');
   assert.match(gitignore, /^\*\.local$/m);
 });

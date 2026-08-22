@@ -48,3 +48,22 @@ if (leakedMarker) {
   throw new Error(`Dormant Stage 5 sync engine entered the production bundle: ${leakedMarker}`);
 }
 console.log('\nDormant Stage 5 sync coordinator is excluded from production assets.');
+
+const stage5bHarnessMarkers = [
+  'Sync Test Harness',
+  'Enable Test Sync',
+  'Pause Test Network',
+  'Mutate Test Portfolio',
+  'Mutate Test Watchlist',
+  'Mutate Test Preferences',
+  'stage5b-exact-test-email-allow-list',
+  'VITE_CLOUD_SYNC_TEST_MODE',
+  'VITE_CLOUD_SYNC_TEST_EMAIL',
+  'cloud-sync-test-',
+  'CLOUD SYNC TEST ONLY',
+];
+const leakedStage5bMarker = stage5bHarnessMarkers.find(marker => javascript.includes(marker));
+if (leakedStage5bMarker) {
+  throw new Error(`Development Stage 5B test harness entered the production bundle: ${leakedStage5bMarker}`);
+}
+console.log('Development Stage 5B harness, coordinator attachment, fixtures, and email allow-list are excluded from production assets.');

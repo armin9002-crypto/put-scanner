@@ -405,5 +405,5 @@ test('Stage 4B changes no SQL, RLS, dashboard, Vercel, route, or navigation cont
   assert.deepEqual(migrations, ['20260820154219_create_user_state.sql']);
   assert.equal((app.match(/label: '(?:Scanner|Screener|Watchlist|Portfolio|Pulse)'/g) ?? []).length, 5);
   assert.doesNotMatch(app, /migration-test|CloudMigrationTestHarness/i);
-  assert.equal(envExample, 'VITE_SUPABASE_URL=\nVITE_SUPABASE_PUBLISHABLE_KEY=\nVITE_CLOUD_MIGRATION_TEST_MODE=false\n');
+  assert.equal(envExample, 'VITE_SUPABASE_URL=\nVITE_SUPABASE_PUBLISHABLE_KEY=\nVITE_CLOUD_MIGRATION_TEST_MODE=false\nVITE_CLOUD_SYNC_TEST_MODE=false\nVITE_CLOUD_SYNC_TEST_EMAIL=\n');
 });

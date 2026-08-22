@@ -9,6 +9,13 @@ const AccountDataSection = lazy(() => import('./AccountDataSection'));
 const DevCloudMigrationTestHarness = import.meta.env.DEV
   ? lazy(() => import('./CloudMigrationTestHarness'))
   : null;
+const DevCloudSyncTestHarness = import.meta.env.DEV
+  ? lazy(() => import('./CloudSyncTestHarness'))
+  : null;
+const cloudSyncTestConfiguredEmail = import.meta.env.DEV
+  && import.meta.env.VITE_CLOUD_SYNC_TEST_MODE === 'true'
+  ? import.meta.env.VITE_CLOUD_SYNC_TEST_EMAIL?.trim().toLowerCase() ?? ''
+  : '';
 const cloudMigrationTestModeEnabled = isCloudMigrationTestModeEnabled({
   dev: import.meta.env.DEV,
   flag: import.meta.env.VITE_CLOUD_MIGRATION_TEST_MODE,
@@ -46,6 +53,11 @@ function AccountPanel({ onSignedOut }: { onSignedOut: () => void }) {
   }
 
   if (user) {
+    const cloudSyncTestModeEnabled = Boolean(
+      DevCloudSyncTestHarness
+      && cloudSyncTestConfiguredEmail
+      && user.email?.trim().toLowerCase() === cloudSyncTestConfiguredEmail,
+    );
     return (
       <div className="space-y-4">
         <div className="rounded-xl border p-3" style={{ backgroundColor: 'var(--surface-alt)', borderColor: 'var(--border)' }}>
@@ -61,6 +73,11 @@ function AccountPanel({ onSignedOut }: { onSignedOut: () => void }) {
         {cloudMigrationTestModeEnabled && DevCloudMigrationTestHarness && (
           <Suspense fallback={null}>
             <DevCloudMigrationTestHarness userId={user.id} />
+          </Suspense>
+        )}
+        {cloudSyncTestModeEnabled && DevCloudSyncTestHarness && (
+          <Suspense fallback={null}>
+            <DevCloudSyncTestHarness key={user.id} userId={user.id} authenticatedEmail={user.email} />
           </Suspense>
         )}
         {authError && <AccountError>{authError}</AccountError>}

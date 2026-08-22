@@ -48,7 +48,12 @@ export function createConfiguredSupabaseClient(
   });
 }
 
-const viteEnvironment = (import.meta as ImportMeta & { env?: PublicEnvironment }).env ?? {};
+// Select only the two production public values. Passing the whole Vite env
+// object would serialize unrelated development-only flags into the bundle.
+const viteEnvironment: PublicEnvironment = {
+  VITE_SUPABASE_URL: (import.meta as ImportMeta & { env?: PublicEnvironment }).env?.VITE_SUPABASE_URL,
+  VITE_SUPABASE_PUBLISHABLE_KEY: (import.meta as ImportMeta & { env?: PublicEnvironment }).env?.VITE_SUPABASE_PUBLISHABLE_KEY,
+};
 
 export const supabasePublicConfig = resolveSupabasePublicConfig(viteEnvironment);
 export const supabaseAuthClient = createConfiguredSupabaseClient(supabasePublicConfig);

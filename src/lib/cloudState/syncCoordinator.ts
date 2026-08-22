@@ -55,6 +55,15 @@ export interface SyncNowResult {
   namespaces: Record<CloudNamespace, SyncNowNamespaceResult>;
 }
 
+export type SyncCoordinatorDiagnosticEvent =
+  | { type: 'mutation'; namespace: CloudNamespace }
+  | { type: 'cloud_select' }
+  | { type: 'cas_attempt'; namespace: CloudNamespace }
+  | { type: 'verified_cas'; namespace: CloudNamespace }
+  | { type: 'network_retry'; namespace: CloudNamespace }
+  | { type: 'conflict'; namespace: CloudNamespace }
+  | { type: 'pull'; namespace: CloudNamespace };
+
 export interface DormantSyncCoordinatorOptions {
   userId: string;
   client: SyncTransport;
@@ -66,6 +75,8 @@ export interface DormantSyncCoordinatorOptions {
   setTimer?: (callback: () => void, milliseconds: number) => ReturnType<typeof setTimeout>;
   clearTimer?: (timer: ReturnType<typeof setTimeout>) => void;
   pullOptions?: (namespace: CloudNamespace) => SafeCloudPullOptions;
+  /** Optional in-memory diagnostics used by development/test surfaces only. */
+  onDiagnosticEvent?: (event: SyncCoordinatorDiagnosticEvent) => void;
 }
 
 function namespaceResult(
@@ -106,6 +117,7 @@ export class DormantLocalFirstSyncCoordinator {
   private readonly now: () => Date;
   private readonly delay: (milliseconds: number) => Promise<void>;
   private readonly pullOptions?: DormantSyncCoordinatorOptions['pullOptions'];
+  private readonly onDiagnosticEvent?: DormantSyncCoordinatorOptions['onDiagnosticEvent'];
   private readonly queues: Record<CloudNamespace, SyncNamespaceQueue>;
   private metadata: OngoingSyncMetadataV1 | null;
   private readonly startupBlock: 'missing' | 'account_mismatch' | 'corrupt' | null;
@@ -125,6 +137,7 @@ export class DormantLocalFirstSyncCoordinator {
     this.now = options.now ?? (() => new Date());
     this.delay = options.delay ?? (milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds)));
     this.pullOptions = options.pullOptions;
+    this.onDiagnosticEvent = options.onDiagnosticEvent;
     this.activeUserId = options.userId.trim() || null;
     const metadataRead = this.activeUserId
       ? readOngoingSyncMetadata(this.storage, this.activeUserId)
@@ -157,6 +170,7 @@ export class DormantLocalFirstSyncCoordinator {
     if (!this.isEnabledForCurrentAccount()) return;
     const status = this.metadata?.namespaces[namespace].status;
     if (status === 'conflict' || status === 'attention') return;
+    this.onDiagnosticEvent?.({ type: 'mutation', namespace });
     if (this.metadata) this.metadata.namespaces[namespace].status = 'pending';
     this.queues[namespace].markMutation();
   }
@@ -203,6 +217,7 @@ export class DormantLocalFirstSyncCoordinator {
       | { status: 'ok'; document: CloudNamespaceDocument; fingerprint: SyncFingerprint }
       | { status: 'invalid' }>;
 
+    this.onDiagnosticEvent?.({ type: 'cloud_select' });
     const fetched = await this.client.fetchAllUserState();
     if (!this.operationIsCurrent(generation) || !fetched.ok) {
       if (this.operationIsCurrent(generation) && !fetched.ok) {
@@ -288,6 +303,7 @@ export class DormantLocalFirstSyncCoordinator {
         if (!this.commitMetadata(next, generation)) {
           return namespaceResult(namespace, 'INVALID', 'attention', cloudRow.revision);
         }
+        this.onDiagnosticEvent?.({ type: 'pull', namespace });
         return namespaceResult(namespace, 'CLOUD_AHEAD', 'pulled', cloudRow.revision);
       }
 
@@ -298,6 +314,7 @@ export class DormantLocalFirstSyncCoordinator {
         localState.status === 'ok' ? localState.fingerprint : null,
         generation,
       );
+      if (conflict) this.onDiagnosticEvent?.({ type: 'conflict', namespace });
       return namespaceResult(namespace, reconciliation.classification,
         conflict ? 'conflict' : 'attention', namespaceMetadata.cloudRevision);
     }));
@@ -387,6 +404,7 @@ export class DormantLocalFirstSyncCoordinator {
     let lastError: CloudStateErrorCode | null = null;
     const attempts = this.retryDelaysMs.length + 1;
     for (let attempt = 0; attempt < attempts; attempt += 1) {
+      this.onDiagnosticEvent?.({ type: 'cas_attempt', namespace });
       const updated = await this.client.updateNamespaceIfRevisionMatches(
         namespace,
         expectedRevision,
@@ -414,6 +432,7 @@ export class DormantLocalFirstSyncCoordinator {
           pendingFingerprint: currentFingerprint === intendedFingerprint ? null : currentFingerprint,
         };
         if (!this.commitMetadata(next, generation)) return 'blocked';
+        this.onDiagnosticEvent?.({ type: 'verified_cas', namespace });
         if (currentFingerprint && currentFingerprint !== intendedFingerprint) {
           this.queues[namespace].markMutation();
         }
@@ -422,6 +441,7 @@ export class DormantLocalFirstSyncCoordinator {
 
       lastError = updated.error.code;
       if (lastError !== 'network_error' || attempt === attempts - 1) break;
+      this.onDiagnosticEvent?.({ type: 'network_retry', namespace });
       await this.delay(this.retryDelaysMs[attempt]);
       if (!this.operationIsCurrent(generation)) return 'blocked';
     }
@@ -430,6 +450,7 @@ export class DormantLocalFirstSyncCoordinator {
     const pending = current.status === 'ok' ? fingerprintNamespaceDocument(current.value.document) : null;
     if (lastError === 'conflict') {
       this.setNamespaceStatus(namespace, 'conflict', pending, generation);
+      this.onDiagnosticEvent?.({ type: 'conflict', namespace });
       return 'blocked';
     }
     if (lastError === 'network_error') {

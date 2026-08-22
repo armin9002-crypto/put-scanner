@@ -180,6 +180,6 @@ Account state remains browser ↔ Supabase under the authenticated RLS boundary.
 
 Stage 5A production modules do not import, construct, attach, or call the coordinator. The coordinator constructor itself makes no cloud request and attaches no event listener. Source tests verify that App, Auth, Account, and session restoration have no coordinator reference. Normal Portfolio, history, Watchlist, and preference mutations therefore produce zero automatic `user_state` calls. Stage 4C remains explicit and unchanged.
 
-Stage 5B will use only the disposable/test Supabase account for controlled live synchronization tests.
+Stage 5B adds a separately gated localhost test harness for one explicitly allow-listed disposable email. Its test coordinator, fixture, email allow-list, and controls are excluded from production builds, so the production attachment boundary above is unchanged. The literal operator procedure is in `docs/SUPABASE_STAGE5B_LIVE_SYNC_TEST.md`.
 
 Stage 5C will separately review and authorize controlled activation for the real account/browser. Stage 5A does not begin either stage automatically.

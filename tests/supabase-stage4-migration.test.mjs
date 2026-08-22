@@ -567,6 +567,7 @@ test('cloud-state access remains isolated to the explicit Account Data surfaces'
     path.join(root, 'src/components/AccountControl.tsx'),
     path.join(root, 'src/components/AccountDataSection.tsx'),
     path.join(root, 'src/components/CloudMigrationTestHarness.tsx'),
+    path.join(root, 'src/components/CloudSyncTestHarness.tsx'),
   ]);
   const runtimeFiles = sourceFiles.filter(file => (
     !file.includes(cloudDirectory) && !accountEntryFiles.has(file)
@@ -624,5 +625,5 @@ test('Stage 4 foundation still requires no migration, dashboard, or auth configu
     readFile(path.join(root, '.env.example'), 'utf8'),
   ]);
   assert.deepEqual(migrationNames, ['20260820154219_create_user_state.sql']);
-  assert.equal(status, 'VITE_SUPABASE_URL=\nVITE_SUPABASE_PUBLISHABLE_KEY=\nVITE_CLOUD_MIGRATION_TEST_MODE=false\n');
+  assert.equal(status, 'VITE_SUPABASE_URL=\nVITE_SUPABASE_PUBLISHABLE_KEY=\nVITE_CLOUD_MIGRATION_TEST_MODE=false\nVITE_CLOUD_SYNC_TEST_MODE=false\nVITE_CLOUD_SYNC_TEST_EMAIL=\n');
 });
