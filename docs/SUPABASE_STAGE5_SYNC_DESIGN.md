@@ -50,6 +50,16 @@ Eligibility still does not enable anything. A second explicit transition produce
 
 The ongoing metadata stores only the account ID, sync mode, per-namespace cloud revision, last-synced fingerprint/time, current status, optional pending fingerprint, and last reconciliation time. It stores no raw Portfolio/Watchlist/Preferences document and no token. Like Stage 4 metadata, it is device-local and excluded from JSON backups.
 
+### Previously enabled development-device resume
+
+Stage 5B.1 treats first enablement and runtime resume as different operations. First-time eligibility remains the strict Stage 4 verified-state proof above. A device that already has valid `enabled` ongoing-sync metadata must not be sent through that proof again, because another device may have legitimately advanced cloud state while this device was closed.
+
+The development-only resume assessment requires the exact DEV/flag/email allow-list, a valid disposable local fixture, valid versioned metadata owned by the authenticated user, `enabled` sync mode, and a complete known revision/fingerprint/time baseline for every namespace. Resume then performs a fresh cloud safety read and requires all three current rows to remain the disposable fixture. It never reconstructs the baseline from current cloud.
+
+After those checks, the operator's explicit **Resume Test Sync** action constructs the real coordinator and attaches the durable mutation listener exactly once. Construction and attachment perform no CAS, pull, or reconciliation write. The device reports **Enabled / awaiting reconciliation** until the operator deliberately invokes **Sync Now**, which applies the unchanged `CLEAN`, `LOCAL_AHEAD`, `CLOUD_AHEAD`, and `BOTH_CHANGED` rules against the persisted baseline.
+
+In Stage 5B the coordinator is intentionally stored in a Sync Test Harness component-local ref. Closing Account, unmounting the harness, or reloading the page disposes that runtime owner while durable local state and metadata survive; explicit resume makes this safe for the test stage. Stage 5C production architecture must instead own the ongoing coordinator above the Account modal/component lifecycle so closing Account does not disable synchronization. Stage 5B.1 does not implement or authorize that production activation.
+
 ## Canonical fingerprints
 
 `syncFingerprint.ts` hashes the canonical serialization of exactly `{ schemaVersion, payload }` with deterministic 64-bit FNV-1a. The fingerprint format is `fnv1a64:` plus 16 lowercase hexadecimal characters.
@@ -180,6 +190,6 @@ Account state remains browser ↔ Supabase under the authenticated RLS boundary.
 
 Stage 5A production modules do not import, construct, attach, or call the coordinator. The coordinator constructor itself makes no cloud request and attaches no event listener. Source tests verify that App, Auth, Account, and session restoration have no coordinator reference. Normal Portfolio, history, Watchlist, and preference mutations therefore produce zero automatic `user_state` calls. Stage 4C remains explicit and unchanged.
 
-Stage 5B adds a separately gated localhost test harness for one explicitly allow-listed disposable email. Its test coordinator, fixture, email allow-list, and controls are excluded from production builds, so the production attachment boundary above is unchanged. The literal operator procedure is in `docs/SUPABASE_STAGE5B_LIVE_SYNC_TEST.md`.
+Stage 5B adds a separately gated localhost test harness for one explicitly allow-listed disposable email. Stage 5B.1 adds explicit reconstruction of that harness coordinator only for a valid previously enabled test device, with no automatic reconciliation. Its test coordinator, fixture, email allow-list, enable/resume controls, and resume implementation are excluded from production builds, so the production attachment boundary above is unchanged. The literal operator procedure is in `docs/SUPABASE_STAGE5B_LIVE_SYNC_TEST.md`.
 
 Stage 5C will separately review and authorize controlled activation for the real account/browser. Stage 5A does not begin either stage automatically.

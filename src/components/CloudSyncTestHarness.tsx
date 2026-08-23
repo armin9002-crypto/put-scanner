@@ -12,10 +12,12 @@ import {
   mutateDisposableTestWatchlist,
 } from '../lib/cloudState/devSyncFixture.ts';
 import {
+  assessDisposableSyncTestResume,
   enableDisposableSyncTest,
   establishDisposableSyncTestEligibility,
   inspectDisposableSyncTestAccount,
   prepareDisposableSyncTestAccount,
+  resumeDisposableSyncTest,
 } from '../lib/cloudState/devSyncHarness.ts';
 import { isCloudSyncTestModeEnabled } from '../lib/cloudState/devSyncTestMode.ts';
 import { createDevelopmentSyncTestTransport } from '../lib/cloudState/devSyncTransport.ts';
@@ -61,7 +63,13 @@ function mergeVerifiedCloudRow(
   } as CloudStateSnapshot;
 }
 
-function CloudSyncTestHarnessActive({ userId }: { userId: string }) {
+function CloudSyncTestHarnessActive({
+  userId,
+  authenticatedEmail,
+}: {
+  userId: string;
+  authenticatedEmail: string | null | undefined;
+}) {
   const [expanded, setExpanded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -72,8 +80,10 @@ function CloudSyncTestHarnessActive({ userId }: { userId: string }) {
   const [runtimeVersion, setRuntimeVersion] = useState(0);
   const [counters, setCounters] = useState<SyncTestDiagnosticCounters>(EMPTY_COUNTERS);
   const [lastSyncNow, setLastSyncNow] = useState<SyncNowResult | null>(null);
+  const [awaitingReconciliation, setAwaitingReconciliation] = useState(false);
   const coordinatorRef = useRef<DormantLocalFirstSyncCoordinator | null>(null);
   const enableInFlightRef = useRef(false);
+  const activeRef = useRef(true);
   const diagnostics = useMemo(() => createSyncTestDiagnostics(setCounters), []);
   const client = useMemo(() => {
     const base = createDormantCloudStateClient(supabaseAuthClient, userId);
@@ -83,10 +93,14 @@ function CloudSyncTestHarnessActive({ userId }: { userId: string }) {
     });
   }, [userId]);
 
-  useEffect(() => () => {
-    coordinatorRef.current?.setAuthenticatedUser(null);
-    coordinatorRef.current?.dispose();
-    coordinatorRef.current = null;
+  useEffect(() => {
+    activeRef.current = true;
+    return () => {
+      activeRef.current = false;
+      coordinatorRef.current?.setAuthenticatedUser(null);
+      coordinatorRef.current?.dispose();
+      coordinatorRef.current = null;
+    };
   }, [userId]);
 
   const local = readCanonicalLocalState(localStorage);
@@ -94,6 +108,13 @@ function CloudSyncTestHarnessActive({ userId }: { userId: string }) {
   const cloudAssessment = cloud ? assessDisposableSyncTestCloud(cloud) : null;
   const hardBlocked = cloudAssessment?.status === 'non_test';
   const storedMetadata = readOngoingSyncMetadata(localStorage, userId);
+  const testGate = {
+    dev: import.meta.env.DEV,
+    flag: import.meta.env.VITE_CLOUD_SYNC_TEST_MODE,
+    configuredEmail: import.meta.env.VITE_CLOUD_SYNC_TEST_EMAIL,
+    authenticatedEmail,
+  };
+  const resumeAssessment = assessDisposableSyncTestResume(localStorage, userId, testGate);
   const runtimeMetadata = coordinatorRef.current?.getMetadata()
     ?? (storedMetadata.status === 'ok' ? storedMetadata.metadata : null);
   const runtimeSnapshot = coordinatorRef.current?.getSnapshot();
@@ -109,6 +130,7 @@ function CloudSyncTestHarnessActive({ userId }: { userId: string }) {
     : { portfolio: null, watchlist: null, preference: null };
   const enabled = Boolean(coordinatorRef.current && runtimeSnapshot?.syncMode === 'enabled');
   const eligible = runtimeMetadata?.syncMode === 'eligible';
+  const previouslyEnabled = !enabled && resumeAssessment.status === 'resumable';
   const mutationSafe = enabled && localAssessment.status === 'fixture' && cloudAssessment?.status === 'fixture';
 
   const refresh = () => setRuntimeVersion(value => value + 1);
@@ -153,26 +175,50 @@ function CloudSyncTestHarnessActive({ userId }: { userId: string }) {
     setSuccess('Stage 5 eligibility verified. Synchronization is still disabled.');
   });
 
+  const attachCoordinator = (): boolean => {
+    if (coordinatorRef.current) return false;
+    const coordinator = createDormantLocalFirstSyncCoordinator({
+      userId,
+      client,
+      storage: localStorage,
+      onDiagnosticEvent: event => {
+        diagnostics.record(event);
+        refresh();
+      },
+    });
+    coordinator.attachMutationEvents();
+    coordinatorRef.current = coordinator;
+    return true;
+  };
+
   const enableSync = () => run(async () => {
     if (coordinatorRef.current || enableInFlightRef.current) return;
     if (!window.confirm('Enable the real Stage 5 coordinator for this disposable test account in this browser session?')) return;
     enableInFlightRef.current = true;
     try {
       const result = await enableDisposableSyncTest(client, localStorage, userId);
+      if (!activeRef.current) return;
       if (!result.ok) return setError(result.message);
       setCloud({ status: 'complete', state: result.cloud });
-      const coordinator = createDormantLocalFirstSyncCoordinator({
-        userId,
-        client,
-        storage: localStorage,
-        onDiagnosticEvent: event => {
-          diagnostics.record(event);
-          refresh();
-        },
-      });
-      coordinator.attachMutationEvents();
-      coordinatorRef.current = coordinator;
+      attachCoordinator();
+      setAwaitingReconciliation(false);
       setSuccess('Test synchronization enabled. The real durable mutation listener is attached once.');
+    } finally {
+      enableInFlightRef.current = false;
+    }
+  });
+
+  const resumeSync = () => run(async () => {
+    if (coordinatorRef.current || enableInFlightRef.current) return;
+    enableInFlightRef.current = true;
+    try {
+      const result = await resumeDisposableSyncTest(client, localStorage, userId, testGate);
+      if (!activeRef.current) return;
+      if (!result.ok) return setError(result.message);
+      setCloud({ status: 'complete', state: result.cloud });
+      attachCoordinator();
+      setAwaitingReconciliation(true);
+      setSuccess('Previously enabled test synchronization resumed. Enabled / awaiting reconciliation. Click Sync Now deliberately.');
     } finally {
       enableInFlightRef.current = false;
     }
@@ -191,6 +237,7 @@ function CloudSyncTestHarnessActive({ userId }: { userId: string }) {
     const result = await coordinatorRef.current?.syncNow();
     if (!result) return setError('Test synchronization is not enabled.');
     setLastSyncNow(result);
+    setAwaitingReconciliation(false);
     const pulled = CLOUD_STATE_NAMESPACES.filter(namespace => result.namespaces[namespace].outcome === 'pulled');
     setSuccess(pulled.length > 0
       ? `Sync Now complete. Pulled ${pulled.map(namespace => `${namespace} r${result.namespaces[namespace].cloudRevision}`).join(', ')}.`
@@ -248,7 +295,14 @@ function CloudSyncTestHarnessActive({ userId }: { userId: string }) {
         <button type="button" onClick={prepare} disabled={busy} className="pressable min-h-11 w-full rounded-lg border px-3 text-xs font-semibold disabled:opacity-40" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>Prepare Disposable Sync Test</button>
       )}
 
-      {!hardBlocked && cloudAssessment?.status === 'fixture' && localAssessment.status === 'fixture' && !enabled && (
+      {!hardBlocked && previouslyEnabled && (
+        <div className="space-y-2 rounded-lg border p-2.5" style={{ borderColor: 'var(--accent)', backgroundColor: 'var(--surface)' }}>
+          <div className="text-[11px] leading-4" style={{ color: 'var(--text-muted)' }}>Previously enabled device — resume available. Resume validates the gate, local fixture, persisted baseline, and current cloud fixture without reconciling.</div>
+          <button type="button" onClick={resumeSync} disabled={busy} className="pressable min-h-11 w-full rounded-lg px-3 text-xs font-semibold text-white disabled:opacity-40" style={{ backgroundColor: 'var(--accent)' }}>Resume Test Sync</button>
+        </div>
+      )}
+
+      {!hardBlocked && cloudAssessment?.status === 'fixture' && localAssessment.status === 'fixture' && !enabled && !previouslyEnabled && (
         <div className="space-y-2">
           <button type="button" onClick={establishEligibility} disabled={busy} className="pressable min-h-11 w-full rounded-lg border px-3 text-xs font-semibold disabled:opacity-40" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>Establish Test Eligibility</button>
           <button type="button" onClick={enableSync} disabled={busy || !eligible} className="pressable min-h-11 w-full rounded-lg px-3 text-xs font-semibold text-white disabled:opacity-40" style={{ backgroundColor: 'var(--accent)' }}>Enable Test Sync</button>
@@ -256,7 +310,10 @@ function CloudSyncTestHarnessActive({ userId }: { userId: string }) {
       )}
 
       <SafeSummary title="Synchronization status">
-        <div>Overall: {runtimeSnapshot?.overall ?? (eligible ? 'Eligible — not enabled' : 'Disabled')}</div>
+        <div>Overall: {awaitingReconciliation
+          ? 'Enabled / awaiting reconciliation'
+          : runtimeSnapshot?.overall
+            ?? (previouslyEnabled ? 'Previously enabled — resume available' : eligible ? 'Eligible — not enabled' : 'Disabled')}</div>
         {CLOUD_STATE_NAMESPACES.map(namespace => <NamespaceStatus key={namespace} namespace={namespace} metadata={runtimeMetadata} />)}
       </SafeSummary>
 
@@ -266,12 +323,12 @@ function CloudSyncTestHarnessActive({ userId }: { userId: string }) {
             Device label
             <select value={deviceLabel} onChange={event => setDeviceLabel(event.target.value === 'B' ? 'B' : 'A')} className="min-h-9 rounded border px-2" style={{ backgroundColor: 'var(--input-bg)', borderColor: 'var(--border)' }}><option value="A">Device A</option><option value="B">Device B</option></select>
           </label>
-          <button type="button" onClick={() => mutation('Portfolio', () => mutateDisposableTestPortfolio(localStorage, deviceLabel))} disabled={busy} className={TEST_BUTTON_CLASSES} style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>Mutate Test Portfolio</button>
-          <button type="button" onClick={() => mutation('Watchlist', () => mutateDisposableTestWatchlist(localStorage, deviceLabel))} disabled={busy} className={TEST_BUTTON_CLASSES} style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>Mutate Test Watchlist</button>
-          <button type="button" onClick={() => mutation('Preferences', () => mutateDisposableTestPreference(localStorage))} disabled={busy} className={TEST_BUTTON_CLASSES} style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>Mutate Test Preferences</button>
-          <button type="button" onClick={() => mutation('Portfolio burst', () => mutateDisposableTestPortfolio(localStorage, deviceLabel, 5))} disabled={busy} className={TEST_BUTTON_CLASSES} style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>Burst Mutate Test Portfolio</button>
+          <button type="button" onClick={() => mutation('Portfolio', () => mutateDisposableTestPortfolio(localStorage, deviceLabel))} disabled={busy || awaitingReconciliation} className={TEST_BUTTON_CLASSES} style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>Mutate Test Portfolio</button>
+          <button type="button" onClick={() => mutation('Watchlist', () => mutateDisposableTestWatchlist(localStorage, deviceLabel))} disabled={busy || awaitingReconciliation} className={TEST_BUTTON_CLASSES} style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>Mutate Test Watchlist</button>
+          <button type="button" onClick={() => mutation('Preferences', () => mutateDisposableTestPreference(localStorage))} disabled={busy || awaitingReconciliation} className={TEST_BUTTON_CLASSES} style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>Mutate Test Preferences</button>
+          <button type="button" onClick={() => mutation('Portfolio burst', () => mutateDisposableTestPortfolio(localStorage, deviceLabel, 5))} disabled={busy || awaitingReconciliation} className={TEST_BUTTON_CLASSES} style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>Burst Mutate Test Portfolio</button>
           <button type="button" onClick={syncNow} disabled={busy} className={TEST_BUTTON_CLASSES} style={{ borderColor: 'var(--accent)', color: 'var(--accent-light)' }}>Sync Now</button>
-          <button type="button" onClick={() => setNetworkOffline(true)} disabled={offline || busy} className={TEST_BUTTON_CLASSES} style={{ borderColor: 'var(--border)', color: 'var(--text)' }}><WifiOff className="h-3.5 w-3.5" aria-hidden="true" /> Simulate Offline (Pause Test Network)</button>
+          <button type="button" onClick={() => setNetworkOffline(true)} disabled={offline || busy || awaitingReconciliation} className={TEST_BUTTON_CLASSES} style={{ borderColor: 'var(--border)', color: 'var(--text)' }}><WifiOff className="h-3.5 w-3.5" aria-hidden="true" /> Simulate Offline (Pause Test Network)</button>
           <button type="button" onClick={() => setNetworkOffline(false)} disabled={!offline || busy} className={TEST_BUTTON_CLASSES} style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>Resume Test Network</button>
         </div>
       )}
@@ -313,5 +370,5 @@ export default function CloudSyncTestHarness(props: { userId: string; authentica
     configuredEmail: import.meta.env.VITE_CLOUD_SYNC_TEST_EMAIL,
     authenticatedEmail: props.authenticatedEmail,
   });
-  return allowed ? <CloudSyncTestHarnessActive userId={props.userId} /> : null;
+  return allowed ? <CloudSyncTestHarnessActive userId={props.userId} authenticatedEmail={props.authenticatedEmail} /> : null;
 }

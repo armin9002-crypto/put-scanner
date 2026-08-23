@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "responsive:check": "node scripts/responsive-checklist.mjs",
     "sync:payload-report": "node scripts/stage5-payload-report.mjs",
+    "sync:resume-check": "node --test tests/supabase-stage5b1-resume.test.mjs",
     "sync:test-harness-check": "node --test tests/supabase-stage5b-live-sync-harness.test.mjs",
     "selfcheck": "node scripts/selfcheck.mjs",
     "test": "node --test tests/*.test.mjs",

@@ -55,6 +55,16 @@ This checklist is for a human operator testing the development-only Stage 5B har
 - Confirm Portfolio reports `CLOUD_AHEAD / pulled`, the local fixture version matches Device A, and the known revision becomes rN+1.
 - Confirm no upload echo occurred, unrelated namespaces were not overwritten, the pull counter advanced, and local recovery/verification completed before metadata advanced.
 
+## Resume a previously enabled device after a reload
+
+A browser reload, Account dialog close, or test-harness remount destroys the Stage 5B component-local coordinator and its in-memory listener. The durable local fixture and `put_scanner_cloud_sync_engine:v1` metadata remain. This lifecycle is acceptable only for the development harness because resume is explicit; Stage 5C must own the production coordinator above the Account modal/component lifecycle.
+
+For a device that was already enabled, reopen Account and expand **Sync Test Harness**. When the development flag, exact disposable email, local fixture, account ID, enabled metadata, and complete per-namespace baseline validate, the harness shows **Previously enabled device — resume available** and **Resume Test Sync**. Do not click **Establish Test Eligibility**: current cloud may legitimately be newer than this device's persisted baseline.
+
+Click **Resume Test Sync**. This performs one current-cloud safety read, requires all three rows to remain the disposable fixture, constructs the real coordinator, and attaches its mutation listener once. It does not recreate the baseline, perform a CAS write, pull data, or reconcile. Confirm the status says **Enabled / awaiting reconciliation**, then click **Sync Now** deliberately.
+
+For the current Device A continuation case, confirm local/baseline Portfolio is r4/P8, Watchlist is r2/W2, and Preferences is r2/false while cloud Preferences is r3/true. Resume first; verify CAS and pull counters do not move. Then click **Sync Now** and confirm Portfolio and Watchlist are `CLEAN`, Preferences is `CLOUD_AHEAD / pulled`, local Preferences becomes true, cloud remains r3, pull increases by one, and CAS/verified-CAS/conflict counters do not increase. A cloud pull must not echo through the user preference mutation path as r3 → r4.
+
 ## PHASE 5 — Reverse
 
 - On Device B, click **Mutate Test Preferences** and wait for its verified automatic Preferences push.
@@ -103,7 +113,8 @@ This checklist is for a human operator testing the development-only Stage 5B har
 
 - The harness exists only when `import.meta.env.DEV === true`, `VITE_CLOUD_SYNC_TEST_MODE === "true"`, and the normalized authenticated email exactly equals normalized `VITE_CLOUD_SYNC_TEST_EMAIL`.
 - Signing in, checking, restoring, preparing, and establishing eligibility do not implicitly enable ongoing synchronization.
-- Only the explicit **Enable Test Sync** action constructs the coordinator and attaches the durable mutation listener.
+- Only explicit **Enable Test Sync** for a newly eligible device or **Resume Test Sync** for a valid previously enabled device constructs the coordinator and attaches the durable mutation listener.
+- Resume reuses the persisted last-synced revisions/fingerprints. It never derives a new baseline from current cloud, never reruns or weakens first eligibility, and never reconciles until the human clicks **Sync Now**.
 - Test mutations use the production durable writers; cloud updates use revision-checked CAS and advance metadata only after verified responses.
 - Offline retries are bounded. Resume requires a deliberate Sync Now fetch before pending writes are released.
 - Conflicts preserve cloud and local values, freeze only the affected namespace, and expose no resolution action.

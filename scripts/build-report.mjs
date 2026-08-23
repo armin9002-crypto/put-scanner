@@ -52,6 +52,7 @@ console.log('\nDormant Stage 5 sync coordinator is excluded from production asse
 const stage5bHarnessMarkers = [
   'Sync Test Harness',
   'Enable Test Sync',
+  'Resume Test Sync',
   'Pause Test Network',
   'Mutate Test Portfolio',
   'Mutate Test Watchlist',

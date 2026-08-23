@@ -7,6 +7,7 @@ import {
   CLOUD_SYNC_TEST_BLOCK_MESSAGE,
   createDisposableLocalSyncTestData,
 } from './devSyncFixture.ts';
+import { isCloudSyncTestModeEnabled, type CloudSyncTestGateInput } from './devSyncTestMode.ts';
 import {
   captureDurableLocalRecoverySnapshot,
   restoreDurableLocalRecoverySnapshot,
@@ -14,6 +15,7 @@ import {
 import {
   createEligibleOngoingSyncMetadata,
   enableEligibleOngoingSync,
+  readOngoingSyncMetadata,
   writeOngoingSyncMetadata,
   type OngoingSyncMetadataV1,
 } from './syncEngineMetadata.ts';
@@ -24,10 +26,90 @@ export type SyncTestPreparationResult =
   | { ok: true; cloud: CloudStateSet; metadata: OngoingSyncMetadataV1 }
   | { ok: false; code: string; message: string };
 
+export type SyncTestResumeAssessment =
+  | { status: 'resumable'; metadata: OngoingSyncMetadataV1 }
+  | {
+      status: 'blocked';
+      code:
+        | 'test_gate_blocked'
+        | 'local_invalid'
+        | 'local_not_test_fixture'
+        | 'metadata_missing'
+        | 'metadata_account_mismatch'
+        | 'metadata_corrupt'
+        | 'not_previously_enabled'
+        | 'metadata_baseline_incomplete';
+      message: string;
+    };
+
 type HarnessClient = Pick<
   DormantCloudStateClient,
   'fetchAllUserState' | 'initializeAllNamespaces'
 >;
+
+export function assessDisposableSyncTestResume(
+  storage: StorageLike,
+  userId: string,
+  gate: CloudSyncTestGateInput,
+): SyncTestResumeAssessment {
+  if (!isCloudSyncTestModeEnabled(gate)) {
+    return { status: 'blocked', code: 'test_gate_blocked', message: 'The Stage 5 development test gate is not satisfied.' };
+  }
+  const local = assessDisposableSyncTestLocal(storage);
+  if (local.status === 'invalid') return { status: 'blocked', code: 'local_invalid', message: local.message };
+  if (local.status !== 'fixture') {
+    return { status: 'blocked', code: 'local_not_test_fixture', message: 'Local Stage 5 disposable fixture verification failed.' };
+  }
+  const persisted = readOngoingSyncMetadata(storage, userId);
+  if (persisted.status === 'missing') {
+    return { status: 'blocked', code: 'metadata_missing', message: 'This device has no persisted Stage 5 synchronization baseline.' };
+  }
+  if (persisted.status === 'account_mismatch') {
+    return { status: 'blocked', code: 'metadata_account_mismatch', message: 'Persisted synchronization metadata belongs to another account.' };
+  }
+  if (persisted.status === 'corrupt') {
+    return { status: 'blocked', code: 'metadata_corrupt', message: persisted.message };
+  }
+  if (persisted.metadata.syncMode !== 'enabled') {
+    return { status: 'blocked', code: 'not_previously_enabled', message: 'This device was not previously enabled for Stage 5 synchronization.' };
+  }
+  const completeBaseline = (['portfolio', 'watchlist', 'preferences'] as const).every(namespace => {
+    const metadata = persisted.metadata.namespaces[namespace];
+    return metadata.cloudRevision !== null
+      && metadata.lastSyncedFingerprint !== null
+      && metadata.lastSyncedAt !== null;
+  });
+  if (!completeBaseline) {
+    return { status: 'blocked', code: 'metadata_baseline_incomplete', message: 'The persisted Stage 5 synchronization baseline is incomplete.' };
+  }
+  return { status: 'resumable', metadata: persisted.metadata };
+}
+
+export async function resumeDisposableSyncTest(
+  client: Pick<DormantCloudStateClient, 'fetchAllUserState'>,
+  storage: StorageLike,
+  userId: string,
+  gate: CloudSyncTestGateInput,
+): Promise<SyncTestPreparationResult> {
+  const resume = assessDisposableSyncTestResume(storage, userId, gate);
+  if (resume.status !== 'resumable') return { ok: false, code: resume.code, message: resume.message };
+  const inspected = await inspectDisposableSyncTestAccount(client);
+  if (!inspected.ok) return { ok: false, code: 'cloud_check_failed', message: inspected.message };
+  if (inspected.assessment.status === 'non_test') {
+    return { ok: false, code: 'non_test_cloud', message: CLOUD_SYNC_TEST_BLOCK_MESSAGE };
+  }
+  if (inspected.assessment.status !== 'fixture') {
+    return { ok: false, code: 'cloud_empty', message: 'The previously enabled disposable cloud fixture is missing.' };
+  }
+  const revalidated = assessDisposableSyncTestResume(storage, userId, gate);
+  if (revalidated.status !== 'resumable') {
+    return { ok: false, code: revalidated.code, message: revalidated.message };
+  }
+  // Do not rewrite or recreate the baseline from current cloud. The persisted
+  // revisions/fingerprints are precisely what the next explicit Sync Now must
+  // reconcile against.
+  return { ok: true, cloud: inspected.assessment.cloud, metadata: revalidated.metadata };
+}
 
 function eligibilityFromVerifiedState(
   storage: StorageLike,
