@@ -15,6 +15,9 @@ const ScreenerPage = lazy(() => import('./pages/ScreenerPage'));
 const WatchlistPage = lazy(() => import('./pages/WatchlistPage'));
 const PortfolioPage = lazy(() => import('./pages/PortfolioPage'));
 const EtfPulsePage = lazy(() => import('./pages/EtfPulsePage'));
+const ProductionCloudSyncProvider = import.meta.env.VITE_CLOUD_SYNC_ENABLED === 'true'
+  ? lazy(() => import('./components/CloudSyncProvider'))
+  : null;
 
 function ThemeToggle() {
   const { theme, cycleTheme } = useTheme();
@@ -316,12 +319,26 @@ function LayoutDiagnosticsPanel() {
   );
 }
 
+function AppBody() {
+  return (
+    <ThemeProvider>
+      <AppContent />
+    </ThemeProvider>
+  );
+}
+
 export default function App() {
   return (
     <AuthProvider>
-      <ThemeProvider>
-        <AppContent />
-      </ThemeProvider>
+      {ProductionCloudSyncProvider
+        ? (
+          <Suspense fallback={null}>
+            <ProductionCloudSyncProvider>
+              <AppBody />
+            </ProductionCloudSyncProvider>
+          </Suspense>
+        )
+        : <AppBody />}
     </AuthProvider>
   );
 }

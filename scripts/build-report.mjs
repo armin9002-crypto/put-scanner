@@ -43,11 +43,28 @@ const dormantSyncMarkers = [
   'Only verified eligible device metadata can enable sync.',
   'Sync retry delays must be non-negative durations.',
 ];
-const leakedMarker = dormantSyncMarkers.find(marker => javascript.includes(marker));
-if (leakedMarker) {
-  throw new Error(`Dormant Stage 5 sync engine entered the production bundle: ${leakedMarker}`);
+const productionSyncMarkers = [
+  'Enable Sync on This Device',
+  'Account sync is up to date.',
+];
+const productionSyncPresent = javascript.includes('Enable Sync on This Device');
+if (productionSyncPresent) {
+  const missingMarker = productionSyncMarkers.find(marker => !javascript.includes(marker));
+  if (missingMarker) {
+    throw new Error(`Feature-enabled production sync bundle is incomplete: ${missingMarker}`);
+  }
+  const missingEngineMarker = dormantSyncMarkers.find(marker => !javascript.includes(marker));
+  if (missingEngineMarker) {
+    throw new Error(`Feature-enabled production sync engine is incomplete: ${missingEngineMarker}`);
+  }
+  console.log('\nFeature-gated production sync orchestration is present and includes explicit enrollment.');
+} else {
+  const leakedMarker = dormantSyncMarkers.find(marker => javascript.includes(marker));
+  if (leakedMarker) {
+    throw new Error(`Dormant Stage 5 sync engine entered the feature-disabled production bundle: ${leakedMarker}`);
+  }
+  console.log('\nFeature-disabled production bundle excludes sync orchestration and the Stage 5 engine.');
 }
-console.log('\nDormant Stage 5 sync coordinator is excluded from production assets.');
 
 const stage5bHarnessMarkers = [
   'Sync Test Harness',

@@ -46,7 +46,13 @@ function newMigrationSessionId(): string {
   return `account-migration-session-${id}`;
 }
 
-export default function AccountDataSection({ userId }: { userId: string }) {
+export default function AccountDataSection({
+  userId,
+  ongoingSyncState = 'none',
+}: {
+  userId: string;
+  ongoingSyncState?: 'none' | 'enabled' | 'blocked';
+}) {
   const [expanded, setExpanded] = useState(false);
   const [checking, setChecking] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -96,7 +102,8 @@ export default function AccountDataSection({ userId }: { userId: string }) {
 
   const openAccountData = () => {
     setExpanded(true);
-    if (!inspection && !inspectionFailure && !completion && !checking) void checkStatus();
+    if (ongoingSyncState === 'none'
+      && !inspection && !inspectionFailure && !completion && !checking) void checkStatus();
   };
 
   const downloadLocalBackup = (prefix: string, unlockMigration: boolean) => {
@@ -198,6 +205,35 @@ export default function AccountDataSection({ userId }: { userId: string }) {
         <span className="flex items-center gap-2"><Cloud className="h-4 w-4" aria-hidden="true" />Account Data</span>
         <ChevronDown className="h-4 w-4" aria-hidden="true" style={{ color: 'var(--text-dim)' }} />
       </button>
+    );
+  }
+
+  if (ongoingSyncState !== 'none') {
+    return (
+      <section className="space-y-3 rounded-xl border p-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface-alt)' }} aria-label="Account Data">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: 'var(--text)' }}>
+            <Cloud className="h-4 w-4" aria-hidden="true" />Account Data
+          </div>
+          <button type="button" onClick={() => setExpanded(false)} className="pressable flex min-h-9 items-center gap-1 px-1 text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
+            Collapse <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+        </div>
+        <div className="rounded-lg border p-3" style={{ borderColor: ongoingSyncState === 'enabled' ? 'color-mix(in srgb, var(--green) 35%, var(--border))' : 'color-mix(in srgb, var(--yellow) 35%, var(--border))', backgroundColor: 'var(--surface)' }}>
+          <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: ongoingSyncState === 'enabled' ? 'var(--green)' : 'var(--yellow)' }}>
+            {ongoingSyncState === 'enabled' ? <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> : <AlertTriangle className="h-4 w-4" aria-hidden="true" />}
+            {ongoingSyncState === 'enabled' ? 'Account copy established' : 'Account association needs attention'}
+          </div>
+          <p className="mt-2 text-[11px] leading-4" style={{ color: 'var(--text-muted)' }}>
+            {ongoingSyncState === 'enabled'
+              ? 'Sync is enabled on this device. Initial migration and restore actions are unavailable so they cannot compete with the established sync baseline.'
+              : 'Ongoing sync metadata must be resolved before initial migration or restore can run. Local data has not been changed.'}
+          </p>
+        </div>
+        <button type="button" onClick={() => downloadLocalBackup('put-scanner-account-copy-backup', false)} className="pressable flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border px-3 text-xs font-semibold" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+          <Download className="h-4 w-4" aria-hidden="true" /> Download Local Backup
+        </button>
+      </section>
     );
   }
 

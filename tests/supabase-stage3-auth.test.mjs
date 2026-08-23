@@ -207,7 +207,8 @@ test('Stage 3A source has no database access, durable-key mutation, protected ro
   assert.match(runtime, /VITE_SUPABASE_PUBLISHABLE_KEY/);
 
   const appSource = sources[5];
-  assert.match(appSource, /<AuthProvider>[\s\S]*?<ThemeProvider>[\s\S]*?<AppContent/);
+  assert.match(appSource, /function AppBody\(\)[\s\S]*?<ThemeProvider>[\s\S]*?<AppContent/);
+  assert.match(appSource, /<AuthProvider>[\s\S]*?<ProductionCloudSyncProvider>[\s\S]*?<AppBody/);
   assert.doesNotMatch(appSource, /ProtectedRoute|RequireAuth|isAuthLoading\s*\?/);
 });
 
@@ -231,6 +232,6 @@ test('account UI is optional, truthful, and does not add a primary route or mobi
   const packageJson = JSON.parse(packageSource);
   assert.equal(packageJson.dependencies['@supabase/supabase-js'], '^2.57.4');
   assert.equal(packageJson.devDependencies.supabase, '^2.115.0');
-  assert.equal(envExample, 'VITE_SUPABASE_URL=\nVITE_SUPABASE_PUBLISHABLE_KEY=\nVITE_CLOUD_MIGRATION_TEST_MODE=false\nVITE_CLOUD_SYNC_TEST_MODE=false\nVITE_CLOUD_SYNC_TEST_EMAIL=\n');
+  assert.equal(envExample, 'VITE_SUPABASE_URL=\nVITE_SUPABASE_PUBLISHABLE_KEY=\nVITE_CLOUD_SYNC_ENABLED=false\nVITE_CLOUD_MIGRATION_TEST_MODE=false\nVITE_CLOUD_SYNC_TEST_MODE=false\nVITE_CLOUD_SYNC_TEST_EMAIL=\n');
   assert.match(gitignore, /^\*\.local$/m);
 });

@@ -559,7 +559,7 @@ async function filesUnder(directory) {
   return children.flat();
 }
 
-test('cloud-state access remains isolated to the explicit Account Data surfaces', async () => {
+test('cloud-state access remains isolated to explicit Account Data and feature-gated sync surfaces', async () => {
   const sourceFiles = (await filesUnder(path.join(root, 'src')))
     .filter(file => /\.(?:ts|tsx|js|jsx)$/.test(file));
   const cloudDirectory = `${path.sep}lib${path.sep}cloudState${path.sep}`;
@@ -568,6 +568,8 @@ test('cloud-state access remains isolated to the explicit Account Data surfaces'
     path.join(root, 'src/components/AccountDataSection.tsx'),
     path.join(root, 'src/components/CloudMigrationTestHarness.tsx'),
     path.join(root, 'src/components/CloudSyncTestHarness.tsx'),
+    path.join(root, 'src/components/CloudSyncProvider.tsx'),
+    path.join(root, 'src/components/CloudSyncSection.tsx'),
   ]);
   const runtimeFiles = sourceFiles.filter(file => (
     !file.includes(cloudDirectory) && !accountEntryFiles.has(file)
@@ -617,6 +619,8 @@ test('cloud-state access remains isolated to the explicit Account Data surfaces'
   assert.doesNotMatch(cloudClientSource, /\.delete\s*\(/);
   assert.match(cloud, /insert\(insertRows\)/);
   assert.match(cloud, /\.eq\('revision', expectedRevision\)/);
+  const appSource = await readFile(path.join(root, 'src/App.tsx'), 'utf8');
+  assert.match(appSource, /VITE_CLOUD_SYNC_ENABLED === 'true'[\s\S]*?lazy\(\(\) => import\('\.\/components\/CloudSyncProvider'\)\)/);
 });
 
 test('Stage 4 foundation still requires no migration, dashboard, or auth configuration change', async () => {
@@ -625,5 +629,5 @@ test('Stage 4 foundation still requires no migration, dashboard, or auth configu
     readFile(path.join(root, '.env.example'), 'utf8'),
   ]);
   assert.deepEqual(migrationNames, ['20260820154219_create_user_state.sql']);
-  assert.equal(status, 'VITE_SUPABASE_URL=\nVITE_SUPABASE_PUBLISHABLE_KEY=\nVITE_CLOUD_MIGRATION_TEST_MODE=false\nVITE_CLOUD_SYNC_TEST_MODE=false\nVITE_CLOUD_SYNC_TEST_EMAIL=\n');
+  assert.equal(status, 'VITE_SUPABASE_URL=\nVITE_SUPABASE_PUBLISHABLE_KEY=\nVITE_CLOUD_SYNC_ENABLED=false\nVITE_CLOUD_MIGRATION_TEST_MODE=false\nVITE_CLOUD_SYNC_TEST_MODE=false\nVITE_CLOUD_SYNC_TEST_EMAIL=\n');
 });

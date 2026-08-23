@@ -718,7 +718,7 @@ test('normal runtime remains dormant: storage edits and auth/app sources instant
   assert.ok(cloudFiles.includes('syncCoordinator.ts'));
   assert.ok(cloudFiles.includes('syncEvents.ts'));
   const buildReport = await readFile(path.join(root, 'scripts/build-report.mjs'), 'utf8');
-  assert.match(buildReport, /Dormant Stage 5 sync coordinator is excluded from production assets/);
+  assert.match(buildReport, /Feature-disabled production bundle excludes sync orchestration and the Stage 5 engine/);
 });
 
 test('engine metadata stores fingerprints and revisions but no raw documents or auth tokens', () => {

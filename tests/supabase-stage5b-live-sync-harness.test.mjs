@@ -346,6 +346,6 @@ test('development harness is Account-only, lazy, inert before enable, and produc
   for (const marker of ['Sync Test Harness', 'Enable Test Sync', 'Pause Test Network', 'Mutate Test Portfolio', 'Mutate Test Watchlist', 'Mutate Test Preferences', 'stage5b-exact-test-email-allow-list', 'VITE_CLOUD_SYNC_TEST_MODE', 'VITE_CLOUD_SYNC_TEST_EMAIL']) {
     assert.ok(buildReport.includes(marker));
   }
-  assert.equal(envExample, 'VITE_SUPABASE_URL=\nVITE_SUPABASE_PUBLISHABLE_KEY=\nVITE_CLOUD_MIGRATION_TEST_MODE=false\nVITE_CLOUD_SYNC_TEST_MODE=false\nVITE_CLOUD_SYNC_TEST_EMAIL=\n');
+  assert.equal(envExample, 'VITE_SUPABASE_URL=\nVITE_SUPABASE_PUBLISHABLE_KEY=\nVITE_CLOUD_SYNC_ENABLED=false\nVITE_CLOUD_MIGRATION_TEST_MODE=false\nVITE_CLOUD_SYNC_TEST_MODE=false\nVITE_CLOUD_SYNC_TEST_EMAIL=\n');
   assert.deepEqual(migrations, ['20260820154219_create_user_state.sql']);
 });

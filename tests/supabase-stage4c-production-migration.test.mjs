@@ -438,6 +438,6 @@ test('production UI is real-data-only while the disposable harness remains doubl
   assert.match(harness, /Create Disposable Local Test Data/);
   assert.doesNotMatch(app, /AccountDataSection|CloudMigrationTestHarness|\/account/);
   assert.equal((app.match(/label: '(?:Scanner|Screener|Watchlist|Portfolio|Pulse)'/g) ?? []).length, 5);
-  assert.equal(envExample, 'VITE_SUPABASE_URL=\nVITE_SUPABASE_PUBLISHABLE_KEY=\nVITE_CLOUD_MIGRATION_TEST_MODE=false\nVITE_CLOUD_SYNC_TEST_MODE=false\nVITE_CLOUD_SYNC_TEST_EMAIL=\n');
+  assert.equal(envExample, 'VITE_SUPABASE_URL=\nVITE_SUPABASE_PUBLISHABLE_KEY=\nVITE_CLOUD_SYNC_ENABLED=false\nVITE_CLOUD_MIGRATION_TEST_MODE=false\nVITE_CLOUD_SYNC_TEST_MODE=false\nVITE_CLOUD_SYNC_TEST_EMAIL=\n');
   assert.deepEqual(migrations, ['20260820154219_create_user_state.sql']);
 });

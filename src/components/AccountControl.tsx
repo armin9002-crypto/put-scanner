@@ -4,6 +4,7 @@ import { useAuth } from '../lib/authContext';
 import { useResponsiveMode } from '../lib/responsive';
 import MobileBottomSheet from './mobile/MobileBottomSheet';
 import { isCloudMigrationTestModeEnabled } from '../lib/cloudState/devTestMode';
+import { useProductionSync } from '../lib/cloudState/productionSyncContext';
 
 const AccountDataSection = lazy(() => import('./AccountDataSection'));
 const DevCloudMigrationTestHarness = import.meta.env.DEV
@@ -11,6 +12,9 @@ const DevCloudMigrationTestHarness = import.meta.env.DEV
   : null;
 const DevCloudSyncTestHarness = import.meta.env.DEV
   ? lazy(() => import('./CloudSyncTestHarness'))
+  : null;
+const ProductionCloudSyncSection = import.meta.env.VITE_CLOUD_SYNC_ENABLED === 'true'
+  ? lazy(() => import('./CloudSyncSection'))
   : null;
 const cloudSyncTestConfiguredEmail = import.meta.env.DEV
   && import.meta.env.VITE_CLOUD_SYNC_TEST_MODE === 'true'
@@ -23,6 +27,7 @@ const cloudMigrationTestModeEnabled = isCloudMigrationTestModeEnabled({
 
 function AccountPanel({ onSignedOut }: { onSignedOut: () => void }) {
   const { user, isAuthLoading, authError, signInWithEmail, signOut } = useAuth();
+  const productionSync = useProductionSync();
   const [email, setEmail] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [linkSent, setLinkSent] = useState(false);
@@ -65,11 +70,18 @@ function AccountPanel({ onSignedOut }: { onSignedOut: () => void }) {
           <div className="mt-1 break-all text-sm font-semibold" style={{ color: 'var(--text)' }}>{user.email ?? 'Put Scanner account'}</div>
         </div>
         <p className="text-xs leading-5" style={{ color: 'var(--text-muted)' }}>
-          Cloud data sync is not enabled yet. Account Data can create or restore a verified account copy through an explicit action.
+          {productionSync.featureEnabled
+            ? 'Put Scanner remains local-first. Account sync runs only after this browser is explicitly enrolled.'
+            : 'Cloud data sync is not enabled yet. Account Data can create or restore a verified account copy through an explicit action.'}
         </p>
         <Suspense fallback={null}>
-          <AccountDataSection userId={user.id} />
+          <AccountDataSection userId={user.id} ongoingSyncState={productionSync.featureEnabled ? productionSync.enrollment : 'none'} />
         </Suspense>
+        {ProductionCloudSyncSection && (
+          <Suspense fallback={null}>
+            <ProductionCloudSyncSection />
+          </Suspense>
+        )}
         {cloudMigrationTestModeEnabled && DevCloudMigrationTestHarness && (
           <Suspense fallback={null}>
             <DevCloudMigrationTestHarness userId={user.id} />

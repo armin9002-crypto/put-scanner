@@ -1,6 +1,6 @@
-# Supabase Stage 5A dormant local-first sync design
+# Supabase Stage 5 local-first sync design
 
-Status: engine and deterministic tests only. Ongoing synchronization is not active in production.
+Status: Stage 5C.1 production lifecycle is implemented behind `VITE_CLOUD_SYNC_ENABLED`, which is off by default. Ongoing synchronization is not activated or deployed.
 
 Stage 4C remains the only production account-data surface. Its explicit first migration and explicit new-browser restore continue to work unchanged, and its statement that automatic cross-device updates are not enabled remains true.
 
@@ -14,7 +14,7 @@ Cloud transport, durable local storage, mutation signals, reconciliation, queues
 
 ## Local-first mutation flow
 
-The intended future flow is:
+The feature-enabled production flow is:
 
 ```text
 user action
@@ -31,7 +31,7 @@ Portfolio and Watchlist emit only when their canonical durable data changed; quo
 
 The explicit JSON importer emits each changed namespace once, and only after its existing multi-key transaction succeeds. A failed import that rolls back emits nothing. Controlled cloud pulls write and verify locally without emitting an upload echo.
 
-Stage 5A attaches no listener in the normal application. Importing the event emitter from the existing storage writers therefore creates zero cloud work.
+When the production feature flag is off, the application excludes the coordinator and attaches no listener. When the flag is on, only an explicitly enrolled, authenticated device attaches the listener after safe startup reconciliation. Importing the event emitter from existing writers still creates no cloud work by itself.
 
 ## Device association and enablement
 
@@ -46,7 +46,7 @@ A device can become `eligible` only through an explicit pure eligibility operati
 - local and cloud canonical fingerprints match for all namespaces; and
 - every last-synced timestamp exists.
 
-Eligibility still does not enable anything. A second explicit transition produces `enabled` metadata. Stage 5A has no production caller for either transition or for coordinator construction.
+Eligibility still does not enable anything. A second explicit transition produces `enabled` metadata. Stage 5C.1 exposes that transition only through **Enable Sync on This Device**, after a fresh inventory/equality verification; the action performs no data-changing cloud write.
 
 The ongoing metadata stores only the account ID, sync mode, per-namespace cloud revision, last-synced fingerprint/time, current status, optional pending fingerprint, and last reconciliation time. It stores no raw Portfolio/Watchlist/Preferences document and no token. Like Stage 4 metadata, it is device-local and excluded from JSON backups.
 
@@ -113,7 +113,7 @@ The pure per-namespace reconciler accepts current local fingerprint, last-synced
 | `INVALID` | Corrupt state, missing metadata, backward revision, or payload changed without revision | Attention |
 | `ACCOUNT_MISMATCH` | Authenticated user differs from device metadata | Hard block |
 
-One future session-restoration reconciliation is planned only for an already enabled device. A new or unassociated browser remains on the explicit Stage 4C “Restore to This Browser” flow. Stage 5A does not run reconciliation on application mount, authentication restoration, sign-in, focus, visibility, or route changes.
+Stage 5C.1 runs one session-restoration reconciliation only for an already enabled device and only when the exact production feature flag is true. A new or unassociated browser performs no startup `user_state` read and remains on the explicit Stage 4C “Restore to This Browser” plus enrollment flow. There is no reconciliation on focus, visibility, route change, hover, resize, or an interval.
 
 ## Safe cloud-ahead pull
 
@@ -143,7 +143,7 @@ Namespace statuses are `disabled`, `synced`, `pending`, `syncing`, `offline`, `c
 
 The dormant `syncNow()` operation captures local fingerprints, performs one all-namespace cloud read, runs the pure reconciler, safely pushes `LOCAL_AHEAD`, safely pulls `CLOUD_AHEAD`, ignores `CLEAN`, and blocks `BOTH_CHANGED`, missing, invalid, and account-mismatched state. A previously conflicted namespace remains frozen. Results are structured per namespace, so partial failures do not produce a false “All synced” result.
 
-No production Sync Now button exists in Stage 5A.
+Stage 5C.1 adds a compact production **Sync Now** control inside Account for enabled devices only. It uses this same operation and adds no polling.
 
 ## Payload measurements
 
@@ -174,6 +174,7 @@ Planning assumptions, not billing guarantees:
 
 | Daily active users | Fetch requests/day | Namespace rows read/day | CAS writes/day | Total browser requests/day | Approx. application JSON transfer/day* |
 | ---: | ---: | ---: | ---: | ---: | ---: |
+| 10 | 10 | 30 | 30 | 40 | ~0.6 MB |
 | 100 | 100 | 300 | 300 | 400 | ~6.3 MB |
 | 500 | 500 | 1,500 | 1,500 | 2,000 | ~31.4 MB |
 | 1,000 | 1,000 | 3,000 | 3,000 | 4,000 | ~62.8 MB |
@@ -186,10 +187,12 @@ Revisions plus restrained event-driven reconciliation provide the required confl
 
 Account state remains browser ↔ Supabase under the authenticated RLS boundary. Sending it through Vercel would add latency, invocations, credentials, and a second authorization surface while mixing account traffic with independent Yahoo/market-data scaling.
 
-## Dormancy proof and future stages
+## Feature-gated production lifecycle
 
-Stage 5A production modules do not import, construct, attach, or call the coordinator. The coordinator constructor itself makes no cloud request and attaches no event listener. Source tests verify that App, Auth, Account, and session restoration have no coordinator reference. Normal Portfolio, history, Watchlist, and preference mutations therefore produce zero automatic `user_state` calls. Stage 4C remains explicit and unchanged.
+With `VITE_CLOUD_SYNC_ENABLED` missing or not exactly `true`, the production build excludes the root provider, coordinator, engine metadata implementation, and Account Sync controls. App mount, authentication, normal durable edits, and market-data work therefore produce zero automatic `user_state` calls. Stage 4C remains explicit and unchanged.
+
+With the flag exactly `true`, `CloudSyncProvider` lives inside Auth but above Account, routes, pages, and drawers. A signed-in but unenrolled browser performs no startup inventory read. Explicit enrollment performs one equality-verification inventory read, writes only local engine metadata, constructs one coordinator, and attaches one listener. A previously enabled device performs one startup inventory reconciliation before listener attachment. Sign-out/account change invalidates the generation and disposes the coordinator without clearing local data.
 
 Stage 5B adds a separately gated localhost test harness for one explicitly allow-listed disposable email. Stage 5B.1 adds explicit reconstruction of that harness coordinator only for a valid previously enabled test device, with no automatic reconciliation. Its test coordinator, fixture, email allow-list, enable/resume controls, and resume implementation are excluded from production builds, so the production attachment boundary above is unchanged. The literal operator procedure is in `docs/SUPABASE_STAGE5B_LIVE_SYNC_TEST.md`.
 
-Stage 5C will separately review and authorize controlled activation for the real account/browser. Stage 5A does not begin either stage automatically.
+The full production lifecycle and the future controlled localhost operator procedure are documented in `docs/SUPABASE_STAGE5C_PRODUCTION_SYNC.md`. Stage 5C.1 does not set the flag, deploy, access a real account, or begin live testing/conflict resolution.

@@ -77,6 +77,8 @@ export interface DormantSyncCoordinatorOptions {
   pullOptions?: (namespace: CloudNamespace) => SafeCloudPullOptions;
   /** Optional in-memory diagnostics used by development/test surfaces only. */
   onDiagnosticEvent?: (event: SyncCoordinatorDiagnosticEvent) => void;
+  /** Optional runtime status observer. It never initiates cloud work. */
+  onSnapshotChange?: (snapshot: SyncCoordinatorSnapshot) => void;
 }
 
 function namespaceResult(
@@ -118,6 +120,7 @@ export class DormantLocalFirstSyncCoordinator {
   private readonly delay: (milliseconds: number) => Promise<void>;
   private readonly pullOptions?: DormantSyncCoordinatorOptions['pullOptions'];
   private readonly onDiagnosticEvent?: DormantSyncCoordinatorOptions['onDiagnosticEvent'];
+  private readonly onSnapshotChange?: DormantSyncCoordinatorOptions['onSnapshotChange'];
   private readonly queues: Record<CloudNamespace, SyncNamespaceQueue>;
   private metadata: OngoingSyncMetadataV1 | null;
   private readonly startupBlock: 'missing' | 'account_mismatch' | 'corrupt' | null;
@@ -138,6 +141,7 @@ export class DormantLocalFirstSyncCoordinator {
     this.delay = options.delay ?? (milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds)));
     this.pullOptions = options.pullOptions;
     this.onDiagnosticEvent = options.onDiagnosticEvent;
+    this.onSnapshotChange = options.onSnapshotChange;
     this.activeUserId = options.userId.trim() || null;
     const metadataRead = this.activeUserId
       ? readOngoingSyncMetadata(this.storage, this.activeUserId)
@@ -173,6 +177,7 @@ export class DormantLocalFirstSyncCoordinator {
     this.onDiagnosticEvent?.({ type: 'mutation', namespace });
     if (this.metadata) this.metadata.namespaces[namespace].status = 'pending';
     this.queues[namespace].markMutation();
+    this.publishSnapshot();
   }
 
   setAuthenticatedUser(userId: string | null): void {
@@ -180,6 +185,7 @@ export class DormantLocalFirstSyncCoordinator {
     if (normalized === this.activeUserId) return;
     this.activeUserId = normalized;
     this.generation += 1;
+    this.publishSnapshot();
   }
 
   async flushNamespace(namespace: CloudNamespace): Promise<SyncQueueRunResult> {
@@ -354,6 +360,7 @@ export class DormantLocalFirstSyncCoordinator {
     this.unsubscribeMutations?.();
     this.unsubscribeMutations = null;
     for (const namespace of CLOUD_STATE_NAMESPACES) this.queues[namespace].dispose();
+    this.publishSnapshot();
   }
 
   private isEnabledForCurrentAccount(): boolean {
@@ -480,10 +487,16 @@ export class DormantLocalFirstSyncCoordinator {
     if (written.status !== 'ok') {
       this.metadata = cloneOngoingSyncMetadata(next);
       this.metadata.syncMode = 'attention';
+      this.publishSnapshot();
       return false;
     }
     this.metadata = cloneOngoingSyncMetadata(next);
+    this.publishSnapshot();
     return true;
+  }
+
+  private publishSnapshot(): void {
+    this.onSnapshotChange?.(this.getSnapshot());
   }
 }
 
