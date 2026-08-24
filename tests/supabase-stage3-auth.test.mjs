@@ -222,12 +222,13 @@ test('account UI is optional, truthful, and does not add a primary route or mobi
   ]);
   assert.match(accountSource, /if \(!isConfigured\) return null/);
   assert.match(accountSource, /Check your email for a sign-in link\./);
-  assert.match(accountSource, /Cloud data sync is not enabled yet\./);
-  assert.match(accountSource, /Your current app data remains local and is not uploaded by signing in\./);
+  assert.match(accountSource, /Your data stays on this browser\. Account Data lets you explicitly save or restore an account copy\./);
+  assert.match(accountSource, /Your current app data remains local and is not uploaded merely by signing in\./);
   assert.match(accountSource, /min-h-11 min-w-11/);
   assert.match(appSource, /<AccountControl \/>/);
   assert.equal((appSource.match(/to="\/account"/g) ?? []).length, 0);
-  assert.equal(/mobileTabs[\s\S]*Account/.test(appSource), false);
+  const mobileTabsSource = appSource.match(/const mobileTabs = \[([\s\S]*?)\] as const;/)?.[1] ?? '';
+  assert.doesNotMatch(mobileTabsSource, /Account/);
 
   const packageJson = JSON.parse(packageSource);
   assert.equal(packageJson.dependencies['@supabase/supabase-js'], '^2.57.4');

@@ -18,6 +18,9 @@ const EtfPulsePage = lazy(() => import('./pages/EtfPulsePage'));
 const ProductionCloudSyncProvider = import.meta.env.VITE_CLOUD_SYNC_ENABLED === 'true'
   ? lazy(() => import('./components/CloudSyncProvider'))
   : null;
+const DevAccountUiTestFixture = import.meta.env.DEV
+  ? lazy(() => import('./components/AccountUiTestFixture'))
+  : null;
 
 function ThemeToggle() {
   const { theme, cycleTheme } = useTheme();
@@ -328,6 +331,19 @@ function AppBody() {
 }
 
 export default function App() {
+  const accountUiFixture = import.meta.env.DEV
+    ? new URLSearchParams(window.location.search).get('account-ui-fixture')
+    : null;
+  if (DevAccountUiTestFixture && accountUiFixture) {
+    return (
+      <ThemeProvider>
+        <Suspense fallback={null}>
+          <DevAccountUiTestFixture requestedState={accountUiFixture} />
+        </Suspense>
+      </ThemeProvider>
+    );
+  }
+
   return (
     <AuthProvider>
       {ProductionCloudSyncProvider

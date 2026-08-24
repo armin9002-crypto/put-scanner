@@ -26,6 +26,7 @@ import {
 import SparklineChart from '../components/SparklineChart';
 import ErrorBoundary from '../components/ErrorBoundary';
 import MobileOptionRow from '../components/mobile/MobileOptionRow';
+import AccountControl from '../components/AccountControl';
 import { useResponsiveMode } from '../lib/responsive';
 import type { AddToPortfolioDraft } from '../components/OptionDetailDrawer';
 import {
@@ -927,7 +928,7 @@ export default function OptionsPage() {
     return (
       <div className="mobile-route-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
         <header className="mobile-option-header sticky top-0 z-40" style={{ backgroundColor: 'color-mix(in srgb, var(--bg) 95%, transparent)', borderBottom: '1px solid var(--border)' }}>
-          <div className="grid min-h-[58px] grid-cols-[88px_1fr_88px] items-center px-1.5">
+          <div className="grid min-h-[58px] grid-cols-[78px_minmax(0,1fr)_132px] items-center px-1.5">
             <button type="button" onClick={handleBackToScanner} className="pressable flex min-h-11 items-center gap-0.5 rounded-lg px-1 text-[13px] font-semibold" style={{ color: 'var(--accent-light)' }} aria-label="Back to Scanner"><ArrowLeft className="h-5 w-5" /> Scanner</button>
             <button type="button" onClick={() => setShowPriceChart(true)} className="pressable min-w-0 text-center" aria-label={`Open ${ticker} price chart`}>
               <div className="truncate font-mono text-[17px] font-bold" style={{ color: 'var(--text)' }}>{ticker}</div>
@@ -936,6 +937,7 @@ export default function OptionsPage() {
             <div className="flex justify-end">
               <button type="button" onClick={() => setShowUnderlyingHoldings(true)} className="pressable flex h-11 w-11 items-center justify-center rounded-lg" aria-label={`Open underlying holdings for ${ticker}`} style={{ color: 'var(--text-muted)' }}><Layers className="h-5 w-5" /></button>
               <button type="button" onClick={handleRefresh} disabled={loading} className="pressable flex h-11 w-11 items-center justify-center rounded-lg disabled:opacity-50" aria-label="Refresh option chain" style={{ color: 'var(--text-muted)' }}><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /></button>
+              <AccountControl />
             </div>
           </div>
           {optionsData && optionsData.expirations.length > 0 && (

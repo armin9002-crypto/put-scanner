@@ -9,12 +9,37 @@ function statusLabel(phase: ProductionSyncPhase): string {
   if (phase === 'verifying') return 'Verifying';
   if (phase === 'synced') return 'Synced';
   if (phase === 'syncing') return 'Syncing';
-  if (phase === 'pending') return 'Saved locally — sync pending';
-  if (phase === 'conflict') return 'Conflict needs attention';
-  if (phase === 'account_mismatch') return 'Account mismatch';
-  if (phase === 'unavailable') return 'Cloud state unavailable';
-  if (phase === 'attention') return 'Cloud state needs attention';
+  if (phase === 'pending') return 'Saved locally';
+  if (phase === 'conflict') return 'Sync conflict';
+  if (phase === 'account_mismatch') return 'This browser is associated with another account.';
+  if (phase === 'unavailable' || phase === 'attention') return 'Account data needs attention.';
   return 'Disabled';
+}
+
+function statusDetail(
+  phase: ProductionSyncPhase,
+  namespaces: Record<string, string>,
+): string {
+  if (phase === 'not_enrolled') return 'Enable Account Sync only after Account Data has been safely saved or restored on this device.';
+  if (phase === 'verifying') return 'Checking this device and its account copy.';
+  if (phase === 'synced') return 'Your account data is up to date.';
+  if (phase === 'syncing') return 'Syncing account changes.';
+  if (phase === 'pending') return 'Account sync pending. Your changes are safely saved on this device.';
+  if (phase === 'conflict') {
+    const affected = CLOUD_STATE_NAMESPACES.find(namespace => namespaces[namespace] === 'conflict');
+    const label = affected ? `${affected.charAt(0).toUpperCase()}${affected.slice(1)} needs attention. ` : '';
+    return `${label}No data was overwritten.`;
+  }
+  if (phase === 'account_mismatch') return 'No data has been changed.';
+  if (phase === 'unavailable' || phase === 'attention') return 'Put Scanner will not overwrite this browser.';
+  return 'Account Sync is unavailable.';
+}
+
+function syncDetailStatus(status: string): string {
+  if (status === 'synced') return 'Synced';
+  if (status === 'pending') return 'Pending';
+  if (status === 'conflict' || status === 'attention') return 'Needs attention';
+  return 'Not active';
 }
 
 function statusColor(phase: ProductionSyncPhase): string {
@@ -61,7 +86,7 @@ export default function CloudSyncSection() {
   if (!sync.featureEnabled) return null;
 
   return (
-    <section className="space-y-2 rounded-xl border p-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface-alt)' }} aria-label="Account synchronization">
+    <section className="space-y-3 rounded-xl border p-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface-alt)' }} aria-label="Account Sync">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: 'var(--text)' }}>
@@ -74,12 +99,12 @@ export default function CloudSyncSection() {
         </div>
         {sync.lastSuccessfulSyncAt && (
           <time className="text-right text-[10px] leading-4" style={{ color: 'var(--text-dim)' }} dateTime={sync.lastSuccessfulSyncAt}>
-            Last sync<br />{new Date(sync.lastSuccessfulSyncAt).toLocaleString()}
+            Last synced<br />{new Date(sync.lastSuccessfulSyncAt).toLocaleString()}
           </time>
         )}
       </div>
 
-      <p className="text-[11px] leading-4" style={{ color: 'var(--text-muted)' }}>{sync.message}</p>
+      <p className="text-xs leading-5" style={{ color: 'var(--text-muted)' }}>{statusDetail(sync.phase, sync.namespaces)}</p>
 
       {sync.canEnable && (
         <button type="button" onClick={enable} disabled={busy} className="pressable flex min-h-11 w-full items-center justify-center gap-2 rounded-lg px-3 text-xs font-semibold text-white disabled:opacity-50" style={{ backgroundColor: 'var(--accent)' }}>
@@ -87,7 +112,7 @@ export default function CloudSyncSection() {
         </button>
       )}
 
-      {sync.canSyncNow && (
+      {sync.canSyncNow && sync.phase !== 'conflict' && (
         <button type="button" onClick={() => void run(() => sync.syncNow())} disabled={busy} className="pressable flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border px-3 text-xs font-semibold disabled:opacity-50" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
           {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />} Sync Now
         </button>
@@ -101,12 +126,12 @@ export default function CloudSyncSection() {
 
       {sync.enrollment !== 'none' && (
         <details className="rounded-lg border px-2.5 py-2 text-[11px]" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)', backgroundColor: 'var(--surface)' }}>
-          <summary className="cursor-pointer font-semibold" style={{ color: 'var(--text)' }}>Namespace details</summary>
+          <summary className="min-h-11 cursor-pointer py-3 font-semibold" style={{ color: 'var(--text)' }}>Sync details</summary>
           <div className="mt-2 grid grid-cols-[1fr_auto] gap-x-3 gap-y-1">
             {CLOUD_STATE_NAMESPACES.map(namespace => (
               <div key={namespace} className="contents">
                 <span className="capitalize">{namespace}</span>
-                <span className="font-mono">{sync.namespaces[namespace]}</span>
+                <span>{syncDetailStatus(sync.namespaces[namespace])}</span>
               </div>
             ))}
           </div>
@@ -114,7 +139,7 @@ export default function CloudSyncSection() {
       )}
 
       {error && <div role="alert" className="rounded-lg border px-2.5 py-2 text-[11px] leading-4" style={{ borderColor: 'color-mix(in srgb, var(--red) 35%, var(--border))', color: 'var(--red)', backgroundColor: 'var(--surface)' }}>{error}</div>}
-      <p className="text-[10px] leading-4" style={{ color: 'var(--text-dim)' }}>Local data remains the immediate source. Sync uses no polling or Realtime.</p>
+      <p className="text-[10px] leading-4" style={{ color: 'var(--text-dim)' }}>Your local data remains available immediately.</p>
     </section>
   );
 }

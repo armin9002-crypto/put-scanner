@@ -20,11 +20,11 @@ const DEFAULT_MODE: ResponsiveMode = {
   isDesktop: false,
 };
 
-function readMode(): ResponsiveMode {
-  if (typeof window === 'undefined') return DEFAULT_MODE;
-  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || DEFAULT_MODE.viewportWidth;
-  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || DEFAULT_MODE.viewportHeight;
-  const landscape = window.matchMedia?.('(orientation: landscape)').matches ?? viewportWidth > viewportHeight;
+export function resolveResponsiveMode(
+  viewportWidth: number,
+  viewportHeight: number,
+  landscape = viewportWidth > viewportHeight,
+): ResponsiveMode {
   const isPhoneLandscape = landscape && viewportHeight <= 520 && viewportWidth <= 950;
   const isPhone = viewportWidth < 768 || isPhoneLandscape;
   const isTablet = !isPhone && viewportWidth < 1200;
@@ -39,6 +39,14 @@ function readMode(): ResponsiveMode {
     isTabletLandscape,
     isDesktop: !isPhone && !isTablet,
   };
+}
+
+function readMode(): ResponsiveMode {
+  if (typeof window === 'undefined') return DEFAULT_MODE;
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || DEFAULT_MODE.viewportWidth;
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || DEFAULT_MODE.viewportHeight;
+  const landscape = window.matchMedia?.('(orientation: landscape)').matches ?? viewportWidth > viewportHeight;
+  return resolveResponsiveMode(viewportWidth, viewportHeight, landscape);
 }
 
 export function useResponsiveMode(): ResponsiveMode {

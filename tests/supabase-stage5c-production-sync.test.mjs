@@ -486,7 +486,7 @@ test('root ownership, compact Account UI, Stage 4 protection, no polling, and pr
   assert.match(provider, /createProductionCloudSyncManager[\s\S]*?manager\.setAccount/);
   assert.match(syncSection, /Enable Sync on This Device/);
   assert.match(syncSection, /Sync Now/);
-  assert.match(accountData, /ongoingSyncState !== 'none'[\s\S]*?Initial migration and restore actions are unavailable/);
+  assert.match(accountData, /ongoingSyncState !== 'none'[\s\S]*?Save and restore actions stay unavailable/);
   assert.doesNotMatch(lifecycle, /setInterval|addEventListener\(['"]focus|visibilitychange|\.channel\s*\(|Realtime/);
   assert.doesNotMatch(provider, /setInterval|addEventListener\(['"]focus|visibilitychange/);
   assert.ok(buildReport.includes('stage5bHarnessMarkers'));

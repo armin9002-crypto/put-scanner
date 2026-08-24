@@ -209,6 +209,42 @@ body {
   padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
 }
 
+.mobile-account-sheet-layer {
+  padding-top: max(0.5rem, env(safe-area-inset-top));
+  padding-right: env(safe-area-inset-right);
+  padding-left: env(safe-area-inset-left);
+  touch-action: none;
+}
+
+.mobile-account-sheet {
+  height: min(94dvh, 860px);
+  max-height: calc(100dvh - max(0.5rem, env(safe-area-inset-top)));
+  padding-bottom: env(safe-area-inset-bottom);
+  box-shadow: 0 -22px 70px rgba(0, 0, 0, 0.42);
+  touch-action: auto;
+}
+
+.mobile-account-sheet__header {
+  padding-top: 0.5rem;
+  padding-right: max(1rem, env(safe-area-inset-right));
+  padding-bottom: 0.75rem;
+  padding-left: max(1rem, env(safe-area-inset-left));
+}
+
+.mobile-account-sheet__content {
+  overscroll-behavior: contain;
+  scroll-padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
+.mobile-account-sheet input,
+.mobile-account-sheet select,
+.mobile-account-sheet textarea {
+  max-width: 100%;
+  font-size: 16px;
+}
+
 .mobile-segmented {
   display: grid;
   grid-auto-flow: column;
@@ -721,6 +757,22 @@ td {
     max-height: 96dvh;
     max-width: min(680px, 94vw);
     border-radius: 1rem 1rem 0 0;
+  }
+
+  .mobile-account-sheet-layer {
+    padding-top: max(0.25rem, env(safe-area-inset-top));
+  }
+
+  .mobile-account-sheet {
+    width: min(760px, calc(100vw - env(safe-area-inset-left) - env(safe-area-inset-right) - 0.5rem));
+    height: calc(100dvh - max(0.25rem, env(safe-area-inset-top)));
+    max-height: calc(100dvh - max(0.25rem, env(safe-area-inset-top)));
+    border-radius: 1rem 1rem 0 0;
+  }
+
+  .mobile-account-sheet__header {
+    padding-top: 0.25rem;
+    padding-bottom: 0.4rem;
   }
 
   .is-phone-landscape-chart .chart-modal-header {

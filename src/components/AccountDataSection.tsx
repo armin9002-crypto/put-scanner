@@ -116,7 +116,7 @@ export default function AccountDataSection({
       downloadPutScannerBackup(backup, prefix);
       if (unlockMigration) {
         setBackupGate(current => recordMigrationBackupExport(current, sessionId, 'succeeded'));
-        setNotice('Backup downloaded for this migration session.');
+        setNotice('Backup downloaded. You can now continue.');
       } else {
         setNotice('Local recovery backup downloaded.');
       }
@@ -199,6 +199,8 @@ export default function AccountDataSection({
       <button
         type="button"
         onClick={openAccountData}
+        aria-label="Account Data"
+        aria-expanded="false"
         className="pressable flex min-h-11 w-full items-center justify-between gap-3 rounded-lg border px-3 text-sm font-semibold"
         style={{ borderColor: 'var(--border)', color: 'var(--text)', backgroundColor: 'var(--surface-alt)' }}
       >
@@ -226,8 +228,8 @@ export default function AccountDataSection({
           </div>
           <p className="mt-2 text-[11px] leading-4" style={{ color: 'var(--text-muted)' }}>
             {ongoingSyncState === 'enabled'
-              ? 'Sync is enabled on this device. Initial migration and restore actions are unavailable so they cannot compete with the established sync baseline.'
-              : 'Ongoing sync metadata must be resolved before initial migration or restore can run. Local data has not been changed.'}
+              ? 'Sync is enabled on this device. Save and restore actions stay unavailable while this account copy is active.'
+              : 'This account association needs attention before Account Data can be changed. Local data has not been changed.'}
           </p>
         </div>
         <button type="button" onClick={() => downloadLocalBackup('put-scanner-account-copy-backup', false)} className="pressable flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border px-3 text-xs font-semibold" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
@@ -375,7 +377,7 @@ function ExistingLocalData({
   return (
     <div className="space-y-3">
       <div>
-        <div className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Existing Data Found</div>
+        <div className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Existing Browser Data</div>
         <p className="mt-1 text-xs leading-5" style={{ color: 'var(--text-muted)' }}>This browser contains Put Scanner data that is not yet saved to your account.</p>
       </div>
       <DataCounts title="This browser" summary={summary} />
@@ -404,7 +406,7 @@ function ExistingLocalData({
   );
 }
 
-function CloudRestore({
+export function CloudRestore({
   summary,
   confirmation,
   busy,

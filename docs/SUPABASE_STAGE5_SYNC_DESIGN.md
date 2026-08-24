@@ -1,8 +1,8 @@
 # Supabase Stage 5 local-first sync design
 
-Status: Stage 5C.3 hardens the production lifecycle behind `VITE_CLOUD_SYNC_ENABLED`, which remains off by default. Ongoing synchronization is not activated or deployed.
+Status: Stage 5C.4 successfully exercised the gated production lifecycle and then returned the production flag to false. Stage 5D.1 hardens final rollout behavior and adds the purpose-built mobile Account presentation. Ongoing synchronization remains off and Stage 5D.1 does not authorize deployment or permanent activation.
 
-Stage 4C remains the only production account-data surface. Its explicit first migration and explicit new-browser restore continue to work unchanged, and its statement that automatic cross-device updates are not enabled remains true.
+Stage 4C Account Data remains the explicit first-save and new-browser restore surface. Restore and ongoing-sync enrollment stay separate; signing in never chooses a winner or uploads browser data. The complete rollout guide is [Supabase Stage 5D production rollout](./SUPABASE_STAGE5D_ROLLOUT.md).
 
 ## Boundaries
 
@@ -11,6 +11,14 @@ The three cloud namespaces remain exactly `portfolio`, `watchlist`, and `prefere
 Only canonical Stage 1.5 durable documents can be fingerprinted or transported. Current quotes, Bid/Ask/Last, IV, OI, Volume, underlying snapshots, Yahoo data, option chains, charts, Scanner/ETF Pulse caches, diagnostics, routes, modal state, debug flags, auth tokens, and device-local market maps are excluded.
 
 Cloud transport, durable local storage, mutation signals, reconciliation, queues, device metadata, authentication, and UI remain separate. In particular, `AuthProvider` contains no synchronization logic.
+
+## Account presentation and coordinator ownership
+
+`CloudSyncProvider` remains above routes and Account UI, inside Auth ownership. Account open/close state is presentation-only and cannot construct, attach, detach, reconcile, or dispose synchronization. Route changes and phone rotation likewise do not control the coordinator.
+
+Desktop retains its existing Account dialog. Phone portrait and semantic phone landscape use `MobileAccountSheet`, portaled to `document.body` so the fixed overlay escapes the sticky blurred header's containing block and stacking context. The sheet uses viewport-level stacking above mobile navigation, `100dvh`, safe-area padding, one scroll region, focus trapping/restoration, Escape and close controls, and iOS-safe body scroll locking.
+
+Mobile and desktop share the same Auth, Account Data, backup, restore, enrollment, Sync Now, and sign-out actions. Only presentation and mobile information order differ. The development Account UI fixture contains no transport and is excluded from production assets alongside the Stage 4B/5B harnesses.
 
 ## Local-first mutation flow
 

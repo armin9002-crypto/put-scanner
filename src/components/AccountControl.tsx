@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useId, useRef, useState, type FormEvent, typ
 import { CircleUserRound, Loader2, LogOut, Mail, X } from 'lucide-react';
 import { useAuth } from '../lib/authContext';
 import { useResponsiveMode } from '../lib/responsive';
-import MobileBottomSheet from './mobile/MobileBottomSheet';
+import MobileAccountSheet from './MobileAccountSheet';
 import { isCloudMigrationTestModeEnabled } from '../lib/cloudState/devTestMode';
 import { useProductionSync } from '../lib/cloudState/productionSyncContext';
 
@@ -25,7 +25,15 @@ const cloudMigrationTestModeEnabled = isCloudMigrationTestModeEnabled({
   flag: import.meta.env.VITE_CLOUD_MIGRATION_TEST_MODE,
 });
 
-function AccountPanel({ onSignedOut }: { onSignedOut: () => void }) {
+export function AccountPanel({
+  onSignedOut,
+  presentation,
+  accountDataContent,
+}: {
+  onSignedOut: () => void;
+  presentation: 'mobile' | 'desktop';
+  accountDataContent?: ReactNode;
+}) {
   const { user, isAuthLoading, authError, signInWithEmail, signOut } = useAuth();
   const productionSync = useProductionSync();
   const [email, setEmail] = useState('');
@@ -63,25 +71,32 @@ function AccountPanel({ onSignedOut }: { onSignedOut: () => void }) {
       && cloudSyncTestConfiguredEmail
       && user.email?.trim().toLowerCase() === cloudSyncTestConfiguredEmail,
     );
+    const accountData = accountDataContent ?? (
+      <Suspense fallback={null}>
+        <AccountDataSection userId={user.id} ongoingSyncState={productionSync.featureEnabled ? productionSync.enrollment : 'none'} />
+      </Suspense>
+    );
+    const accountSync = ProductionCloudSyncSection ? (
+      <Suspense fallback={null}>
+        <ProductionCloudSyncSection />
+      </Suspense>
+    ) : null;
     return (
       <div className="space-y-4">
-        <div className="rounded-xl border p-3" style={{ backgroundColor: 'var(--surface-alt)', borderColor: 'var(--border)' }}>
-          <div className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--green)' }}>Signed in</div>
-          <div className="mt-1 break-all text-sm font-semibold" style={{ color: 'var(--text)' }}>{user.email ?? 'Put Scanner account'}</div>
-        </div>
+        {presentation === 'desktop' && (
+          <div className="rounded-xl border p-3" style={{ backgroundColor: 'var(--surface-alt)', borderColor: 'var(--border)' }}>
+            <div className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--green)' }}>Signed in</div>
+            <div className="mt-1 break-all text-sm font-semibold" style={{ color: 'var(--text)' }}>{user.email ?? 'Put Scanner account'}</div>
+          </div>
+        )}
         <p className="text-xs leading-5" style={{ color: 'var(--text-muted)' }}>
           {productionSync.featureEnabled
-            ? 'Put Scanner remains local-first. Account sync runs only after this browser is explicitly enrolled.'
-            : 'Cloud data sync is not enabled yet. Account Data can create or restore a verified account copy through an explicit action.'}
+            ? 'Your data stays on this browser first. Account Sync runs only after you enable it on this device.'
+            : 'Your data stays on this browser. Account Data lets you explicitly save or restore an account copy.'}
         </p>
-        <Suspense fallback={null}>
-          <AccountDataSection userId={user.id} ongoingSyncState={productionSync.featureEnabled ? productionSync.enrollment : 'none'} />
-        </Suspense>
-        {ProductionCloudSyncSection && (
-          <Suspense fallback={null}>
-            <ProductionCloudSyncSection />
-          </Suspense>
-        )}
+        {presentation === 'mobile' && accountSync}
+        {accountData}
+        {presentation === 'desktop' && accountSync}
         {cloudMigrationTestModeEnabled && DevCloudMigrationTestHarness && (
           <Suspense fallback={null}>
             <DevCloudMigrationTestHarness userId={user.id} />
@@ -110,7 +125,7 @@ function AccountPanel({ onSignedOut }: { onSignedOut: () => void }) {
   return (
     <form onSubmit={event => void handleSubmit(event)} className="space-y-4">
       <p className="text-xs leading-5" style={{ color: 'var(--text-muted)' }}>
-        Account sign-in is being prepared for portable Put Scanner data. Your current app data remains local and is not uploaded by signing in.
+        Sign in to use your account across devices. Your current app data remains local and is not uploaded merely by signing in.
       </p>
       <label className="block">
         <span className="mb-1.5 block text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Email</span>
@@ -216,7 +231,7 @@ function DesktopAccountDialog({ onClose }: { onClose: () => void }) {
             <X className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
-        <AccountPanel onSignedOut={onClose} />
+        <AccountPanel onSignedOut={onClose} presentation="desktop" />
       </div>
     </div>
   );
@@ -226,33 +241,44 @@ export default function AccountControl() {
   const { user, isAuthLoading, isConfigured } = useAuth();
   const { isPhone } = useResponsiveMode();
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const sheetId = useId();
 
   if (!isConfigured) return null;
 
-  const label = user?.email ? `Account: ${user.email}` : 'Sign in to Put Scanner';
+  const title = user?.email ? `Account: ${user.email}` : 'Account';
   return (
     <>
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen(true)}
         className="pressable relative flex h-11 w-11 min-h-11 min-w-11 items-center justify-center rounded-lg"
         style={{ color: user ? 'var(--accent-light)' : 'var(--text-muted)' }}
-        aria-label={label}
-        title={label}
+        aria-label="Account"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-controls={open ? sheetId : undefined}
+        title={title}
       >
         {isAuthLoading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <CircleUserRound className="h-[18px] w-[18px]" aria-hidden="true" />}
         {user && <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full" style={{ backgroundColor: 'var(--green)' }} aria-hidden="true" />}
       </button>
       {open && (isPhone
         ? (
-          <MobileBottomSheet
-            title="Put Scanner Account"
-            description="Optional account access"
+          <MobileAccountSheet
+            id={sheetId}
+            identity={user?.email ?? null}
+            status={user ? 'Signed in' : undefined}
+            description={isAuthLoading
+              ? 'Checking account session…'
+              : user
+                ? undefined
+                : 'Sign in to use your account across devices'}
             onClose={() => setOpen(false)}
-            className="account-sheet"
           >
-            <AccountPanel onSignedOut={() => setOpen(false)} />
-          </MobileBottomSheet>
+            <AccountPanel onSignedOut={() => setOpen(false)} presentation="mobile" />
+          </MobileAccountSheet>
         )
         : <DesktopAccountDialog onClose={() => setOpen(false)} />)}
     </>

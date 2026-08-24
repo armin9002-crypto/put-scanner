@@ -97,4 +97,13 @@ const leakedStage4bMarker = stage4bHarnessMarkers.find(marker => javascript.incl
 if (leakedStage4bMarker) {
   throw new Error(`Development Stage 4B migration harness entered the production bundle: ${leakedStage4bMarker}`);
 }
-console.log('Development Stage 4B/5B harnesses, coordinator attachment, fixtures, and email allow-list are excluded from production assets.');
+const accountUiFixtureMarkers = [
+  'ACCOUNT UI TEST FIXTURE',
+  'account-ui-fixture',
+  'AccountUiTestFixture',
+];
+const leakedAccountUiMarker = accountUiFixtureMarkers.find(marker => javascript.includes(marker));
+if (leakedAccountUiMarker) {
+  throw new Error(`Development Account UI fixture entered the production bundle: ${leakedAccountUiMarker}`);
+}
+console.log('Development Stage 4B/5B harnesses, Account UI fixtures, coordinator attachment, fixtures, and email allow-list are excluded from production assets.');

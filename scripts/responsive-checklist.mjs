@@ -30,6 +30,7 @@ const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const sources = {
   app: read('src/App.tsx'),
   account: read('src/components/AccountControl.tsx'),
+  mobileAccount: read('src/components/MobileAccountSheet.tsx'),
   accountData: read('src/components/AccountDataSection.tsx'),
   css: read('src/index.css'),
   responsive: read('src/lib/responsive.ts'),
@@ -53,9 +54,12 @@ const sources = {
 
 const guardrails = [
   ['phone navigation uses contextual headers and real links', sources.app.includes('<MobilePageHeader') && sources.app.includes('<NavLink')],
-  ['Account stays in utility controls with a 44px mobile target and no sixth tab', sources.app.includes('<AccountControl />') && sources.account.includes('min-h-11 min-w-11') && !sources.app.includes("to: '/account'")],
+  ['Account stays in utility controls with a 44px mobile target and no sixth tab', sources.app.includes('<AccountControl />') && sources.account.includes('h-11 w-11 min-h-11 min-w-11') && sources.account.includes('aria-haspopup="dialog"') && !sources.app.includes("to: '/account'")],
+  ['mobile Account uses a body portal above header and bottom navigation stacking contexts', sources.account.includes('<MobileAccountSheet') && sources.mobileAccount.includes('createPortal(sheet, document.body)') && sources.mobileAccount.includes('z-[110]')],
+  ['mobile Account uses dynamic viewport, safe-area, scroll, focus, and iOS body-lock safeguards', sources.css.includes('.mobile-account-sheet') && sources.css.includes('100dvh') && sources.css.includes('scroll-padding-bottom') && sources.mobileAccount.includes('document.documentElement.style.overflow') && sources.mobileAccount.includes('window.scrollTo(0, scrollY)')],
   ['Account Data remains compact, scrollable, and touch-safe on small screens', sources.account.includes('max-h-[calc(100dvh-2rem)]') && sources.account.includes('overflow-y-auto') && sources.accountData.includes('min-h-11 w-full') && sources.accountData.includes('grid grid-cols-2 gap-2')],
   ['option workflow owns its compact header and hides the tab bar', sources.options.includes('mobile-option-header') && sources.app.includes("location.pathname.startsWith('/options/')")],
+  ['mobile ETF option header keeps the shared Account trigger available', sources.options.includes("import AccountControl from '../components/AccountControl'") && sources.options.includes('<AccountControl />')],
   ['safe areas, dynamic viewport units, and native phone font are present', sources.css.includes('safe-area-inset-bottom') && sources.css.includes('100dvh') && sources.css.includes('-apple-system')],
   ['phone-landscape semantic breakpoint remains explicit', sources.responsive.includes('viewportHeight <= 520') && sources.responsive.includes('viewportWidth <= 950')],
   ['shared bottom sheet locks scroll and restores focus', sources.mobileSheet.includes("document.body.style.overflow = 'hidden'") && sources.mobileSheet.includes('previousFocus?.focus()')],
