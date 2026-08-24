@@ -182,16 +182,25 @@ export function createEligibleOngoingSyncMetadata(
 
   const localFingerprints = fingerprintInitialization(local.documents);
   const cloudFingerprints = fingerprintCloudState(cloud);
-  const eligible = CLOUD_STATE_NAMESPACES.every(namespace => (
+  const verifiedCloudBaseline = CLOUD_STATE_NAMESPACES.every(namespace => (
     cloud[namespace].userId === normalizedUserId
     && cloud[namespace].namespace === namespace
     && stage4Metadata.namespaces[namespace].cloudRevision === cloud[namespace].revision
-    && stage4Metadata.namespaces[namespace].lastSyncedLocalUpdatedAt === local.localUpdatedAt[namespace]
     && stage4Metadata.namespaces[namespace].lastSyncedAt !== null
-    && localFingerprints[namespace] === cloudFingerprints[namespace]
   ));
-  if (!eligible) {
-    return { ok: false, reason: 'Local state no longer matches the last verified cloud state.' };
+  if (!verifiedCloudBaseline) {
+    return { ok: false, reason: 'Cloud ownership or revisions no longer match the verified Stage 4 baseline.' };
+  }
+
+  // Stage 4 recorded envelope timestamps as a useful migration-time change detector.
+  // They are not account content: local-only market data or storage normalization may
+  // rewrite an envelope without changing the canonical document. Fresh cloud revision
+  // validation plus canonical fingerprints preserve the no-overwrite invariant here.
+  const canonicalStateMatches = CLOUD_STATE_NAMESPACES.every(namespace => (
+    localFingerprints[namespace] === cloudFingerprints[namespace]
+  ));
+  if (!canonicalStateMatches) {
+    return { ok: false, reason: 'Canonical local durable data differs from the verified cloud copy.' };
   }
 
   const timestamp = now.toISOString();

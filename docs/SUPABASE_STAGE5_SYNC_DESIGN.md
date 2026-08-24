@@ -1,6 +1,6 @@
 # Supabase Stage 5 local-first sync design
 
-Status: Stage 5C.1 production lifecycle is implemented behind `VITE_CLOUD_SYNC_ENABLED`, which is off by default. Ongoing synchronization is not activated or deployed.
+Status: Stage 5C.3 hardens the production lifecycle behind `VITE_CLOUD_SYNC_ENABLED`, which remains off by default. Ongoing synchronization is not activated or deployed.
 
 Stage 4C remains the only production account-data surface. Its explicit first migration and explicit new-browser restore continue to work unchanged, and its statement that automatic cross-device updates are not enabled remains true.
 
@@ -67,6 +67,14 @@ In Stage 5B the coordinator is intentionally stored in a Sync Test Harness compo
 The existing Stage 4 canonical serializer recursively sorts object keys, retains array order and JSON value types, and omits undefined object properties using JSON semantics. Inputs first pass through the Stage 1.5 migration/normalization functions. Therefore property insertion order and legacy representation differences do not create false changes, while durable Portfolio/history, Watchlist, or Preferences changes do.
 
 FNV-1a is a compact change detector, not an authentication or cryptographic integrity mechanism. Payload validation, ownership checks, RLS, revisions, and exact returned-payload verification remain the safety controls.
+
+### Stage 5C.3 enrollment-baseline semantics
+
+Stage 4’s `lastSyncedLocalUpdatedAt` was originally a conservative migration-time signal that the local storage envelope had not changed since verification. It is not a canonical account fact. A local-only market-data rewrite or storage-envelope normalization can change bookkeeping while leaving the exact cloud document unchanged.
+
+Production enrollment therefore uses the safety properties that enforce the no-overwrite invariant directly: matching authenticated ownership, valid verified Stage 4 metadata, complete supported cloud rows, cloud revisions equal to the verified revisions, non-null verified sync timestamps, and fresh equality of canonical local/cloud fingerprints. Harmless envelope timestamp drift is accepted. Canonical local divergence, a different cloud revision, wrong owner, corrupt metadata, or invalid/partial state still blocks.
+
+Portfolio’s state contract is explicit: `latestMarketData` contains current underlying/option marks, last-trade time, IV, delta, Volume/OI, display DTE, availability, and refresh time. It remains device-local and is excluded from fingerprints. `PortfolioTrade.updatedAt` changes only for durable trade/user/lifecycle data. Entry VIX remains durable history but is no longer backfilled by passive mount; explicit Refresh Open Trades may enrich it and reports that durable activity. Expiration resolution remains a genuine durable transition.
 
 ## Namespace queues and coalescing
 

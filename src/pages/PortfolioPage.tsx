@@ -62,6 +62,7 @@ import DataFreshness from '../components/DataFreshness';
 import { persistCollapsedExpirationGroups, persistCollapsedUnderlyingGroups, persistPortfolioGroupMode, readCollapsedExpirationGroups, readCollapsedUnderlyingGroups, readPortfolioGroupMode, setAllExpirationGroupsCollapsed, toggleCollapsedExpirationGroup, type PortfolioGroupMode } from '../lib/portfolioSchedulePreferences';
 import { buildHistoryAnalytics, buildMonthlyRealizedPnl, filterHistoryTrades, historyDaysHeld, historyRealizedIrr, type HistoryOutcome } from '../lib/portfolioHistoryAnalytics';
 import { resolvePortfolioEntryVix } from '../lib/portfolioEntryVix';
+import { applyTransientPortfolioMarketData } from '../lib/portfolioMarketRefresh';
 import { useResponsiveMode } from '../lib/responsive';
 import MobileBottomSheet from '../components/mobile/MobileBottomSheet';
 import MobileSegmentedControl from '../components/mobile/MobileSegmentedControl';
@@ -77,6 +78,7 @@ import {
 } from '../lib/portfolioScheduleSorting';
 import { OPTION_QUOTE_TABLE_DISPLAY_ORDER, orderedOptionQuoteEntries } from '../lib/optionQuoteDisplay';
 import { persistPortfolioMarkBasis, readPortfolioMarkBasis } from '../lib/portfolioMarkPreference';
+import { persistShowNominalYield, readShowNominalYield } from '../lib/optionTablePreferences';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 const PortfolioScreenshotImportModal = lazy(() => import('../components/PortfolioScreenshotImportModal'));
@@ -1077,10 +1079,11 @@ export default function PortfolioPage() {
   const [showDataBackup, setShowDataBackup] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshWarning, setRefreshWarning] = useState(false);
+  const [durableActivityNotice, setDurableActivityNotice] = useState('');
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [drawerSelection, setDrawerSelection] = useState<DrawerSelection | null>(null);
   const [markBasis, setMarkBasis] = useState<MarkBasis>(readPortfolioMarkBasis);
-  const [showNominalYield, setShowNominalYield] = useState(false);
+  const [showNominalYield, setShowNominalYield] = useState(readShowNominalYield);
   const [showNotesErrors, setShowNotesErrors] = useState(false);
   const [showOpenInterestVolume, setShowOpenInterestVolume] = useState(false);
   const [sortField, setSortField] = useState<PortfolioScheduleSortField>('expiration');
@@ -1106,10 +1109,12 @@ export default function PortfolioPage() {
     if (latest > 0) setLastRefreshed(new Date(latest));
     void (async () => {
       const archived = await archiveExpiredOpenTrades(stored);
-      const withEntryVix = await resolvePortfolioEntryVix(archived.trades).catch(() => ({ trades: archived.trades, changed: false }));
       if (!active) return;
-      if (archived.changed || withEntryVix.changed) savePortfolioTrades(withEntryVix.trades);
-      setTrades(withEntryVix.trades);
+      if (archived.changed) {
+        savePortfolioTrades(archived.trades);
+        setDurableActivityNotice('Expired positions were durably moved into lifecycle history. Review Account Sync before enrollment.');
+      }
+      setTrades(archived.trades);
     })();
     return () => {
       active = false;
@@ -1234,6 +1239,11 @@ export default function PortfolioPage() {
     setTrades(next);
   }, []);
 
+  const handleShowNominalYieldChange = useCallback((value: boolean) => {
+    setShowNominalYield(value);
+    persistShowNominalYield(value);
+  }, []);
+
   const handleSaveTrade = useCallback(async (input: PortfolioTradeInput, id?: string) => {
     const next = id ? updatePortfolioTrade(id, input as Partial<PortfolioTrade>) : addPortfolioTrade(input);
     const archived = await archiveExpiredOpenTrades(next);
@@ -1260,10 +1270,26 @@ export default function PortfolioPage() {
   const handleRefreshOpenTrades = useCallback(async () => {
     setRefreshing(true);
     setRefreshWarning(false);
+    setDurableActivityNotice('');
     const current = loadPortfolioTrades();
     const archived = await archiveExpiredOpenTrades(current);
-    const withEntryVix = await resolvePortfolioEntryVix(archived.trades).catch(() => ({ trades: archived.trades, changed: false }));
+    const withEntryVix = await resolvePortfolioEntryVix(archived.trades).catch(() => ({
+      trades: archived.trades,
+      changed: false,
+      networkRequests: 0,
+      resolved: 0,
+      unresolved: 0,
+    }));
     if (archived.changed || withEntryVix.changed) savePortfolioTrades(withEntryVix.trades);
+    const durableMessages = [
+      archived.changed ? 'Expired positions were durably moved into lifecycle history.' : '',
+      withEntryVix.resolved > 0
+        ? `Entry VIX history was durably enriched for ${withEntryVix.resolved} ${withEntryVix.resolved === 1 ? 'position' : 'positions'}.`
+        : '',
+    ].filter(Boolean);
+    if (durableMessages.length > 0) {
+      setDurableActivityNotice(`${durableMessages.join(' ')} This was more than a quote-only refresh.`);
+    }
     const sweepTrades = withEntryVix.trades;
     const open = sweepTrades.filter(trade => trade.status === 'open');
     setTrades(sweepTrades);
@@ -1297,16 +1323,11 @@ export default function PortfolioPage() {
       if (trade.status !== 'open') return trade;
       const remainingDte = calculateDte(trade.expiration);
       if (isFiniteNumber(remainingDte) && remainingDte < 0) {
-        return {
-          ...trade,
-          updatedAt: nowIso,
-          latestMarketData: {
-            ...trade.latestMarketData,
-            dte: remainingDte,
-            refreshedAt: nowIso,
-            availabilityStatus: 'expired' as const,
-          },
-        };
+        return applyTransientPortfolioMarketData(trade, {
+          dte: remainingDte,
+          refreshedAt: nowIso,
+          availabilityStatus: 'expired',
+        });
       }
 
       const timestamp = isoToUnixSeconds(trade.expiration);
@@ -1317,33 +1338,23 @@ export default function PortfolioPage() {
 
       if (failed || !optData) {
         setRefreshWarning(true);
-        return {
-          ...trade,
-          updatedAt: nowIso,
-          latestMarketData: {
-            ...trade.latestMarketData,
-            underlyingPrice: underlying,
-            dte: remainingDte,
-            refreshedAt: nowIso,
-            availabilityStatus: 'refresh_failed' as const,
-          },
-        };
+        return applyTransientPortfolioMarketData(trade, {
+          underlyingPrice: underlying,
+          dte: remainingDte,
+          refreshedAt: nowIso,
+          availabilityStatus: 'refresh_failed',
+        });
       }
 
       const put = optData.puts.find(candidate => Math.abs(candidate.strike - trade.strike) < 0.01);
       if (!put) {
         setRefreshWarning(true);
-        return {
-          ...trade,
-          updatedAt: nowIso,
-          latestMarketData: {
-            ...trade.latestMarketData,
-            underlyingPrice: underlying,
-            dte: remainingDte,
-            refreshedAt: nowIso,
-            availabilityStatus: 'unavailable' as const,
-          },
-        };
+        return applyTransientPortfolioMarketData(trade, {
+          underlyingPrice: underlying,
+          dte: remainingDte,
+          refreshedAt: nowIso,
+          availabilityStatus: 'unavailable',
+        });
       }
 
       let delta = put.delta;
@@ -1357,25 +1368,21 @@ export default function PortfolioPage() {
       const bid = put.bid ?? null;
       const ask = put.ask ?? null;
       const mid = isFiniteNumber(bid) && isFiniteNumber(ask) && ask >= bid ? (bid + ask) / 2 : null;
-      return {
-        ...trade,
-        updatedAt: nowIso,
-        latestMarketData: {
-          underlyingPrice: underlying,
-          optionBid: bid,
-          optionAsk: ask,
-          optionMid: mid,
-          optionLast: put.last ?? null,
-          lastTradeDate: put.lastTradeDate ?? null,
-          iv,
-          delta,
-          volume: put.volume ?? null,
-          openInterest: put.openInterest ?? null,
-          dte: remainingDte,
-          refreshedAt: nowIso,
-          availabilityStatus: 'live' as const,
-        },
-      };
+      return applyTransientPortfolioMarketData(trade, {
+        underlyingPrice: underlying,
+        optionBid: bid,
+        optionAsk: ask,
+        optionMid: mid,
+        optionLast: put.last ?? null,
+        lastTradeDate: put.lastTradeDate ?? null,
+        iv,
+        delta,
+        volume: put.volume ?? null,
+        openInterest: put.openInterest ?? null,
+        dte: remainingDte,
+        refreshedAt: nowIso,
+        availabilityStatus: 'live',
+      }, 'replace');
     });
 
     persistTrades(refreshed);
@@ -1503,6 +1510,7 @@ export default function PortfolioPage() {
               </div>
               <div className="mt-3 flex items-center gap-3"><span className="flex-none text-[12px] font-semibold" style={{ color: 'var(--text-muted)' }}>Mark at</span><div className="min-w-0 flex-1"><MobileSegmentedControl value={markBasis} onChange={setMarkBasis} label="Portfolio mark basis" options={MARK_BASIS_OPTIONS.map(value => ({ value, label: value.charAt(0).toUpperCase() + value.slice(1) }))} /></div></div>
               <DataFreshness updatedAt={lastRefreshed} status={refreshing ? 'updating' : refreshWarning ? 'failed' : lastRefreshed ? 'cached' : 'stale'} label="Portfolio marks" />
+              {durableActivityNotice && <p role="status" className="mt-2 text-[11px] leading-4" style={{ color: 'var(--yellow)' }}>{durableActivityNotice}</p>}
             </section>
 
             <div ref={scheduleRef} className="border-b px-3.5 py-2" style={{ borderColor: 'var(--border)' }}>
@@ -1563,6 +1571,11 @@ export default function PortfolioPage() {
             </button>
           </div>
         </div>
+        {durableActivityNotice && (
+          <div role="status" className="flex items-center gap-2 rounded-lg px-3 py-2 mb-3 text-xs" style={{ backgroundColor: 'rgba(250,204,21,0.10)', color: 'var(--yellow)', border: '1px solid rgba(250,204,21,0.22)' }}>
+            <AlertTriangle className="w-3.5 h-3.5" /> {durableActivityNotice}
+          </div>
+        )}
         {refreshWarning && (
           <div className="flex items-center gap-2 rounded-lg px-3 py-2 mb-3 text-xs" style={{ backgroundColor: 'rgba(250,204,21,0.10)', color: 'var(--yellow)', border: '1px solid rgba(250,204,21,0.22)' }}>
             <AlertTriangle className="w-3.5 h-3.5" /> Some trades could not be refreshed. Saved trade data was preserved.
@@ -1676,7 +1689,7 @@ export default function PortfolioPage() {
                     <button key={value} type="button" onClick={() => setGroupMode(value)} aria-pressed={groupMode === value} className="min-h-8 rounded-md px-2 py-1 text-[10px] font-semibold" style={{ backgroundColor: groupMode === value ? 'var(--accent-bg)' : 'transparent', color: groupMode === value ? 'var(--accent-light)' : 'var(--text-muted)' }}>{label}</button>
                   ))}
                 </div>
-                <DisplayToggle checked={showNominalYield} onChange={setShowNominalYield} label="Show Nominal Yield" />
+                <DisplayToggle checked={showNominalYield} onChange={handleShowNominalYieldChange} label="Show Nominal Yield" />
                 <DisplayToggle checked={showOpenInterestVolume} onChange={setShowOpenInterestVolume} label="Show OI / Volume" />
                 <DisplayToggle checked={showNotesErrors} onChange={setShowNotesErrors} label="Show Notes / Errors" />
                 {scheduleGroups.length > 0 && <button onClick={toggleAllScheduleGroups} className="rounded-lg px-2 py-1.5 text-[11px] whitespace-nowrap" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>

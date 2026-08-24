@@ -84,4 +84,17 @@ const leakedStage5bMarker = stage5bHarnessMarkers.find(marker => javascript.incl
 if (leakedStage5bMarker) {
   throw new Error(`Development Stage 5B test harness entered the production bundle: ${leakedStage5bMarker}`);
 }
-console.log('Development Stage 5B harness, coordinator attachment, fixtures, and email allow-list are excluded from production assets.');
+const forcedTestEmail = process.env.VITE_CLOUD_SYNC_TEST_EMAIL?.trim();
+if (forcedTestEmail && javascript.includes(forcedTestEmail)) {
+  throw new Error('Configured development sync-test email entered the production bundle.');
+}
+const stage4bHarnessMarkers = [
+  'Migration Test Harness',
+  'CLOUD MIGRATION TEST ONLY',
+  'VITE_CLOUD_MIGRATION_TEST_MODE',
+];
+const leakedStage4bMarker = stage4bHarnessMarkers.find(marker => javascript.includes(marker));
+if (leakedStage4bMarker) {
+  throw new Error(`Development Stage 4B migration harness entered the production bundle: ${leakedStage4bMarker}`);
+}
+console.log('Development Stage 4B/5B harnesses, coordinator attachment, fixtures, and email allow-list are excluded from production assets.');

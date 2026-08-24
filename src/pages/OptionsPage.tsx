@@ -440,6 +440,11 @@ export default function OptionsPage() {
 
   const inFlightFetchKeyRef = useRef<string>('');
 
+  const handleShowNominalYieldChange = useCallback((value: boolean) => {
+    setShowNominalYield(value);
+    persistShowNominalYield(value);
+  }, []);
+
   const loadData = useCallback(async (expDate?: number, bypassCache = false, fresh = false) => {
     if (!ticker) return;
     const key = `${ticker}:${expDate ?? 'default'}:${fresh ? 'fresh' : bypassCache ? 'bypass' : 'cached'}`;
@@ -507,7 +512,6 @@ export default function OptionsPage() {
   }, [ticker, expiryParam, loadData]);
 
   useEffect(() => {
-    persistShowNominalYield(showNominalYield);
     if (!showNominalYield) {
       setSortField(current => current === 'nomYieldBid' ? 'annYieldBid' : current === 'nomYieldAsk' ? 'annYieldAsk' : current === 'nomYieldLast' ? 'annYieldLast' : current);
     }
@@ -943,7 +947,7 @@ export default function OptionsPage() {
 
         <div className="flex min-h-[46px] items-center gap-2 border-b px-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
           <span className="mr-auto text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Puts <span className="font-mono font-normal" style={{ color: 'var(--text-muted)' }}>{sortedPuts.length}</span></span>
-          <label className="flex min-h-11 items-center gap-1 text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}><input type="checkbox" checked={showNominalYield} onChange={event => setShowNominalYield(event.target.checked)} className="rounded" /> NY</label>
+          <label className="flex min-h-11 items-center gap-1 text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}><input type="checkbox" checked={showNominalYield} onChange={event => handleShowNominalYieldChange(event.target.checked)} className="rounded" /> NY</label>
           <select value={sortField} onChange={event => setSortField(event.target.value as SortField)} className="min-h-11 rounded-lg px-2 text-[12px] outline-none" aria-label="Sort option chain" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>{mobileSortOptions.map(option => <option key={option.field} value={option.field}>{option.label}</option>)}</select>
           <button type="button" onClick={() => setSortDir(current => current === 'asc' ? 'desc' : 'asc')} className="pressable flex h-11 min-w-11 items-center justify-center rounded-lg text-[11px] font-semibold" aria-label={`Sort ${sortDir === 'asc' ? 'descending' : 'ascending'}`} style={{ color: 'var(--accent-light)' }}>{sortDir === 'asc' ? '↑' : '↓'}</button>
         </div>
@@ -1106,7 +1110,7 @@ export default function OptionsPage() {
                 <input
                   type="checkbox"
                   checked={showNominalYield}
-                  onChange={event => setShowNominalYield(event.target.checked)}
+                  onChange={event => handleShowNominalYieldChange(event.target.checked)}
                   className="rounded"
                 />
                 Show Nominal Yield

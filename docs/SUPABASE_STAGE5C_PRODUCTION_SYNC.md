@@ -1,8 +1,37 @@
 # Supabase Stage 5C.1 production sync integration
 
-Status: implemented behind `VITE_CLOUD_SYNC_ENABLED`, which is off by default. Stage 5C.1 does not authorize enabling the flag in Vercel, deploying it, signing into a real account, or running a live test.
+Status: implemented and hardened through Stage 5C.3 behind `VITE_CLOUD_SYNC_ENABLED`, which is off by default. Stage 5C.3 does not authorize enabling the flag in Vercel, deploying it, signing into a real account, or running a live test.
 
 Put Scanner remains local-first. Portfolio/history, Watchlist, and portable Preferences are written and read locally first. Supabase is an authenticated durable account copy, cross-device state source, and revision authority only after this browser is explicitly enrolled.
+
+## Stage 5C.3 production-canary finding
+
+The first production canary safely stopped before enrollment with “Local state no longer matches the last verified cloud state.” No production sync metadata or intended cloud write was created. Live payload inspection was deliberately not used, so that single error cannot prove which browser-side trigger occurred. Source audit and deterministic restore fixtures found three relevant paths:
+
+1. Every Refresh Open Trades quote outcome—live quote, failed request, unavailable strike, and display-only expired DTE—advanced `PortfolioTrade.updatedAt`. Because that field is canonical, a quote refresh became a false durable edit. This is a direct reproduction of the canary failure class.
+2. Passive Portfolio mount automatically resolved and persisted missing entry VIX. Entry VIX is intentionally durable historical data, so this was a real canonical change caused by merely viewing the page. It was another valid way for a freshly restored browser to become ineligible without an intentional edit.
+3. Passive expiration processing may resolve or mark an expired open position. This is a genuine financial lifecycle transition, not transient drift, and must continue to block exact-baseline enrollment until reconciled.
+
+The former envelope-timestamp eligibility check could also reject an identical canonical payload after harmless storage bookkeeping. Stage 5C.3 therefore fixes both mutation sources and the non-canonical timestamp check without weakening ownership, schema, revision, or fingerprint protection.
+
+## Portfolio durable/transient contract
+
+| Durable account and lifecycle data | Transient device-local market data |
+| --- | --- |
+| identity, ticker, strike, expiration, contracts | current underlying quote |
+| sold price/date, notes, status | option Bid/Ask/Mid/Last and last-trade time |
+| close/resolution/archive economics | current IV, delta, volume, open interest |
+| entry snapshot and entry VIX history | display DTE and quote availability status |
+| imported historical snapshot | market `refreshedAt` and cache freshness |
+| `createdAt` and durable `updatedAt` | `latestMarketData` envelope member |
+
+`PortfolioTrade.updatedAt` now means the last durable user or lifecycle change. Quote freshness exists only at `latestMarketData.refreshedAt`. `DurablePortfolioTrade` excludes `latestMarketData`; market-only persistence can rewrite local market data but preserves the durable revision, durable envelope timestamp, canonical fingerprint, and mutation-event count.
+
+Entry VIX remains portable historical trade metadata. Existing values remain supported and synchronized. Passive Portfolio mount no longer performs entry-VIX lookup or persistence. The explicit **Refresh Open Trades** action may perform that durable enrichment and displays that it was more than a quote-only refresh. This makes user intent and the enrollment consequence visible without adding automatic network load.
+
+Expiration processing remains durable and financially authoritative. Non-expired trades produce no mount write. An expired open trade may still be resolved or marked pending on mount; Portfolio displays a lifecycle notice, and exact-baseline enrollment then correctly blocks because canonical data genuinely changed.
+
+`showNominalYield` was already part of `DurablePreferences`; Portfolio now initializes from and writes through the existing preference storage/event path. Portfolio and Options persist it only from an explicit user toggle, not passive mount.
 
 ## Feature gate and root ownership
 
@@ -30,7 +59,7 @@ Enrollment requires a fresh proof of all of the following:
 - all Stage 4 revisions and local mutation timestamps still match; and
 - no corrupt, account-mismatched, already-enabled, or attention-state Stage 5 metadata exists.
 
-Local state and metadata are re-read after the asynchronous inventory request so enrollment cannot commit a stale baseline. A successful action creates enabled Stage 5 metadata, constructs the root coordinator, and attaches its listener once. It performs one inventory SELECT and zero data-changing `user_state` writes.
+Local state and metadata are re-read after the asynchronous inventory request so enrollment cannot commit a stale baseline. Eligibility requires verified ownership, complete valid rows, unchanged verified cloud revisions, and equality of fresh canonical local/cloud fingerprints. Stage 4’s recorded local envelope timestamp is retained as migration history but is not account content and no longer vetoes an otherwise exact canonical baseline. A different canonical document or changed cloud revision still blocks. A successful action creates enabled Stage 5 metadata, constructs the root coordinator, and attaches its listener once. It performs one inventory SELECT and zero data-changing `user_state` writes.
 
 ## Already-enabled startup
 
@@ -94,7 +123,7 @@ Architecture estimate, not a Supabase plan-limit claim. Assumptions: every liste
 
 One clean manual Sync Now adds one inventory request and three rows read. It adds a CAS only for a namespace classified `LOCAL_AHEAD`; a safe `CLOUD_AHEAD` pull adds no cloud write. Idle enabled apps make no recurring sync requests.
 
-## Future controlled localhost real-account test procedure — do not execute in Stage 5C.1
+## Stage 5C.2 controlled localhost procedure — retained as reference only
 
 1. Confirm the Stage 5C.1 commit and all automated/forced-build checks are green.
 2. Download a fresh local Put Scanner backup and keep the current Stage 4 account copy unchanged.
@@ -108,6 +137,21 @@ One clean manual Sync Now adds one inventory request and three rows read. It add
 10. Use **Sync Now** once and confirm one inventory read and no unnecessary write.
 11. Sign out and confirm all local durable data remains byte-for-byte present.
 12. Stop localhost, return the local flag to false/remove it, restart, and confirm Account Sync is absent. Do not deploy.
+
+## Stage 5C.4 controlled production-canary procedure — do not execute in Stage 5C.3
+
+1. Confirm the Stage 5C.3 commit is deployed with `VITE_CLOUD_SYNC_ENABLED=false`, all automated checks are green, and a fresh local backup exists.
+2. Verify the authoritative account-copy revision numbers through the approved human operator record; do not use an ad hoc payload query.
+3. Choose one controlled production browser with a freshly restored, verified Stage 4 copy and no enabled Stage 5 metadata.
+4. Record its canonical namespace fingerprints, durable Portfolio revision/timestamp, and current local market-data envelope using an approved local diagnostic that exposes no payload content.
+5. View Scanner, Portfolio, Watchlist, Portfolio again, and open/close Account without deliberate edits. Confirm canonical fingerprints and durable revisions/timestamps are unchanged.
+6. Run **Refresh Open Trades** only on non-expired positions with entry VIX already populated. Confirm only `localMarketData` changes and no durable mutation/CAS occurs.
+7. Enable the production flag only for the reviewed canary deployment and confirm anonymous/unenrolled sessions remain inert.
+8. Sign into the controlled browser, confirm **Not enabled on this device**, then click **Enable Sync on This Device** once.
+9. Confirm one inventory SELECT, local enabled engine metadata, cloud revisions unchanged, and zero enrollment CAS writes.
+10. Refresh quotes again and confirm Account Sync stays **Synced** with no Portfolio CAS.
+11. Make one reviewed durable preference change and confirm only Preferences advances by one revision.
+12. Sign out, verify local durable bytes remain present, disable the production flag immediately, and retain logs/fingerprints for review before any broader activation.
 
 ## Infrastructure boundary
 

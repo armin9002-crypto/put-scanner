@@ -14,6 +14,7 @@ export interface PortfolioTradeSnapshot {
 }
 
 export interface PortfolioMarketData {
+  /** Device-local current-market facts. These are excluded from cloud payloads and durable revisions. */
   underlyingPrice?: number | null;
   optionBid?: number | null;
   optionAsk?: number | null;
@@ -71,8 +72,10 @@ export interface PortfolioTrade {
   resolutionSource?: PortfolioResolutionSource;
   resolutionWarning?: string;
   createdAt: string;
+  /** Last durable user or lifecycle change; quote/cache refreshes must preserve this value. */
   updatedAt: string;
   entrySnapshot?: PortfolioTradeSnapshot;
+  /** Transient device-local market state stored outside DurablePortfolioTrade. */
   latestMarketData?: PortfolioMarketData;
   importedSnapshot?: PortfolioImportedSnapshot;
 }
@@ -86,6 +89,7 @@ export type PortfolioTradeInput = Omit<PortfolioTrade, 'id' | 'createdAt' | 'upd
 export const PORTFOLIO_STORAGE_KEY = 'put_scanner_portfolio_trades';
 export const PORTFOLIO_DURABLE_SCHEMA_VERSION = 1 as const;
 
+/** Canonical account data. Current quotes and refresh bookkeeping are deliberately excluded. */
 export type DurablePortfolioTrade = Omit<PortfolioTrade, 'latestMarketData'>;
 
 export interface PortfolioStorageEnvelopeV1 extends DurableStateEnvelope<DurablePortfolioTrade[], 1> {
