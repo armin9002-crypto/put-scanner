@@ -63,6 +63,15 @@ export class SyncNamespaceQueue {
     };
   }
 
+  /** Drops superseded queued work after an explicit, verified conflict resolution. */
+  discardPending(): boolean {
+    if (this.disposed || this.inFlight) return false;
+    if (this.timer) this.clearTimer(this.timer);
+    this.timer = null;
+    this.handledVersion = this.mutationVersion;
+    return true;
+  }
+
   private drain(force: boolean): Promise<SyncQueueRunResult> {
     if (this.disposed) return Promise.resolve('blocked');
     if (this.inFlight) return this.inFlight;

@@ -1,6 +1,13 @@
 import type { StorageLike } from '../durableStorage.ts';
 import type { DormantCloudStateClient } from './cloudStateClient.ts';
-import { readCanonicalLocalNamespace } from './localState.ts';
+import { readCanonicalLocalNamespace, type CanonicalLocalNamespaceState } from './localState.ts';
+import {
+  captureConflictSnapshot,
+  conflictSnapshotView,
+  type CapturedConflictSnapshot,
+  type ConflictResolutionChoice,
+  type SyncConflictView,
+} from './conflictRecovery.ts';
 import {
   cloneOngoingSyncMetadata,
   readOngoingSyncMetadata,
@@ -23,7 +30,7 @@ import {
 
 type SyncTransport = Pick<
   DormantCloudStateClient,
-  'fetchAllUserState' | 'updateNamespaceIfRevisionMatches'
+  'fetchAllUserState' | 'fetchNamespace' | 'updateNamespaceIfRevisionMatches'
 >;
 
 export const DEFAULT_SYNC_DEBOUNCE_MS = 1_000;
@@ -41,7 +48,12 @@ export interface SyncCoordinatorSnapshot {
   overall: OverallSyncStatus;
   syncMode: OngoingSyncMetadataV1['syncMode'] | 'disabled';
   namespaces: Record<CloudNamespace, NamespaceSyncStatus>;
+  conflicts: Partial<Record<CloudNamespace, SyncConflictView>>;
 }
+
+export type ConflictRecoveryResult =
+  | { ok: true; namespace: CloudNamespace; choice?: ConflictResolutionChoice; metadata?: OngoingSyncMetadataV1 }
+  | { ok: false; code: string; message: string };
 
 export interface SyncNowNamespaceResult {
   namespace: CloudNamespace;
@@ -62,6 +74,8 @@ export type SyncCoordinatorDiagnosticEvent =
   | { type: 'verified_cas'; namespace: CloudNamespace }
   | { type: 'network_retry'; namespace: CloudNamespace }
   | { type: 'conflict'; namespace: CloudNamespace }
+  | { type: 'conflict_backup'; namespace: CloudNamespace }
+  | { type: 'conflict_resolved'; namespace: CloudNamespace; choice: ConflictResolutionChoice }
   | { type: 'pull'; namespace: CloudNamespace };
 
 export interface DormantSyncCoordinatorOptions {
@@ -128,6 +142,8 @@ export class DormantLocalFirstSyncCoordinator {
   private generation = 1;
   private unsubscribeMutations: (() => void) | null = null;
   private syncNowInFlight: Promise<SyncNowResult> | null = null;
+  private readonly conflictSnapshots: Partial<Record<CloudNamespace, CapturedConflictSnapshot>> = {};
+  private readonly conflictBackupAcknowledgements = new Set<string>();
   private disposed = false;
 
   constructor(options: DormantSyncCoordinatorOptions) {
@@ -185,6 +201,7 @@ export class DormantLocalFirstSyncCoordinator {
     if (normalized === this.activeUserId) return;
     this.activeUserId = normalized;
     this.generation += 1;
+    this.clearConflictSession();
     this.publishSnapshot();
   }
 
@@ -217,10 +234,20 @@ export class DormantLocalFirstSyncCoordinator {
     const local = Object.fromEntries(CLOUD_STATE_NAMESPACES.map(namespace => {
       const read = readCanonicalLocalNamespace(this.storage, namespace);
       return [namespace, read.status === 'ok'
-        ? { status: 'ok' as const, document: read.value.document, fingerprint: fingerprintNamespaceDocument(read.value.document) }
+        ? {
+            status: 'ok' as const,
+            value: read.value,
+            document: read.value.document,
+            fingerprint: fingerprintNamespaceDocument(read.value.document),
+          }
         : { status: 'invalid' as const }];
     })) as Record<CloudNamespace,
-      | { status: 'ok'; document: CloudNamespaceDocument; fingerprint: SyncFingerprint }
+      | {
+          status: 'ok';
+          value: CanonicalLocalNamespaceState;
+          document: CloudNamespaceDocument;
+          fingerprint: SyncFingerprint;
+        }
       | { status: 'invalid' }>;
 
     this.onDiagnosticEvent?.({ type: 'cloud_select' });
@@ -249,9 +276,6 @@ export class DormantLocalFirstSyncCoordinator {
         return namespaceResult(namespace, 'ACCOUNT_MISMATCH', 'disabled', null);
       }
       const namespaceMetadata = (this.metadata as OngoingSyncMetadataV1).namespaces[namespace];
-      if (namespaceMetadata.status === 'conflict') {
-        return namespaceResult(namespace, 'BOTH_CHANGED', 'conflict', namespaceMetadata.cloudRevision);
-      }
       const localState = local[namespace];
       const cloudRow = cloudState?.[namespace] as CloudStateRow<typeof namespace> | undefined;
       const reconciliation = reconcileNamespace({
@@ -264,11 +288,36 @@ export class DormantLocalFirstSyncCoordinator {
           : { status: 'missing' },
       });
 
+      if (namespaceMetadata.status === 'conflict') {
+        if (reconciliation.classification === 'BOTH_CHANGED'
+          && localState.status === 'ok'
+          && cloudRow) {
+          const captured = captureConflictSnapshot({
+            namespace,
+            userId: metadata.userId,
+            local: localState.value,
+            cloud: cloudRow,
+            metadata: namespaceMetadata,
+            now: this.now(),
+          });
+          if (captured) {
+            this.storeConflictSnapshot(captured);
+            this.setNamespaceStatus(namespace, 'conflict', localState.fingerprint, generation);
+            return namespaceResult(namespace, 'BOTH_CHANGED', 'conflict', cloudRow.revision);
+          }
+        }
+        this.removeConflictSnapshot(namespace);
+        this.setNamespaceStatus(namespace, 'attention', localState.status === 'ok' ? localState.fingerprint : null, generation);
+        return namespaceResult(namespace, reconciliation.classification, 'attention', cloudRow?.revision ?? null);
+      }
+
       if (reconciliation.classification === 'CLEAN') {
+        this.removeConflictSnapshot(namespace);
         this.setNamespaceStatus(namespace, 'synced', null, generation);
         return namespaceResult(namespace, 'CLEAN', 'clean', namespaceMetadata.cloudRevision);
       }
       if (reconciliation.classification === 'LOCAL_AHEAD' && localState.status === 'ok') {
+        this.removeConflictSnapshot(namespace);
         // All pushes, including explicit Sync Now, pass through the same
         // namespace queue so a manual action cannot overlap an event write.
         const pushed = await this.queues[namespace].flush();
@@ -282,6 +331,7 @@ export class DormantLocalFirstSyncCoordinator {
       if (reconciliation.classification === 'CLOUD_AHEAD'
         && cloudRow
         && namespaceMetadata.lastSyncedFingerprint) {
+        this.removeConflictSnapshot(namespace);
         const pulled = safelyPullCloudNamespace(
           this.storage,
           metadata.userId,
@@ -314,6 +364,19 @@ export class DormantLocalFirstSyncCoordinator {
       }
 
       const conflict = reconciliation.classification === 'BOTH_CHANGED';
+      if (conflict && localState.status === 'ok' && cloudRow) {
+        const captured = captureConflictSnapshot({
+          namespace,
+          userId: metadata.userId,
+          local: localState.value,
+          cloud: cloudRow,
+          metadata: namespaceMetadata,
+          now: this.now(),
+        });
+        if (captured) this.storeConflictSnapshot(captured);
+      } else {
+        this.removeConflictSnapshot(namespace);
+      }
       this.setNamespaceStatus(
         namespace,
         conflict ? 'conflict' : 'attention',
@@ -346,7 +409,175 @@ export class DormantLocalFirstSyncCoordinator {
       namespaces: Object.fromEntries(CLOUD_STATE_NAMESPACES.map(namespace => (
         [namespace, this.metadata?.namespaces[namespace].status ?? 'disabled']
       ))) as Record<CloudNamespace, NamespaceSyncStatus>,
+      conflicts: Object.fromEntries(CLOUD_STATE_NAMESPACES.flatMap(namespace => {
+        const conflict = this.conflictSnapshots[namespace];
+        return conflict && this.metadata?.namespaces[namespace].status === 'conflict'
+          ? [[namespace, conflictSnapshotView(conflict, this.conflictBackupAcknowledgements.has(conflict.id))]]
+          : [];
+      })) as Partial<Record<CloudNamespace, SyncConflictView>>,
     };
+  }
+
+  acknowledgeConflictBackup(namespace: CloudNamespace, conflictId: string): ConflictRecoveryResult {
+    if (!this.isEnabledForCurrentAccount() || !this.metadata) {
+      return { ok: false, code: 'not_enabled', message: 'Account sync is not enabled for this account.' };
+    }
+    const conflict = this.conflictSnapshots[namespace];
+    if (!conflict || conflict.id !== conflictId || this.metadata.namespaces[namespace].status !== 'conflict') {
+      return { ok: false, code: 'conflict_changed', message: 'Review the latest account copy before continuing.' };
+    }
+    this.conflictBackupAcknowledgements.add(conflict.id);
+    this.onDiagnosticEvent?.({ type: 'conflict_backup', namespace });
+    this.publishSnapshot();
+    return { ok: true, namespace };
+  }
+
+  async resolveConflict(
+    namespace: CloudNamespace,
+    choice: ConflictResolutionChoice,
+    conflictId: string,
+  ): Promise<ConflictRecoveryResult> {
+    if (!this.isEnabledForCurrentAccount() || !this.metadata) {
+      return { ok: false, code: 'not_enabled', message: 'Account sync is not enabled for this account.' };
+    }
+    if (choice !== 'keep_this_device' && choice !== 'use_account_copy') {
+      return { ok: false, code: 'invalid_choice', message: 'Choose which account copy to keep.' };
+    }
+    const conflict = this.conflictSnapshots[namespace];
+    if (!conflict || conflict.id !== conflictId || this.metadata.namespaces[namespace].status !== 'conflict') {
+      return { ok: false, code: 'conflict_changed', message: 'Review the latest account copy before continuing.' };
+    }
+    if (!this.conflictBackupAcknowledgements.has(conflict.id)) {
+      return { ok: false, code: 'backup_required', message: 'Download a recovery backup before choosing a version.' };
+    }
+    if (conflict.userId !== this.activeUserId || this.queues[namespace].getState().inFlight) {
+      return { ok: false, code: 'not_ready', message: 'Account Sync is still finishing another operation.' };
+    }
+    const generation = this.generation;
+    const local = readCanonicalLocalNamespace(this.storage, namespace);
+    const localFingerprint = local.status === 'ok'
+      ? fingerprintNamespaceDocument(local.value.document)
+      : null;
+    if (local.status !== 'ok' || localFingerprint !== conflict.localFingerprint) {
+      this.removeConflictSnapshot(namespace);
+      this.publishSnapshot();
+      return {
+        ok: false,
+        code: 'device_changed_again',
+        message: 'This device changed again. Nothing was overwritten. Review both versions before trying again.',
+      };
+    }
+
+    if (choice === 'keep_this_device') {
+      this.onDiagnosticEvent?.({ type: 'cas_attempt', namespace });
+      const updated = await this.client.updateNamespaceIfRevisionMatches(
+        namespace,
+        conflict.cloud.revision,
+        local.value.document.schemaVersion,
+        local.value.document.payload,
+      );
+      if (!this.operationIsCurrent(generation)) {
+        return { ok: false, code: 'not_enabled', message: 'The signed-in account changed. Nothing was overwritten.' };
+      }
+      if (!updated.ok) {
+        if (updated.error.code === 'conflict') {
+          this.removeConflictSnapshot(namespace);
+          this.publishSnapshot();
+          return {
+            ok: false,
+            code: 'cloud_changed_again',
+            message: 'Account data changed again. Nothing was overwritten. Review the latest account copy before trying again.',
+          };
+        }
+        return { ok: false, code: updated.error.code, message: 'Account data could not be updated. Nothing was overwritten.' };
+      }
+      const intendedFingerprint = fingerprintNamespaceDocument(local.value.document);
+      if (fingerprintNamespaceDocument(updated.value) !== intendedFingerprint) {
+        this.removeConflictSnapshot(namespace);
+        this.setNamespaceStatus(namespace, 'attention', localFingerprint, generation);
+        return { ok: false, code: 'verification_failed', message: 'Account data could not be verified. Review your recovery backup.' };
+      }
+      const current = readCanonicalLocalNamespace(this.storage, namespace);
+      const currentFingerprint = current.status === 'ok'
+        ? fingerprintNamespaceDocument(current.value.document)
+        : null;
+      const next = cloneOngoingSyncMetadata(this.metadata);
+      next.namespaces[namespace] = {
+        cloudRevision: updated.value.revision,
+        lastSyncedFingerprint: intendedFingerprint,
+        lastSyncedAt: this.now().toISOString(),
+        status: currentFingerprint === intendedFingerprint ? 'synced' : currentFingerprint ? 'pending' : 'attention',
+        pendingFingerprint: currentFingerprint === intendedFingerprint ? null : currentFingerprint,
+      };
+      next.lastReconciledAt = this.now().toISOString();
+      if (!this.commitMetadata(next, generation)) {
+        return { ok: false, code: 'metadata_write_failed', message: 'The account update succeeded, but local sync status needs attention.' };
+      }
+      this.queues[namespace].discardPending();
+      this.removeConflictSnapshot(namespace);
+      if (currentFingerprint && currentFingerprint !== intendedFingerprint) this.queues[namespace].markMutation();
+      this.onDiagnosticEvent?.({ type: 'verified_cas', namespace });
+      this.onDiagnosticEvent?.({ type: 'conflict_resolved', namespace, choice });
+      this.publishSnapshot();
+      return { ok: true, namespace, choice, metadata: this.getMetadata() as OngoingSyncMetadataV1 };
+    }
+
+    const currentCloud = await this.client.fetchNamespace(namespace);
+    if (!this.operationIsCurrent(generation)) {
+      return { ok: false, code: 'not_enabled', message: 'The signed-in account changed. Nothing was overwritten.' };
+    }
+    if (!currentCloud.ok) {
+      return { ok: false, code: currentCloud.error.code, message: 'The latest account copy could not be verified. Nothing was changed.' };
+    }
+    if (!currentCloud.value
+      || currentCloud.value.userId !== conflict.userId
+      || currentCloud.value.revision !== conflict.cloud.revision
+      || fingerprintNamespaceDocument(currentCloud.value) !== conflict.cloudFingerprint) {
+      this.removeConflictSnapshot(namespace);
+      this.publishSnapshot();
+      return {
+        ok: false,
+        code: 'cloud_changed_again',
+        message: 'Account data changed again. Nothing was overwritten. Review the latest account copy before trying again.',
+      };
+    }
+    const pulled = safelyPullCloudNamespace(
+      this.storage,
+      conflict.userId,
+      currentCloud.value,
+      conflict.localFingerprint,
+      this.pullOptions?.(namespace),
+    );
+    if (!pulled.ok) {
+      this.removeConflictSnapshot(namespace);
+      if (pulled.code !== 'local_changed') this.setNamespaceStatus(namespace, 'attention', localFingerprint, generation);
+      else this.publishSnapshot();
+      return {
+        ok: false,
+        code: pulled.code === 'local_changed' ? 'device_changed_again' : pulled.code,
+        message: pulled.code === 'local_changed'
+          ? 'This device changed again. Nothing was overwritten. Review both versions before trying again.'
+          : 'The account copy could not be applied safely. Local data was preserved.',
+      };
+    }
+    const next = cloneOngoingSyncMetadata(this.metadata);
+    next.namespaces[namespace] = {
+      cloudRevision: currentCloud.value.revision,
+      lastSyncedFingerprint: pulled.fingerprint,
+      lastSyncedAt: this.now().toISOString(),
+      status: 'synced',
+      pendingFingerprint: null,
+    };
+    next.lastReconciledAt = this.now().toISOString();
+    if (!this.commitMetadata(next, generation)) {
+      return { ok: false, code: 'metadata_write_failed', message: 'The account copy was applied, but local sync status needs attention.' };
+    }
+    this.queues[namespace].discardPending();
+    this.removeConflictSnapshot(namespace);
+    this.onDiagnosticEvent?.({ type: 'pull', namespace });
+    this.onDiagnosticEvent?.({ type: 'conflict_resolved', namespace, choice });
+    this.publishSnapshot();
+    return { ok: true, namespace, choice, metadata: this.getMetadata() as OngoingSyncMetadataV1 };
   }
 
   getMetadata(): OngoingSyncMetadataV1 | null {
@@ -360,6 +591,7 @@ export class DormantLocalFirstSyncCoordinator {
     this.unsubscribeMutations?.();
     this.unsubscribeMutations = null;
     for (const namespace of CLOUD_STATE_NAMESPACES) this.queues[namespace].dispose();
+    this.clearConflictSession();
     this.publishSnapshot();
   }
 
@@ -479,6 +711,23 @@ export class DormantLocalFirstSyncCoordinator {
     next.namespaces[namespace].status = status;
     next.namespaces[namespace].pendingFingerprint = pendingFingerprint;
     return this.commitMetadata(next, generation);
+  }
+
+  private storeConflictSnapshot(snapshot: CapturedConflictSnapshot): void {
+    const existing = this.conflictSnapshots[snapshot.namespace];
+    if (existing && existing.id !== snapshot.id) this.conflictBackupAcknowledgements.delete(existing.id);
+    this.conflictSnapshots[snapshot.namespace] = snapshot;
+  }
+
+  private removeConflictSnapshot(namespace: CloudNamespace): void {
+    const existing = this.conflictSnapshots[namespace];
+    if (existing) this.conflictBackupAcknowledgements.delete(existing.id);
+    delete this.conflictSnapshots[namespace];
+  }
+
+  private clearConflictSession(): void {
+    for (const namespace of CLOUD_STATE_NAMESPACES) delete this.conflictSnapshots[namespace];
+    this.conflictBackupAcknowledgements.clear();
   }
 
   private commitMetadata(next: OngoingSyncMetadataV1, generation: number): boolean {

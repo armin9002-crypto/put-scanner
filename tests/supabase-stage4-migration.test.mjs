@@ -570,6 +570,7 @@ test('cloud-state access remains isolated to explicit Account Data and feature-g
     path.join(root, 'src/components/CloudSyncTestHarness.tsx'),
     path.join(root, 'src/components/CloudSyncProvider.tsx'),
     path.join(root, 'src/components/CloudSyncSection.tsx'),
+    path.join(root, 'src/components/ConflictResolutionDialog.tsx'),
     path.join(root, 'src/components/AccountUiTestFixture.tsx'),
   ]);
   const runtimeFiles = sourceFiles.filter(file => (

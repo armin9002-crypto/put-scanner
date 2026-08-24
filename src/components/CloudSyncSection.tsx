@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { AlertTriangle, CheckCircle2, Cloud, Download, Loader2, RefreshCw } from 'lucide-react';
 import { useProductionSync, type ProductionSyncPhase } from '../lib/cloudState/productionSyncContext.ts';
-import { CLOUD_STATE_NAMESPACES } from '../lib/cloudState/types.ts';
+import { CLOUD_STATE_NAMESPACES, type CloudNamespace } from '../lib/cloudState/types.ts';
+import type { ConflictResolutionChoice } from '../lib/cloudState/conflictRecovery.ts';
 import { createPutScannerBackup, downloadPutScannerBackup } from '../lib/userDataBackup.ts';
+import ConflictResolutionDialog from './ConflictResolutionDialog.tsx';
 
 function statusLabel(phase: ProductionSyncPhase): string {
   if (phase === 'not_enrolled') return 'Not enabled on this device';
@@ -53,14 +55,21 @@ export default function CloudSyncSection() {
   const sync = useProductionSync();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [confirmation, setConfirmation] = useState<{
+    namespace: CloudNamespace;
+    conflictId: string;
+    choice: ConflictResolutionChoice;
+    label: string;
+  } | null>(null);
 
-  const run = async (action: () => ReturnType<typeof sync.syncNow>) => {
+  const run = async (action: () => Promise<{ ok: boolean; message?: string }>) => {
     if (busy) return;
     setBusy(true);
     setError('');
     try {
       const result = await action();
-      if (!result.ok) setError(result.message);
+      if (!result.ok) setError(result.message ?? 'Account Sync could not complete that action.');
+      return result.ok;
     } finally {
       setBusy(false);
     }
@@ -71,17 +80,38 @@ export default function CloudSyncSection() {
     void run(() => sync.enableOnThisDevice());
   };
 
-  const downloadBackup = () => {
+  const downloadBackup = (namespace: CloudNamespace, conflictId: string) => {
     setError('');
     try {
       const backup = createPutScannerBackup(localStorage, {
         appVersion: import.meta.env.VITE_APP_VERSION || '0.0.0',
       });
-      downloadPutScannerBackup(backup, 'put-scanner-sync-conflict-backup');
+      downloadPutScannerBackup(backup, `put-scanner-${namespace}-conflict-recovery`);
+      const acknowledged = sync.acknowledgeConflictBackup(namespace, conflictId);
+      if (!acknowledged.ok) setError(acknowledged.message);
     } catch (backupError) {
       setError(backupError instanceof Error ? backupError.message : 'Local backup could not be created.');
     }
   };
+
+  const resolveConfirmedConflict = async () => {
+    if (!confirmation) return;
+    const resolved = await run(() => sync.resolveConflict(
+      confirmation.namespace,
+      confirmation.choice,
+      confirmation.conflictId,
+    ));
+    if (resolved) setConfirmation(null);
+  };
+
+  const formatChangedAt = (value: string | null) => value
+    ? new Date(value).toLocaleString()
+    : 'Time unavailable';
+
+  const conflictViews = CLOUD_STATE_NAMESPACES.flatMap(namespace => {
+    const conflict = sync.conflicts[namespace];
+    return conflict ? [conflict] : [];
+  });
 
   if (!sync.featureEnabled) return null;
 
@@ -119,9 +149,52 @@ export default function CloudSyncSection() {
       )}
 
       {sync.phase === 'conflict' && (
-        <button type="button" onClick={downloadBackup} className="pressable flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border px-3 text-xs font-semibold" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
-          <Download className="h-4 w-4" aria-hidden="true" /> Download Local Backup
-        </button>
+        <div className="space-y-3">
+          {conflictViews.length === 0 && (
+            <div className="space-y-3 rounded-xl border p-3" style={{ borderColor: 'color-mix(in srgb, var(--yellow) 45%, var(--border))', backgroundColor: 'var(--surface)' }}>
+              <p className="text-xs leading-5" style={{ color: 'var(--text-muted)' }}>Review the latest account copy before choosing which version to keep.</p>
+              <button type="button" onClick={() => void run(() => sync.syncNow())} disabled={busy} className="pressable flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border px-3 text-xs font-semibold disabled:opacity-50" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />} Review Latest Account Copy
+              </button>
+            </div>
+          )}
+          {conflictViews.map(conflict => (
+            <section key={conflict.id} className="space-y-3 rounded-xl border p-3" style={{ borderColor: 'color-mix(in srgb, var(--yellow) 45%, var(--border))', backgroundColor: 'var(--surface)' }} aria-label={`${conflict.label} conflict recovery`}>
+              <div>
+                <div className="text-sm font-bold" style={{ color: 'var(--text)' }}>{conflict.label} was changed on this device and another device.</div>
+                <p className="mt-1 text-xs leading-5" style={{ color: 'var(--text-muted)' }}>No data has been overwritten. Before choosing a version, download a recovery backup.</p>
+              </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {[
+                  ['This Device', conflict.thisDevice],
+                  ['Account Copy', conflict.accountCopy],
+                ].map(([title, version]) => (
+                  <div key={title as string} className="rounded-lg border p-2.5 text-xs" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface-alt)' }}>
+                    <div className="font-semibold" style={{ color: 'var(--text)' }}>{title as string}</div>
+                    <div className="mt-1 space-y-0.5" style={{ color: 'var(--text-muted)' }}>
+                      {(version as typeof conflict.thisDevice).lines.map(line => <div key={line}>{line}</div>)}
+                      <div>{title === 'This Device' ? 'Last changed' : 'Last saved'}: {formatChangedAt((version as typeof conflict.thisDevice).changedAt)}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button type="button" onClick={() => downloadBackup(conflict.namespace, conflict.id)} className="pressable flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border px-3 text-xs font-semibold" style={{ borderColor: conflict.backupCompleted ? 'var(--green)' : 'var(--border)', color: conflict.backupCompleted ? 'var(--green)' : 'var(--text)' }}>
+                {conflict.backupCompleted ? <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> : <Download className="h-4 w-4" aria-hidden="true" />}
+                {conflict.backupCompleted ? 'Recovery Backup Ready' : 'Download Recovery Backup'}
+              </button>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <button type="button" disabled={!conflict.backupCompleted || busy} onClick={() => setConfirmation({ namespace: conflict.namespace, conflictId: conflict.id, choice: 'keep_this_device', label: conflict.label })} className="pressable min-h-11 rounded-lg border px-3 py-2 text-left text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-45" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+                  <span className="block">Keep This Device</span>
+                  <span className="mt-1 block font-normal leading-4" style={{ color: 'var(--text-muted)' }}>Use the {conflict.label} currently shown on this device.</span>
+                </button>
+                <button type="button" disabled={!conflict.backupCompleted || busy} onClick={() => setConfirmation({ namespace: conflict.namespace, conflictId: conflict.id, choice: 'use_account_copy', label: conflict.label })} className="pressable min-h-11 rounded-lg border px-3 py-2 text-left text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-45" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+                  <span className="block">Use Account Copy</span>
+                  <span className="mt-1 block font-normal leading-4" style={{ color: 'var(--text-muted)' }}>Replace this device's {conflict.label} with the version saved to your account.</span>
+                </button>
+              </div>
+            </section>
+          ))}
+        </div>
       )}
 
       {sync.enrollment !== 'none' && (
@@ -140,6 +213,15 @@ export default function CloudSyncSection() {
 
       {error && <div role="alert" className="rounded-lg border px-2.5 py-2 text-[11px] leading-4" style={{ borderColor: 'color-mix(in srgb, var(--red) 35%, var(--border))', color: 'var(--red)', backgroundColor: 'var(--surface)' }}>{error}</div>}
       <p className="text-[10px] leading-4" style={{ color: 'var(--text-dim)' }}>Your local data remains available immediately.</p>
+      {confirmation && (
+        <ConflictResolutionDialog
+          label={confirmation.label}
+          choice={confirmation.choice}
+          busy={busy}
+          onCancel={() => setConfirmation(null)}
+          onConfirm={() => void resolveConfirmedConflict()}
+        />
+      )}
     </section>
   );
 }

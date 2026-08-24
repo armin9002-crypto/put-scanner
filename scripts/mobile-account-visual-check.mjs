@@ -10,6 +10,8 @@ const baseUrl = process.argv[2] || 'http://127.0.0.1:4173/watchlist';
 const label = process.argv[3] || 'account';
 const outputMode = process.argv[4] || 'detailed';
 const keyboardMode = outputMode === 'keyboard';
+const confirmationMode = outputMode === 'confirmation';
+const fixtureState = new URL(baseUrl).searchParams.get('account-ui-fixture');
 const outputDirectory = path.join(os.tmpdir(), 'put-scanner-stage5d1-screenshots');
 const viewports = keyboardMode ? [{ width: 390, height: 500 }] : [
   { width: 390, height: 844 },
@@ -150,6 +152,10 @@ try {
       await evaluate(client, `document.querySelector('[aria-label="Account Data"]')?.scrollIntoView({ block: 'start' })`);
       await delay(150);
     }
+    if (confirmationMode) {
+      await evaluate(client, `[...document.querySelectorAll('button')].find(button => button.textContent?.includes('Keep This Device') && !button.disabled)?.click()`);
+      await delay(150);
+    }
 
     const metrics = await evaluate(client, `(() => {
       const rect = element => element ? Object.fromEntries(['x','y','width','height','top','right','bottom','left'].map(key => [key, Math.round(element.getBoundingClientRect()[key])])) : null;
@@ -164,6 +170,13 @@ try {
       const signOut = [...document.querySelectorAll('button')].find(button => button.textContent?.trim() === 'Sign Out');
       const emailInput = document.querySelector('input[type="email"]');
       const signInButton = [...document.querySelectorAll('button')].find(button => button.textContent?.includes('Send Sign-In Link'));
+      const conflictRecovery = document.querySelector('[aria-label$="conflict recovery"]');
+      const backupButton = [...document.querySelectorAll('button')].find(button => /Download Recovery Backup|Recovery Backup Ready/.test(button.textContent ?? ''));
+      const keepDevice = [...document.querySelectorAll('button')].find(button => button.textContent?.includes('Keep This Device') && !button.closest('[role="alertdialog"]'));
+      const useAccountCopy = [...document.querySelectorAll('button')].find(button => button.textContent?.includes('Use Account Copy') && !button.closest('[role="alertdialog"]'));
+      const confirmation = document.querySelector('[role="alertdialog"]');
+      const confirmationCancel = confirmation ? [...confirmation.querySelectorAll('button')].find(button => button.textContent?.trim() === 'Cancel') : null;
+      const confirmationAction = confirmation ? [...confirmation.querySelectorAll('button')].find(button => /Keep This Device|Use Account Copy/.test(button.textContent ?? '')) : null;
       const parent = layer?.parentElement;
       return {
         viewport: { width: innerWidth, height: innerHeight },
@@ -179,6 +192,13 @@ try {
         signOut: rect(signOut),
         emailInput: rect(emailInput),
         signInButton: rect(signInButton),
+        conflictRecovery: rect(conflictRecovery),
+        backupButton: rect(backupButton),
+        keepDevice: keepDevice ? { ...rect(keepDevice), disabled: keepDevice.disabled } : null,
+        useAccountCopy: useAccountCopy ? { ...rect(useAccountCopy), disabled: useAccountCopy.disabled } : null,
+        confirmation: rect(confirmation),
+        confirmationCancel: rect(confirmationCancel),
+        confirmationAction: rect(confirmationAction),
         contentScroll: content ? { clientHeight: content.clientHeight, scrollHeight: content.scrollHeight, scrollTop: content.scrollTop, horizontalOverflow: content.scrollWidth > content.clientWidth + 1 } : null,
         layerZIndex: layer ? getComputedStyle(layer).zIndex : null,
         headerZIndex: header ? getComputedStyle(header).zIndex : null,
@@ -198,12 +218,23 @@ try {
     await writeFile(filePath, Buffer.from(screenshot.data, 'base64'));
     results.push({ ...metrics, screenshot: filePath });
 
+    if (confirmationMode) {
+      await evaluate(client, `(() => {
+        const confirmation = document.querySelector('[role="alertdialog"]');
+        [...(confirmation?.querySelectorAll('button') ?? [])]
+          .find(button => button.textContent?.trim() === 'Cancel')?.click();
+      })()`);
+      await delay(50);
+      results[results.length - 1].confirmationClosed = await evaluate(client, `!document.querySelector('[role="alertdialog"]')`);
+    }
     await evaluate(client, `document.querySelector('[aria-label^="Close account"], [aria-label^="Close Account"], [aria-label^="Close Put Scanner Account"]')?.click()`);
     await delay(100);
+    const closed = await evaluate(client, `!document.querySelector('[role="dialog"]')`);
+    results[results.length - 1].closed = closed;
   }
 
-  const fixtureState = new URL(baseUrl).searchParams.get('account-ui-fixture');
   const fixtureNeedsSignedInSections = fixtureState && fixtureState !== 'signed-out';
+  const fixtureConflict = fixtureState === 'conflict' || fixtureState === 'conflict-backed-up';
   const failures = [];
   for (const result of results) {
     const key = `${result.viewport.width}x${result.viewport.height}`;
@@ -215,6 +246,12 @@ try {
     if (result.trigger && (result.trigger.width < 44 || result.trigger.height < 44)) failures.push(`${key}: Account trigger is smaller than 44px`);
     if (fixtureNeedsSignedInSections && (!result.accountSync || !result.accountData || !result.signOut)) failures.push(`${key}: signed-in Account sections are not reachable`);
     if (keyboardMode && !result.emailFormVisible) failures.push(`${key}: email form is not visible in the reduced dynamic viewport`);
+    if (fixtureConflict && (!result.conflictRecovery || !result.backupButton || !result.keepDevice || !result.useAccountCopy)) failures.push(`${key}: conflict recovery controls are not reachable`);
+    if (fixtureState === 'conflict' && (!result.keepDevice?.disabled || !result.useAccountCopy?.disabled)) failures.push(`${key}: resolution controls must be disabled before backup`);
+    if (fixtureState === 'conflict-backed-up' && (result.keepDevice?.disabled || result.useAccountCopy?.disabled)) failures.push(`${key}: resolution controls must be enabled after backup`);
+    if (confirmationMode && (!result.confirmation || result.confirmation.top < 0 || result.confirmation.bottom > result.viewport.height || !result.confirmationCancel || result.confirmationCancel.height < 44 || !result.confirmationAction || result.confirmationAction.height < 44)) failures.push(`${key}: confirmation is not viewport-safe and touch-safe`);
+    if (confirmationMode && !result.confirmationClosed) failures.push(`${key}: confirmation Cancel did not close the confirmation`);
+    if (!result.closed) failures.push(`${key}: close control did not close the Account sheet`);
   }
   if (failures.length > 0) throw new Error(`Mobile Account visual checks failed:\n${failures.join('\n')}`);
 

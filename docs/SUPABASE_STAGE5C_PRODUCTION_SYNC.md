@@ -1,6 +1,6 @@
 # Supabase Stage 5C.1 production sync integration
 
-Status: the Stage 5C.4 controlled production canary completed successfully and was deliberately closed. Stage 5D.1 adds final rollout hardening and the mobile Account presentation behind `VITE_CLOUD_SYNC_ENABLED`, which remains off. Stage 5D.1 does not authorize changing Vercel, deploying, inspecting the live account, or permanently enabling synchronization.
+Status: the Stage 5C/5D production lifecycle is live and validated. Stage 5E adds explicit backup-first conflict recovery while preserving the same feature gate, root coordinator, enrollment, request discipline, and local-first durable contract. Stage 5E does not authorize changing Vercel, deploying, inspecting the live account, or performing a live conflict canary.
 
 Put Scanner remains local-first. Portfolio/history, Watchlist, and portable Preferences are written and read locally first. Supabase is an authenticated durable account copy, cross-device state source, and revision authority only after this browser is explicitly enrolled.
 
@@ -8,7 +8,7 @@ Put Scanner remains local-first. Portfolio/history, Watchlist, and portable Pref
 
 The reviewed canary verified a clean production restore and explicit enrollment. Enrollment created local device metadata and caused zero cloud writes; quote-only **Refresh Open Trades** caused zero Portfolio CAS; one durable preference change updated only Preferences; a clean **Sync Now** caused no feedback write; and sign-out preserved local durable data. The canary flag was then returned to false. Stage 5D.1 relies on those recorded results and performs no new live action.
 
-The final permanent-rollout behavior, purpose-built mobile Account design, and unexecuted rollout checklist are documented in [Supabase Stage 5D production rollout](./SUPABASE_STAGE5D_ROLLOUT.md).
+The final mobile Account design remains documented in [Supabase Stage 5D production rollout](./SUPABASE_STAGE5D_ROLLOUT.md). Explicit conflict recovery is documented in [Supabase Stage 5E conflict recovery](./SUPABASE_STAGE5E_CONFLICT_RECOVERY.md).
 
 ## Stage 5C.3 production-canary finding
 
@@ -100,7 +100,7 @@ Each namespace retains its independent 1,000 ms coalescing queue, one write in f
 
 An offline local edit succeeds immediately and remains visible. The queue makes one initial attempt plus at most two bounded network retries. If those fail, status becomes **Saved locally — account sync pending**; local state and known cloud revision are preserved. Recovery occurs only through a later durable mutation, next enabled-app startup, or explicit **Sync Now**.
 
-**Sync Now** performs one inventory SELECT and only the safe action identified per namespace. It does not force a winner. `BOTH_CHANGED` freezes that namespace and displays **Sync conflict — namespace needs attention**. Other namespaces remain independent. Existing local backup export is offered; conflict resolution is deferred.
+**Sync Now** performs one inventory SELECT and only the safe action identified per namespace. It does not force a winner. `BOTH_CHANGED` freezes that namespace and displays **Sync conflict** while other namespaces remain independent. Stage 5E captures a validated recovery snapshot and requires a complete local JSON recovery backup before **Keep This Device** or **Use Account Copy** becomes available. A stale cloud row or changed local document invalidates the captured snapshot and performs no overwrite.
 
 ## Sign-out and account switching
 
@@ -161,4 +161,4 @@ One clean manual Sync Now adds one inventory request and three rows read. It add
 
 ## Infrastructure boundary
 
-Stage 5D.1 adds no SQL migration, schema/RLS change, Supabase dashboard setting, Vercel variable, deployment, cron, Realtime configuration, server function, or client DELETE capability. Its implementation validation uses local mocks, loopback browser fixtures, deterministic tests, and build inspection only.
+Stage 5E adds no SQL migration, schema/RLS change, Supabase dashboard setting, Vercel variable, deployment, cron, Realtime configuration, server function, cloud device registry, or client DELETE capability. Its implementation validation uses local mocks, loopback browser fixtures, deterministic tests, and build inspection only.

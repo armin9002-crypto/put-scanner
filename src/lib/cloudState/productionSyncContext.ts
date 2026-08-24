@@ -1,6 +1,8 @@
 import { createContext, useContext } from 'react';
 import type { NamespaceSyncStatus, OngoingSyncMetadataV1 } from './syncEngineMetadata.ts';
 import type { OverallSyncStatus, SyncNowResult } from './syncCoordinator.ts';
+import type { ConflictRecoveryResult } from './syncCoordinator.ts';
+import type { ConflictResolutionChoice, SyncConflictView } from './conflictRecovery.ts';
 import type { CloudNamespace } from './types.ts';
 
 export type ProductionSyncPhase =
@@ -25,6 +27,9 @@ export interface ProductionSyncSnapshot {
   enrollment: ProductionSyncEnrollment;
   overall: OverallSyncStatus | 'disabled';
   namespaces: Record<CloudNamespace, NamespaceSyncStatus>;
+  conflicts: Partial<Record<CloudNamespace, SyncConflictView>>;
+  deviceId: string | null;
+  deviceLabel: string;
   lastSuccessfulSyncAt: string | null;
   message: string;
   canEnable: boolean;
@@ -38,6 +43,12 @@ export type ProductionSyncActionResult =
 export interface ProductionSyncContextValue extends ProductionSyncSnapshot {
   enableOnThisDevice(): Promise<ProductionSyncActionResult>;
   syncNow(): Promise<ProductionSyncActionResult>;
+  acknowledgeConflictBackup(namespace: CloudNamespace, conflictId: string): ConflictRecoveryResult;
+  resolveConflict(
+    namespace: CloudNamespace,
+    choice: ConflictResolutionChoice,
+    conflictId: string,
+  ): Promise<ConflictRecoveryResult>;
 }
 
 const DISABLED_NAMESPACES: Record<CloudNamespace, NamespaceSyncStatus> = {
@@ -53,6 +64,9 @@ export const DISABLED_PRODUCTION_SYNC_SNAPSHOT: ProductionSyncSnapshot = {
   enrollment: 'none',
   overall: 'disabled',
   namespaces: DISABLED_NAMESPACES,
+  conflicts: {},
+  deviceId: null,
+  deviceLabel: 'This Browser',
   lastSuccessfulSyncAt: null,
   message: 'Account synchronization is disabled.',
   canEnable: false,
@@ -65,10 +79,18 @@ const disabledAction = async (): Promise<ProductionSyncActionResult> => ({
   message: 'Account synchronization is disabled.',
 });
 
+const disabledConflictAction = (): ConflictRecoveryResult => ({
+  ok: false,
+  code: 'feature_disabled',
+  message: 'Account synchronization is disabled.',
+});
+
 export const ProductionSyncContext = createContext<ProductionSyncContextValue>({
   ...DISABLED_PRODUCTION_SYNC_SNAPSHOT,
   enableOnThisDevice: disabledAction,
   syncNow: disabledAction,
+  acknowledgeConflictBackup: disabledConflictAction,
+  resolveConflict: async () => disabledConflictAction(),
 });
 
 export function useProductionSync(): ProductionSyncContextValue {

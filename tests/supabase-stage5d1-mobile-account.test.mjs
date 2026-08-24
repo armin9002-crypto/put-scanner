@@ -92,7 +92,7 @@ test('Account Sync presents every mobile production state without implementation
     'No data has been changed.',
     'Account data needs attention.',
     'Put Scanner will not overwrite this browser.',
-    'Download Local Backup',
+    'Download Recovery Backup',
     'Sync details',
   ]) assert.match(source, new RegExp(copy.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.doesNotMatch(source, />Namespace details</);

@@ -6,8 +6,11 @@ import {
   type DormantLocalFirstSyncCoordinator,
   type DormantSyncCoordinatorOptions,
   type SyncCoordinatorDiagnosticEvent,
+  type ConflictRecoveryResult,
   type SyncNowResult,
 } from './syncCoordinator.ts';
+import { getOrCreateLocalSyncDeviceId, localDeviceLabel } from './deviceIdentity.ts';
+import type { ConflictResolutionChoice } from './conflictRecovery.ts';
 import {
   createEligibleOngoingSyncMetadata,
   enableEligibleOngoingSync,
@@ -25,7 +28,7 @@ import { CLOUD_STATE_NAMESPACES, type CloudNamespace } from './types.ts';
 
 type ProductionSyncClient = Pick<
   DormantCloudStateClient,
-  'fetchAllUserState' | 'updateNamespaceIfRevisionMatches'
+  'fetchAllUserState' | 'fetchNamespace' | 'updateNamespaceIfRevisionMatches'
 >;
 
 export type ProductionEnrollmentPreparationResult =
@@ -52,7 +55,7 @@ const DISABLED_NAMESPACES = {
   preferences: 'disabled',
 } as const;
 
-function baseSnapshot(featureEnabled: boolean): ProductionSyncSnapshot {
+function baseSnapshot(featureEnabled: boolean, deviceId: string | null = null): ProductionSyncSnapshot {
   return {
     featureEnabled,
     userId: null,
@@ -60,6 +63,9 @@ function baseSnapshot(featureEnabled: boolean): ProductionSyncSnapshot {
     enrollment: 'none',
     overall: 'disabled',
     namespaces: { ...DISABLED_NAMESPACES },
+    conflicts: {},
+    deviceId,
+    deviceLabel: localDeviceLabel(),
     lastSuccessfulSyncAt: null,
     message: featureEnabled ? 'Sign in to use account synchronization.' : 'Account synchronization is disabled.',
     canEnable: false,
@@ -208,16 +214,19 @@ export class ProductionCloudSyncManager {
   private accountOperation: Promise<void> | null = null;
   private currentUserId: string | null = null;
   private configured = false;
+  private readonly deviceId: string | null;
 
   constructor(options: ProductionSyncManagerOptions) {
     this.options = options;
-    this.snapshot = baseSnapshot(options.featureEnabled);
+    this.deviceId = options.featureEnabled ? getOrCreateLocalSyncDeviceId(options.storage) : null;
+    this.snapshot = baseSnapshot(options.featureEnabled, this.deviceId);
   }
 
   getSnapshot(): ProductionSyncSnapshot {
     return {
       ...this.snapshot,
       namespaces: { ...this.snapshot.namespaces },
+      conflicts: { ...this.snapshot.conflicts },
     };
   }
 
@@ -342,25 +351,54 @@ export class ProductionCloudSyncManager {
       : { ok: false, code: 'metadata_invalid', message: 'Account sync metadata is unavailable.' };
   }
 
+  acknowledgeConflictBackup(namespace: CloudNamespace, conflictId: string): ConflictRecoveryResult {
+    const coordinator = this.coordinator;
+    if (!this.options.featureEnabled || !coordinator || !this.currentUserId) {
+      return { ok: false, code: 'not_enabled', message: 'Account sync is not enabled on this device.' };
+    }
+    const result = coordinator.acknowledgeConflictBackup(namespace, conflictId);
+    this.publishFromCoordinator();
+    return result;
+  }
+
+  async resolveConflict(
+    namespace: CloudNamespace,
+    choice: ConflictResolutionChoice,
+    conflictId: string,
+  ): Promise<ConflictRecoveryResult> {
+    const coordinator = this.coordinator;
+    const userId = this.currentUserId;
+    const generation = this.generation;
+    if (!this.options.featureEnabled || !coordinator || !userId) {
+      return { ok: false, code: 'not_enabled', message: 'Account sync is not enabled on this device.' };
+    }
+    const result = await coordinator.resolveConflict(namespace, choice, conflictId);
+    if (!this.isCurrent(generation, userId) || this.coordinator !== coordinator) {
+      return { ok: false, code: 'account_changed', message: 'The signed-in account changed. Nothing was overwritten.' };
+    }
+    this.publishFromCoordinator();
+    return result;
+  }
+
   private async startAccount(
     generation: number,
     userId: string | null,
     configured: boolean,
   ): Promise<void> {
     if (!this.options.featureEnabled) {
-      this.publish(baseSnapshot(false));
+      this.publish(baseSnapshot(false, this.deviceId));
       return;
     }
     if (!configured) {
       this.publish({
-        ...baseSnapshot(true),
+        ...baseSnapshot(true, this.deviceId),
         phase: 'unavailable',
         message: 'Supabase is not configured. The app remains local-first.',
       });
       return;
     }
     if (!userId) {
-      this.publish(baseSnapshot(true));
+      this.publish(baseSnapshot(true, this.deviceId));
       return;
     }
 
@@ -369,7 +407,7 @@ export class ProductionCloudSyncManager {
       || (metadataRead.status === 'ok' && metadataRead.metadata.syncMode !== 'enabled'
         && metadataRead.metadata.syncMode !== 'attention')) {
       this.publish({
-        ...baseSnapshot(true),
+        ...baseSnapshot(true, this.deviceId),
         userId,
         phase: 'not_enrolled',
         message: messageForPhase('not_enrolled', DISABLED_NAMESPACES),
@@ -379,7 +417,7 @@ export class ProductionCloudSyncManager {
     }
     if (metadataRead.status === 'account_mismatch') {
       this.publish({
-        ...baseSnapshot(true),
+        ...baseSnapshot(true, this.deviceId),
         userId,
         phase: 'account_mismatch',
         enrollment: 'blocked',
@@ -389,7 +427,7 @@ export class ProductionCloudSyncManager {
     }
     if (metadataRead.status === 'corrupt' || metadataRead.metadata.syncMode === 'attention') {
       this.publish({
-        ...baseSnapshot(true),
+        ...baseSnapshot(true, this.deviceId),
         userId,
         phase: 'attention',
         enrollment: 'blocked',
@@ -403,7 +441,7 @@ export class ProductionCloudSyncManager {
     const local = readCanonicalLocalState(this.options.storage);
     if (local.status !== 'ok') {
       this.publish({
-        ...baseSnapshot(true),
+        ...baseSnapshot(true, this.deviceId),
         userId,
         phase: 'attention',
         enrollment: 'blocked',
@@ -416,7 +454,7 @@ export class ProductionCloudSyncManager {
     const coordinator = this.createCoordinator(userId, client, generation);
     this.coordinator = coordinator;
     this.publish({
-      ...baseSnapshot(true),
+      ...baseSnapshot(true, this.deviceId),
       userId,
       phase: 'verifying',
       enrollment: 'enabled',
@@ -478,6 +516,9 @@ export class ProductionCloudSyncManager {
       enrollment: 'enabled',
       overall: coordinatorSnapshot.overall,
       namespaces: coordinatorSnapshot.namespaces,
+      conflicts: coordinatorSnapshot.conflicts,
+      deviceId: this.deviceId,
+      deviceLabel: localDeviceLabel(),
       lastSuccessfulSyncAt: latestSuccessfulTimestamp(metadata),
       message: messageForPhase(phase, coordinatorSnapshot.namespaces),
       canEnable: false,
@@ -502,6 +543,7 @@ export class ProductionCloudSyncManager {
     this.snapshot = {
       ...next,
       namespaces: { ...next.namespaces },
+      conflicts: { ...next.conflicts },
     };
     const snapshot = this.getSnapshot();
     for (const subscriber of this.subscribers) subscriber(snapshot);

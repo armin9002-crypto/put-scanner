@@ -1,4 +1,5 @@
 import type { User } from '@supabase/supabase-js';
+import { useState } from 'react';
 import { Cloud, Database, ScanLine, Star, Briefcase, Activity } from 'lucide-react';
 import { AuthContext, type AuthContextValue } from '../lib/authContext';
 import {
@@ -20,6 +21,7 @@ type AccountUiFixtureState =
   | 'synced'
   | 'pending'
   | 'conflict'
+  | 'conflict-backed-up'
   | 'account-mismatch'
   | 'attention'
   | 'restore';
@@ -39,12 +41,17 @@ const disabledNamespaces: Record<'portfolio' | 'watchlist' | 'preferences', Name
   preferences: 'disabled',
 };
 
-function syncFixture(state: AccountUiFixtureState): ProductionSyncContextValue {
+function syncFixture(
+  state: AccountUiFixtureState,
+  backupCompleted: boolean,
+  setBackupCompleted: (completed: boolean) => void,
+): ProductionSyncContextValue {
+  const isConflict = state === 'conflict' || state === 'conflict-backed-up';
   const phase: ProductionSyncPhase = state === 'synced'
     ? 'synced'
     : state === 'pending'
       ? 'pending'
-    : state === 'conflict'
+    : isConflict
       ? 'conflict'
       : state === 'account-mismatch'
         ? 'account_mismatch'
@@ -57,7 +64,7 @@ function syncFixture(state: AccountUiFixtureState): ProductionSyncContextValue {
     ? { portfolio: 'synced', watchlist: 'synced', preferences: 'synced' } as const
     : state === 'pending'
       ? { portfolio: 'pending', watchlist: 'synced', preferences: 'synced' } as const
-    : state === 'conflict'
+    : isConflict
       ? { portfolio: 'conflict', watchlist: 'synced', preferences: 'synced' } as const
       : disabledNamespaces;
   const failedFixtureAction = async () => ({
@@ -70,7 +77,7 @@ function syncFixture(state: AccountUiFixtureState): ProductionSyncContextValue {
     featureEnabled: true,
     userId: state === 'signed-out' ? null : fixtureUser.id,
     phase,
-    enrollment: state === 'synced' || state === 'pending' || state === 'conflict'
+    enrollment: state === 'synced' || state === 'pending' || isConflict
       ? 'enabled'
       : state === 'account-mismatch' || state === 'attention'
         ? 'blocked'
@@ -79,18 +86,44 @@ function syncFixture(state: AccountUiFixtureState): ProductionSyncContextValue {
       ? 'all_synced'
       : state === 'pending'
         ? 'offline_saved_locally'
-        : state === 'conflict'
+        : isConflict
           ? 'conflict_needs_attention'
           : state === 'account-mismatch' || state === 'attention'
             ? 'attention'
             : 'disabled',
     namespaces: { ...namespaces },
-    lastSuccessfulSyncAt: state === 'synced' || state === 'pending' || state === 'conflict' ? '2026-08-24T12:00:00.000Z' : null,
+    conflicts: isConflict ? {
+      portfolio: {
+        id: 'portfolio:fixture-conflict',
+        namespace: 'portfolio',
+        label: 'Portfolio',
+        thisDevice: {
+          lines: ['15 open positions', '8 history items'],
+          changedAt: '2026-08-25T12:01:00.000Z',
+        },
+        accountCopy: {
+          lines: ['14 open positions', '9 history items'],
+          changedAt: '2026-08-25T12:02:00.000Z',
+        },
+        backupCompleted,
+      },
+    } : {},
+    deviceId: '11111111-1111-4111-8111-111111111111',
+    deviceLabel: 'This Browser',
+    lastSuccessfulSyncAt: state === 'synced' || state === 'pending' || isConflict ? '2026-08-24T12:00:00.000Z' : null,
     message: ACCOUNT_UI_TEST_FIXTURE_MARKER,
     canEnable: state === 'not-enrolled' || state === 'restore',
-    canSyncNow: state === 'synced' || state === 'pending' || state === 'conflict',
+    canSyncNow: state === 'synced' || state === 'pending' || isConflict,
     enableOnThisDevice: failedFixtureAction,
     syncNow: failedFixtureAction,
+    acknowledgeConflictBackup: (namespace, conflictId) => {
+      if (isConflict && namespace === 'portfolio' && conflictId === 'portfolio:fixture-conflict') {
+        setBackupCompleted(true);
+        return { ok: true, namespace };
+      }
+      return { ok: false, code: 'fixture_conflict_changed', message: 'Fixture conflict changed.' };
+    },
+    resolveConflict: failedFixtureAction,
   };
 }
 
@@ -142,9 +175,11 @@ const fixtureTabs = [
 
 export default function AccountUiTestFixture({ requestedState }: { requestedState: string }) {
   const { isPhoneLandscape } = useResponsiveMode();
-  const state: AccountUiFixtureState = ['signed-out', 'not-enrolled', 'synced', 'pending', 'conflict', 'account-mismatch', 'attention', 'restore'].includes(requestedState)
+  const state: AccountUiFixtureState = ['signed-out', 'not-enrolled', 'synced', 'pending', 'conflict', 'conflict-backed-up', 'account-mismatch', 'attention', 'restore'].includes(requestedState)
     ? requestedState as AccountUiFixtureState
     : 'signed-out';
+  const [backupCompleted, setBackupCompleted] = useState(state === 'conflict-backed-up');
+  const [accountOpen, setAccountOpen] = useState(true);
   const user = state === 'signed-out' ? null : fixtureUser;
 
   return (
@@ -168,19 +203,21 @@ export default function AccountUiTestFixture({ requestedState }: { requestedStat
         ))}
       </nav>
       <AuthContext.Provider value={authFixture(state)}>
-        <ProductionSyncContext.Provider value={syncFixture(state)}>
-          <MobileAccountSheet
-            identity={user?.email ?? null}
-            status={user ? 'Signed in' : undefined}
-            description={user ? undefined : 'Sign in to use your account across devices'}
-            onClose={() => undefined}
-          >
-            <AccountPanel
-              presentation="mobile"
-              onSignedOut={() => undefined}
-              accountDataContent={state === 'restore' ? <AccountDataRestoreFixture /> : undefined}
-            />
-          </MobileAccountSheet>
+        <ProductionSyncContext.Provider value={syncFixture(state, backupCompleted, setBackupCompleted)}>
+          {accountOpen && (
+            <MobileAccountSheet
+              identity={user?.email ?? null}
+              status={user ? 'Signed in' : undefined}
+              description={user ? undefined : 'Sign in to use your account across devices'}
+              onClose={() => setAccountOpen(false)}
+            >
+              <AccountPanel
+                presentation="mobile"
+                onSignedOut={() => setAccountOpen(false)}
+                accountDataContent={state === 'restore' ? <AccountDataRestoreFixture /> : undefined}
+              />
+            </MobileAccountSheet>
+          )}
         </ProductionSyncContext.Provider>
       </AuthContext.Provider>
     </div>

@@ -1,6 +1,6 @@
 # Supabase Stage 5D production rollout
 
-Status: Stage 5D.1 rollout hardening and mobile Account presentation are implemented locally. Production synchronization remains controlled only by the exact build-time value `VITE_CLOUD_SYNC_ENABLED=true`; it remains off. This document does not authorize a deployment, environment-variable change, live account inspection, or rollout.
+Status: Stage 5D.1 mobile Account and rollout hardening are deployed and production synchronization has been validated. Stage 5E extends this surface with explicit conflict recovery; see [Supabase Stage 5E conflict recovery](./SUPABASE_STAGE5E_CONFLICT_RECOVERY.md). This document does not authorize an environment-variable change, deployment, live account inspection, or conflict canary.
 
 ## Final production behavior
 
@@ -38,7 +38,7 @@ Restore and enrollment are intentionally not combined. Signing in alone does not
 
 ## Conflict and offline behavior
 
-`BOTH_CHANGED` freezes only the affected account area. The cloud version and browser version are preserved; there is no automatic merge, timestamp winner, revision winner, or Last Write Wins. The mobile Account sheet states which area needs attention, confirms that no data was overwritten, and offers **Download Local Backup**. Stage 5D.1 provides no conflict-resolution action.
+`BOTH_CHANGED` freezes only the affected account area. The cloud version and browser version are preserved; there is no automatic merge, timestamp winner, revision winner, or Last Write Wins. Stage 5E keeps the existing mobile Account sheet and adds a backup-first summary plus the explicit **Keep This Device** and **Use Account Copy** actions. Both require confirmation and reconcile only the affected account area.
 
 When a network update cannot complete after bounded retry, the durable change remains saved locally and Account reports **Saved locally** / **Account sync pending**. It does not create a polling or recurring retry loop. A later durable edit or explicit **Sync Now** may retry safely.
 
@@ -61,9 +61,9 @@ Mobile information order is:
 
 Signed-out presentation shows the account explanation, email field, and **Send Sign-In Link** without passwords. Production Account actions are not forked: mobile and desktop render the same `AccountPanel`, `CloudSyncSection`, `AccountDataSection`, Auth actions, backup actions, restore action, enrollment action, and Sync Now action. Desktop retains its established dialog presentation.
 
-## FINAL PERMANENT ROLLOUT CHECKLIST
+## Historical permanent-rollout checklist
 
-Do not execute this checklist as part of Stage 5D.1.
+The production owner subsequently completed and validated the permanent rollout outside Stage 5D.1. This original checklist is retained as an audit record; do not re-execute it as part of Stage 5E.
 
 1. Confirm latest commit deployed with sync false.
 2. Confirm real cloud account healthy.
@@ -86,4 +86,4 @@ Do not execute this checklist as part of Stage 5D.1.
 19. Enroll only reviewed browsers/devices.
 20. Monitor Supabase request/storage behavior.
 
-The checklist requires explicit human authorization. Stage 5D.1 itself performs none of these production operations.
+The original checklist required explicit human authorization. Stage 5D.1 itself performed none of these production operations.

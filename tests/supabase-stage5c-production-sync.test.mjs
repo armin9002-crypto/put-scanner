@@ -22,6 +22,7 @@ import {
   SYNC_ENGINE_METADATA_KEY,
   writeOngoingSyncMetadata,
 } from '../src/lib/cloudState/syncEngineMetadata.ts';
+import { LOCAL_SYNC_DEVICE_ID_KEY } from '../src/lib/cloudState/deviceIdentity.ts';
 import { durableMutationListenerCount } from '../src/lib/cloudState/syncEvents.ts';
 import { writeCloudSyncMetadata } from '../src/lib/cloudState/syncMetadata.ts';
 import { readPortfolioTrades, writePortfolioTrades } from '../src/lib/portfolioStorage.ts';
@@ -237,7 +238,9 @@ test('explicit enrollment requires the exact verified Stage 4 baseline and chang
     assert.deepEqual(client.cloud, cloudBefore);
     assert.equal(readOngoingSyncMetadata(storage, userId).metadata.syncMode, 'enabled');
     const after = storageEntries(storage);
-    assert.deepEqual(Object.fromEntries(Object.entries(after).filter(([key]) => key !== SYNC_ENGINE_METADATA_KEY)), durableBefore);
+    assert.deepEqual(Object.fromEntries(Object.entries(after).filter(([key]) => (
+      key !== SYNC_ENGINE_METADATA_KEY && key !== LOCAL_SYNC_DEVICE_ID_KEY
+    ))), durableBefore);
     assert.equal(manager.getSnapshot().phase, 'synced');
     assert.equal(durableMutationListenerCount(), 1);
     await manager.setAccount(userId, true);

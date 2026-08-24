@@ -1,8 +1,8 @@
 # Supabase Stage 5 local-first sync design
 
-Status: Stage 5C.4 successfully exercised the gated production lifecycle and then returned the production flag to false. Stage 5D.1 hardens final rollout behavior and adds the purpose-built mobile Account presentation. Ongoing synchronization remains off and Stage 5D.1 does not authorize deployment or permanent activation.
+Status: Stage 5C/5D production synchronization is live and has been validated through restore, enrollment, startup reconciliation, durable updates, quote-only refresh, mobile Account, and sign-out. Stage 5E adds explicit backup-first conflict recovery without changing the authoritative local-first architecture. This implementation does not authorize a deployment or live conflict canary.
 
-Stage 4C Account Data remains the explicit first-save and new-browser restore surface. Restore and ongoing-sync enrollment stay separate; signing in never chooses a winner or uploads browser data. The complete rollout guide is [Supabase Stage 5D production rollout](./SUPABASE_STAGE5D_ROLLOUT.md).
+Stage 4C Account Data remains the explicit first-save and new-browser restore surface. Restore and ongoing-sync enrollment stay separate; signing in never chooses a winner or uploads browser data. Stage 5E recovery is documented in [Supabase Stage 5E conflict recovery](./SUPABASE_STAGE5E_CONFLICT_RECOVERY.md).
 
 ## Boundaries
 
@@ -57,6 +57,8 @@ A device can become `eligible` only through an explicit pure eligibility operati
 Eligibility still does not enable anything. A second explicit transition produces `enabled` metadata. Stage 5C.1 exposes that transition only through **Enable Sync on This Device**, after a fresh inventory/equality verification; the action performs no data-changing cloud write.
 
 The ongoing metadata stores only the account ID, sync mode, per-namespace cloud revision, last-synced fingerprint/time, current status, optional pending fingerprint, and last reconciliation time. It stores no raw Portfolio/Watchlist/Preferences document and no token. Like Stage 4 metadata, it is device-local and excluded from JSON backups.
+
+Stage 5E adds `put_scanner_cloud_device_id:v1`, a separate local-only opaque UUID generated once per browser profile. It is not uploaded and is not derived from IP address, location, hardware, browser attributes, or financial data. There is no cloud device registry. The optional UI label is only **This iPhone** or **This Browser**.
 
 ### Previously enabled development-device resume
 
@@ -149,7 +151,11 @@ A durable local change detected before commit stops the pull and preserves that 
 
 ## Multi-device conflict
 
-For the fundamental r5/r5 case, both devices begin at fingerprint F5. Device A writes its local change with expected r5 and creates r6. Device B keeps its offline local change and later attempts expected r5. The database returns zero rows, so B becomes `conflict` and its automatic queue freezes. A's r6 remains in the cloud and B's local state remains in B's browser. B never fetches r6 and automatically overwrites it with B's copy. Explicit conflict resolution is deferred.
+For the fundamental r5/r5 case, both devices begin at fingerprint F5. Device A writes its local change with expected r5 and creates r6. Device B keeps its offline local change and later attempts expected r5. The database returns zero rows, so B becomes `conflict` and its automatic queue freezes. A's r6 remains in the cloud and B's local state remains in B's browser. B never automatically overwrites either version.
+
+Stage 5E retains the exact `BOTH_CHANGED` classifier: local canonical fingerprint differs from the known common fingerprint **and** the validated cloud revision advanced beyond the known common revision. Timestamps, device labels, and revision magnitude never choose a winner. Reconciliation captures the validated local document and current cloud row in memory only for the affected namespace. Persisted conflict status and the common baseline allow a reload to reconstruct that snapshot through a fresh inventory without storing raw conflict payloads in metadata.
+
+After a complete local JSON recovery backup is initiated, the user may explicitly choose **Keep This Device** or **Use Account Copy**. The first performs one CAS against the exact captured cloud revision with no retry and verifies the returned row. The second re-reads only the affected cloud row, requires its revision and fingerprint to match the captured snapshot, and then uses the existing rollback-protected safe pull. Portfolio market data and Watchlist local snapshots remain device-local. Both paths update only the affected baseline, discard only its superseded queued work, and leave unrelated namespaces running.
 
 Conflicts are per namespace. A Portfolio conflict does not roll back a successful Preferences update or stop an unrelated Watchlist queue.
 
@@ -157,7 +163,7 @@ Conflicts are per namespace. A Portfolio conflict does not roll back a successfu
 
 Namespace statuses are `disabled`, `synced`, `pending`, `syncing`, `offline`, `conflict`, and `attention`. The overall summary is one of `disabled`, `all_synced`, `changes_pending`, `offline_saved_locally`, `conflict_needs_attention`, or `attention`. Status is not inferred from unrelated booleans.
 
-The dormant `syncNow()` operation captures local fingerprints, performs one all-namespace cloud read, runs the pure reconciler, safely pushes `LOCAL_AHEAD`, safely pulls `CLOUD_AHEAD`, ignores `CLEAN`, and blocks `BOTH_CHANGED`, missing, invalid, and account-mismatched state. A previously conflicted namespace remains frozen. Results are structured per namespace, so partial failures do not produce a false “All synced” result.
+The dormant `syncNow()` operation captures local fingerprints, performs one all-namespace cloud read, runs the pure reconciler, safely pushes `LOCAL_AHEAD`, safely pulls `CLOUD_AHEAD`, ignores `CLEAN`, and blocks `BOTH_CHANGED`, missing, invalid, and account-mismatched state. A previously conflicted namespace remains frozen but refreshes its validated recovery snapshot without applying either side. Results are structured per namespace, so partial failures do not produce a false “All synced” result.
 
 Stage 5C.1 adds a compact production **Sync Now** control inside Account for enabled devices only. It uses this same operation and adds no polling.
 
@@ -211,4 +217,4 @@ With the flag exactly `true`, `CloudSyncProvider` lives inside Auth but above Ac
 
 Stage 5B adds a separately gated localhost test harness for one explicitly allow-listed disposable email. Stage 5B.1 adds explicit reconstruction of that harness coordinator only for a valid previously enabled test device, with no automatic reconciliation. Its test coordinator, fixture, email allow-list, enable/resume controls, and resume implementation are excluded from production builds, so the production attachment boundary above is unchanged. The literal operator procedure is in `docs/SUPABASE_STAGE5B_LIVE_SYNC_TEST.md`.
 
-The full production lifecycle and the future controlled localhost operator procedure are documented in `docs/SUPABASE_STAGE5C_PRODUCTION_SYNC.md`. Stage 5C.1 does not set the flag, deploy, access a real account, or begin live testing/conflict resolution.
+The production lifecycle remains documented in `docs/SUPABASE_STAGE5C_PRODUCTION_SYNC.md`. Stage 5E changes no flag, deployment, SQL, RLS, or live account state.

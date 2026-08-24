@@ -52,6 +52,8 @@ export default function CloudSyncProvider({ children }: { children: ReactNode })
       ...visibleSnapshot,
       enableOnThisDevice: () => manager.enableOnThisDevice(),
       syncNow: () => manager.syncNow(),
+      acknowledgeConflictBackup: (namespace, conflictId) => manager.acknowledgeConflictBackup(namespace, conflictId),
+      resolveConflict: (namespace, choice, conflictId) => manager.resolveConflict(namespace, choice, conflictId),
     };
   }, [manager, snapshot, userId]);
 
