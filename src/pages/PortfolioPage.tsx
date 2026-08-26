@@ -122,7 +122,6 @@ const PORTFOLIO_SCHEDULE_SORT_OPTIONS: Array<{ value: PortfolioScheduleSortField
   { value: 'soldPrice', label: 'Sold Price' },
   { value: 'premium', label: 'Premium Collected' },
   { value: 'grossRisk', label: 'Gross Risk' },
-  { value: 'netCapitalRisk', label: 'Net Capital at Risk' },
   { value: 'currentMark', label: 'Current Mark' },
   { value: 'currentValue', label: 'Current Value' },
   { value: 'pnl', label: 'Total Gain/Loss' },
@@ -1096,6 +1095,7 @@ export default function PortfolioPage() {
   const [highlightedExpiration, setHighlightedExpiration] = useState<string | null>(null);
   const [highlightedTradeId, setHighlightedTradeId] = useState<string | null>(null);
   const [mobileAnalytics, setMobileAnalytics] = useState<'maturity' | 'ticker' | 'attention' | 'close'>('maturity');
+  const [analyticsExpanded, setAnalyticsExpanded] = useState(false);
   const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
   const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false);
   const scheduleRef = useRef<HTMLDivElement | null>(null);
@@ -1531,7 +1531,7 @@ export default function PortfolioPage() {
               return <MobileExpirationGroup key={key} label={scheduleGroupLabel(group)} dte={groupMode === 'underlying' && 'expirationCount' in group ? `${group.expirationCount} ${group.expirationCount === 1 ? 'expiry' : 'expiries'}` : scheduleGroupDte(group)} positions={group.tradeCount} contracts={group.contractCount} risk={formatCurrency(group.grossRisk, 0)} pnl={formatCurrency(group.totalGainLoss, 0)} captured={formatPctValue(captured)} expanded={expanded} onToggle={() => toggleScheduleGroup(key)}>{group.trades.map(renderMobileScheduleTrade)}</MobileExpirationGroup>;
             })}</div>}
 
-            {openTrades.length > 0 && <section className="border-t px-3.5 py-4" style={{ borderColor: 'var(--border)' }}><h2 className="mb-2 text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Analytics</h2><MobileSegmentedControl value={mobileAnalytics} onChange={setMobileAnalytics} label="Portfolio analytics" options={[{ value: 'maturity', label: 'Maturity' }, { value: 'ticker', label: 'Exposure' }, { value: 'attention', label: 'Attention' }, { value: 'close', label: 'Close' }]} /><div className="mt-2">{mobileAnalytics === 'maturity' && <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openTrades, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." onGroupClick={drillToExpiration} />}{mobileAnalytics === 'ticker' && <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openTrades, markBasis)} totalGrossRisk={sumValues(openTrades.map(calculateEquityAtRisk))} maxItems={8} onGroupClick={drillToTicker} />}{mobileAnalytics === 'attention' && <NeedsAttentionList items={buildNeedsAttention(openTrades).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} />}{mobileAnalytics === 'close' && <CloseCandidatesCard candidates={buildCloseCandidates(openTrades, markBasis).slice(0, 5)} onNavigate={drillToTrade} />}</div></section>}
+            {openTrades.length > 0 && <section className="border-t px-3.5 py-2" style={{ borderColor: 'var(--border)' }}><button type="button" onClick={() => setAnalyticsExpanded(expanded => !expanded)} aria-expanded={analyticsExpanded} aria-controls="portfolio-analytics-content" className="pressable flex min-h-11 w-full items-center justify-between text-left"><h2 className="text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Portfolio Analytics</h2><ChevronDown className={`h-4 w-4 transition-transform ${analyticsExpanded ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} aria-hidden="true" /></button><div id="portfolio-analytics-content">{analyticsExpanded && <div className="pb-2"><MobileSegmentedControl value={mobileAnalytics} onChange={setMobileAnalytics} label="Portfolio analytics" options={[{ value: 'maturity', label: 'Maturity' }, { value: 'ticker', label: 'Exposure' }, { value: 'attention', label: 'Attention' }, { value: 'close', label: 'Close' }]} /><div className="mt-2">{mobileAnalytics === 'maturity' && <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openTrades, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." onGroupClick={drillToExpiration} />}{mobileAnalytics === 'ticker' && <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openTrades, markBasis)} totalGrossRisk={sumValues(openTrades.map(calculateEquityAtRisk))} maxItems={8} onGroupClick={drillToTicker} />}{mobileAnalytics === 'attention' && <NeedsAttentionList items={buildNeedsAttention(openTrades).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} />}{mobileAnalytics === 'close' && <CloseCandidatesCard candidates={buildCloseCandidates(openTrades, markBasis).slice(0, 5)} onNavigate={drillToTrade} />}</div></div>}</div></section>}
 
             {archivedTrades.length > 0 && <section className="border-t px-3.5 py-3" style={{ borderColor: 'var(--border)' }}><button type="button" onClick={() => setMobileHistoryOpen(current => !current)} className="pressable flex min-h-11 w-full items-center justify-between text-left" aria-expanded={mobileHistoryOpen}><span><b className="block text-[15px]" style={{ color: 'var(--text)' }}>History</b><span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{archivedTrades.length} resolved · {formatCurrency(archiveSummary.realizedPnl, 0)} realized</span></span><ChevronDown className={`h-4 w-4 transition-transform ${mobileHistoryOpen ? 'rotate-180' : ''}`} /></button>{mobileHistoryOpen && <ArchiveHistorySection trades={archivedTrades} summary={archiveSummary} resolvingIds={resolvingArchiveIds} onRetryResolve={handleRetryResolve} onManualExpirationClose={handleManualExpirationClose} onEdit={setEditingTrade} onDelete={handleDeleteTrade} />}</section>}
           </>
@@ -1641,8 +1641,9 @@ export default function PortfolioPage() {
             <section className="mt-4 mb-4 w-full max-w-full">
               <div className="flex items-center justify-between mb-2">
                 <h2 className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--text-muted)' }}>Portfolio Analytics</h2>
+                <button type="button" onClick={() => setAnalyticsExpanded(expanded => !expanded)} aria-expanded={analyticsExpanded} aria-controls="portfolio-analytics-content" aria-label={`${analyticsExpanded ? 'Collapse' : 'Expand'} Portfolio Analytics`} className="pressable flex min-h-11 min-w-11 items-center justify-center rounded-lg sm:min-h-8 sm:min-w-8" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}><ChevronDown className={`h-4 w-4 transition-transform ${analyticsExpanded ? 'rotate-180' : ''}`} aria-hidden="true" /></button>
               </div>
-              {openTrades.length === 0 ? (
+              <div id="portfolio-analytics-content">{analyticsExpanded && (openTrades.length === 0 ? (
                 <section className="rounded-lg p-3 text-sm" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>No open positions for analytics.</section>
               ) : (
                 <>
@@ -1674,7 +1675,7 @@ export default function PortfolioPage() {
                   </div>
                 </div>
                 </>
-              )}
+              ))}</div>
             </section>
 
             <div ref={scheduleRef} className="flex scroll-mt-20 flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
@@ -1785,7 +1786,6 @@ export default function PortfolioPage() {
                       {sortButton('soldPrice', 'Sold Price')}
                       {sortButton('premium', 'Premium Collected')}
                       {sortButton('grossRisk', 'Gross Risk')}
-                      {sortButton('netCapitalRisk', 'Net Capital at Risk')}
                       {sortButton('currentMark', 'Current Mark')}
                       {sortButton('currentValue', 'Current Value')}
                       {sortButton('pnl', 'Total Gain/Loss')}
@@ -1828,7 +1828,6 @@ export default function PortfolioPage() {
                           <td className="px-2 py-1.5 text-right">{DASH}</td>
                           <td className="px-2 py-1.5 text-right font-mono tabular-nums font-semibold" style={{ color: 'var(--green)' }}>{formatCurrency(group.premiumCollected, 0)}</td>
                           <td className="px-2 py-1.5 text-right font-mono tabular-nums font-semibold">{formatCurrency(group.grossRisk, 0)}</td>
-                          <td className="px-2 py-1.5 text-right font-mono tabular-nums font-semibold">{formatCurrency(group.netCapitalAtRisk, 0)}</td>
                           <td className="px-2 py-1.5 text-right">{DASH}</td>
                           <td className="px-2 py-1.5 text-right font-mono tabular-nums font-semibold">{formatCurrency(group.currentValue, 0)}</td>
                           <td className="px-2 py-1.5 text-right font-mono tabular-nums font-semibold" style={{ color: pnlColor(group.totalGainLoss) }}>{formatCurrency(group.totalGainLoss, 0)}</td>
@@ -1875,7 +1874,6 @@ export default function PortfolioPage() {
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatOptionPrice(trade.soldPrice)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(calculatePremiumCollected(trade), 0)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(calculateEquityAtRisk(trade), 0)}</td>
-                          <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(calculateNetCapitalAtRisk(trade), 0)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">
                             <HoverTooltip content={<CurrentMarkTooltipContent trade={trade} markBasis={markBasis} />} ariaLabel={`${trade.ticker} current mark details`}>
                               {formatOptionPrice(currentMark)}
@@ -1933,7 +1931,6 @@ export default function PortfolioPage() {
                       <td className="px-2 py-2 text-right font-mono tabular-nums">{DASH}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold" style={{ color: 'var(--green)' }}>{formatCurrency(scheduleTotals.premium, 0)}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold">{formatCurrency(scheduleTotals.grossRisk, 0)}</td>
-                      <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold">{formatCurrency(scheduleTotals.netRisk, 0)}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums">{DASH}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold">{formatCurrency(scheduleTotals.currentValue, 0)}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold" style={{ color: pnlColor(scheduleTotals.totalGainLoss) }}>{formatCurrency(scheduleTotals.totalGainLoss, 0)}</td>

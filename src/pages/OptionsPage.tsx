@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import type { ExpirationDate, OptionsChainData, SortField, SortDirection } from '../lib/types';
+import type { OptionsChainData, SortField, SortDirection } from '../lib/types';
 import { ETF_LIST } from '../lib/etfs';
 import { fetchOptions, fetchExtendedPrice, calculatePutDelta, formatPrice, formatYield, yieldColor, formatNumber, fetchIVRank } from '../lib/api';
 import type { ExtendedPriceData, IVRankData } from '../lib/api';
@@ -13,6 +13,7 @@ import { getOptionLastTradeFreshness } from '../lib/optionLastTradeFreshness';
 import { persistShowNominalYield, readShowNominalYield } from '../lib/optionTablePreferences';
 import { getUnderlyingHoldingsProxy } from '../lib/underlyingHoldingsProxies';
 import { getLastScannerUrl, isScannerNavigationState } from '../lib/scannerNavigation';
+import { parseRequestedOptionExpiry, resolveOptionExpirySelection } from '../lib/optionExpiryNavigation';
 import {
   OPTION_QUOTE_DISPLAY_LABELS,
   OPTION_QUOTE_TABLE_DISPLAY_ORDER,
@@ -374,38 +375,6 @@ function MobileOptionCard({
 const PRICE_HEADER_TOP = 56;
 const EXPIRY_ROW_TOP = 144;
 
-function parseExpiryParam(expiryParam: string | null): number | null {
-  if (!expiryParam) return null;
-  const numeric = Number(expiryParam);
-  if (Number.isFinite(numeric)) return numeric;
-  const isoMatch = expiryParam.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!isoMatch) return null;
-  const [, year, month, day] = isoMatch;
-  return Math.floor(Date.UTC(Number(year), Number(month) - 1, Number(day)) / 1000);
-}
-
-function resolvePreferredExpiration(
-  expirations: ExpirationDate[],
-  expiryParam: string | null
-): { date: number | null; fromScanner: boolean } {
-  if (expirations.length === 0) return { date: null, fromScanner: false };
-  if (expiryParam === 'lte30' || expiryParam === 'lte_30dte') {
-    const shortDated = expirations.find(exp => exp.dte <= 30);
-    return {
-      date: shortDated?.date ?? expirations[0].date,
-      fromScanner: !!shortDated,
-    };
-  }
-  const requestedDate = parseExpiryParam(expiryParam);
-  if (requestedDate != null && expirations.some(exp => exp.date === requestedDate)) {
-    return {
-      date: requestedDate,
-      fromScanner: requestedDate !== expirations[0].date,
-    };
-  }
-  return { date: expirations[0].date, fromScanner: false };
-}
-
 export default function OptionsPage() {
   const { isPhone } = useResponsiveMode();
   const navigate = useNavigate();
@@ -413,6 +382,8 @@ export default function OptionsPage() {
   const { ticker } = useParams<{ ticker: string }>();
   const [searchParams] = useSearchParams();
   const expiryParam = searchParams.get('expiry');
+  const requestedExpiry = parseRequestedOptionExpiry(expiryParam);
+  const openedFromScanner = isScannerNavigationState(location.state);
   const etf = ETF_LIST.find(e => e.ticker === ticker);
 
   const [optionsData, setOptionsData] = useState<OptionsChainData | null>(null);
@@ -446,9 +417,9 @@ export default function OptionsPage() {
     persistShowNominalYield(value);
   }, []);
 
-  const loadData = useCallback(async (expDate?: number, bypassCache = false, fresh = false) => {
+  const loadData = useCallback(async (bypassCache = false, fresh = false) => {
     if (!ticker) return;
-    const key = `${ticker}:${expDate ?? 'default'}:${fresh ? 'fresh' : bypassCache ? 'bypass' : 'cached'}`;
+    const key = `${ticker}:${requestedExpiry ?? 'default'}:${fresh ? 'fresh' : bypassCache ? 'bypass' : 'cached'}`;
     if (inFlightFetchKeyRef.current === key) return;
     inFlightFetchKeyRef.current = key;
 
@@ -456,14 +427,19 @@ export default function OptionsPage() {
     setError(null);
     try {
       const [initialOpts, ext] = await Promise.all([
-        fetchOptions(ticker, expDate, { bypassCache, fresh, source: fresh ? 'OptionsPage:refresh' : 'OptionsPage:load' }),
+        fetchOptions(ticker, requestedExpiry ?? undefined, { bypassCache, fresh, source: fresh ? 'OptionsPage:refresh' : 'OptionsPage:load' }).catch(error => {
+          const status = (error as Error & { status?: number }).status;
+          if (requestedExpiry == null || (status !== 400 && status !== 404)) throw error;
+          return fetchOptions(ticker, undefined, { bypassCache, fresh, source: fresh ? 'OptionsPage:refresh:fallback' : 'OptionsPage:load:fallback' });
+        }),
         fetchExtendedPrice(ticker, { includeSparkline: true }),
       ]);
-      const preferredExp = expDate
-        ? { date: expDate, fromScanner: false }
-        : resolvePreferredExpiration(initialOpts.expirations, expiryParam);
-      const opts = !expDate && preferredExp.date && preferredExp.date !== initialOpts.expirations[0]?.date
-        ? await fetchOptions(ticker, preferredExp.date, { bypassCache, fresh, source: fresh ? 'OptionsPage:refresh:selected' : 'OptionsPage:load:selected' })
+      const returnedExpiration = initialOpts.chainMeta?.returnedExpiration
+        ?? initialOpts.chainMeta?.expirationDate
+        ?? null;
+      const preferredExp = resolveOptionExpirySelection(initialOpts.expirations, expiryParam, returnedExpiration);
+      const opts = preferredExp.date && preferredExp.needsChainFetch
+        ? await fetchOptions(ticker, preferredExp.date, { bypassCache, fresh, source: fresh ? 'OptionsPage:refresh:fallback' : 'OptionsPage:load:fallback' })
         : initialOpts;
       setOptionsData(opts);
       setExtendedPrice(ext);
@@ -472,7 +448,7 @@ export default function OptionsPage() {
       if (preferredExp.date) {
         setSelectedExp(preferredExp.date);
       }
-      setShowScannerPreselectBadge(preferredExp.fromScanner);
+      setShowScannerPreselectBadge(openedFromScanner && preferredExp.requestedMatch);
       setLastUpdated(new Date());
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to load options data');
@@ -480,7 +456,7 @@ export default function OptionsPage() {
       inFlightFetchKeyRef.current = '';
       setLoading(false);
     }
-  }, [ticker, expiryParam]);
+  }, [expiryParam, openedFromScanner, requestedExpiry, ticker]);
 
   const loadExpiration = useCallback(async (expDate: number, bypassCache = false, fresh = false) => {
     if (!ticker) return;
@@ -858,7 +834,7 @@ export default function OptionsPage() {
   const handleRefresh = useCallback(() => {
     inFlightFetchKeyRef.current = '';
     if (selectedExp) loadExpiration(selectedExp, true, true);
-    else loadData(undefined, true, true);
+    else loadData(true, true);
   }, [loadData, loadExpiration, selectedExp]);
 
   const handleBackToScanner = useCallback(() => {

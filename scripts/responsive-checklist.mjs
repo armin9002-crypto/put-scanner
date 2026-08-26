@@ -52,6 +52,11 @@ const sources = {
   mobileOptionRow: read('src/components/mobile/MobileOptionRow.tsx'),
   mobilePositionRow: read('src/components/mobile/MobilePositionRow.tsx'),
 };
+const portfolioScheduleStart = sources.portfolio.indexOf('Schedule of Positions');
+const portfolioSchedule = sources.portfolio.slice(
+  portfolioScheduleStart,
+  sources.portfolio.indexOf('<ArchiveHistorySection', portfolioScheduleStart),
+);
 
 const guardrails = [
   ['phone navigation uses contextual headers and real links', sources.app.includes('<MobilePageHeader') && sources.app.includes('<NavLink')],
@@ -74,6 +79,8 @@ const guardrails = [
   ['Screener uses the shared option language and a filter sheet', sources.screener.includes('if (isPhone)') && sources.screener.includes('<MobileOptionRow') && sources.screener.includes('<MobileBottomSheet')],
   ['Watchlist uses the same shared option row language', sources.watchlist.includes('if (isPhone)') && sources.watchlist.includes('<MobileOptionRow')],
   ['Portfolio puts grouped position rows before one-at-a-time analytics', sources.portfolio.includes('if (isPhone)') && sources.portfolio.indexOf('<MobilePositionRow') < sources.portfolio.indexOf('Portfolio analytics')],
+  ['Portfolio Analytics is collapsed by default with touch-safe controls in both layouts', sources.portfolio.includes('useState(false)') && (sources.portfolio.match(/aria-controls="portfolio-analytics-content"/g) ?? []).length === 2 && (sources.portfolio.match(/aria-expanded=\{analyticsExpanded\}/g) ?? []).length === 2 && sources.portfolio.includes('min-h-11')],
+  ['Schedule removes the Net Capital at Risk display column without removing its calculations', !portfolioSchedule.includes("sortButton('netCapitalRisk', 'Net Capital at Risk')") && !portfolioSchedule.includes('formatCurrency(group.netCapitalAtRisk, 0)') && sources.portfolio.includes('calculateNetCapitalAtRisk')],
   ['Portfolio exposes persistent Expiry/Underlying/None grouping and VIX-first schedule data', sources.portfolio.includes("['expiration', 'Expiry']") && sources.portfolio.includes("['none', 'None']") && sources.portfolio.includes("groupMode === 'none'") && sources.portfolio.includes('VIX @ Entry') && sources.portfolio.includes('Show OI / Volume') && sources.portfolio.includes('Realized IRR')],
   ['Portfolio backup stays in utility actions and uses a phone-safe confirmation sheet', sources.portfolio.includes('Data Backup') && sources.dataBackup.includes('max-h-[94dvh]') && sources.dataBackup.includes('Replace Current Data') && sources.dataBackup.includes('Download Current Recovery Backup')],
   ['ETF Pulse offers one-at-a-time List, Heatmap, and Momentum views', sources.pulse.includes("'list' | 'heatmap' | 'momentum'") && sources.pulse.includes('mobileVisual === \'heatmap\'') && sources.pulse.includes('mobileVisual === \'momentum\'')],

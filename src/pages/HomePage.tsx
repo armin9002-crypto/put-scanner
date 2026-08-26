@@ -44,6 +44,7 @@ import { passesScannerLiquidityFilter, sortScannerEtfs, type ScannerLiquidityFil
 import { fetchFundAssets, type FundAssetsData } from '../lib/fundAssets';
 import { parseScannerState, resolveScannerExpiration, serializeScannerState, type ScannerState } from '../lib/scannerState';
 import { saveLastScannerUrl, type ScannerNavigationState } from '../lib/scannerNavigation';
+import { buildScannerOptionsPath } from '../lib/optionExpiryNavigation';
 import { useResponsiveMode } from '../lib/responsive';
 import MobileBottomSheet from '../components/mobile/MobileBottomSheet';
 import MobileMarketStrip from '../components/mobile/MobileMarketStrip';
@@ -474,7 +475,7 @@ export default function HomePage() {
             <MobileEtfRow
               key={etf.ticker}
               etf={etf}
-              to={`/options/${etf.ticker}`}
+              to={buildScannerOptionsPath(etf.ticker, expFilter)}
               navigationState={{ fromScanner: true } satisfies ScannerNavigationState}
               priceData={prices[etf.ticker] ?? null}
               optionSnapshot={optionSnapshots[etf.ticker] ?? null}
@@ -575,7 +576,7 @@ export default function HomePage() {
             <ETFCard
               key={etf.ticker}
               etf={etf}
-              to={`/options/${etf.ticker}`}
+              to={buildScannerOptionsPath(etf.ticker, expFilter)}
               navigationState={{ fromScanner: true } satisfies ScannerNavigationState}
               priceData={prices[etf.ticker] ?? null}
               optionSnapshot={optionSnapshots[etf.ticker] ?? null}
