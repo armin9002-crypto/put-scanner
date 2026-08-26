@@ -6,6 +6,23 @@ export interface OptionExpirySelection {
   needsChainFetch: boolean;
 }
 
+interface OptionChainExpirationMetadata {
+  returnedExpiration?: number | null;
+  expirationDate?: number | null;
+}
+
+export function getReturnedOptionExpiration(metadata: OptionChainExpirationMetadata | null | undefined): number | null {
+  return metadata?.returnedExpiration ?? metadata?.expirationDate ?? null;
+}
+
+export function optionChainMatchesRequestedExpiration(
+  metadata: OptionChainExpirationMetadata | null | undefined,
+  requestedExpiration: number,
+): boolean {
+  const returnedExpiration = getReturnedOptionExpiration(metadata);
+  return returnedExpiration == null || returnedExpiration === requestedExpiration;
+}
+
 function isoFromTimestamp(timestamp: number): string | null {
   if (!Number.isSafeInteger(timestamp) || timestamp <= 0) return null;
   try {

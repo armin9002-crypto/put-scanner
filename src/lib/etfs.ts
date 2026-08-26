@@ -1,46 +1,16 @@
 import type { ETFInfo } from './types';
+import { SCANNER_SYMBOLS, normalizeSymbolTicker } from '../../shared/symbolRegistry.js';
 
-export const ETF_LIST: ETFInfo[] = [
-  { ticker: 'AGQ', name: 'ProShares Ultra Silver', leverage: '2x', underlying: 'Silver', type: 'Commodity' },
-  { ticker: 'BOIL', name: 'ProShares Ultra DJ-AIG Natural Gas', leverage: '2x', underlying: 'Natural Gas', type: 'Commodity' },
-  { ticker: 'BRZU', name: 'Direxion MSCI Brazil Bull 2X', leverage: '2x', underlying: 'Brazil', type: 'Country' },
-  { ticker: 'BULZ', name: 'MicroSectors FANG & Innovation 3X', leverage: '3x', underlying: 'Tech/FANG', type: 'Sector' },
-  { ticker: 'CURE', name: 'Direxion Healthcare Bull 3X', leverage: '3x', underlying: 'Healthcare', type: 'Sector' },
-  { ticker: 'CWEB', name: 'Direxion China Internet Bull 2X', leverage: '2x', underlying: 'China Internet', type: 'Country' },
-  { ticker: 'DDM', name: 'ProShares Ultra Dow 30', leverage: '2x', underlying: 'Dow Jones', type: 'Broad Index' },
-  { ticker: 'DFEN', name: 'Direxion Aerospace & Defense 3X', leverage: '3x', underlying: 'Aerospace/Defense', type: 'Sector' },
-  { ticker: 'DIG', name: 'ProShares Ultra Oil & Gas', leverage: '2x', underlying: 'Oil & Gas', type: 'Commodity' },
-  { ticker: 'DPST', name: 'Direxion Regional Banks Bull 3X', leverage: '3x', underlying: 'Regional Banks', type: 'Sector' },
-  { ticker: 'DUSL', name: 'Direxion Industrials Bull 3X', leverage: '3x', underlying: 'Industrials', type: 'Sector' },
-  { ticker: 'EDC', name: 'Direxion Emerging Markets Bull 3X', leverage: '3x', underlying: 'Emerging Markets', type: 'Country' },
-  { ticker: 'ERX', name: 'Direxion Energy Bull 2X', leverage: '2x', underlying: 'Energy', type: 'Commodity' },
-  { ticker: 'EURL', name: 'Direxion FTSE Europe Bull 3X', leverage: '3x', underlying: 'Europe', type: 'Country' },
-  { ticker: 'FAS', name: 'Direxion Financial Bull 3X', leverage: '3x', underlying: 'Financials', type: 'Sector' },
-  { ticker: 'FNGU', name: 'MicroSectors FANG+ 3X', leverage: '3x', underlying: 'FANG+', type: 'Sector' },
-  { ticker: 'GUSH', name: 'Direxion Oil & Gas Bull 2X', leverage: '2x', underlying: 'Oil & Gas E&P', type: 'Commodity' },
-  { ticker: 'HIBL', name: 'Direxion S&P 500 High Beta Bull 3X', leverage: '3x', underlying: 'S&P High Beta', type: 'Broad Index' },
-  { ticker: 'INDL', name: 'Direxion MSCI India Bull 2X', leverage: '2x', underlying: 'India', type: 'Country' },
-  { ticker: 'LABU', name: 'Direxion Biotech Bull 3X', leverage: '3x', underlying: 'Biotech', type: 'Sector' },
-  { ticker: 'MIDU', name: 'Direxion Mid Cap Bull 3X', leverage: '3x', underlying: 'Mid Cap', type: 'Broad Index' },
-  { ticker: 'NAIL', name: 'Direxion Homebuilders Bull 3X', leverage: '3x', underlying: 'Homebuilders', type: 'Sector' },
-  { ticker: 'NUGT', name: 'Direxion Gold Miners Bull 2X', leverage: '2x', underlying: 'Gold Miners', type: 'Commodity' },
-  { ticker: 'QLD', name: 'ProShares Ultra QQQ', leverage: '2x', underlying: 'NASDAQ-100', type: 'Broad Index' },
-  { ticker: 'ROM', name: 'ProShares Ultra Technology', leverage: '2x', underlying: 'Technology', type: 'Sector' },
-  { ticker: 'SOXL', name: 'Direxion Semiconductor Bull 3X', leverage: '3x', underlying: 'Semiconductors', type: 'Sector' },
-  { ticker: 'SSO', name: 'ProShares Ultra S&P 500', leverage: '2x', underlying: 'S&P 500', type: 'Broad Index' },
-  { ticker: 'TECL', name: 'Direxion Tech Bull 3X', leverage: '3x', underlying: 'Technology', type: 'Sector' },
-  { ticker: 'TNA', name: 'Direxion Small Cap Bull 3X', leverage: '3x', underlying: 'Russell 2000', type: 'Broad Index' },
-  { ticker: 'TQQQ', name: 'ProShares UltraPro QQQ', leverage: '3x', underlying: 'NASDAQ-100', type: 'Broad Index' },
-  { ticker: 'UCO', name: 'ProShares Ultra Bloomberg Crude Oil', leverage: '2x', underlying: 'Crude Oil', type: 'Commodity' },
-  { ticker: 'UDOW', name: 'ProShares UltraPro Dow 30', leverage: '3x', underlying: 'Dow Jones', type: 'Broad Index' },
-  { ticker: 'UGL', name: 'ProShares Ultra Gold', leverage: '2x', underlying: 'Gold', type: 'Commodity' },
-  { ticker: 'UPRO', name: 'ProShares UltraPro S&P 500', leverage: '3x', underlying: 'S&P 500', type: 'Broad Index' },
-  { ticker: 'URTY', name: 'ProShares UltraPro Russell 2000', leverage: '3x', underlying: 'Russell 2000', type: 'Broad Index' },
-  { ticker: 'USD', name: 'ProShares Ultra Semiconductors', leverage: '2x', underlying: 'Semiconductors', type: 'Sector' },
-  { ticker: 'UTSL', name: 'Direxion Utilities Bull 3X', leverage: '3x', underlying: 'Utilities', type: 'Sector' },
-  { ticker: 'UWM', name: 'ProShares Ultra Russell 2000', leverage: '2x', underlying: 'Russell 2000', type: 'Broad Index' },
-  { ticker: 'UYG', name: 'ProShares Ultra Financials', leverage: '2x', underlying: 'Financials', type: 'Sector' },
-  { ticker: 'UYM', name: 'ProShares Ultra Materials', leverage: '2x', underlying: 'Materials', type: 'Sector' },
-  { ticker: 'WEBL', name: 'Direxion Dow Jones Internet Bull 3X', leverage: '3x', underlying: 'Internet', type: 'Sector' },
-  { ticker: 'YINN', name: 'Direxion FTSE China Bull 3X', leverage: '3x', underlying: 'China', type: 'Country' },
-];
+export const ETF_LIST: ETFInfo[] = SCANNER_SYMBOLS.map(symbol => ({
+  ticker: symbol.ticker,
+  name: symbol.name,
+  leverage: `${symbol.leverageMultiple}x`,
+  underlying: symbol.exposure ?? symbol.name,
+  type: symbol.etfCategory ?? 'Broad Index',
+}));
+
+const ETF_BY_TICKER = new Map(ETF_LIST.map(etf => [etf.ticker, etf]));
+
+export function getScannerEtf(ticker: string | null | undefined): ETFInfo | null {
+  return ETF_BY_TICKER.get(normalizeSymbolTicker(ticker)) ?? null;
+}

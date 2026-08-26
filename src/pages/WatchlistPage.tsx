@@ -2,6 +2,7 @@ import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } fro
 import { Link } from 'react-router-dom';
 import {
   getWatchlist,
+  isPastWatchlistExpirationDte,
   markWatchlistItems,
   removeFromWatchlist,
   updateWatchlistNote,
@@ -114,7 +115,7 @@ function buildRow(item: WatchlistItem): LiveRow {
   const snapshot: WatchlistSnapshot = item.snapshot ?? {};
   const rawDte = calculateDte(item.expiry);
   const dte = isFiniteNumber(rawDte) ? Math.max(0, rawDte) : snapshot.dte ?? null;
-  const expired = isFiniteNumber(rawDte) ? rawDte <= 0 : false;
+  const expired = isPastWatchlistExpirationDte(rawDte);
   const currentPrice = snapshot.underlyingPrice ?? null;
   const bid = snapshot.bid ?? null;
   const ask = snapshot.ask ?? null;
@@ -179,7 +180,7 @@ function optionDetailFromWatchlistRow(row: LiveRow): OptionDetail {
 function mergeLiveItem(item: WatchlistItem, optData: OptionsChainData | null, currentPrice: number | null, failed: boolean): WatchlistItem {
   const rawDte = calculateDte(item.expiry);
   const dte = isFiniteNumber(rawDte) ? Math.max(0, rawDte) : null;
-  if (isFiniteNumber(rawDte) && rawDte <= 0) {
+  if (isPastWatchlistExpirationDte(rawDte)) {
     return { ...item, status: 'expired', updatedAt: Date.now() };
   }
 
@@ -280,7 +281,7 @@ export default function WatchlistPage() {
     const requestItems = currentItems
       .filter(item => {
         const rawDte = calculateDte(item.expiry);
-        return !isFiniteNumber(rawDte) || rawDte > 0;
+        return !isPastWatchlistExpirationDte(rawDte);
       })
       .map(item => ({ ticker: item.ticker, expirationTimestamp: item.expiryTimestamp }));
     const acquired = await acquireOptionChains<OptionsChainData>(requestItems, {

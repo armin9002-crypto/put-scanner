@@ -1,9 +1,9 @@
-import { ETF_LIST } from './etfs.ts';
 import { buildEtfPulseRow, type EtfPulseRow } from './etfPulseMetrics.ts';
 import type { ETFInfo } from './types.ts';
 import type { ChartPoint } from './chartHistory.ts';
 import { recordRequestDiagnostic, recordResponseDebugHeaders } from './requestDiagnostics.ts';
 import { ETF_PULSE_TICKERS } from '../../shared/etfPulseUniverse.js';
+import { ETF_PULSE_SYMBOLS } from '../../shared/symbolRegistry.js';
 
 export interface EtfPulseLoadResult {
   rows: EtfPulseRow[];
@@ -95,24 +95,13 @@ function writeRowsCache(result: EtfPulseLoadResult): void {
 }
 
 export function getEtfPulseUniverse(): ETFInfo[] {
-  const byTicker = new Map<string, ETFInfo>();
-  ETF_LIST.forEach(etf => byTicker.set(etf.ticker.toUpperCase(), { ...etf, ticker: etf.ticker.toUpperCase() }));
-  byTicker.set('QQQ', {
-    ticker: 'QQQ',
-    name: 'Invesco QQQ Trust',
-    leverage: '1x',
-    underlying: 'Nasdaq 100',
-    type: 'Broad Index',
-  });
-  byTicker.set('SPY', {
-    ticker: 'SPY',
-    name: 'SPDR S&P 500 ETF Trust',
-    leverage: '1x',
-    underlying: 'S&P 500',
-    type: 'Broad Index',
-  });
-  const expected = new Set(ETF_PULSE_TICKERS);
-  return [...byTicker.values()].filter(etf => expected.has(etf.ticker)).sort((a, b) => a.ticker.localeCompare(b.ticker));
+  return ETF_PULSE_SYMBOLS.map(symbol => ({
+    ticker: symbol.ticker,
+    name: symbol.name,
+    leverage: `${symbol.leverageMultiple}x`,
+    underlying: symbol.exposure ?? symbol.name,
+    type: symbol.etfCategory ?? 'Broad Index',
+  }));
 }
 
 function isEtfPulseDataset(value: unknown): value is EtfPulseDataset {

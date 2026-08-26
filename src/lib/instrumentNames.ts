@@ -1,15 +1,4 @@
-import { ETF_LIST } from './etfs';
-
-const STATIC_INSTRUMENT_NAMES: Record<string, string> = {
-  SPY: 'SPDR S&P 500 ETF Trust',
-  QQQ: 'Invesco QQQ Trust',
-  VIX: 'CBOE Volatility Index',
-  VXN: 'CBOE Nasdaq-100 Volatility Index',
-  '^VIX': 'CBOE Volatility Index',
-  '^VXN': 'CBOE Nasdaq-100 Volatility Index',
-};
-
-const ETF_NAME_BY_TICKER = new Map(ETF_LIST.map(etf => [etf.ticker.toUpperCase(), etf.name]));
+import { getSymbolMetadata } from '../../shared/symbolRegistry.js';
 
 export function normalizeDisplayTicker(ticker: string): string {
   const normalized = ticker.trim().toUpperCase();
@@ -26,11 +15,8 @@ export function getInstrumentName(ticker: string, displayTicker?: string): strin
   ].filter(Boolean);
 
   for (const candidate of candidates) {
-    const staticName = STATIC_INSTRUMENT_NAMES[candidate];
-    if (staticName) return staticName;
-
-    const etfName = ETF_NAME_BY_TICKER.get(candidate);
-    if (etfName) return etfName;
+    const symbol = getSymbolMetadata(candidate);
+    if (symbol) return symbol.name;
   }
 
   return null;

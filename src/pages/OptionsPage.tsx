@@ -1,7 +1,7 @@
 import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { OptionsChainData, SortField, SortDirection } from '../lib/types';
-import { ETF_LIST } from '../lib/etfs';
+import { getScannerEtf } from '../lib/etfs';
 import { fetchOptions, fetchExtendedPrice, calculatePutDelta, formatPrice, formatYield, yieldColor, formatNumber, fetchIVRank } from '../lib/api';
 import type { ExtendedPriceData, IVRankData } from '../lib/api';
 import { addToWatchlist, removeFromWatchlist, isInWatchlist, makeWatchlistId } from '../lib/watchlist';
@@ -13,7 +13,7 @@ import { getOptionLastTradeFreshness } from '../lib/optionLastTradeFreshness';
 import { persistShowNominalYield, readShowNominalYield } from '../lib/optionTablePreferences';
 import { getUnderlyingHoldingsProxy } from '../lib/underlyingHoldingsProxies';
 import { getLastScannerUrl, isScannerNavigationState } from '../lib/scannerNavigation';
-import { parseRequestedOptionExpiry, resolveOptionExpirySelection } from '../lib/optionExpiryNavigation';
+import { getReturnedOptionExpiration, optionChainMatchesRequestedExpiration, parseRequestedOptionExpiry, resolveOptionExpirySelection } from '../lib/optionExpiryNavigation';
 import {
   OPTION_QUOTE_DISPLAY_LABELS,
   OPTION_QUOTE_TABLE_DISPLAY_ORDER,
@@ -379,12 +379,13 @@ export default function OptionsPage() {
   const { isPhone } = useResponsiveMode();
   const navigate = useNavigate();
   const location = useLocation();
-  const { ticker } = useParams<{ ticker: string }>();
+  const { ticker: routeTicker } = useParams<{ ticker: string }>();
+  const ticker = routeTicker?.trim().toUpperCase();
   const [searchParams] = useSearchParams();
   const expiryParam = searchParams.get('expiry');
   const requestedExpiry = parseRequestedOptionExpiry(expiryParam);
   const openedFromScanner = isScannerNavigationState(location.state);
-  const etf = ETF_LIST.find(e => e.ticker === ticker);
+  const etf = getScannerEtf(ticker);
 
   const [optionsData, setOptionsData] = useState<OptionsChainData | null>(null);
   const [extendedPrice, setExtendedPrice] = useState<ExtendedPriceData | null>(null);
@@ -411,6 +412,7 @@ export default function OptionsPage() {
   });
 
   const inFlightFetchKeyRef = useRef<string>('');
+  const requestGenerationRef = useRef(0);
 
   const handleShowNominalYieldChange = useCallback((value: boolean) => {
     setShowNominalYield(value);
@@ -418,10 +420,11 @@ export default function OptionsPage() {
   }, []);
 
   const loadData = useCallback(async (bypassCache = false, fresh = false) => {
-    if (!ticker) return;
+    if (!ticker || !etf) return;
     const key = `${ticker}:${requestedExpiry ?? 'default'}:${fresh ? 'fresh' : bypassCache ? 'bypass' : 'cached'}`;
     if (inFlightFetchKeyRef.current === key) return;
     inFlightFetchKeyRef.current = key;
+    const requestGeneration = ++requestGenerationRef.current;
 
     setLoading(true);
     setError(null);
@@ -434,58 +437,81 @@ export default function OptionsPage() {
         }),
         fetchExtendedPrice(ticker, { includeSparkline: true }),
       ]);
-      const returnedExpiration = initialOpts.chainMeta?.returnedExpiration
-        ?? initialOpts.chainMeta?.expirationDate
-        ?? null;
+      const returnedExpiration = getReturnedOptionExpiration(initialOpts.chainMeta);
       const preferredExp = resolveOptionExpirySelection(initialOpts.expirations, expiryParam, returnedExpiration);
       const opts = preferredExp.date && preferredExp.needsChainFetch
         ? await fetchOptions(ticker, preferredExp.date, { bypassCache, fresh, source: fresh ? 'OptionsPage:refresh:fallback' : 'OptionsPage:load:fallback' })
         : initialOpts;
+      if (preferredExp.date && !optionChainMatchesRequestedExpiration(opts.chainMeta, preferredExp.date)) {
+        throw new Error('The requested expiration was unavailable. The previous chain was preserved.');
+      }
+      if (requestGeneration !== requestGenerationRef.current) return;
       setOptionsData(opts);
       setExtendedPrice(ext);
       // Lazy-load IV Rank (non-blocking)
-      fetchIVRank(ticker).then(setIvRankData).catch(() => {});
+      fetchIVRank(ticker).then(data => {
+        if (requestGeneration === requestGenerationRef.current) setIvRankData(data);
+      }).catch(() => {});
       if (preferredExp.date) {
         setSelectedExp(preferredExp.date);
       }
       setShowScannerPreselectBadge(openedFromScanner && preferredExp.requestedMatch);
       setLastUpdated(new Date());
     } catch (err: unknown) {
+      if (requestGeneration !== requestGenerationRef.current) return;
       setError(err instanceof Error ? err.message : 'Failed to load options data');
     } finally {
-      inFlightFetchKeyRef.current = '';
-      setLoading(false);
+      if (requestGeneration === requestGenerationRef.current) {
+        inFlightFetchKeyRef.current = '';
+        setLoading(false);
+      }
     }
-  }, [expiryParam, openedFromScanner, requestedExpiry, ticker]);
+  }, [etf, expiryParam, openedFromScanner, requestedExpiry, ticker]);
 
   const loadExpiration = useCallback(async (expDate: number, bypassCache = false, fresh = false) => {
-    if (!ticker) return;
+    if (!ticker || !etf) return;
     const key = `${ticker}:${expDate}:${fresh ? 'fresh' : bypassCache ? 'bypass' : 'cached'}`;
     if (inFlightFetchKeyRef.current === key) return;
     inFlightFetchKeyRef.current = key;
+    const requestGeneration = ++requestGenerationRef.current;
 
     setShowScannerPreselectBadge(false);
     setSelectedOption(null);
-    setSelectedExp(expDate);
     setLoading(true);
     setError(null);
     try {
       // Only fetch options — preserve existing price state (Opt 5)
       const opts = await fetchOptions(ticker, expDate, { bypassCache, fresh, source: fresh ? 'OptionsPage:refreshExpiration' : 'OptionsPage:loadExpiration' });
+      if (!optionChainMatchesRequestedExpiration(opts.chainMeta, expDate)) {
+        throw new Error('The requested expiration was unavailable. The previous chain was preserved.');
+      }
+      if (requestGeneration !== requestGenerationRef.current) return;
       setOptionsData(opts);
+      setSelectedExp(expDate);
       setLastUpdated(new Date());
     } catch (err: unknown) {
+      if (requestGeneration !== requestGenerationRef.current) return;
       setError(err instanceof Error ? err.message : 'Failed to load expiration data');
     } finally {
-      inFlightFetchKeyRef.current = '';
-      setLoading(false);
+      if (requestGeneration === requestGenerationRef.current) {
+        inFlightFetchKeyRef.current = '';
+        setLoading(false);
+      }
     }
-  }, [ticker]);
+  }, [etf, ticker]);
 
   useEffect(() => {
     inFlightFetchKeyRef.current = '';
     setSelectedOption(null);
-    loadData();
+    setOptionsData(null);
+    setExtendedPrice(null);
+    setSelectedExp(null);
+    setIvRankData(null);
+    void loadData();
+    return () => {
+      requestGenerationRef.current += 1;
+      inFlightFetchKeyRef.current = '';
+    };
   }, [ticker, expiryParam, loadData]);
 
   useEffect(() => {

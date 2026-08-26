@@ -39,6 +39,10 @@ export const WATCHLIST_STORAGE_KEY = 'put_scanner_watchlist';
 export const LEGACY_WATCHLIST_STORAGE_KEY = 'watchlist';
 export const WATCHLIST_DURABLE_SCHEMA_VERSION = 1 as const;
 
+export function isPastWatchlistExpirationDte(dte: number | null | undefined): boolean {
+  return typeof dte === 'number' && Number.isFinite(dte) && dte < 0;
+}
+
 export type DurableWatchlistItem = Omit<WatchlistItem, 'snapshot' | 'status' | 'updatedAt'>;
 
 export interface WatchlistLocalState {

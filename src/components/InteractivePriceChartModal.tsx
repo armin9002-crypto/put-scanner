@@ -117,6 +117,7 @@ export default function InteractivePriceChartModal({
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [rangeIndex, setRangeIndex] = useState<number | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const chartRequestGenerationRef = useRef(0);
   const timeframes = useMemo(() => getOrderedChartTimeframes(), []);
 
   const requestedTicker = ticker.trim().toUpperCase();
@@ -130,24 +131,30 @@ export default function InteractivePriceChartModal({
 
   const loadChart = useCallback(async (forceRefresh = false) => {
     if (!requestedTicker) return;
+    const requestGeneration = ++chartRequestGenerationRef.current;
     setLoading(true);
     setError(null);
     try {
       const history = await getChartHistory(requestedTicker, timeframe, { forceRefresh });
+      if (requestGeneration !== chartRequestGenerationRef.current) return;
       setData(history);
       setHoveredIndex(null);
       setSelectedIndex(null);
       setRangeIndex(null);
     } catch (err) {
+      if (requestGeneration !== chartRequestGenerationRef.current) return;
       setError(err instanceof Error ? err.message : 'Failed to load chart data');
     } finally {
-      setLoading(false);
+      if (requestGeneration === chartRequestGenerationRef.current) setLoading(false);
     }
   }, [requestedTicker, timeframe]);
 
   useEffect(() => {
     if (!isOpen) return;
-    loadChart();
+    void loadChart();
+    return () => {
+      chartRequestGenerationRef.current += 1;
+    };
   }, [isOpen, loadChart]);
 
   useEffect(() => {

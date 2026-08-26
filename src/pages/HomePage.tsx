@@ -25,12 +25,9 @@ import {
 
 const InteractivePriceChartModal = lazy(() => import('../components/InteractivePriceChartModal'));
 
-const HARDCODED_TICKERS = 'AGQ,BOIL,BRZU,BULZ,CURE,CWEB,DDM,DFEN,DIG,DPST,DUSL,EDC,ERX,EURL,FAS,FNGU,GUSH,HIBL,INDL,LABU,MIDU,NAIL,NUGT,QLD,ROM,SOXL,SSO,TECL,TNA,TQQQ,UCO,UDOW,UGL,UPRO,URTY,USD,UTSL,UWM,UYG,UYM,WEBL,YINN';
-
 const LEVERAGE_OPTIONS = ['All', '2x', '3x'] as const;
 const TYPE_OPTIONS = ['All', 'Broad Index', 'Sector', 'Commodity', 'Country'] as const;
 
-// Import ETF_LIST for filtering only
 import { ETF_LIST } from '../lib/etfs';
 import {
   buildCachedExpirationState,
@@ -49,6 +46,8 @@ import { useResponsiveMode } from '../lib/responsive';
 import MobileBottomSheet from '../components/mobile/MobileBottomSheet';
 import MobileMarketStrip from '../components/mobile/MobileMarketStrip';
 import MobileEtfRow from '../components/mobile/MobileEtfRow';
+
+const SCANNER_PRICE_TICKERS = ETF_LIST.map(etf => etf.ticker);
 
 const SORT_OPTIONS: Array<{ value: ScannerSort; label: string }> = [
   { value: 'default', label: 'Default' }, { value: 'iv60', label: 'IV60 High → Low' },
@@ -213,8 +212,7 @@ export default function HomePage() {
     }, 10000);
 
     try {
-      const tickers = HARDCODED_TICKERS.split(',');
-      const fetchPromise = fetchBatchPricesResult(tickers, { mode: forceRefresh ? 'revalidate' : 'cache-first' });
+      const fetchPromise = fetchBatchPricesResult(SCANNER_PRICE_TICKERS, { mode: forceRefresh ? 'revalidate' : 'cache-first' });
 
       // 10-second hard timeout
       const timeoutPromise = new Promise<null>((_, reject) =>
@@ -253,7 +251,7 @@ export default function HomePage() {
 
   useEffect(() => {
     let cancelled = false;
-    fetchFundAssets(HARDCODED_TICKERS.split(','))
+    fetchFundAssets(SCANNER_PRICE_TICKERS)
       .then(data => { if (!cancelled) setFundAssets(current => ({ ...current, ...data })); })
       .catch(() => { /* preserve any cached/previous Assets values */ });
     return () => { cancelled = true; };
