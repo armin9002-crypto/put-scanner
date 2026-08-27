@@ -14,6 +14,7 @@ export async function buildEtfPulseDataset(options = {}) {
     config: HISTORY_CONFIG,
     endpoint: 'etf-pulse-history',
     timeoutMs: 6_000,
+    signal: options.signal,
   }));
   let maxObservedConcurrency = 0;
   const settled = await mapWithConcurrency(tickers, options.concurrency ?? ETF_PULSE_CONCURRENCY, fetchHistory, {

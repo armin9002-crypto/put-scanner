@@ -1,6 +1,7 @@
 import { makeCacheKey } from './dataCache.ts';
 import { findCachedDailyHistoryForDates, type ChartPoint } from './chartHistory.ts';
 import { requestMarketData } from './marketDataRequest.ts';
+import { fetchObservedMarketData } from './requestDiagnostics.ts';
 import { isFiniteNumber } from './optionMetrics.ts';
 import type { PortfolioEntryVixSource, PortfolioTrade } from './portfolioStorage.ts';
 
@@ -117,7 +118,7 @@ export async function resolvePortfolioEntryVix(trades: PortfolioTrade[]): Promis
     allowStaleOnError: true,
     validator: isValidHistory,
     fetcher: async signal => {
-      const response = await fetch(`/api/chart-history?ticker=${encodeURIComponent('^VIX')}&start=${start}&end=${end}`, { signal });
+      const response = await fetchObservedMarketData('chart-history', `/api/chart-history?ticker=${encodeURIComponent('^VIX')}&start=${start}&end=${end}`, { signal }, 'portfolioEntryVix');
       if (!response.ok) throw new Error('Failed to fetch historical VIX closes');
       const data = await response.json();
       if (data.error || !isValidHistory(data)) throw new Error(data.error || 'Invalid historical VIX response');

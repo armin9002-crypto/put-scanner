@@ -1,4 +1,5 @@
 import { fetchYahooChartHistory } from './_lib/chartHistory.js';
+import { observeMarketRequest } from './_lib/requestObservability.js';
 
 const TIMEFRAME_CONFIG = {
   '1D': {
@@ -77,6 +78,7 @@ function parseDateOnly(value) {
 }
 
 export default async function handler(req, res) {
+  const observation = observeMarketRequest(req, res, { endpoint: 'chart-history', tickerCount: 1 });
   const ticker = typeof req.query.ticker === 'string' ? req.query.ticker.trim().toUpperCase() : '';
   const timeframe = typeof req.query.timeframe === 'string' ? req.query.timeframe : '1D';
   const start = parseDateOnly(req.query.start);
@@ -102,11 +104,11 @@ export default async function handler(req, res) {
   if (!config) {
     return res.status(400).json({ error: 'Invalid timeframe' });
   }
+  res.setHeader('X-PutScanner-Upstream-Requests', '1');
 
   try {
-    const body = await fetchYahooChartHistory({ ticker, timeframe, config });
+    const body = await fetchYahooChartHistory({ ticker, timeframe, config, signal: observation.signal });
     res.setHeader('Cache-Control', config.cacheControl);
-    res.setHeader('X-PutScanner-Upstream-Requests', '1');
     res.setHeader('X-PutScanner-Cache-Strategy', config.cacheControl);
     return res.status(200).json(body);
   } catch (e) {

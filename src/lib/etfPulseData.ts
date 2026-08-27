@@ -1,7 +1,8 @@
 import { buildEtfPulseRow, type EtfPulseRow } from './etfPulseMetrics.ts';
 import type { ETFInfo } from './types.ts';
 import type { ChartPoint } from './chartHistory.ts';
-import { recordRequestDiagnostic, recordResponseDebugHeaders } from './requestDiagnostics.ts';
+import { fetchObservedMarketData, recordRequestDiagnostic } from './requestDiagnostics.ts';
+import { isAbortError } from './marketDataRequest.ts';
 import { ETF_PULSE_TICKERS } from '../../shared/etfPulseUniverse.js';
 import { ETF_PULSE_SYMBOLS } from '../../shared/symbolRegistry.js';
 
@@ -118,28 +119,28 @@ function isEtfPulseDataset(value: unknown): value is EtfPulseDataset {
     && history.points.every(point => isRecord(point) && typeof point.timestamp === 'number' && typeof point.date === 'string' && typeof point.price === 'number'));
 }
 
-export async function fetchEtfPulseDataset(options: { forceRefresh?: boolean } = {}): Promise<EtfPulseDataset> {
+export async function fetchEtfPulseDataset(options: { forceRefresh?: boolean; signal?: AbortSignal } = {}): Promise<EtfPulseDataset> {
   const source = 'EtfPulse:dataset';
   const url = `/api/etf-pulse${options.forceRefresh ? `?fresh=1&_=${Date.now()}` : ''}`;
   recordRequestDiagnostic('etf-pulse', 'attempted', source);
   recordRequestDiagnostic('etf-pulse', 'network', source);
   const startedAt = Date.now();
   try {
-    const response = await fetch(url, options.forceRefresh ? { cache: 'no-store' } : undefined);
-    recordResponseDebugHeaders('etf-pulse', response, source);
+    const response = await fetchObservedMarketData('etf-pulse', url, { ...(options.forceRefresh ? { cache: 'no-store' as RequestCache } : {}), signal: options.signal }, source);
     if (!response.ok) throw new Error('Failed to fetch ETF Pulse dataset');
     const data: unknown = await response.json();
     if (!isEtfPulseDataset(data)) throw new Error('Invalid ETF Pulse dataset response');
     recordRequestDiagnostic('etf-pulse', 'success', source, Date.now() - startedAt);
     return data;
   } catch (error) {
-    recordRequestDiagnostic('etf-pulse', 'failure', source, Date.now() - startedAt);
+    recordRequestDiagnostic('etf-pulse', isAbortError(error) ? 'aborted' : 'failure', source, Date.now() - startedAt);
     throw error;
   }
 }
 
 export async function buildEtfPulseRows(options: {
   forceRefresh?: boolean;
+  signal?: AbortSignal;
   onProgress?: (progress: EtfPulseProgress) => void;
 } = {}): Promise<EtfPulseLoadResult> {
   const previous = readEtfPulseRowsCache(true);
@@ -151,8 +152,9 @@ export async function buildEtfPulseRows(options: {
   const universe = getEtfPulseUniverse();
   let dataset: EtfPulseDataset;
   try {
-    dataset = await fetchEtfPulseDataset({ forceRefresh: options.forceRefresh });
+    dataset = await fetchEtfPulseDataset({ forceRefresh: options.forceRefresh, signal: options.signal });
   } catch (error) {
+    if (isAbortError(error)) throw error;
     if (previous) {
       return {
         ...previous,

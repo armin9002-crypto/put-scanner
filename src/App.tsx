@@ -7,7 +7,8 @@ import { useResponsiveMode } from './lib/responsive';
 import AccountControl from './components/AccountControl';
 import ErrorBoundary from './components/ErrorBoundary';
 import MobilePageHeader from './components/mobile/MobilePageHeader';
-import { getRequestDiagnosticsSnapshot, getScreenerScanDiagnostics, isRequestDiagnosticsEnabled, type RequestDiagnosticsSnapshot, type ScreenerScanDiagnostics } from './lib/requestDiagnostics';
+import { getDevelopmentRequestSummary, getRequestDiagnosticsSnapshot, getScreenerScanDiagnostics, isRequestDiagnosticsEnabled, type DevelopmentRequestSummary, type RequestDiagnosticsSnapshot, type ScreenerScanDiagnostics } from './lib/requestDiagnostics';
+import { LOCAL_STORAGE_FAILURE_MESSAGE, subscribeToLocalStorageFailures } from './lib/storageFeedback';
 
 const HomePage = lazy(() => import('./pages/HomePage'));
 const OptionsPage = lazy(() => import('./pages/OptionsPage'));
@@ -215,6 +216,7 @@ function AppContent() {
       <MobileBottomNav />
       <NetworkDiagnosticsPanel />
       <LayoutDiagnosticsPanel />
+      <StorageFailureNotice />
     </BrowserRouter>
   );
 }
@@ -233,6 +235,7 @@ function NetworkDiagnosticsPanel() {
   const [enabled, setEnabled] = useState(false);
   const [snapshot, setSnapshot] = useState<RequestDiagnosticsSnapshot | null>(null);
   const [screenerScan, setScreenerScan] = useState<ScreenerScanDiagnostics | null>(null);
+  const [requestSummary, setRequestSummary] = useState<DevelopmentRequestSummary | null>(null);
 
   useEffect(() => {
     const active = isRequestDiagnosticsEnabled();
@@ -242,6 +245,7 @@ function NetworkDiagnosticsPanel() {
     const update = () => {
       setSnapshot(getRequestDiagnosticsSnapshot());
       setScreenerScan(getScreenerScanDiagnostics());
+      setRequestSummary(getDevelopmentRequestSummary());
     };
     update();
     const id = window.setInterval(update, 1000);
@@ -260,11 +264,12 @@ function NetworkDiagnosticsPanel() {
         Network diagnostics
       </summary>
       <div className="mt-2 grid gap-1 font-mono tabular-nums">
+        {requestSummary && <div className="mb-1 border-b pb-1" style={{ borderColor: 'var(--border)' }}>browser:{requestSummary.browserRequests} vercel:{requestSummary.vercelResponses} provider:{requestSummary.providerAttempts} retry:{requestSummary.retries} fail:{requestSummary.failures} abort:{requestSummary.aborted}</div>}
         {endpoints.map(([endpoint, entry]) => (
           <div key={endpoint} className="grid grid-cols-[78px_1fr] gap-2">
             <span style={{ color: 'var(--text)' }}>{endpoint}</span>
             <span>
-              a:{entry.attempted} n:{entry.networkRequests} v:{entry.serverEndpointResponses} y:{entry.yahooUpstreamAttempts} m:{entry.memoryHits} p:{entry.persistentCacheHits} d:{entry.inFlightDedupes} c:{entry.chainsDeduplicated} pc:{entry.plannedChains} rb:{entry.responseBytes} x:{entry.maxObservedConcurrency} s:{entry.staleFallbacks} cb:{entry.circuitBreakerRejections} f:{entry.failures} ver:{entry.lastDatasetVersion ?? '-'} k:{Object.keys(entry.cacheStrategies).join(',') || '-'}
+              a:{entry.attempted} n:{entry.networkRequests} v:{entry.serverEndpointResponses} y:{entry.yahooUpstreamAttempts} r:{entry.retries} m:{entry.memoryHits} p:{entry.persistentCacheHits} d:{entry.inFlightDedupes} c:{entry.chainsDeduplicated} pc:{entry.plannedChains} rb:{entry.responseBytes} x:{entry.maxObservedConcurrency} s:{entry.staleFallbacks} cb:{entry.circuitBreakerRejections} f:{entry.failures} ab:{entry.aborted} ver:{entry.lastDatasetVersion ?? '-'} k:{Object.keys(entry.cacheStrategies).join(',') || '-'}
             </span>
           </div>
         ))}
@@ -278,6 +283,18 @@ function NetworkDiagnosticsPanel() {
         Enable in production with localStorage key put_scanner_debug_network=true.
       </div>
     </details>
+  );
+}
+
+function StorageFailureNotice() {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => subscribeToLocalStorageFailures(() => setVisible(true)), []);
+  if (!visible) return null;
+  return (
+    <div role="alert" className="fixed bottom-3 left-3 z-[90] flex max-w-[calc(100vw-1.5rem)] items-center gap-3 rounded-lg border px-3 py-2 text-xs shadow-lg" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--red)', color: 'var(--text)' }}>
+      <span>{LOCAL_STORAGE_FAILURE_MESSAGE}</span>
+      <button type="button" onClick={() => setVisible(false)} className="min-h-9 rounded px-2 font-semibold" aria-label="Dismiss local save warning">Dismiss</button>
+    </div>
   );
 }
 

@@ -211,6 +211,8 @@ Watchlist and Portfolio cold request totals do not magically disappear because e
 
 Development diagnostics now separate browser network requests, Vercel responses, Yahoo attempts reported by safe headers, memory/persistent cache hits, stale fallbacks, in-flight dedupes, chain dedupes, maximum observed concurrency, failures, and circuit-breaker rejections. Safe responses may include `X-PutScanner-Upstream-Requests`, `X-PutScanner-Cache-Strategy`, `X-PutScanner-Dataset-Version`, concurrency, and circuit-rejection counts. No cookies, Yahoo crumb, secrets, auth material, or stack traces are exposed.
 
+Stage 6B.3 standardizes an ephemeral `X-PutScanner-Request-Id`, server duration/retry/cache/failure headers, one count-only structured log per existing market request, and a capped in-memory development summary. It adds no request, telemetry vendor, log-upload path, Supabase write, or durable diagnostic state. The current request graph, privacy exclusions, regression budgets, cancellation behavior, and deterministic local Playwright harness are documented in `PRODUCT_STAGE6B3_OBSERVABILITY_E2E.md`.
+
 True per-user limits remain deferred until authentication exists. A later authenticated design should start with a three-request option-chain burst, a rolling per-user manual option-refresh allowance, approximately one ETF Pulse cache-bypassing refresh per minute, and separate lower-frequency Screener allowances. Global provider concurrency/queues, CDN-aware metrics, 429 backoff, and the existing circuit breakers should accompany those limits. Exact quotas must be set from production cache-hit and latency observations, not IP identity or assumptions made in this stage.
 
 ## Stage 1.6B Screener scalability architecture

@@ -1,5 +1,6 @@
 import type { MarkBasis } from './portfolioMetrics.ts';
 import { emitDurableMutation } from './cloudState/syncEvents.ts';
+import { notifyLocalStorageFailure } from './storageFeedback.ts';
 
 export const PORTFOLIO_MARK_BASIS_KEY = 'put_scanner_portfolio_mark_basis';
 export const PORTFOLIO_MARK_BASIS_OPTIONS: MarkBasis[] = ['last', 'bid', 'ask'];
@@ -24,6 +25,6 @@ export function persistPortfolioMarkBasis(
     storage?.setItem(PORTFOLIO_MARK_BASIS_KEY, value);
     if (storage && previous !== value) emitDurableMutation('preferences');
   } catch {
-    // Preference persistence is best-effort only.
+    notifyLocalStorageFailure();
   }
 }

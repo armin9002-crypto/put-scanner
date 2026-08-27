@@ -512,7 +512,9 @@ export function writeWatchlist(
 
 export function saveWatchlist(items: WatchlistItem[]): StorageWriteResult {
   const storage = getStorage();
-  return storage ? writeWatchlist(storage, items) : { status: 'error', error: 'Watchlist storage is unavailable.' };
+  const result: StorageWriteResult = storage ? writeWatchlist(storage, items) : { status: 'error', error: 'Watchlist storage is unavailable.' };
+  if (result.status === 'error') notifyLocalStorageFailure();
+  return result;
 }
 
 function watchlistItemsForMutation(): WatchlistItem[] {
@@ -598,3 +600,4 @@ import {
   type StorageWriteResult,
 } from './durableStorage.ts';
 import { emitDurableMutation } from './cloudState/syncEvents.ts';
+import { notifyLocalStorageFailure } from './storageFeedback.ts';

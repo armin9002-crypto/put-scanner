@@ -1,5 +1,6 @@
 import { makeCacheKey } from './dataCache.ts';
 import { peekMarketData, requestMarketData, type DataFreshness } from './marketDataRequest.ts';
+import { fetchObservedMarketData } from './requestDiagnostics.ts';
 
 export type ChartTimeframe = '1D' | '5D' | '30D' | 'YTD' | '3M' | '6M' | '1Y' | '2Y' | '3Y' | '5Y' | 'All';
 
@@ -192,7 +193,7 @@ export async function getChartHistory(
     allowStaleOnError: true,
     validator: data => isValidChartHistory(data, timeframe),
     fetcher: async signal => {
-      const response = await fetch(`/api/chart-history?ticker=${encodeURIComponent(normalizedTicker)}&timeframe=${encodeURIComponent(timeframe)}`, { signal });
+      const response = await fetchObservedMarketData('chart-history', `/api/chart-history?ticker=${encodeURIComponent(normalizedTicker)}&timeframe=${encodeURIComponent(timeframe)}`, { signal }, `chartHistory:${timeframe}`);
       if (!response.ok) {
         const error = new Error('Failed to fetch chart history') as Error & { status: number };
         error.status = response.status;

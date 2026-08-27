@@ -1,9 +1,12 @@
 import { buildScreenerExpirationDataset, SCREENER_BATCH_VERSION } from './_lib/screenerBatch.js';
+import { observeMarketRequest } from './_lib/requestObservability.js';
 
-export default async function handler(_req, res) {
+export default async function handler(req, res) {
+  const observation = observeMarketRequest(req, res, { endpoint: 'screener-expirations' });
   res.setHeader('Access-Control-Allow-Origin', '*');
   try {
-    const dataset = await buildScreenerExpirationDataset();
+    const dataset = await buildScreenerExpirationDataset({ signal: observation.signal });
+    observation.setCounts({ tickerCount: Object.keys(dataset.expirationsByTicker).length });
     const cacheControl = dataset.complete
       ? 'public, s-maxage=7200, stale-while-revalidate=21600'
       : 'private, no-store';

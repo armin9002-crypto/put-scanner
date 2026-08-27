@@ -1,4 +1,5 @@
 import { clearMarketDataCache, peekMarketData, requestMarketData } from './marketDataRequest';
+import { fetchObservedMarketData } from './requestDiagnostics';
 
 export interface UnderlyingHolding {
   symbol: string;
@@ -71,7 +72,7 @@ export async function fetchUnderlyingHoldings(
       allowStaleOnError: true,
       validator: isValidHoldingsData,
       fetcher: async signal => {
-    const response = await fetch(`/api/holdings?ticker=${encodeURIComponent(ticker)}`, { signal });
+    const response = await fetchObservedMarketData('holdings', `/api/holdings?ticker=${encodeURIComponent(ticker)}`, { signal }, 'fetchUnderlyingHoldings');
     if (!response.ok) {
       throw new Error(`Unable to load holdings for ${ticker}.`);
     }

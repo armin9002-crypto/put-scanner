@@ -19,11 +19,11 @@ function displayTickerFor(ticker) {
   return ticker;
 }
 
-export async function fetchYahooChartHistory({ ticker, timeframe, config, endpoint = 'chart', timeoutMs }) {
+export async function fetchYahooChartHistory({ ticker, timeframe, config, endpoint = 'chart', timeoutMs, signal }) {
   const hasDateRange = config.period1 != null && config.period2 != null;
   const rangeParams = hasDateRange ? `period1=${config.period1}&period2=${config.period2}` : `range=${config.range}`;
   const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=${config.interval}&${rangeParams}`;
-  const yahooRes = await yahooFetch(url, { endpoint, ...(timeoutMs ? { timeoutMs } : {}) });
+  const yahooRes = await yahooFetch(url, { endpoint, signal, ...(timeoutMs ? { timeoutMs } : {}) });
   if (!yahooRes.ok) throw new Error(`Yahoo chart request failed with ${yahooRes.status}`);
   const data = await readYahooJson(yahooRes, endpoint);
   const result = data?.chart?.result?.[0];

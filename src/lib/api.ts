@@ -7,7 +7,7 @@ import { peekMarketData, requestMarketData, type DataFreshness, type RefreshMode
 import { normalizeFiniteNumber } from './marketDataNormalize';
 import { normalizeOptionChainData } from './yahooOptionAdapter';
 import { getOptionsCacheKey, isValidOptionsChain, OPTIONS_HARD_TTL_MS, OPTIONS_SOFT_TTL_MS, primeOptionsMarketDataCache } from './optionChainCache';
-import { recordResponseDebugHeaders } from './requestDiagnostics';
+import { fetchObservedMarketData } from './requestDiagnostics';
 import { mapWithConcurrency } from '../../shared/concurrency.js';
 import { calculatePutDelta } from './putDelta';
 
@@ -20,6 +20,7 @@ interface FetchOptionsOptions {
   fresh?: boolean;
   source?: string;
   refreshMode?: RefreshMode;
+  signal?: AbortSignal;
 }
 
 const BATCH_PRICE_SOFT_TTL = 3 * 60 * 1000;
@@ -63,8 +64,7 @@ export async function fetchBatchPricesResult(tickers: string[], options: { mode?
     allowStaleOnError: true,
     validator: data => isValidBatchResponse(data, normalizedTickers),
     fetcher: async signal => {
-      const res = await fetch(`${API_BASE}/prices?tickers=${encodeURIComponent(normalizedTickers.join(','))}`, { signal });
-      recordResponseDebugHeaders('prices', res, 'fetchBatchPrices');
+      const res = await fetchObservedMarketData('prices', `${API_BASE}/prices?tickers=${encodeURIComponent(normalizedTickers.join(','))}`, { signal }, 'fetchBatchPrices');
       if (!res.ok) {
         const error = new Error('Failed to fetch batch prices') as Error & { status: number };
         error.status = res.status;
@@ -143,14 +143,14 @@ export async function fetchOptions(ticker: string, date?: number, options: Fetch
     mode,
     priority: source.startsWith('Scanner:') ? 'bulk_manual' : fresh ? 'user_refresh' : 'interactive',
     allowStaleOnError: true,
+    signal: options.signal,
     validator,
     fetcher: async signal => {
     let url = `${API_BASE}/options?ticker=${encodeURIComponent(normalizedTicker)}`;
     if (date) url += `&date=${date}`;
     if (fresh) url += `&fresh=1&_=${Date.now()}`;
 
-    const res = await fetch(url, { signal, ...(fresh ? { cache: 'no-store' as RequestCache } : {}) });
-    recordResponseDebugHeaders('options', res, source);
+    const res = await fetchObservedMarketData('options', url, { signal, ...(fresh ? { cache: 'no-store' as RequestCache } : {}) }, source);
     if (!res.ok) {
       const error = new Error(`Failed to fetch options for ${normalizedTicker}`) as Error & { status: number };
       error.status = res.status;
@@ -219,7 +219,7 @@ export async function fetchSparkline(ticker: string): Promise<SparklineData> {
     SPARKLINE_MEM_TTL,
     SPARKLINE_LS_TTL,
     async () => {
-      const res = await fetch(`${API_BASE}/price?ticker=${encodeURIComponent(ticker)}&range=1d&interval=1m`);
+      const res = await fetchObservedMarketData('price', `${API_BASE}/price?ticker=${encodeURIComponent(ticker)}&range=1d&interval=1m`, undefined, 'fetchSparkline');
       if (!res.ok) throw new Error(`Failed to fetch sparkline for ${ticker}`);
       const data = await res.json();
       if (data.error) throw new Error(data.error);
@@ -260,7 +260,7 @@ export async function fetchExtendedPrice(ticker: string, options: { includeSpark
     EXTENDED_PRICE_MEM_TTL,
     EXTENDED_PRICE_LS_TTL,
     async () => {
-      const res = await fetch(`${API_BASE}/price?ticker=${encodeURIComponent(ticker)}&extended=true&includeSparkline=${includeSparkline ? 'true' : 'false'}`);
+      const res = await fetchObservedMarketData('price', `${API_BASE}/price?ticker=${encodeURIComponent(ticker)}&extended=true&includeSparkline=${includeSparkline ? 'true' : 'false'}`, undefined, includeSparkline ? 'fetchExtendedPrice:sparkline' : 'fetchExtendedPrice:daily');
       if (!res.ok) throw new Error(`Failed to fetch extended price for ${ticker}`);
       const data = await res.json();
       if (data.error) throw new Error(data.error);
@@ -299,7 +299,7 @@ export async function fetchVolatilityContext(ticker: string): Promise<Volatility
     makeCacheKey(['volatility-context', normalizedTicker]),
     60 * 60 * 1000,
     async () => {
-      const res = await fetch(`${API_BASE}/volatility-context?ticker=${encodeURIComponent(normalizedTicker)}`);
+      const res = await fetchObservedMarketData('volatility-context', `${API_BASE}/volatility-context?ticker=${encodeURIComponent(normalizedTicker)}`, undefined, 'fetchVolatilityContext');
       if (!res.ok) throw new Error(`Failed to fetch volatility context for ${normalizedTicker}`);
       const data = await res.json();
       if (data.error) throw new Error(data.error);
@@ -337,19 +337,18 @@ export interface TickerDetailData {
 export async function fetchTickerDetail(
   ticker: string,
   date?: number,
-  options: { bypassCache?: boolean; fresh?: boolean } = {},
+  options: { bypassCache?: boolean; fresh?: boolean; signal?: AbortSignal } = {},
 ): Promise<TickerDetailData> {
   const normalizedTicker = ticker.trim().toUpperCase();
   const cacheKey = makeCacheKey(['ticker-detail-v1', normalizedTicker, date]);
   const data = await cachedRequest(
     cacheKey,
     5 * 60 * 1000,
-    async () => {
+    async signal => {
       let url = `${API_BASE}/ticker-detail?ticker=${encodeURIComponent(normalizedTicker)}`;
       if (date) url += `&date=${date}`;
       if (options.fresh) url += `&fresh=1&_=${Date.now()}`;
-      const response = await fetch(url, options.fresh ? { cache: 'no-store' } : undefined);
-      recordResponseDebugHeaders('ticker-detail', response, 'fetchTickerDetail');
+      const response = await fetchObservedMarketData('ticker-detail', url, { ...(options.fresh ? { cache: 'no-store' as RequestCache } : {}), signal }, 'fetchTickerDetail');
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
         const error = new Error(body.message || `We couldn't load options for ${normalizedTicker}.`) as Error & { status: number; code: TickerDetailErrorCode };
@@ -377,6 +376,7 @@ export async function fetchTickerDetail(
       hardTtlMs: 45 * 60 * 1000,
       schemaVersion: 1,
       allowStaleOnError: !options.fresh,
+      signal: options.signal,
       validator: value => value?.options != null && (value.availability === 'optionable' || value.availability === 'no_options'),
       diagnosticsEndpoint: 'ticker-detail',
       diagnosticsSource: 'fetchTickerDetail',

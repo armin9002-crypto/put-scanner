@@ -1,5 +1,6 @@
 import { makeCacheKey } from './dataCache.ts';
 import { requestMarketData } from './marketDataRequest.ts';
+import { fetchObservedMarketData } from './requestDiagnostics.ts';
 
 export type FundAssetsData = Record<string, number | null>;
 
@@ -39,7 +40,7 @@ export async function fetchFundAssets(tickers: string[]): Promise<FundAssetsData
     allowStaleOnError: true,
     validator: data => data != null && typeof data === 'object',
     fetcher: async signal => {
-      const response = await fetch(`/api/fund-metadata?symbols=${encodeURIComponent(symbols.join(','))}`, { signal });
+      const response = await fetchObservedMarketData('fund-metadata', `/api/fund-metadata?symbols=${encodeURIComponent(symbols.join(','))}`, { signal }, 'fetchFundAssets');
       if (!response.ok) {
         const error = new Error('Failed to fetch fund assets') as Error & { status: number };
         error.status = response.status;

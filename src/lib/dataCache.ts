@@ -8,7 +8,7 @@ export function makeCacheKey(parts: Array<string | number | null | undefined>): 
 export async function cachedRequest<T>(
   key: string,
   ttlMs: number,
-  request: () => Promise<T>,
+  request: (signal: AbortSignal) => Promise<T>,
   options: {
     bypassCache?: boolean;
     storage?: 'local' | 'session';
@@ -18,6 +18,7 @@ export async function cachedRequest<T>(
     hardTtlMs?: number;
     schemaVersion?: number;
     allowStaleOnError?: boolean;
+    signal?: AbortSignal;
   } = {}
 ): Promise<T> {
   const result = await requestMarketData({
@@ -29,9 +30,10 @@ export async function cachedRequest<T>(
     schemaVersion: options.schemaVersion ?? 1,
     mode: options.bypassCache ? 'revalidate' : 'cache-first',
     allowStaleOnError: options.allowStaleOnError ?? true,
+    signal: options.signal,
     storage: options.storage,
     validator: options.validator ?? (() => true),
-    fetcher: () => request(),
+    fetcher: signal => request(signal),
   });
   return result.data;
 }

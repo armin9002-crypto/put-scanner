@@ -302,11 +302,13 @@ export default function WatchlistPage() {
         }),
       });
       const optionsByKey = acquired.byKey;
+      let partialFailure = batchResult == null;
 
       const refreshed = currentItems.map(item => {
         const key = canonicalOptionChainKey(item.ticker, item.expiryTimestamp);
         const hasRequest = optionsByKey.has(key);
         const optData = optionsByKey.get(key) ?? null;
+        if (hasRequest && (optData == null || optData.chainMeta?.staleFallbackUsed === true)) partialFailure = true;
         const price = batchResult?.[item.ticker]?.price ?? optData?.currentPrice ?? item.snapshot?.underlyingPrice ?? null;
         return mergeLiveItem(item, optData, price, hasRequest && (optData == null || optData.chainMeta?.staleFallbackUsed === true));
       });
@@ -315,6 +317,7 @@ export default function WatchlistPage() {
       const stored = markWatchlistItems(refreshed);
       setItems(stored);
       setLastRefreshed(new Date());
+      if (partialFailure) setRefreshError('Watchlist refresh could not be completed. Saved contracts were preserved.');
     } catch {
       if (refreshGeneration === refreshGenerationRef.current) {
         setRefreshError('Watchlist refresh could not be completed. Saved contracts were preserved.');

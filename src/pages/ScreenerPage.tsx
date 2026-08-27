@@ -5,7 +5,7 @@ import type { ETFInfo } from '../lib/types';
 import { fetchSparkline, formatPrice, formatNumber } from '../lib/api';
 import type { SparklineData } from '../lib/api';
 import { getExpirationsCache, setExpirationsCache } from '../lib/cache';
-import { createLatestScreenerScanGate, fetchScreenerExpirations, runScreenerBatchScan } from '../lib/screenerAcquisition';
+import { createLatestScreenerScanGate, fetchScreenerExpirations, retryFailedScreenerBatches, runScreenerBatchScan, type ScreenerScanResult } from '../lib/screenerAcquisition';
 import { applyScreenerFilters, buildScreenerRows, type ScreenerRow } from '../lib/screenerRows';
 import SparklineChart from '../components/SparklineChart';
 import ExpirationFilter, { buildExpirationOptions, formatExpirationDropdownLabel } from '../components/ExpirationFilter';
@@ -248,6 +248,7 @@ export default function ScreenerPage() {
   const [slowWarning, setSlowWarning] = useState(false);
   const [scanFailureCount, setScanFailureCount] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [retryState, setRetryState] = useState<{ criteria: ScreenerCriteria; acquired: ScreenerScanResult } | null>(null);
   const [selectedOption, setSelectedOption] = useState<DrawerSelection | null>(null);
 
   // Confirmation dialog
@@ -393,6 +394,10 @@ export default function ScreenerPage() {
     selectedEtfKey(selectedETFs) !== selectedEtfKey(lastLoadedCriteria.selectedETFs)
   );
 
+  useEffect(() => {
+    if (hasStructuralCriteriaChanged) setRetryState(null);
+  }, [hasStructuralCriteriaChanged]);
+
   // Client-side re-filtering — when filters change but data is already loaded
   useEffect(() => {
     if (!loaded || rawRowsRef.current.length === 0) return;
@@ -408,6 +413,7 @@ export default function ScreenerPage() {
     setSlowWarning(false);
     setScanFailureCount(0);
     setLoadError(null);
+    setRetryState(null);
     rawRowsRef.current = [];
     setLastLoadedCriteria(null);
     setRows([]);
@@ -443,6 +449,7 @@ export default function ScreenerPage() {
       rawRowsRef.current = built.rows;
       setRows(applyScreenerFilters(built.rows, criteria));
       setScanFailureCount(acquired.errors.length);
+      setRetryState(acquired.failedBatchIds.length > 0 ? { criteria, acquired } : null);
       setLoaded(true);
       setLastLoadedCriteria(criteria);
 
@@ -456,6 +463,38 @@ export default function ScreenerPage() {
       if (scan.isCurrent()) setLoading(false);
     }
   }, []);
+
+  const handleRetryFailedResults = useCallback(async () => {
+    if (!retryState) return;
+    const scan = scanGateRef.current.begin();
+    const { criteria, acquired: previous } = retryState;
+    setLoading(true);
+    setLoadError(null);
+    setProgress({ current: 0, total: previous.failedBatchIds.length });
+    try {
+      const acquired = await retryFailedScreenerBatches({
+        scanId: scan.id,
+        selectedTickers: criteria.selectedETFs.map(etf => etf.ticker),
+        expFilter: criteria.expFilter,
+        failedBatchIds: previous.failedBatchIds,
+        previous,
+        signal: scan.signal,
+      });
+      if (!scan.isCurrent()) return;
+      const built = buildScreenerRows(acquired, criteria.expFilter);
+      rawRowsRef.current = built.rows;
+      setRows(applyScreenerFilters(built.rows, criteria));
+      setScanFailureCount(acquired.errors.length);
+      setRetryState(acquired.failedBatchIds.length > 0 ? { criteria, acquired } : null);
+      setLoaded(true);
+    } catch (error) {
+      if (scan.isCurrent() && (error as { name?: unknown })?.name !== 'AbortError') {
+        setLoadError('The failed Screener batches could not be retried.');
+      }
+    } finally {
+      if (scan.isCurrent()) setLoading(false);
+    }
+  }, [retryState]);
 
   const handleLoad = useCallback(async () => {
     const criteria = getCurrentCriteria();
@@ -582,7 +621,7 @@ export default function ScreenerPage() {
           <button type="button" onClick={() => void handleLoad()} disabled={loading} className="mobile-sheet-action primary mt-3 w-full disabled:opacity-50">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}{loading ? `Scanning ${progress.current}/${progress.total}` : 'Run Screener'}</button>
           {loading && progress.total > 0 && <div className="mt-2 h-1 overflow-hidden rounded-full" style={{ backgroundColor: 'var(--border)' }}><div className="h-full rounded-full" style={{ width: `${progressPct}%`, backgroundColor: 'var(--accent)' }} /></div>}
           {slowWarning && <p className="mt-2 flex items-center gap-1 text-[11px]" style={{ color: 'var(--yellow)' }}><AlertTriangle className="h-3.5 w-3.5" /> Narrow filters for a faster scan.</p>}
-          {scanFailureCount > 0 && <p className="mt-2 flex items-center gap-1 text-[11px]" style={{ color: 'var(--yellow)' }}><AlertTriangle className="h-3.5 w-3.5" /> Partial results: {scanFailureCount} market-data operation{scanFailureCount === 1 ? '' : 's'} could not be completed.</p>}
+          {scanFailureCount > 0 && <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]" style={{ color: 'var(--yellow)' }}><span className="flex items-center gap-1"><AlertTriangle className="h-3.5 w-3.5" /> Some results could not be loaded.</span>{retryState && !hasStructuralCriteriaChanged && !loading && <button type="button" onClick={() => void handleRetryFailedResults()} className="mobile-sheet-action secondary min-h-9 px-3 py-1"><RefreshCw className="h-3.5 w-3.5" /> Retry failed results</button>}</div>}
           {loadError && !loading && <p role="alert" className="mt-2 flex items-start gap-1 text-[11px]" style={{ color: 'var(--red)' }}><AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-none" /> <span>{loadError} Run Screener to retry.</span></p>}
         </div>
 
@@ -835,9 +874,9 @@ export default function ScreenerPage() {
             </div>
           )}
           {scanFailureCount > 0 && (
-            <div className="flex items-center gap-2 mt-3 text-xs" style={{ color: 'var(--yellow)' }}>
-              <AlertTriangle className="w-3.5 h-3.5" />
-              Partial results: {scanFailureCount} market-data operation{scanFailureCount === 1 ? '' : 's'} could not be completed.
+            <div className="flex flex-wrap items-center gap-2 mt-3 text-xs" style={{ color: 'var(--yellow)' }}>
+              <span className="flex items-center gap-2"><AlertTriangle className="w-3.5 h-3.5" /> Some results could not be loaded.</span>
+              {retryState && !hasStructuralCriteriaChanged && !loading && <button type="button" onClick={() => void handleRetryFailedResults()} className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border px-3 py-1.5 font-semibold" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}><RefreshCw className="h-3.5 w-3.5" /> Retry failed results</button>}
             </div>
           )}
           {loadError && !loading && (

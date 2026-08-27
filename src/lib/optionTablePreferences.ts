@@ -1,4 +1,5 @@
 import { emitDurableMutation } from './cloudState/syncEvents.ts';
+import { notifyLocalStorageFailure } from './storageFeedback.ts';
 
 export const SHOW_NOMINAL_YIELD_KEY = 'put_scanner_show_nominal_yield:v1';
 
@@ -14,5 +15,5 @@ export function persistShowNominalYield(value: boolean, storage: PreferenceWrite
     const previous = storage?.getItem?.(SHOW_NOMINAL_YIELD_KEY);
     storage?.setItem(SHOW_NOMINAL_YIELD_KEY, serialized);
     if (storage && previous !== serialized) emitDurableMutation('preferences');
-  } catch { /* best effort */ }
+  } catch { notifyLocalStorageFailure(); }
 }

@@ -504,8 +504,12 @@ export default function EtfPulsePage() {
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [mobileVisual, setMobileVisual] = useState<'list' | 'heatmap' | 'momentum'>('list');
   const requestGenerationRef = useRef(0);
+  const requestAbortRef = useRef<AbortController | null>(null);
 
   const loadRows = useCallback(async (forceRefresh = false) => {
+    requestAbortRef.current?.abort();
+    const controller = new AbortController();
+    requestAbortRef.current = controller;
     const requestGeneration = ++requestGenerationRef.current;
     setLoading(true);
     setError('');
@@ -513,6 +517,7 @@ export default function EtfPulsePage() {
     try {
       const next = await buildEtfPulseRows({
         forceRefresh,
+        signal: controller.signal,
         onProgress: progress => {
           if (requestGeneration === requestGenerationRef.current) setProgress(progress);
         },
@@ -522,6 +527,7 @@ export default function EtfPulsePage() {
       setProgress({ loaded: next.loaded + next.failed, total: next.total });
     } catch (err) {
       if (requestGeneration !== requestGenerationRef.current) return;
+      if ((err as { name?: unknown })?.name === 'AbortError') return;
       setError(err instanceof Error ? err.message : 'ETF Pulse data could not be loaded.');
     } finally {
       if (requestGeneration === requestGenerationRef.current) setLoading(false);
@@ -530,7 +536,7 @@ export default function EtfPulsePage() {
 
   useEffect(() => {
     void loadRows(false);
-    return () => { requestGenerationRef.current += 1; };
+    return () => { requestGenerationRef.current += 1; requestAbortRef.current?.abort(); };
   }, [loadRows]);
 
   const rows = useMemo(() => result?.rows ?? [], [result]);

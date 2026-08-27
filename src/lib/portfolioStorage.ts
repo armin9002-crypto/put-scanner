@@ -579,7 +579,9 @@ export function writePortfolioTrades(
 
 export function savePortfolioTrades(trades: PortfolioTrade[]): StorageWriteResult {
   const storage = getStorage();
-  return storage ? writePortfolioTrades(storage, trades) : { status: 'error', error: 'Portfolio storage is unavailable.' };
+  const result: StorageWriteResult = storage ? writePortfolioTrades(storage, trades) : { status: 'error', error: 'Portfolio storage is unavailable.' };
+  if (result.status === 'error') notifyLocalStorageFailure();
+  return result;
 }
 
 function portfolioTradesForMutation(): PortfolioTrade[] {
@@ -637,3 +639,4 @@ import {
   type StorageWriteResult,
 } from './durableStorage.ts';
 import { emitDurableMutation } from './cloudState/syncEvents.ts';
+import { notifyLocalStorageFailure } from './storageFeedback.ts';

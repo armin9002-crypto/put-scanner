@@ -1,10 +1,13 @@
 import { buildEtfPulseDataset, ETF_PULSE_DATASET_VERSION } from './_lib/etfPulseDataset.js';
+import { observeMarketRequest } from './_lib/requestObservability.js';
 
 export default async function handler(req, res) {
+  const observation = observeMarketRequest(req, res, { endpoint: 'etf-pulse' });
   res.setHeader('Access-Control-Allow-Origin', '*');
   const fresh = req.query.fresh === '1';
   try {
-    const dataset = await buildEtfPulseDataset();
+    const dataset = await buildEtfPulseDataset({ signal: observation.signal });
+    observation.setCounts({ tickerCount: dataset.tickers.length });
     const complete = dataset.errors.length === 0;
     const cacheControl = fresh
       ? 'private, no-store'

@@ -1,4 +1,5 @@
 import { getYahooSession, readYahooJson, yahooFetch } from './_lib/yahoo.js';
+import { observeMarketRequest } from './_lib/requestObservability.js';
 
 function normalizeWeight(value) {
   if (value == null) return null;
@@ -32,6 +33,12 @@ function normalizeHolding(holding) {
 }
 
 export default async function handler(req, res) {
+  const observation = observeMarketRequest(req, res, { endpoint: 'holdings', tickerCount: 1 });
+  let upstreamRequests = 0;
+  const onAttempt = () => {
+    upstreamRequests += 1;
+    res.setHeader('X-PutScanner-Upstream-Requests', String(upstreamRequests));
+  };
   res.setHeader('Access-Control-Allow-Origin', '*');
 
   const rawTicker = Array.isArray(req.query.ticker) ? req.query.ticker[0] : req.query.ticker;
@@ -45,15 +52,18 @@ export default async function handler(req, res) {
 
   try {
     const baseUrl = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=topHoldings,price`;
-    let yahooRes = await yahooFetch(baseUrl, { endpoint: 'holdings' });
+    let yahooRes = await yahooFetch(baseUrl, { endpoint: 'holdings', signal: observation.signal, onAttempt });
 
     if (!yahooRes.ok && (yahooRes.status === 401 || yahooRes.status === 403)) {
-      const session = await getYahooSession(ticker);
+      const session = await getYahooSession(ticker, false, { signal: observation.signal, onAttempt });
       const fallbackUrl = `${baseUrl}&crumb=${encodeURIComponent(session.crumb)}`;
       yahooRes = await yahooFetch(fallbackUrl, {
         endpoint: 'holdings',
+        signal: observation.signal,
+        onAttempt,
         fetchOptions: { headers: { Cookie: session.cookie } },
       });
+      observation.noteRetry();
     }
 
     res.setHeader('Cache-Control', 'public, s-maxage=86400, stale-while-revalidate=604800');

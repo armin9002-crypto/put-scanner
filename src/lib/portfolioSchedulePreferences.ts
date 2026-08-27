@@ -2,6 +2,7 @@ export const PORTFOLIO_EXPIRY_GROUPS_KEY = 'put_scanner_portfolio_expiry_groups:
 export const PORTFOLIO_UNDERLYING_GROUPS_KEY = 'put_scanner_portfolio_underlying_groups:v1';
 export const PORTFOLIO_GROUP_MODE_KEY = 'put_scanner_portfolio_group_mode:v1';
 export type PortfolioGroupMode = 'expiration' | 'underlying' | 'none';
+import { notifyLocalStorageFailure } from './storageFeedback.ts';
 
 function readCollapsedGroups(key: string, storage: Pick<Storage, 'getItem'> | null): Record<string, boolean> {
   if (!storage) return {};
@@ -20,7 +21,7 @@ function persistCollapsedGroups(key: string, value: Record<string, boolean>, sto
     const previous = storage?.getItem?.(key);
     storage?.setItem(key, serialized);
     if (storage && previous !== serialized) emitDurableMutation('preferences');
-  } catch { /* best effort */ }
+  } catch { notifyLocalStorageFailure(); }
 }
 
 export function readCollapsedExpirationGroups(storage: Pick<Storage, 'getItem'> | null = typeof localStorage === 'undefined' ? null : localStorage): Record<string, boolean> {
@@ -51,7 +52,7 @@ export function persistPortfolioGroupMode(value: PortfolioGroupMode, storage: Pr
     const previous = storage?.getItem?.(PORTFOLIO_GROUP_MODE_KEY);
     storage?.setItem(PORTFOLIO_GROUP_MODE_KEY, value);
     if (storage && previous !== value) emitDurableMutation('preferences');
-  } catch { /* best effort */ }
+  } catch { notifyLocalStorageFailure(); }
 }
 
 export function toggleCollapsedExpirationGroup(value: Record<string, boolean>, expiration: string): Record<string, boolean> {

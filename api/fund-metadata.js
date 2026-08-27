@@ -1,16 +1,20 @@
 import YahooFinance from 'yahoo-finance2';
 import { normalizePositiveNumber } from './_lib/yahoo.js';
+import { observeMarketRequest } from './_lib/requestObservability.js';
 
 const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
 
 export default async function handler(req, res) {
+  const observation = observeMarketRequest(req, res, { endpoint: 'fund-metadata' });
   res.setHeader('Access-Control-Allow-Origin', '*');
   const rawSymbols = Array.isArray(req.query.symbols) ? req.query.symbols[0] : req.query.symbols;
   if (!rawSymbols) return res.status(400).json({ error: 'Missing symbols parameter' });
 
   const symbols = [...new Set(String(rawSymbols).split(',').map(symbol => symbol.trim().toUpperCase()).filter(symbol => /^[A-Z0-9.^-]{1,12}$/.test(symbol)))];
+  observation.setCounts({ tickerCount: symbols.length });
   if (symbols.length === 0) return res.status(400).json({ error: 'No valid symbols' });
   if (symbols.length > 100) return res.status(400).json({ error: 'Too many symbols' });
+  res.setHeader('X-PutScanner-Upstream-Requests', '1');
 
   try {
     const quotes = await yahooFinance.quote(symbols, { fields: ['symbol', 'quoteType', 'netAssets'] });

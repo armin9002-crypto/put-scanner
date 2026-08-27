@@ -427,6 +427,7 @@ export default function OptionsPage() {
 
   const inFlightFetchKeyRef = useRef<string>('');
   const requestGenerationRef = useRef(0);
+  const requestAbortRef = useRef<AbortController | null>(null);
 
   const handleShowNominalYieldChange = useCallback((value: boolean) => {
     setShowNominalYield(value);
@@ -438,22 +439,25 @@ export default function OptionsPage() {
     const key = `${ticker}:${requestedExpiry ?? 'default'}:${fresh ? 'fresh' : bypassCache ? 'bypass' : 'cached'}`;
     if (inFlightFetchKeyRef.current === key) return;
     inFlightFetchKeyRef.current = key;
+    requestAbortRef.current?.abort();
+    const controller = new AbortController();
+    requestAbortRef.current = controller;
     const requestGeneration = ++requestGenerationRef.current;
 
     setLoading(true);
     setError(null);
     try {
-      const detail = await fetchTickerDetail(ticker, requestedExpiry ?? undefined, { bypassCache, fresh }).catch(error => {
+      const detail = await fetchTickerDetail(ticker, requestedExpiry ?? undefined, { bypassCache, fresh, signal: controller.signal }).catch(error => {
           const status = (error as Error & { status?: number }).status;
           if (requestedExpiry == null || (status !== 400 && status !== 404)) throw error;
-          return fetchTickerDetail(ticker, undefined, { bypassCache, fresh });
+          return fetchTickerDetail(ticker, undefined, { bypassCache, fresh, signal: controller.signal });
         });
       const initialOpts = detail.options;
       const ext = detail.extendedPrice;
       const returnedExpiration = getReturnedOptionExpiration(initialOpts.chainMeta);
       const preferredExp = resolveOptionExpirySelection(initialOpts.expirations, expiryParam, returnedExpiration);
       const opts = preferredExp.date && preferredExp.needsChainFetch
-        ? await fetchOptions(ticker, preferredExp.date, { bypassCache, fresh, source: fresh ? 'OptionsPage:refresh:fallback' : 'OptionsPage:load:fallback' })
+        ? await fetchOptions(ticker, preferredExp.date, { bypassCache, fresh, signal: controller.signal, source: fresh ? 'OptionsPage:refresh:fallback' : 'OptionsPage:load:fallback' })
         : initialOpts;
       if (preferredExp.date && !optionChainMatchesRequestedExpiration(opts.chainMeta, preferredExp.date)) {
         throw new Error('The requested expiration was unavailable. The previous chain was preserved.');
@@ -471,6 +475,7 @@ export default function OptionsPage() {
       setLastUpdated(new Date());
     } catch (err: unknown) {
       if (requestGeneration !== requestGenerationRef.current) return;
+      if ((err as { name?: unknown })?.name === 'AbortError') return;
       setError(err instanceof Error ? err.message : 'Failed to load options data');
       const code = (err as Error & { code?: TickerDetailErrorCode }).code;
       setDetailErrorCode(code === 'INVALID_INPUT' || code === 'INVALID_SYMBOL' ? code : 'PROVIDER_FAILURE');
@@ -487,6 +492,9 @@ export default function OptionsPage() {
     const key = `${ticker}:${expDate}:${fresh ? 'fresh' : bypassCache ? 'bypass' : 'cached'}`;
     if (inFlightFetchKeyRef.current === key) return;
     inFlightFetchKeyRef.current = key;
+    requestAbortRef.current?.abort();
+    const controller = new AbortController();
+    requestAbortRef.current = controller;
     const requestGeneration = ++requestGenerationRef.current;
 
     setShowScannerPreselectBadge(false);
@@ -495,7 +503,7 @@ export default function OptionsPage() {
     setError(null);
     try {
       // Only fetch options — preserve existing price state (Opt 5)
-      const opts = await fetchOptions(ticker, expDate, { bypassCache, fresh, source: fresh ? 'OptionsPage:refreshExpiration' : 'OptionsPage:loadExpiration' });
+      const opts = await fetchOptions(ticker, expDate, { bypassCache, fresh, signal: controller.signal, source: fresh ? 'OptionsPage:refreshExpiration' : 'OptionsPage:loadExpiration' });
       if (!optionChainMatchesRequestedExpiration(opts.chainMeta, expDate)) {
         throw new Error('The requested expiration was unavailable. The previous chain was preserved.');
       }
@@ -505,6 +513,7 @@ export default function OptionsPage() {
       setLastUpdated(new Date());
     } catch (err: unknown) {
       if (requestGeneration !== requestGenerationRef.current) return;
+      if ((err as { name?: unknown })?.name === 'AbortError') return;
       setError(err instanceof Error ? err.message : 'Failed to load expiration data');
     } finally {
       if (requestGeneration === requestGenerationRef.current) {
@@ -526,6 +535,7 @@ export default function OptionsPage() {
     void loadData();
     return () => {
       requestGenerationRef.current += 1;
+      requestAbortRef.current?.abort();
       inFlightFetchKeyRef.current = '';
     };
   }, [ticker, expiryParam, loadData]);
@@ -1198,8 +1208,10 @@ export default function OptionsPage() {
           >
             {optionsData.expirations.map(exp => (
               <button
+                type="button"
                 key={exp.date}
                 onClick={() => loadExpiration(exp.date)}
+                aria-pressed={selectedExp === exp.date}
                 className="px-3 py-2 sm:py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap flex-shrink-0 min-h-[44px] sm:min-h-0"
                 style={{
                   backgroundColor: selectedExp === exp.date ? 'var(--accent)' : 'var(--surface)',

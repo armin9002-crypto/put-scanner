@@ -14,6 +14,7 @@ import {
   createLatestScreenerScanGate,
   fetchScreenerBatch,
   planScreenerBatches,
+  retryFailedScreenerBatches,
   runScreenerBatchScan,
 } from '../src/lib/screenerAcquisition.ts';
 import { canonicalOptionChainKey } from '../src/lib/optionChainRequests.ts';
@@ -266,17 +267,23 @@ test('one failed batch preserves successful batches and retry reconstruction has
   });
   assert.equal(first.initialResults.size, 3);
   assert.equal(first.completedBatches, 1);
+  assert.deepEqual(first.failedBatchIds, [1]);
   assert.deepEqual(first.errors, [{ batchId: 1, message: 'fixture batch unavailable' }]);
 
-  const retried = await runScreenerBatchScan({
+  let retryCalls = 0;
+  const retried = await retryFailedScreenerBatches({
     scanId: 'retry-batch-fixture',
     selectedTickers: selected,
     expFilter: 'all',
-    fetchBatch: async plan => ({ payload: batchPayload(plan), meta: networkMeta }),
+    failedBatchIds: first.failedBatchIds,
+    previous: first,
+    fetchBatch: async plan => { retryCalls += 1; return { payload: batchPayload(plan), meta: networkMeta }; },
   });
   const rebuilt = buildScreenerRows(retried, 'all');
   assert.equal(retried.initialResults.size, 6);
   assert.equal(retried.chainsByKey.size, 12);
+  assert.equal(retryCalls, 1);
+  assert.deepEqual(retried.failedBatchIds, []);
   assert.equal(new Set(rebuilt.rows.map(row => `${row.ticker}|${row.expDate}|${row.strike}`)).size, rebuilt.rows.length);
 });
 

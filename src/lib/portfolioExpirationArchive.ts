@@ -4,6 +4,7 @@ import { calculatePremiumCollected } from './portfolioMetrics.ts';
 import type { PortfolioResolutionSource, PortfolioTrade } from './portfolioStorage';
 import { findCachedDailyHistoryForDates, type ChartPoint } from './chartHistory.ts';
 import { mapWithConcurrency } from '../../shared/concurrency.js';
+import { fetchObservedMarketData } from './requestDiagnostics.ts';
 
 interface HistoricalClosePoint {
   timestamp: number;
@@ -114,7 +115,7 @@ export async function getExpirationClosePrice(ticker: string, expirationDate: st
     key,
     EXPIRATION_CLOSE_TTL,
     async () => {
-      const response = await fetch(`/api/chart-history?ticker=${encodeURIComponent(normalizedTicker)}&start=${start}&end=${end}`);
+      const response = await fetchObservedMarketData('chart-history', `/api/chart-history?ticker=${encodeURIComponent(normalizedTicker)}&start=${start}&end=${end}`, undefined, 'portfolioExpirationArchive');
       if (!response.ok) throw new Error(`Failed to fetch expiration close for ${normalizedTicker}`);
       const data = await response.json();
       if (data.error) throw new Error(data.error);

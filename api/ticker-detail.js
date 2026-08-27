@@ -1,6 +1,7 @@
 import { fetchYahooExtendedPrice } from './_lib/extendedPrice.js';
 import { fetchYahooVolatilityContext } from './_lib/ivRank.js';
 import { fetchYahooOptions } from './_lib/yahoo.js';
+import { observeMarketRequest } from './_lib/requestObservability.js';
 
 function tickerFromRequest(req) {
   const rawTicker = Array.isArray(req.query.ticker) ? req.query.ticker[0] : req.query.ticker;
@@ -12,6 +13,7 @@ function optionResult(optionData) {
 }
 
 export default async function handler(req, res) {
+  const observation = observeMarketRequest(req, res, { endpoint: 'ticker-detail', tickerCount: 1 });
   res.setHeader('Access-Control-Allow-Origin', '*');
   const ticker = tickerFromRequest(req);
   if (!ticker || !/^[A-Z0-9.^-]{1,12}$/.test(ticker)) {
@@ -27,8 +29,8 @@ export default async function handler(req, res) {
   const onAttempt = () => { upstreamAttempts += 1; };
 
   try {
-    const extendedPromise = fetchYahooExtendedPrice(ticker, { includeSparkline: true, onAttempt }).catch(() => null);
-    const options = await fetchYahooOptions(ticker, date, { fresh, onAttempt });
+    const extendedPromise = fetchYahooExtendedPrice(ticker, { includeSparkline: true, onAttempt, signal: observation.signal }).catch(() => null);
+    const options = await fetchYahooOptions(ticker, date, { fresh, onAttempt, signal: observation.signal, onRetry: () => observation.noteRetry() });
     const result = optionResult(options);
     if (!result) {
       const providerError = options?.optionChain?.error;
@@ -42,7 +44,7 @@ export default async function handler(req, res) {
 
     const [extendedPrice, volatilityContext] = await Promise.all([
       extendedPromise,
-      fetchYahooVolatilityContext(ticker, { optionData: options, onAttempt }).catch(() => null),
+      fetchYahooVolatilityContext(ticker, { optionData: options, onAttempt, signal: observation.signal }).catch(() => null),
     ]);
     const expirationDates = Array.isArray(result.expirationDates) ? result.expirationDates : [];
     const puts = Array.isArray(result.options?.[0]?.puts) ? result.options[0].puts : [];

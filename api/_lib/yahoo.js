@@ -178,6 +178,7 @@ export async function fetchYahooOptions(ticker, date = null, options = {}) {
     });
     if ((response.status === 401 || response.status === 403) && attempt === 0) {
       invalidateYahooSession();
+      options.onRetry?.();
       continue;
     }
     if (!response.ok) {

@@ -8,6 +8,7 @@ import {
   type Theme,
 } from './themePreference';
 import { emitDurableMutation } from './cloudState/syncEvents';
+import { notifyLocalStorageFailure } from './storageFeedback';
 
 export type { Theme } from './themePreference';
 
@@ -50,7 +51,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       localStorage.setItem(THEME_MIGRATION_KEY, THEME_MIGRATION_VERSION);
       if (previousTheme !== theme) emitDurableMutation('preferences');
     } catch {
-      // Ignore unavailable storage.
+      notifyLocalStorageFailure();
     }
   }, [theme]);
 

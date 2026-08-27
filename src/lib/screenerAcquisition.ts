@@ -11,7 +11,7 @@ import {
   beginScreenerScanDiagnostics,
   finishScreenerScanDiagnostics,
   observeScreenerClientConcurrency,
-  recordResponseDebugHeaders,
+  fetchObservedMarketData,
   recordScreenerScanBatch,
 } from './requestDiagnostics.ts';
 import type { OptionsChainData, OptionChainSource } from './types.ts';
@@ -84,6 +84,7 @@ export interface ScreenerScanResult {
   errors: Array<{ batchId: number; ticker?: string; message: string }>;
   plannedBatches: number;
   completedBatches: number;
+  failedBatchIds: number[];
 }
 
 export interface LatestScreenerScan {
@@ -163,7 +164,7 @@ function responseError(response: Response, fallback: string): Error & { status?:
   return error;
 }
 
-export async function fetchScreenerBatch(plan: ScreenerBatchPlan): Promise<ScreenerBatchFetchResult> {
+export async function fetchScreenerBatch(plan: ScreenerBatchPlan, options: { signal?: AbortSignal; forceRefresh?: boolean } = {}): Promise<ScreenerBatchFetchResult> {
   const requestOptions = {
     key: plan.cacheKey,
     softTtlMs: BATCH_SOFT_TTL_MS,
@@ -177,15 +178,15 @@ export async function fetchScreenerBatch(plan: ScreenerBatchPlan): Promise<Scree
     ...requestOptions,
     source: 'Screener:batch',
     endpoint: 'screener-batch',
-    mode: cached && !cached.data.complete ? 'revalidate' : 'cache-first',
+    mode: options.forceRefresh || (cached && !cached.data.complete) ? 'revalidate' : 'cache-first',
     priority: 'bulk_manual',
     allowStaleOnError: true,
     timeoutMs: 58_000,
+    signal: options.signal,
     fetcher: async signal => {
       const query = new URLSearchParams({ chunk: String(plan.chunkId) });
       if (plan.targetDate != null) query.set('date', String(plan.targetDate));
-      const response = await fetch(`/api/screener-batch?${query}`, { signal });
-      recordResponseDebugHeaders('screener-batch', response, 'Screener:batch');
+      const response = await fetchObservedMarketData('screener-batch', `/api/screener-batch?${query}`, { signal }, 'Screener:batch');
       if (!response.ok) throw responseError(response, `Screener batch ${plan.chunkId + 1} failed (${response.status})`);
       return response.json() as Promise<ScreenerBatchPayload>;
     },
@@ -212,18 +213,20 @@ export async function runScreenerBatchScan(options: {
   selectedTickers: readonly string[];
   expFilter: string;
   signal?: AbortSignal;
+  forceRefresh?: boolean;
   fetchBatch?: (plan: ScreenerBatchPlan) => Promise<ScreenerBatchFetchResult>;
   onProgress?: (completedEtfs: number, totalEtfs: number) => void;
 }): Promise<ScreenerScanResult> {
   const plans = planScreenerBatches(options.selectedTickers, options.expFilter);
   const selected = new Set(options.selectedTickers.map(ticker => ticker.trim().toUpperCase()));
-  const fetchBatch = options.fetchBatch ?? fetchScreenerBatch;
+  const fetchBatch = options.fetchBatch ?? (plan => fetchScreenerBatch(plan, { signal: options.signal, forceRefresh: options.forceRefresh }));
   const initialResults = new Map<string, OptionsChainData>();
   const chainsByKey = new Map<string, OptionsChainData>();
   const ivVsRealizedRangeByTicker = new Map<string, number | null>();
   const errors: ScreenerScanResult['errors'] = [];
   let completedEtfs = 0;
   let rejectedBatchFailures = 0;
+  const failedBatchIds = new Set<number>();
   beginScreenerScanDiagnostics(options.scanId, selected.size, plans.length);
 
   const settled = await mapWithConcurrency(plans, SCREENER_BROWSER_CONCURRENCY, async plan => {
@@ -246,12 +249,14 @@ export async function runScreenerBatchScan(options: {
     const plan = plans[index];
     if (batchResult.status === 'rejected') {
       if (batchResult.reason?.name !== 'AbortError') {
+        failedBatchIds.add(plan.chunkId);
         rejectedBatchFailures += 1;
         errors.push({ batchId: plan.chunkId, message: batchResult.reason instanceof Error ? batchResult.reason.message : 'Screener batch failed' });
       }
       return;
     }
     const { payload, meta } = batchResult.value.result;
+    if (!payload.complete || payload.errors.length > 0) failedBatchIds.add(plan.chunkId);
     recordScreenerScanBatch(options.scanId, {
       networkCall: meta.networkCall,
       plannedOptionChains: payload.diagnostics.plannedOptionChains,
@@ -291,6 +296,42 @@ export async function runScreenerBatchScan(options: {
     errors,
     plannedBatches: plans.length,
     completedBatches: settled.filter(result => result.status === 'fulfilled').length,
+    failedBatchIds: [...failedBatchIds].sort((a, b) => a - b),
+  };
+}
+
+export async function retryFailedScreenerBatches(options: {
+  scanId: string;
+  selectedTickers: readonly string[];
+  expFilter: string;
+  failedBatchIds: readonly number[];
+  previous: ScreenerScanResult;
+  signal?: AbortSignal;
+  fetchBatch?: (plan: ScreenerBatchPlan) => Promise<ScreenerBatchFetchResult>;
+  onProgress?: (completedEtfs: number, totalEtfs: number) => void;
+}): Promise<ScreenerScanResult> {
+  const failed = new Set(options.failedBatchIds);
+  const retryTickers = planScreenerBatches(options.selectedTickers, options.expFilter)
+    .filter(plan => failed.has(plan.chunkId))
+    .flatMap(plan => plan.selectedTickers);
+  if (retryTickers.length === 0) return options.previous;
+  const retried = await runScreenerBatchScan({
+    scanId: options.scanId,
+    selectedTickers: retryTickers,
+    expFilter: options.expFilter,
+    signal: options.signal,
+    forceRefresh: true,
+    fetchBatch: options.fetchBatch,
+    onProgress: options.onProgress,
+  });
+  return {
+    initialResults: new Map([...options.previous.initialResults, ...retried.initialResults]),
+    chainsByKey: new Map([...options.previous.chainsByKey, ...retried.chainsByKey]),
+    ivVsRealizedRangeByTicker: new Map([...options.previous.ivVsRealizedRangeByTicker, ...retried.ivVsRealizedRangeByTicker]),
+    errors: [...options.previous.errors.filter(error => !failed.has(error.batchId)), ...retried.errors],
+    plannedBatches: options.previous.plannedBatches,
+    completedBatches: Math.max(0, options.previous.plannedBatches - retried.failedBatchIds.length),
+    failedBatchIds: retried.failedBatchIds,
   };
 }
 
@@ -310,8 +351,7 @@ export async function fetchScreenerExpirations(): Promise<Array<{ date: number; 
     storage: 'session',
     validator: isExpirationPayload,
     fetcher: async signal => {
-      const response = await fetch('/api/screener-expirations', { signal });
-      recordResponseDebugHeaders('screener-expirations', response, 'Screener:expirations');
+      const response = await fetchObservedMarketData('screener-expirations', '/api/screener-expirations', { signal }, 'Screener:expirations');
       if (!response.ok) throw responseError(response, `Screener expirations failed (${response.status})`);
       return response.json() as Promise<ScreenerExpirationPayload>;
     },

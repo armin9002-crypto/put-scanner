@@ -1,6 +1,13 @@
 import { normalizeFiniteNumber, normalizePositiveNumber, readYahooJson, yahooFetch } from './_lib/yahoo.js';
+import { observeMarketRequest } from './_lib/requestObservability.js';
 
 export default async function handler(req, res) {
+  const observation = observeMarketRequest(req, res, { endpoint: 'price', tickerCount: 1 });
+  let upstreamRequests = 0;
+  const noteProviderAttempt = () => {
+    upstreamRequests += 1;
+    res.setHeader('X-PutScanner-Upstream-Requests', String(upstreamRequests));
+  };
   res.setHeader('Access-Control-Allow-Origin', '*');
 
   const rawTicker = Array.isArray(req.query.ticker) ? req.query.ticker[0] : req.query.ticker;
@@ -25,7 +32,11 @@ export default async function handler(req, res) {
       url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=${interval}&range=${range}`;
     }
 
-    const yahooRes = await yahooFetch(url, { endpoint: 'price' });
+    const yahooRes = await yahooFetch(url, {
+      endpoint: 'price',
+      fetchOptions: { signal: observation.signal },
+      onAttempt: noteProviderAttempt,
+    });
     if (!yahooRes.ok) {
       return res.status(yahooRes.status).json({ error: `Yahoo chart request failed for ${ticker}` });
     }
@@ -90,7 +101,11 @@ export default async function handler(req, res) {
       if (includeSparkline) {
         try {
           const intradayUrl = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1m&range=1d`;
-          const intradayRes = await yahooFetch(intradayUrl, { endpoint: 'price' });
+          const intradayRes = await yahooFetch(intradayUrl, {
+            endpoint: 'price',
+            fetchOptions: { signal: observation.signal },
+            onAttempt: noteProviderAttempt,
+          });
           const intradayData = await readYahooJson(intradayRes, 'price');
           const intradayResult = intradayData.chart?.result?.[0];
           const intradayCloses = intradayResult?.indicators?.quote?.[0]?.close || [];

@@ -1,6 +1,9 @@
 import { fetchYahooOptions } from './_lib/yahoo.js';
+import { observeMarketRequest } from './_lib/requestObservability.js';
 
 export default async function handler(req, res) {
+  const observation = observeMarketRequest(req, res, { endpoint: 'options', tickerCount: 1 });
+  let upstreamRequests = 0;
   res.setHeader('Access-Control-Allow-Origin', '*');
 
   const rawTicker = Array.isArray(req.query.ticker) ? req.query.ticker[0] : req.query.ticker;
@@ -21,7 +24,15 @@ export default async function handler(req, res) {
   const fresh = rawFresh === '1' || rawFresh === 'true';
 
   try {
-    const data = await fetchYahooOptions(ticker, date, { fresh });
+    const data = await fetchYahooOptions(ticker, date, {
+      fresh,
+      signal: observation.signal,
+      onAttempt: () => {
+        upstreamRequests += 1;
+        res.setHeader('X-PutScanner-Upstream-Requests', String(upstreamRequests));
+      },
+      onRetry: () => observation.noteRetry(),
+    });
 
     const cacheControl = fresh
         ? 'no-store'

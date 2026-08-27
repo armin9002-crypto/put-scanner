@@ -1,26 +1,30 @@
 import { normalizeFiniteNumber, normalizePositiveNumber, readYahooJson, yahooFetch } from './_lib/yahoo.js';
 import { mapWithConcurrency } from '../shared/concurrency.js';
+import { observeMarketRequest } from './_lib/requestObservability.js';
 
 function percentChange(current, past) {
   return current != null && past != null && past > 0 ? (current - past) / past * 100 : null;
 }
 
 export default async function handler(req, res) {
+  const observation = observeMarketRequest(req, res, { endpoint: 'prices' });
   res.setHeader('Access-Control-Allow-Origin', '*');
   const rawTickers = Array.isArray(req.query.tickers) ? req.query.tickers[0] : req.query.tickers;
   if (!rawTickers) return res.status(400).json({ error: 'Missing tickers parameter' });
 
   const symbols = [...new Set(String(rawTickers).split(',').map(symbol => symbol.trim().toUpperCase()).filter(symbol => /^[A-Z0-9.^-]{1,12}$/.test(symbol)))];
+  observation.setCounts({ tickerCount: symbols.length });
   if (symbols.length === 0) return res.status(400).json({ error: 'No valid ticker symbols' });
 
   const chunks = [];
   for (let index = 0; index < symbols.length; index += 20) chunks.push(symbols.slice(index, index + 20));
+  res.setHeader('X-PutScanner-Upstream-Requests', String(chunks.length));
 
   const errors = [];
   const settled = await mapWithConcurrency(chunks, 3, async chunk => {
     try {
       const url = `https://query2.finance.yahoo.com/v7/finance/spark?symbols=${encodeURIComponent(chunk.join(','))}&range=3mo&interval=1d`;
-      const response = await yahooFetch(url, { endpoint: 'prices' });
+      const response = await yahooFetch(url, { endpoint: 'prices', signal: observation.signal });
       if (!response.ok) throw new Error(`Yahoo prices failed (${response.status})`);
       const data = await readYahooJson(response, 'prices');
       return Array.isArray(data?.spark?.result) ? data.spark.result : [];
@@ -66,7 +70,6 @@ export default async function handler(req, res) {
 
   res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=900');
   res.setHeader('X-Upstream-Requests', String(chunks.length));
-  res.setHeader('X-PutScanner-Upstream-Requests', String(chunks.length));
   res.setHeader('X-PutScanner-Cache-Strategy', 'public, s-maxage=300, stale-while-revalidate=900');
   return res.status(200).json(prices);
 }

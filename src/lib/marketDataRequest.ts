@@ -37,6 +37,7 @@ interface MarketDataRequestOptions<T> {
   priority?: RequestPriority;
   allowStaleOnError?: boolean;
   timeoutMs?: number;
+  signal?: AbortSignal;
   storage?: 'local' | 'session' | 'none';
   validator: (data: T) => boolean;
   fetcher: (signal: AbortSignal) => Promise<T>;
@@ -49,7 +50,14 @@ interface ProviderHealth {
 }
 
 const memoryCache = new Map<string, CacheRecord<unknown>>();
-const inFlight = new Map<string, Promise<MarketDataRequestResult<unknown>>>();
+interface InFlightRequest {
+  promise: Promise<MarketDataRequestResult<unknown>>;
+  controller: AbortController;
+  consumers: number;
+  settled: boolean;
+}
+
+const inFlight = new Map<string, InFlightRequest>();
 const providerHealth = new Map<RequestEndpoint, ProviderHealth>();
 const FAILURE_THRESHOLD = 3;
 const CIRCUIT_COOLDOWN_MS = 45_000;
@@ -161,6 +169,46 @@ function isProviderFailure(error: unknown): boolean {
   return status == null || !Number.isFinite(status) || status === 429 || status >= 500;
 }
 
+export function isAbortError(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as { name?: unknown }).name === 'AbortError';
+}
+
+function abortReason(signal: AbortSignal): unknown {
+  return signal.reason ?? new DOMException('Operation aborted', 'AbortError');
+}
+
+function consumeInFlight<T>(entry: InFlightRequest, signal: AbortSignal | undefined, deduped: boolean): Promise<MarketDataRequestResult<T>> {
+  entry.consumers += 1;
+  return new Promise((resolve, reject) => {
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      signal?.removeEventListener('abort', onAbort);
+      entry.consumers = Math.max(0, entry.consumers - 1);
+      if (entry.consumers === 0 && !entry.settled && !entry.controller.signal.aborted) {
+        entry.controller.abort(new DOMException('No active request consumers', 'AbortError'));
+      }
+    };
+    const onAbort = () => {
+      release();
+      reject(abortReason(signal!));
+    };
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    signal?.addEventListener('abort', onAbort, { once: true });
+    entry.promise.then(result => {
+      release();
+      resolve({ ...(result as MarketDataRequestResult<T>), meta: { ...result.meta, deduped } });
+    }, error => {
+      release();
+      reject(error);
+    });
+  });
+}
+
 function resultFromRecord<T>(record: CacheRecord<T>, source: 'memory' | 'persistent' | 'stale-fallback', deduped = false): MarketDataRequestResult<T> {
   return {
     data: record.data,
@@ -227,17 +275,23 @@ export async function requestMarketData<T>(options: MarketDataRequestOptions<T>)
     throw new Error(`Market data temporarily unavailable for ${options.endpoint}; retry shortly.`);
   }
 
-  const existing = inFlight.get(options.key) as Promise<MarketDataRequestResult<T>> | undefined;
-  if (existing) {
+  const existing = inFlight.get(options.key);
+  if (existing && !existing.controller.signal.aborted) {
     recordRequestDiagnostic(options.endpoint, 'deduped', options.source);
-    const result = await existing;
-    return { ...result, meta: { ...result.meta, deduped: true } };
+    return consumeInFlight<T>(existing, options.signal, true);
   }
+  if (existing) inFlight.delete(options.key);
 
   const startedAt = Date.now();
+  const controller = new AbortController();
+  const entry: InFlightRequest = {
+    promise: Promise.resolve(null as unknown as MarketDataRequestResult<unknown>),
+    controller,
+    consumers: 0,
+    settled: false,
+  };
   const promise = (async () => {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 12_000);
+    const timeout = setTimeout(() => controller.abort(new DOMException('Market data request timed out', 'TimeoutError')), options.timeoutMs ?? 12_000);
     try {
       recordRequestDiagnostic(options.endpoint, 'network', options.source);
       const data = await options.fetcher(controller.signal);
@@ -257,6 +311,10 @@ export async function requestMarketData<T>(options: MarketDataRequestOptions<T>)
         },
       };
     } catch (error) {
+      if (isAbortError(error)) {
+        recordRequestDiagnostic(options.endpoint, 'aborted', options.source, Date.now() - startedAt);
+        throw error;
+      }
       if (isProviderFailure(error)) noteFailure(options.endpoint);
       recordRequestDiagnostic(options.endpoint, 'failure', options.source, Date.now() - startedAt);
       if (cached && cachedFreshness !== 'expired' && options.allowStaleOnError !== false) {
@@ -266,11 +324,13 @@ export async function requestMarketData<T>(options: MarketDataRequestOptions<T>)
       throw error;
     } finally {
       clearTimeout(timeout);
-      inFlight.delete(options.key);
+      entry.settled = true;
+      if (inFlight.get(options.key) === entry) inFlight.delete(options.key);
     }
   })();
-  inFlight.set(options.key, promise as Promise<MarketDataRequestResult<unknown>>);
-  return promise;
+  entry.promise = promise as Promise<MarketDataRequestResult<unknown>>;
+  inFlight.set(options.key, entry);
+  return consumeInFlight<T>(entry, options.signal, false);
 }
 
 export function getMarketProviderHealth(): Record<string, ProviderHealth> {
