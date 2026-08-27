@@ -222,7 +222,7 @@ export function getPortfolioCurrentNY(trades: PortfolioTrade[], markBasis: MarkB
 export function getPortfolioCurrentAYDollarDays(trades: PortfolioTrade[], markBasis: MarkBasis): number | null {
   const open = openTrades(trades);
   const currentPremium = completeSum(open.map(trade => calculateCurrentMarkValueAbsolute(trade, markBasis)));
-  // Same dollar-days approach as original AY, but using remaining option value and remaining DTE.
+  // Same dollar-days approach as the annualized entry return, but using remaining liability and remaining DTE.
   const dollarDays = sum(open.map(trade => {
     const netRisk = getTradeNetCapitalAtRisk(trade);
     const dte = getRemainingDte(trade);

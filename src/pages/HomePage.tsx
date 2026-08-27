@@ -46,6 +46,7 @@ import { useResponsiveMode } from '../lib/responsive';
 import MobileBottomSheet from '../components/mobile/MobileBottomSheet';
 import MobileMarketStrip from '../components/mobile/MobileMarketStrip';
 import MobileEtfRow from '../components/mobile/MobileEtfRow';
+import AnalyzeTickerForm from '../components/AnalyzeTickerForm';
 
 const SCANNER_PRICE_TICKERS = ETF_LIST.map(etf => etf.ticker);
 
@@ -439,6 +440,10 @@ export default function HomePage() {
         }))} />
 
         <div className="px-3.5 pb-3 pt-3">
+          <div className="mb-3 rounded-xl p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+            <div className="mb-2 text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Analyze Ticker</div>
+            <AnalyzeTickerForm compact />
+          </div>
           <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
             <label className="min-w-0">
               <span className="sr-only">Expiration</span>
@@ -519,6 +524,9 @@ export default function HomePage() {
   return (
     <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-5">
+        <div className="mb-3">
+          <AnalyzeTickerForm />
+        </div>
         <div className="relative mb-3">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
           <input

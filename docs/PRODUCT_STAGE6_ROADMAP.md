@@ -1,5 +1,25 @@
 # Product Stage 6 Roadmap
 
+Stage 6B.1 completion date: 2026-08-26
+
+## Current decision after Stage 6B.1
+
+Stage 6B.1 is complete. Metric integrity is now strong enough for bounded external testing: yield concepts expose their denominators, the realized-volatility comparison is no longer marketed as IV Rank, invalid Delta inputs fail closed, and unavailable numeric values cannot rise to the top of opportunity sorts.
+
+Analyze Ticker now supports an explicit, refresh-safe, one-symbol path for provider-supported leveraged ETFs, normal ETFs, stocks such as NVDA, and safely generic unknown symbols. It does not fetch while typing, add a durable record, or expand Scanner/Screener/Pulse membership.
+
+The recommended next stage is **Stage 6B.2 — Curated Universe + Saved Underlyings + Screener Universe Selection (design and bounded implementation only)**:
+
+1. Start with a reviewed total curated discovery set of roughly **25–30 symbols**, including the most decision-useful legacy leveraged ETFs, liquid normal ETFs, and a small number of liquid large-cap stocks. Do not append 35–50 stocks to the current 42-symbol set.
+2. Implement Saved Underlyings before broad Scanner expansion. It represents “willing to own/watch,” stays distinct from contract Watchlist records, and must have a versioned local/cloud migration plan before activation.
+3. Keep Scanner mount quote-only. No membership-triggered chains, volatility history, or Pulse history.
+4. Before exposing 35–50 selectable symbols to Screener, add a server-validated exact-symbol batch contract, canonical sorted cache keys, hard symbol/expiry caps, existing browser concurrency two/server provider concurrency three, partial-result retry, payload guards, and request-budget UI.
+5. Validate option liquidity and provider behavior per symbol before curated membership. Analyze-Ticker demand should inform curation.
+
+This recommendation is design direction only. Stage 6B.1 did not add a broad universe, Saved Underlyings, earnings, rolling, alerts, polling, or automatic scanning.
+
+## Historical Stage 6A roadmap
+
 Stage 6A audit date: 2026-08-26
 
 ## Ordering principle
@@ -151,7 +171,7 @@ Before charging even <100 users:
 
 At ~1,000 users, add enforced per-action limits, shared stable server datasets, provider/circuit dashboards, cost alarms, and a commercial data decision. None requires replacing local-first durable state or the three-namespace Supabase design.
 
-## Exact next Codex implementation stage
+## Historical Stage 6A next-stage recommendation (completed)
 
 **Stage 6B.1 — Metric Integrity + Asset-Aware Analyze Ticker Foundation**
 

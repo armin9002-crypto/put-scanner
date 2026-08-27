@@ -1,7 +1,8 @@
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AlertTriangle, Briefcase, ChevronDown, ChevronRight, Download, Edit2, FileImage, Loader2, MoreHorizontal, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { calculatePutDelta, fetchBatchPricesResult, fetchOptions } from '../lib/api';
+import { fetchBatchPricesResult, fetchOptions } from '../lib/api';
+import { resolvePutDelta } from '../lib/putDelta';
 import type { OptionsChainData } from '../lib/types';
 import { acquireOptionChains, canonicalOptionChainKey } from '../lib/optionChainRequests';
 import { formatCurrency, formatDate, formatOptionPrice, formatPercent, formatPercentPoints, normalizeTimestampMs } from '../lib/format';
@@ -121,7 +122,7 @@ const PORTFOLIO_SCHEDULE_SORT_OPTIONS: Array<{ value: PortfolioScheduleSortField
   { value: 'contracts', label: 'Contracts' },
   { value: 'soldPrice', label: 'Sold Price' },
   { value: 'premium', label: 'Premium Collected' },
-  { value: 'grossRisk', label: 'Gross Risk' },
+  { value: 'grossRisk', label: 'Gross Secured Cash' },
   { value: 'currentMark', label: 'Current Mark' },
   { value: 'currentValue', label: 'Current Value' },
   { value: 'pnl', label: 'Total Gain/Loss' },
@@ -133,10 +134,10 @@ const PORTFOLIO_SCHEDULE_SORT_OPTIONS: Array<{ value: PortfolioScheduleSortField
   { value: 'iv', label: 'IV' },
   { value: 'entryVix', label: 'VIX @ Entry' },
   { value: 'openInterest', label: 'Open Interest' },
-  { value: 'originalNy', label: 'Original NY' },
-  { value: 'originalAy', label: 'Original AY' },
-  { value: 'currentNy', label: 'Current NY' },
-  { value: 'currentAy', label: 'Current AY' },
+  { value: 'originalNy', label: 'Entry Net-Risk Return' },
+  { value: 'originalAy', label: 'Ann. Entry Net-Risk Return' },
+  { value: 'currentNy', label: 'Remaining Liability / Entry Net Risk' },
+  { value: 'currentAy', label: 'Ann. Remaining Liability / Entry Net Risk' },
 ];
 
 function todayIso(): string {
@@ -560,13 +561,13 @@ function CompactExposureBars({
           {groups.map(group => {
             const width = max > 0 ? Math.max(3, (group.grossRisk / max) * 100) : 0;
             const tooltip = [
-              `Gross Risk: ${formatCurrency(group.grossRisk, 0)}`,
-              `Net Capital: ${formatCurrency(group.netCapitalAtRisk, 0)}`,
+              `Gross Secured Cash: ${formatCurrency(group.grossRisk, 0)}`,
+              `Net Maximum-Loss Capital: ${formatCurrency(group.netCapitalAtRisk, 0)}`,
               `Premium: ${formatCurrency(group.premiumCollected, 0)}`,
               `Trades: ${group.tradeCount}`,
-              `Original AY: ${formatPctValue(group.originalAY)}`,
+              `Ann. Entry Net-Risk Return: ${formatPctValue(group.originalAY)}`,
               `Weighted Avg Delta: ${formatDelta(group.weightedAverageDelta)}`,
-              `Current AY: ${formatPctValue(group.currentAY)}`,
+              `Ann. Remaining Liability / Entry Net Risk: ${formatPctValue(group.currentAY)}`,
               `% Captured: ${formatGroupPercentCaptured(group)}`,
             ].join('\n');
             return (
@@ -582,7 +583,7 @@ function CompactExposureBars({
                 </div>
                 <div className="flex justify-between gap-2 mt-1 text-[11px] leading-none" style={{ color: 'var(--text-dim)' }}>
                   <span>{group.tradeCount} trade{group.tradeCount === 1 ? '' : 's'}</span>
-                  <span className="truncate tabular-nums">Prem {formatCompactCurrency(group.premiumCollected)} · Captured {formatGroupPercentCaptured(group)} · Δ {formatDelta(group.weightedAverageDelta)} · Cur AY {formatPctValue(group.currentAY)}</span>
+                  <span className="truncate tabular-nums">Prem {formatCompactCurrency(group.premiumCollected)} · Captured {formatGroupPercentCaptured(group)} · Δ {formatDelta(group.weightedAverageDelta)} · Ann. Remaining Liab. {formatPctValue(group.currentAY)}</span>
                 </div>
               </button>
             );
@@ -662,7 +663,7 @@ function CloseCandidatesCard({ candidates, onNavigate }: { candidates: CloseCand
               </div>
               <button type="button" onClick={() => onNavigate(candidate.trade)} className="grid w-full grid-cols-[minmax(88px,1fr)_auto_auto] gap-2 text-left text-[11px] leading-none mt-1 hover:opacity-80 focus:outline-none" title="Show in Schedule" style={{ color: 'var(--text-dim)' }}>
                 <span className="truncate">{expiryLabel(candidate.trade.expiration)} {formatCurrency(candidate.trade.strike, 0)} Put</span>
-                <span className="font-mono tabular-nums">{formatPctValue(candidate.currentAnnualizedYield)} AY</span>
+                <span className="font-mono tabular-nums">{formatPctValue(candidate.currentAnnualizedYield)} Ann. Liab.</span>
                 <span className="font-mono tabular-nums">{formatDteValue(candidate.dte)}</span>
               </button>
             </div>
@@ -711,7 +712,7 @@ function ConcentrationBars({
                 </div>
                 <div className="flex justify-between gap-2 mt-1 text-[11px] leading-none" style={{ color: 'var(--text-dim)' }}>
                   <span>{formatPctValue(percentOfTotal(group.grossRisk, totalGrossRisk))}</span>
-                  <span className="truncate tabular-nums">{group.tradeCount} trades · Captured {formatGroupPercentCaptured(group)} · Δ {formatDelta(group.weightedAverageDelta)} · Cur AY {formatPctValue(group.currentAY)}</span>
+                  <span className="truncate tabular-nums">{group.tradeCount} trades · Captured {formatGroupPercentCaptured(group)} · Δ {formatDelta(group.weightedAverageDelta)} · Ann. Remaining Liab. {formatPctValue(group.currentAY)}</span>
                 </div>
               </button>
             );
@@ -759,7 +760,7 @@ function buildCloseCandidates(trades: PortfolioTrade[], basis: MarkBasis): Close
 
       if (isFiniteNumber(percentCaptured) && percentCaptured >= 0.75) reasons.push('75%+ captured');
       else if (isFiniteNumber(percentCaptured) && percentCaptured >= 0.50) reasons.push('50%+ captured');
-      if (isFiniteNumber(percentCaptured) && percentCaptured >= 0.50 && isFiniteNumber(currentAnnualizedYield) && currentAnnualizedYield < 0.05) reasons.push('low remaining yield');
+      if (isFiniteNumber(percentCaptured) && percentCaptured >= 0.50 && isFiniteNumber(currentAnnualizedYield) && currentAnnualizedYield < 0.05) reasons.push('low annualized remaining liability');
       if (isFiniteNumber(currentMark) && currentMark <= 0.05) reasons.push('small remaining premium');
       if (isFiniteNumber(dte) && dte <= 14 && isFiniteNumber(breakevenCushion) && breakevenCushion >= 0.20) reasons.push('near expiry with cushion');
 
@@ -784,7 +785,7 @@ function getRedeployBadges(trade: PortfolioTrade, basis: MarkBasis): string[] {
 
   if (isFiniteNumber(percentCaptured) && percentCaptured >= 0.75) badges.push('75%+ Captured');
   else if (isFiniteNumber(percentCaptured) && percentCaptured >= 0.50) badges.push('50%+ Captured');
-  if (isFiniteNumber(currentAnnualizedYield) && currentAnnualizedYield < 0.05) badges.push('Low Remaining Yield');
+  if (isFiniteNumber(currentAnnualizedYield) && currentAnnualizedYield < 0.05) badges.push('Low Ann. Remaining Liability');
   if (isFiniteNumber(dte) && dte <= 14) badges.push('Near Expiry');
 
   return badges;
@@ -796,14 +797,14 @@ function percentOfTotal(value: number | null | undefined, total: number | null |
 
 function groupTooltip(group: PortfolioExposureGroup): string {
   return [
-    `Gross Risk: ${formatCurrency(group.grossRisk, 0)}`,
-    `Net Capital: ${formatCurrency(group.netCapitalAtRisk, 0)}`,
+    `Gross Secured Cash: ${formatCurrency(group.grossRisk, 0)}`,
+    `Net Maximum-Loss Capital: ${formatCurrency(group.netCapitalAtRisk, 0)}`,
     `Premium: ${formatCurrency(group.premiumCollected, 0)}`,
     `Total Gain/Loss: ${formatCurrency(group.totalGainLoss, 0)}`,
     `Delta Exposure: ${formatSignedNumber(group.deltaExposure)}`,
     `Underlying Eq.: ${formatCurrency(group.underlyingEquivalentExposure, 0)}`,
     `Weighted Avg Delta: ${formatDelta(group.weightedAverageDelta)}`,
-    `Current AY: ${formatPctValue(group.currentAY)}`,
+    `Ann. Remaining Liability / Entry Net Risk: ${formatPctValue(group.currentAY)}`,
     `% Captured: ${formatGroupPercentCaptured(group)}`,
     `Trades: ${group.tradeCount}`,
   ].join('\n');
@@ -1050,7 +1051,7 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
           <SummaryCard label="Net Risk" value={previewTrade ? formatCurrency(calculateNetCapitalAtRisk(previewTrade), 0) : DASH} />
           <SummaryCard label="Breakeven" value={previewTrade ? formatCurrency(calculateBreakeven(previewTrade)) : DASH} />
           <SummaryCard label="Original DTE" value={previewTrade ? formatDteValue(calculateOriginalDte(previewTrade)) : DASH} />
-          <SummaryCard label="Orig. Ann. Yield" value={previewTrade ? formatPctValue(calculateOriginalAnnualizedYield(previewTrade)) : DASH} />
+          <SummaryCard label="Ann. Entry Net-Risk Return" value={previewTrade ? formatPctValue(calculateOriginalAnnualizedYield(previewTrade)) : DASH} />
         </div>
 
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-5">
@@ -1357,13 +1358,14 @@ export default function PortfolioPage() {
         });
       }
 
-      let delta = put.delta;
       const iv = put.impliedVolatility ?? null;
-      if ((!isFiniteNumber(delta) || delta === 0) && isFiniteNumber(underlying) && underlying > 0 && isFiniteNumber(remainingDte) && remainingDte > 0) {
-        const sigma = isFiniteNumber(iv) && iv > 0 ? iv / 100 : 0.8;
-        delta = calculatePutDelta(underlying, trade.strike, remainingDte / 365, 0.045, sigma);
-      }
-      if (isFiniteNumber(delta) && delta > 0) delta = -delta;
+      const delta = resolvePutDelta({
+        providerDelta: put.delta,
+        underlyingPrice: underlying,
+        strike: trade.strike,
+        dte: remainingDte,
+        impliedVolatilityPercent: iv,
+      });
 
       const bid = put.bid ?? null;
       const ask = put.ask ?? null;
@@ -1502,9 +1504,9 @@ export default function PortfolioPage() {
               </div>
               <div className="mt-3 grid grid-cols-4 gap-2 border-t pt-3" style={{ borderColor: 'var(--border)' }}>
                 {[
-                  ['Gross Risk', formatCurrency(summary.totalEquityAtRisk, 0)],
-                  ['Net Capital', formatCurrency(summary.totalNetCapitalAtRisk, 0)],
-                  ['Current AY', formatPctValue(markSummary.portfolioCurrentAnnualizedYield)],
+                  ['Gross Secured Cash', formatCurrency(summary.totalEquityAtRisk, 0)],
+                  ['Net Max-Loss Capital', formatCurrency(summary.totalNetCapitalAtRisk, 0)],
+                  ['Ann. Remaining Liability / Entry Net Risk', formatPctValue(markSummary.portfolioCurrentAnnualizedYield)],
                   ['Weighted Δ', formatDelta(markSummary.weightedAverageDelta)],
                 ].map(([label, value]) => <div key={label} className="min-w-0"><div className="truncate text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>{label}</div><div className="truncate font-mono text-[12px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{value}</div></div>)}
               </div>
@@ -1607,14 +1609,14 @@ export default function PortfolioPage() {
                 </div>
                 <SummaryCard label="Open Trades" value={String(summary.totalOpenTrades)} />
                 <SummaryCard label="Premium Collected" value={formatCurrency(summary.totalPremiumCollected, 0)} color="var(--green)" />
-                <SummaryCard label="Gross Risk" value={formatCurrency(summary.totalEquityAtRisk, 0)} />
-                <SummaryCard label="Net Capital at Risk" value={formatCurrency(summary.totalNetCapitalAtRisk, 0)} />
+                <SummaryCard label="Gross Secured Cash" value={formatCurrency(summary.totalEquityAtRisk, 0)} />
+                <SummaryCard label="Net Maximum-Loss Capital" value={formatCurrency(summary.totalNetCapitalAtRisk, 0)} />
               </div>
               <details className="mt-1.5 rounded-lg" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
                 <summary className="flex min-h-[44px] cursor-pointer list-none items-center justify-between px-3 text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>More portfolio metrics <ChevronDown className="h-4 w-4" /></summary>
                 <div className="grid grid-cols-2 gap-1.5 border-t p-2" style={{ borderColor: 'var(--border)' }}>
-                  <SummaryCard label="Weighted Avg Entry AY" value={formatPctValue(markSummary.portfolioOriginalAnnualizedYield)} color="var(--accent-light)" />
-                  <SummaryCard label="Weighted Avg Current AY" value={formatPctValue(markSummary.portfolioCurrentAnnualizedYield)} color="var(--accent-light)" />
+                  <SummaryCard label="Weighted Ann. Entry Net-Risk Return" value={formatPctValue(markSummary.portfolioOriginalAnnualizedYield)} color="var(--accent-light)" />
+                  <SummaryCard label="Weighted Ann. Remaining Liability / Entry Net Risk" value={formatPctValue(markSummary.portfolioCurrentAnnualizedYield)} color="var(--accent-light)" />
                   <SummaryCard label="Weighted Avg Delta" value={formatDelta(markSummary.weightedAverageDelta)} color={pnlColor(markSummary.weightedAverageDelta)} />
                   <SummaryCard label="Weighted Avg DTE" value={isFiniteNumber(summary.weightedAverageRemainingDte) ? `${Math.round(summary.weightedAverageRemainingDte)} DTE` : DASH} />
                 </div>
@@ -1624,12 +1626,12 @@ export default function PortfolioPage() {
             <div className="hidden grid-cols-2 md:grid md:grid-cols-5 xl:grid-cols-10 gap-1.5 mb-3">
               <SummaryCard label="Open Trades" value={String(summary.totalOpenTrades)} />
               <SummaryCard label="Premium Collected" value={formatCurrency(summary.totalPremiumCollected, 0)} color="var(--green)" />
-              <SummaryCard label="Gross Risk" value={formatCurrency(summary.totalEquityAtRisk, 0)} />
-              <SummaryCard label="Net Capital at Risk" value={formatCurrency(summary.totalNetCapitalAtRisk, 0)} />
+              <SummaryCard label="Gross Secured Cash" value={formatCurrency(summary.totalEquityAtRisk, 0)} />
+              <SummaryCard label="Net Maximum-Loss Capital" value={formatCurrency(summary.totalNetCapitalAtRisk, 0)} />
               <SummaryCard label="Total Gain/Loss" value={formatCurrency(markSummary.totalGainLoss, 0)} color={pnlColor(markSummary.totalGainLoss)} />
               <SummaryCard label="% Captured" value={formatPctValue(markSummary.percentCaptured)} color={pnlColor(markSummary.percentCaptured)} />
-              <SummaryCard label="Weighted Avg Entry AY" value={formatPctValue(markSummary.portfolioOriginalAnnualizedYield)} color="var(--accent-light)" />
-              <SummaryCard label="Weighted Avg Current AY" value={formatPctValue(markSummary.portfolioCurrentAnnualizedYield)} color="var(--accent-light)" />
+              <SummaryCard label="Weighted Ann. Entry Net-Risk Return" value={formatPctValue(markSummary.portfolioOriginalAnnualizedYield)} color="var(--accent-light)" />
+              <SummaryCard label="Weighted Ann. Remaining Liability / Entry Net Risk" value={formatPctValue(markSummary.portfolioCurrentAnnualizedYield)} color="var(--accent-light)" />
               <SummaryCard label="Weighted Avg Delta" value={formatDelta(markSummary.weightedAverageDelta)} color={pnlColor(markSummary.weightedAverageDelta)} />
               <SummaryCard label="Weighted Avg DTE" value={isFiniteNumber(summary.weightedAverageRemainingDte) ? `${Math.round(summary.weightedAverageRemainingDte)} DTE` : DASH} />
             </div>
@@ -1690,7 +1692,7 @@ export default function PortfolioPage() {
                     <button key={value} type="button" onClick={() => setGroupMode(value)} aria-pressed={groupMode === value} className="min-h-8 rounded-md px-2 py-1 text-[10px] font-semibold" style={{ backgroundColor: groupMode === value ? 'var(--accent-bg)' : 'transparent', color: groupMode === value ? 'var(--accent-light)' : 'var(--text-muted)' }}>{label}</button>
                   ))}
                 </div>
-                <DisplayToggle checked={showNominalYield} onChange={handleShowNominalYieldChange} label="Show Nominal Yield" />
+                <DisplayToggle checked={showNominalYield} onChange={handleShowNominalYieldChange} label="Show Non-Annualized Returns" />
                 <DisplayToggle checked={showOpenInterestVolume} onChange={setShowOpenInterestVolume} label="Show OI / Volume" />
                 <DisplayToggle checked={showNotesErrors} onChange={setShowNotesErrors} label="Show Notes / Errors" />
                 {scheduleGroups.length > 0 && <button onClick={toggleAllScheduleGroups} className="rounded-lg px-2 py-1.5 text-[11px] whitespace-nowrap" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
@@ -1742,13 +1744,13 @@ export default function PortfolioPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-2 mt-3 text-xs">
                     <Metric label="Premium" value={formatCurrency(calculatePremiumCollected(trade), 0)} color="var(--green)" />
-                    <Metric label="Gross Risk" value={formatCurrency(calculateEquityAtRisk(trade), 0)} />
+                    <Metric label="Gross Secured Cash" value={formatCurrency(calculateEquityAtRisk(trade), 0)} />
                     <Metric label="Current Mark" value={formatOptionPrice(calculateCurrentOptionMark(trade, markBasis))} />
                     <Metric label="Total Gain/Loss" value={formatCurrency(calculateTotalGainLoss(trade, markBasis), 0)} color={pnlColor(calculateTotalGainLoss(trade, markBasis))} />
                     <Metric label="% Captured" value={formatPctValue(calculatePercentCaptured(trade, markBasis))} color={pnlColor(calculatePercentCaptured(trade, markBasis))} />
                     <Metric label="Delta" value={formatDelta(trade.latestMarketData?.delta)} color={pnlColor(trade.latestMarketData?.delta)} />
-                    <Metric label="Original AY" value={formatPctValue(calculateOriginalAnnualizedYield(trade))} />
-                    <Metric label="Current AY" value={formatPctValue(calculateCurrentAnnualizedYield(trade, markBasis))} />
+                    <Metric label="Ann. Entry Net-Risk Return" value={formatPctValue(calculateOriginalAnnualizedYield(trade))} />
+                    <Metric label="Ann. Remaining Liability / Entry Net Risk" value={formatPctValue(calculateCurrentAnnualizedYield(trade, markBasis))} />
                   </div>
                   {getRedeployBadges(trade, markBasis).length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-3">
@@ -1785,7 +1787,7 @@ export default function PortfolioPage() {
                       {sortButton('contracts', 'Contracts')}
                       {sortButton('soldPrice', 'Sold Price')}
                       {sortButton('premium', 'Premium Collected')}
-                      {sortButton('grossRisk', 'Gross Risk')}
+                      {sortButton('grossRisk', 'Gross Secured Cash', 'text-right', 'Strike × 100 × contracts.')}
                       {sortButton('currentMark', 'Current Mark')}
                       {sortButton('currentValue', 'Current Value')}
                       {sortButton('pnl', 'Total Gain/Loss')}
@@ -1797,10 +1799,10 @@ export default function PortfolioPage() {
                       {sortButton('iv', 'IV')}
                       {sortButton('entryVix', 'VIX @ Entry')}
                       {showOpenInterestVolume && sortButton('openInterest', 'OI / Volume', 'text-right', 'Sorts by Open Interest')}
-                      {showNominalYield && sortButton('originalNy', 'Original NY')}
-                      {sortButton('originalAy', 'Original AY')}
-                      {showNominalYield && sortButton('currentNy', 'Current NY')}
-                      {sortButton('currentAy', 'Current AY')}
+                      {showNominalYield && sortButton('originalNy', 'Entry Net-Risk Return', 'text-right', 'Premium collected ÷ entry net maximum-loss capital.')}
+                      {sortButton('originalAy', 'Ann. Entry Net-Risk Return', 'text-right', 'Entry net-risk return × 365 ÷ original DTE.')}
+                      {showNominalYield && sortButton('currentNy', 'Remaining Liability / Entry Net Risk', 'text-right', 'Current buyback cost ÷ entry net maximum-loss capital.')}
+                      {sortButton('currentAy', 'Ann. Remaining Liability / Entry Net Risk', 'text-right', 'Remaining liability ratio × 365 ÷ remaining DTE.')}
                       {showNotesErrors && <th className="px-2 py-2 text-[11px] font-medium text-left min-w-[160px]" style={{ color: 'var(--text-muted)' }}>Notes / Errors</th>}
                       <th className="px-2 py-2 text-[11px] font-medium text-left" style={{ color: 'var(--text-muted)' }}>Actions</th>
                     </tr>
@@ -1946,7 +1948,7 @@ export default function PortfolioPage() {
                       <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold">{formatPctValue(scheduleTotals.originalAnnualizedYield)}</td>
                       {showNominalYield && <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold">{formatPctValue(scheduleTotals.currentNominalYield)}</td>}
                       <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold">{formatPctValue(scheduleTotals.currentAnnualizedYield)}</td>
-                      {showNotesErrors && <td className="px-2 py-2 text-left text-[10px]" style={{ color: 'var(--text-dim)' }}>Portfolio-level yields use aggregate dollar-days.</td>}
+                      {showNotesErrors && <td className="px-2 py-2 text-left text-[10px]" style={{ color: 'var(--text-dim)' }}>Portfolio-level annualized ratios use aggregate dollar-days.</td>}
                       <td className="px-2 py-2 text-left">{DASH}</td>
                     </tr>
                   </tbody>
@@ -2157,7 +2159,7 @@ function ArchiveHistorySection({
                 const percentCaptured = getArchivedPercentCaptured(trade);
                 const realizedIrr = historyRealizedIrr(trade);
                 return (
-                  <tr key={trade.id} title={`${trade.ticker} ${formatCurrency(trade.strike)} Put\nWritten: ${formatFullDate(trade.soldDate)}\nResolved: ${formatFullDate(trade.closeDate ?? trade.resolvedDate ?? trade.expiration)}\nDays held: ${formatDays(historyDaysHeld(trade))}\nSold: ${formatOptionPrice(trade.soldPrice)}\nClose: ${formatOptionPrice(trade.closePrice)}\nUnderlying expiration close: ${formatCurrency(trade.expirationClosePrice)}\nFinal value: ${formatCurrency(getArchivedFinalValue(trade))}\nPremium: ${formatCurrency(getArchivedPremium(trade))}\nRealized P&L: ${formatCurrency(realizedPnl)}\nRealized IRR: ${formatPctValue(realizedIrr)}\nCaptured: ${formatPctValue(percentCaptured)}\nOriginal AY: ${formatPctValue(calculateOriginalAnnualizedYield(trade))}\nOutcome: ${getArchiveOutcomeLabel(trade)}`} style={{ borderBottom: '1px solid var(--border)', backgroundColor: index % 2 ? 'var(--row-alt)' : 'transparent' }}>
+                  <tr key={trade.id} title={`${trade.ticker} ${formatCurrency(trade.strike)} Put\nWritten: ${formatFullDate(trade.soldDate)}\nResolved: ${formatFullDate(trade.closeDate ?? trade.resolvedDate ?? trade.expiration)}\nDays held: ${formatDays(historyDaysHeld(trade))}\nSold: ${formatOptionPrice(trade.soldPrice)}\nClose: ${formatOptionPrice(trade.closePrice)}\nUnderlying expiration close: ${formatCurrency(trade.expirationClosePrice)}\nFinal value: ${formatCurrency(getArchivedFinalValue(trade))}\nPremium: ${formatCurrency(getArchivedPremium(trade))}\nRealized P&L: ${formatCurrency(realizedPnl)}\nRealized IRR: ${formatPctValue(realizedIrr)}\nCaptured: ${formatPctValue(percentCaptured)}\nAnn. Entry Net-Risk Return: ${formatPctValue(calculateOriginalAnnualizedYield(trade))}\nOutcome: ${getArchiveOutcomeLabel(trade)}`} style={{ borderBottom: '1px solid var(--border)', backgroundColor: index % 2 ? 'var(--row-alt)' : 'transparent' }}>
                     <td className="px-2 py-1 text-left font-mono font-bold whitespace-nowrap" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatFullDate(trade.expiration)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatCurrency(trade.strike)}</td>

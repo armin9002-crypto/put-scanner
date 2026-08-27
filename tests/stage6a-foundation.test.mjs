@@ -51,10 +51,11 @@ test('expiration validation rejects a provider fallback while allowing metadata-
   assert.equal(optionChainMatchesRequestedExpiration(null, 2_000), true);
 });
 
-test('option detail gates unsupported symbols and chart publication is latest-request-only', async () => {
+test('option detail accepts normalized on-demand symbols and chart publication is latest-request-only', async () => {
   const optionsPage = await readFile(path.join(root, 'src/pages/OptionsPage.tsx'), 'utf8');
   const chartModal = await readFile(path.join(root, 'src/components/InteractivePriceChartModal.tsx'), 'utf8');
-  assert.match(optionsPage, /if \(!ticker \|\| !etf\) return;/);
+  assert.match(optionsPage, /if \(!ticker\) return;/);
+  assert.match(optionsPage, /resolveTickerDetailInstrument\(ticker \?\? '', optionsData\?\.instrument\)/);
   assert.match(optionsPage, /optionChainMatchesRequestedExpiration\(opts\.chainMeta, expDate\)/);
   assert.match(optionsPage, /requestGeneration !== requestGenerationRef\.current/);
   assert.match(chartModal, /requestGeneration !== chartRequestGenerationRef\.current/);

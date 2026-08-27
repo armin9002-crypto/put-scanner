@@ -1,4 +1,4 @@
-import { calculatePutDelta } from './putDelta.ts';
+import { resolvePutDelta } from './putDelta.ts';
 import { canonicalOptionChainKey } from './optionChainRequests.ts';
 import { calculateMoneyness, calculateYieldPercent } from './optionMetrics.ts';
 import type { OptionsChainData } from './types.ts';
@@ -13,7 +13,7 @@ export interface ScreenerRow {
   moneynessPct: number;
   moneynessLabel: string;
   moneynessColor: string;
-  delta: number;
+  delta: number | null;
   bid: number | null;
   last: number | null;
   lastTradeDate: number | null;
@@ -28,7 +28,7 @@ export interface ScreenerRow {
   volume: number | null;
   openInterest: number | null;
   volOI: number | null;
-  ivRank: number | null;
+  ivVsRealizedRange: number | null;
 }
 
 export interface ScreenerFilterCriteria {
@@ -37,20 +37,20 @@ export interface ScreenerFilterCriteria {
   yieldFilter: string;
   oiFilter: string;
   volFilter: string;
-  ivRankFilter: string;
+  ivVsRealizedRangeFilter: string;
 }
 
 export interface ScreenerAcquiredData {
   initialResults: Map<string, OptionsChainData>;
   chainsByKey: Map<string, OptionsChainData>;
-  ivRankByTicker: Map<string, number | null>;
+  ivVsRealizedRangeByTicker: Map<string, number | null>;
 }
 
 export interface ScreenerExpirationCandidate { date: number; dte: number }
 
-function matchDeltaAbs(delta: number, filter: string): boolean {
+function matchDeltaAbs(delta: number | null, filter: string): boolean {
   if (filter === 'all') return true;
-  if (!Number.isFinite(delta)) return false;
+  if (delta == null || !Number.isFinite(delta)) return false;
   const abs = Math.abs(delta);
   switch (filter) {
     case 'below_0.05': return abs < 0.05;
@@ -125,19 +125,19 @@ function matchMinimum(value: number | null, filter: string): boolean {
   return Number.isFinite(threshold) ? value > threshold : true;
 }
 
-function matchIvRank(ivRank: number | null, filter: string): boolean {
+function matchIvVsRealizedRange(value: number | null, filter: string): boolean {
   if (filter === 'all') return true;
-  if (ivRank == null || !Number.isFinite(ivRank)) return false;
+  if (value == null || !Number.isFinite(value)) return false;
   switch (filter) {
-    case 'below_20': return ivRank < 20;
-    case 'below_40': return ivRank < 40;
-    case 'below_60': return ivRank < 60;
-    case 'above_50': return ivRank >= 50;
-    case 'above_70': return ivRank >= 70;
-    case 'above_80': return ivRank >= 80;
-    case 'above_90': return ivRank >= 90;
-    case '20_to_50': return ivRank >= 20 && ivRank <= 50;
-    case '50_to_80': return ivRank >= 50 && ivRank <= 80;
+    case 'below_20': return value < 20;
+    case 'below_40': return value < 40;
+    case 'below_60': return value < 60;
+    case 'above_50': return value >= 50;
+    case 'above_70': return value >= 70;
+    case 'above_80': return value >= 80;
+    case 'above_90': return value >= 90;
+    case '20_to_50': return value >= 20 && value <= 50;
+    case '50_to_80': return value >= 50 && value <= 80;
     default: return true;
   }
 }
@@ -148,7 +148,7 @@ export function applyScreenerFilters(rows: ScreenerRow[], criteria: ScreenerFilt
     && matchYield(row.annYieldBid, criteria.yieldFilter)
     && matchMinimum(row.openInterest, criteria.oiFilter)
     && matchMinimum(row.volume, criteria.volFilter)
-    && matchIvRank(row.ivRank, criteria.ivRankFilter));
+    && matchIvVsRealizedRange(row.ivVsRealizedRange, criteria.ivVsRealizedRangeFilter));
 }
 
 export function getExpsToFetchForFilter(allExps: ScreenerExpirationCandidate[], expFilter: string): ScreenerExpirationCandidate[] {
@@ -192,14 +192,13 @@ export function buildScreenerRows(data: ScreenerAcquiredData, expFilter: string)
       const price = chain.currentPrice || currentPrice;
       const dte = Math.max(1, expiration.dte);
       for (const put of chain.puts) {
-        let delta: number;
-        if (put.delta != null && put.delta !== 0) delta = put.delta;
-        else {
-          const sigma = put.impliedVolatility != null && put.impliedVolatility > 0 ? put.impliedVolatility / 100 : 0.80;
-          delta = calculatePutDelta(price, put.strike, dte / 365, 0.045, sigma);
-        }
-        if (delta > 0) delta = -delta;
-        if (delta > -0.01 && delta <= 0) delta = -0.01;
+        const delta = resolvePutDelta({
+          providerDelta: put.delta,
+          underlyingPrice: price,
+          strike: put.strike,
+          dte,
+          impliedVolatilityPercent: put.impliedVolatility,
+        });
 
         const moneyness = calculateMoneyness(price, put.strike);
         const moneynessPct = moneyness.pct ?? 0;
@@ -234,7 +233,7 @@ export function buildScreenerRows(data: ScreenerAcquiredData, expFilter: string)
           volume: put.volume,
           openInterest: put.openInterest,
           volOI,
-          ivRank: data.ivRankByTicker.get(ticker) ?? null,
+          ivVsRealizedRange: data.ivVsRealizedRangeByTicker.get(ticker) ?? null,
         });
       }
     }

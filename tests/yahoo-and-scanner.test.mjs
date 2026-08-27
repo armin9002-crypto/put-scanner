@@ -21,8 +21,13 @@ test('normalizes Yahoo units, timestamps, put delta sign, expiration metadata, a
   assert.equal(chain.expirations.length, 3);
 });
 
-test('preserves valid zero bids while normalizing missing fields to null', () => {
+test('preserves valid zero bids and provider Delta while normalizing missing fields to null', () => {
   assert.equal(normalize(zeroBidResponse).puts.find(put => put.strike === 70).bid, 0);
+  const zeroDelta = structuredClone(normalLiquidResponse);
+  const zeroDeltaStrike = zeroDelta.optionChain.result[0].options[0].puts[0].strike;
+  zeroDelta.optionChain.result[0].options[0].puts[0].delta = 0;
+  if (zeroDelta.optionChain.result[0].options[0].puts[0].greeks) zeroDelta.optionChain.result[0].options[0].puts[0].greeks.delta = 0;
+  assert.equal(normalize(zeroDelta).puts.find(put => put.strike === zeroDeltaStrike).delta, 0);
   const missing = normalize(missingFieldsResponse).puts;
   assert.equal(missing[0].volume, null);
   assert.equal(missing[0].lastTradeDate, null);

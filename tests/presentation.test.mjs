@@ -80,7 +80,7 @@ test('derived yield columns and values follow LAST, BID, ASK order', () => {
   }
   for (const field of OPTION_YIELD_DISPLAY_ORDER) {
     assert.match(optionsSource, new RegExp(`case '${field}': return put\\.${field};`));
-    assert.match(screenerSource, new RegExp(`case '${field}': aVal = a\\.${field} \\?\\? -1; bVal = b\\.${field} \\?\\? -1; break;`));
-    assert.match(watchlistSource, new RegExp(`case '${field}': aVal = a\\.${field} \\?\\? -1; bVal = b\\.${field} \\?\\? -1; break;`));
+    assert.match(screenerSource, new RegExp(`case '${field}': aVal = a\\.${field}; bVal = b\\.${field}; break;`));
+    assert.match(watchlistSource, new RegExp(`case '${field}': aVal = a\\.${field}; bVal = b\\.${field}; break;`));
   }
 });

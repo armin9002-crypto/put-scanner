@@ -29,9 +29,9 @@ export function currentAtmIvFromOptionData(optionData) {
   return atmIV;
 }
 
-export function calculateIvRankFromCloses(atmIV, closes) {
+export function calculateIvVsRealizedVolFromCloses(atmIV, closes) {
   const validCloses = closes.map(normalizeFiniteNumber).filter(value => value != null);
-  if (validCloses.length < 20) return { currentIV: atmIV, ivRank: null, ivPercentile: null };
+  if (validCloses.length < 20) return emptyVolatilityContext(atmIV);
 
   const weeklyVols = [];
   for (let index = 4; index < validCloses.length; index += 1) {
@@ -46,22 +46,29 @@ export function calculateIvRankFromCloses(atmIV, closes) {
     weeklyVols.push(Math.sqrt(variance) * Math.sqrt(52) * 100);
   }
 
-  if (weeklyVols.length < 5) return { currentIV: atmIV, ivRank: null, ivPercentile: null };
-  const ivLow = Math.min(...weeklyVols);
-  const ivHigh = Math.max(...weeklyVols);
-  const ivPercentile = weeklyVols.filter(value => value < atmIV).length / weeklyVols.length * 100;
-  const ivRank = ivHigh > ivLow ? (atmIV - ivLow) / (ivHigh - ivLow) * 100 : 50;
+  if (weeklyVols.length < 5) return emptyVolatilityContext(atmIV);
+  const realizedVolLow = Math.min(...weeklyVols);
+  const realizedVolHigh = Math.max(...weeklyVols);
+  const observationPercent = weeklyVols.filter(value => value < atmIV).length / weeklyVols.length * 100;
+  const rangePosition = realizedVolHigh > realizedVolLow ? (atmIV - realizedVolLow) / (realizedVolHigh - realizedVolLow) * 100 : 50;
   return {
     currentIV: Math.round(atmIV * 100) / 100,
-    ivRank: Math.round(Math.max(0, Math.min(100, ivRank)) * 10) / 10,
-    ivPercentile: Math.round(ivPercentile * 10) / 10,
+    rangePosition: Math.round(Math.max(0, Math.min(100, rangePosition)) * 10) / 10,
+    observationPercent: Math.round(observationPercent * 10) / 10,
+    realizedVolLow: Math.round(realizedVolLow * 10) / 10,
+    realizedVolHigh: Math.round(realizedVolHigh * 10) / 10,
+    observationCount: weeklyVols.length,
   };
 }
 
-export async function fetchYahooIvRank(ticker, options = {}) {
+function emptyVolatilityContext(currentIV) {
+  return { currentIV, rangePosition: null, observationPercent: null, realizedVolLow: null, realizedVolHigh: null, observationCount: 0 };
+}
+
+export async function fetchYahooVolatilityContext(ticker, options = {}) {
   const optionData = options.optionData ?? await fetchYahooOptions(ticker, null, options);
   const atmIV = currentAtmIvFromOptionData(optionData);
-  if (atmIV == null) return { currentIV: null, ivRank: null, ivPercentile: null };
+  if (atmIV == null) return emptyVolatilityContext(null);
 
   const session = await getYahooSession(ticker, false, { onAttempt: options.onAttempt, timeoutMs: options.timeoutMs, signal: options.signal });
   const now = Math.floor(Date.now() / 1000);
@@ -81,5 +88,5 @@ export async function fetchYahooIvRank(ticker, options = {}) {
   }
   const chartData = await readYahooJson(chartResponse, 'chart');
   const closes = chartData?.chart?.result?.[0]?.indicators?.quote?.[0]?.close || [];
-  return calculateIvRankFromCloses(atmIV, closes);
+  return calculateIvVsRealizedVolFromCloses(atmIV, closes);
 }

@@ -4,10 +4,10 @@ import {
   SCREENER_PREFETCH_TICKERS,
   SCREENER_SERVER_CONCURRENCY,
 } from '../../shared/screenerUniverse.js';
-import { fetchYahooIvRank } from './ivRank.js';
+import { fetchYahooVolatilityContext } from './ivRank.js';
 import { fetchYahooOptions, normalizeTimestampSeconds } from './yahoo.js';
 
-export const SCREENER_BATCH_VERSION = 1;
+export const SCREENER_BATCH_VERSION = 2;
 export const SCREENER_BATCH_TIMEOUT_MS = 6_000;
 export const SCREENER_BATCH_MAX_BYTES = 750_000;
 
@@ -64,7 +64,7 @@ export async function buildScreenerBatch(options = {}) {
   if (!chunk) throw new RangeError('Invalid Screener chunk');
   const concurrency = options.concurrency ?? SCREENER_SERVER_CONCURRENCY;
   const fetchOptions = options.fetchOptions ?? ((ticker, date, requestOptions) => fetchYahooOptions(ticker, date, requestOptions));
-  const fetchIvRank = options.fetchIvRank ?? ((ticker, requestOptions) => fetchYahooIvRank(ticker, requestOptions));
+  const fetchVolatilityContext = options.fetchVolatilityContext ?? options.fetchIvRank ?? ((ticker, requestOptions) => fetchYahooVolatilityContext(ticker, requestOptions));
   let upstreamRequests = 0;
   let maxObservedConcurrency = 0;
   let circuitBreakerRejections = 0;
@@ -96,14 +96,14 @@ export async function buildScreenerBatch(options = {}) {
       initialExpiration: metadata.returnedExpiration,
       initial: compactYahooOptionData(data),
       additionalChains: {},
-      ivRank: null,
+      ivVsRealizedRange: null,
     };
   });
 
   const phaseTwoTasks = [];
   for (const [ticker, data] of initialRaw) {
     const metadata = optionMetadata(data);
-    phaseTwoTasks.push({ kind: 'ivrank', ticker, data });
+    phaseTwoTasks.push({ kind: 'volatility-context', ticker, data });
     const targets = options.targetDate != null
       ? (metadata.expirationDates.includes(options.targetDate) ? [options.targetDate] : [])
       : metadata.expirationDates.slice(0, 2);
@@ -113,8 +113,8 @@ export async function buildScreenerBatch(options = {}) {
   }
 
   const phaseTwo = await mapWithConcurrency(phaseTwoTasks, concurrency, async task => {
-    if (task.kind === 'ivrank') {
-      return { ...task, value: await fetchIvRank(task.ticker, { optionData: task.data, timeoutMs: SCREENER_BATCH_TIMEOUT_MS, onAttempt, signal: options.signal }) };
+    if (task.kind === 'volatility-context') {
+      return { ...task, value: await fetchVolatilityContext(task.ticker, { optionData: task.data, timeoutMs: SCREENER_BATCH_TIMEOUT_MS, onAttempt, signal: options.signal }) };
     }
     return { ...task, value: await fetchOptions(task.ticker, task.date, { timeoutMs: SCREENER_BATCH_TIMEOUT_MS, onAttempt, signal: options.signal }) };
   }, { signal: options.signal, onActiveChange: observe });
@@ -126,7 +126,7 @@ export async function buildScreenerBatch(options = {}) {
       errors.push({ ticker: task.ticker, stage: task.kind, expiration: task.date, message: errorMessage(result.reason) });
       return;
     }
-    if (task.kind === 'ivrank') tickerResults[task.ticker].ivRank = Number.isFinite(result.value.value?.ivRank) ? result.value.value.ivRank : null;
+    if (task.kind === 'volatility-context') tickerResults[task.ticker].ivVsRealizedRange = Number.isFinite(result.value.value?.rangePosition) ? result.value.value.rangePosition : null;
     else tickerResults[task.ticker].additionalChains[String(task.date)] = compactYahooOptionData(result.value.value);
   });
 

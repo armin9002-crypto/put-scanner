@@ -178,17 +178,17 @@ export async function fetchOptions(ticker: string, date?: number, options: Fetch
 
 export function blackScholesPutDelta(
   S: number, K: number, T: number, r: number, sigma: number
-): number {
+): number | null {
   return calculatePutDelta(S, K, T, r, sigma);
 }
 
 export function formatPrice(n: number | null): string {
-  if (n == null) return '—';
+  if (n == null || !Number.isFinite(n)) return '—';
   return n.toFixed(2);
 }
 
 export function formatYield(n: number): string {
-  return n.toFixed(2) + '%';
+  return Number.isFinite(n) ? n.toFixed(2) + '%' : '—';
 }
 
 export function yieldColor(annYield: number): string {
@@ -199,7 +199,7 @@ export function yieldColor(annYield: number): string {
 }
 
 export function formatNumber(n: number | null): string {
-  if (n == null || n === 0) return '—';
+  if (n == null || !Number.isFinite(n)) return '—';
   return n.toLocaleString('en-US');
 }
 
@@ -284,38 +284,106 @@ export async function fetchExtendedPrice(ticker: string, options: { includeSpark
   );
 }
 
-export interface IVRankData {
+export interface VolatilityContextData {
   currentIV: number | null;
-  ivRank: number | null;
-  ivPercentile: number | null;
+  rangePosition: number | null;
+  observationPercent: number | null;
+  realizedVolLow: number | null;
+  realizedVolHigh: number | null;
+  observationCount: number;
 }
 
-export async function fetchIVRank(ticker: string): Promise<IVRankData> {
+export async function fetchVolatilityContext(ticker: string): Promise<VolatilityContextData> {
   const normalizedTicker = ticker.trim().toUpperCase();
   return cachedRequest(
-    makeCacheKey(['ivrank', normalizedTicker]),
+    makeCacheKey(['volatility-context', normalizedTicker]),
     60 * 60 * 1000,
     async () => {
-      const res = await fetch(`${API_BASE}/ivrank?ticker=${encodeURIComponent(normalizedTicker)}`);
-      if (!res.ok) throw new Error(`Failed to fetch IV Rank for ${normalizedTicker}`);
+      const res = await fetch(`${API_BASE}/volatility-context?ticker=${encodeURIComponent(normalizedTicker)}`);
+      if (!res.ok) throw new Error(`Failed to fetch volatility context for ${normalizedTicker}`);
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       return {
         currentIV: data.currentIV ?? null,
-        ivRank: data.ivRank ?? null,
-        ivPercentile: data.ivPercentile ?? null,
+        rangePosition: data.rangePosition ?? null,
+        observationPercent: data.observationPercent ?? null,
+        realizedVolLow: data.realizedVolLow ?? null,
+        realizedVolHigh: data.realizedVolHigh ?? null,
+        observationCount: Number.isFinite(data.observationCount) ? data.observationCount : 0,
       };
     },
     {
       validator: data => (
         data != null &&
         typeof data === 'object' &&
-        ('ivRank' in data || 'currentIV' in data || 'ivPercentile' in data)
+        ('rangePosition' in data || 'currentIV' in data || 'observationPercent' in data)
       ),
-      diagnosticsEndpoint: 'ivrank',
-      diagnosticsSource: 'fetchIVRank',
+      diagnosticsEndpoint: 'volatility-context',
+      diagnosticsSource: 'fetchVolatilityContext',
     }
   );
+}
+
+export type TickerDetailAvailability = 'optionable' | 'no_options';
+export type TickerDetailErrorCode = 'INVALID_INPUT' | 'INVALID_SYMBOL' | 'PROVIDER_FAILURE';
+
+export interface TickerDetailData {
+  options: OptionsChainData;
+  extendedPrice: ExtendedPriceData | null;
+  volatilityContext: VolatilityContextData | null;
+  availability: TickerDetailAvailability;
+}
+
+export async function fetchTickerDetail(
+  ticker: string,
+  date?: number,
+  options: { bypassCache?: boolean; fresh?: boolean } = {},
+): Promise<TickerDetailData> {
+  const normalizedTicker = ticker.trim().toUpperCase();
+  const cacheKey = makeCacheKey(['ticker-detail-v1', normalizedTicker, date]);
+  const data = await cachedRequest(
+    cacheKey,
+    5 * 60 * 1000,
+    async () => {
+      let url = `${API_BASE}/ticker-detail?ticker=${encodeURIComponent(normalizedTicker)}`;
+      if (date) url += `&date=${date}`;
+      if (options.fresh) url += `&fresh=1&_=${Date.now()}`;
+      const response = await fetch(url, options.fresh ? { cache: 'no-store' } : undefined);
+      recordResponseDebugHeaders('ticker-detail', response, 'fetchTickerDetail');
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const error = new Error(body.message || `We couldn't load options for ${normalizedTicker}.`) as Error & { status: number; code: TickerDetailErrorCode };
+        error.status = response.status;
+        error.code = body.code === 'INVALID_INPUT' || body.code === 'INVALID_SYMBOL' ? body.code : 'PROVIDER_FAILURE';
+        throw error;
+      }
+      const normalizedOptions = normalizeOptionChainData(
+        body.options,
+        normalizedTicker,
+        date,
+        getOptionsCacheKey(normalizedTicker, date),
+        options.fresh ? 'fresh' : 'network',
+        null,
+      );
+      return {
+        options: normalizedOptions,
+        extendedPrice: body.extendedPrice ?? null,
+        volatilityContext: body.volatilityContext ?? null,
+        availability: body.availability === 'no_options' ? 'no_options' : 'optionable',
+      } satisfies TickerDetailData;
+    },
+    {
+      bypassCache: options.bypassCache || options.fresh,
+      hardTtlMs: 45 * 60 * 1000,
+      schemaVersion: 1,
+      allowStaleOnError: !options.fresh,
+      validator: value => value?.options != null && (value.availability === 'optionable' || value.availability === 'no_options'),
+      diagnosticsEndpoint: 'ticker-detail',
+      diagnosticsSource: 'fetchTickerDetail',
+    },
+  );
+  primeOptionsChainCache(normalizedTicker, date, data.options);
+  return data;
 }
 
 // Concurrency-limited fetch for screener (Opt 4)

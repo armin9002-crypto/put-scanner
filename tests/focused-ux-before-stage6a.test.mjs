@@ -75,7 +75,7 @@ test('Scanner links use one shared expiry-aware path and detail load requests th
   ]);
   assert.equal((scanner.match(/buildScannerOptionsPath\(etf\.ticker, expFilter\)/g) ?? []).length, 2);
   assert.match(options, /const requestedExpiry = parseRequestedOptionExpiry\(expiryParam\)/);
-  assert.match(options, /fetchOptions\(ticker, requestedExpiry \?\? undefined/);
+  assert.match(options, /fetchTickerDetail\(ticker, requestedExpiry \?\? undefined/);
   assert.doesNotMatch(options, /OptionsPage:(?:load|refresh):selected/);
   assert.doesNotMatch(scanner, /onMouseEnter[\s\S]{0,120}fetchOptions/);
 });
@@ -103,5 +103,5 @@ test('Schedule of Positions removes only the Net Capital at Risk display column'
   assert.doesNotMatch(sortOptions, /netCapitalRisk|Net Capital at Risk/);
   assert.doesNotMatch(schedule, /netCapitalRisk|Net Capital at Risk|group\.netCapitalAtRisk|scheduleTotals\.netRisk|calculateNetCapitalAtRisk\(trade\)/);
   assert.match(source, /calculateNetCapitalAtRisk/);
-  assert.match(source, /SummaryCard label="Net Capital at Risk"/);
+  assert.match(source, /SummaryCard label="Net Maximum-Loss Capital"/);
 });

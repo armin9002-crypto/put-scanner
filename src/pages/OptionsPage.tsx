@@ -1,13 +1,15 @@
 import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { OptionsChainData, SortField, SortDirection } from '../lib/types';
-import { getScannerEtf } from '../lib/etfs';
-import { fetchOptions, fetchExtendedPrice, calculatePutDelta, formatPrice, formatYield, yieldColor, formatNumber, fetchIVRank } from '../lib/api';
-import type { ExtendedPriceData, IVRankData } from '../lib/api';
+import { fetchOptions, fetchTickerDetail, formatPrice, formatYield, yieldColor, formatNumber } from '../lib/api';
+import type { ExtendedPriceData, TickerDetailAvailability, TickerDetailErrorCode, VolatilityContextData } from '../lib/api';
 import { addToWatchlist, removeFromWatchlist, isInWatchlist, makeWatchlistId } from '../lib/watchlist';
 import type { WatchlistItem } from '../lib/watchlist';
 import { addPortfolioTrade } from '../lib/portfolioStorage';
 import { calculateBidAskSpreadPercent, calculateMoneyness, calculateYieldPercent } from '../lib/optionMetrics';
+import { resolvePutDelta } from '../lib/putDelta';
+import { compareNullableValue } from '../lib/metricValue';
+import { normalizeAnalyzeTicker, resolveTickerDetailInstrument } from '../lib/tickerDetail';
 import { formatOptionLastTradeDate, normalizeTimestampMs } from '../lib/format';
 import { getOptionLastTradeFreshness } from '../lib/optionLastTradeFreshness';
 import { persistShowNominalYield, readShowNominalYield } from '../lib/optionTablePreferences';
@@ -45,7 +47,7 @@ interface EnrichedPut {
   lastTradeDate: number | null;
   bid: number | null;
   ask: number | null;
-  delta: number;
+  delta: number | null;
   gamma: number | null;
   theta: number | null;
   vega: number | null;
@@ -100,8 +102,8 @@ function OptionsEmptyState({
   const Icon = type === 'empty' ? BarChart3 : AlertCircle;
   const title = customTitle ?? (type === 'empty' ? 'No options data available' : 'Failed to load options data');
   const subtitle = type === 'empty'
-    ? 'This ETF may have illiquid options or Yahoo Finance returned no data. Try refreshing or check back during market hours.'
-    : 'Failed to load options data — click Refresh to try again.';
+    ? 'This ticker may not have listed options, or market data may be unavailable. Try again or return to Scanner.'
+    : 'Market data could not be loaded. Try again or return to Scanner.';
 
   return (
     <div
@@ -111,15 +113,24 @@ function OptionsEmptyState({
       <Icon className="w-10 h-10 mx-auto mb-4" style={{ color: 'var(--text-dim)' }} />
       <h2 className="text-lg font-semibold mb-2" style={{ color: 'var(--text)' }}>{title}</h2>
       <p className="text-sm max-w-md mx-auto mb-6" style={{ color: 'var(--text-muted)' }}>{customSubtitle ?? subtitle}</p>
-      <button
-        onClick={onRefresh}
-        disabled={loading}
-        className="inline-flex items-center gap-2 px-4 py-2.5 sm:py-2 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-all min-h-[44px] sm:min-h-0"
-        style={{ backgroundColor: 'var(--accent)' }}
-      >
-        <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-        Refresh
-      </button>
+      <div className="flex flex-wrap items-center justify-center gap-3">
+        <button
+          onClick={onRefresh}
+          disabled={loading}
+          className="inline-flex items-center gap-2 px-4 py-2.5 sm:py-2 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-all min-h-[44px] sm:min-h-0"
+          style={{ backgroundColor: 'var(--accent)' }}
+        >
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          Try Again
+        </button>
+        <Link
+          to="/"
+          className="inline-flex min-h-[44px] items-center rounded-lg px-4 py-2.5 text-sm font-medium sm:min-h-0 sm:py-2"
+          style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+        >
+          Back to Scanner
+        </Link>
+      </div>
     </div>
   );
 }
@@ -181,7 +192,8 @@ function PerfSkeleton() {
   );
 }
 
-function deltaColor(delta: number): string {
+function deltaColor(delta: number | null): string {
+  if (delta == null || !Number.isFinite(delta)) return 'var(--text-dim)';
   const abs = Math.abs(delta);
   if (abs >= 0.7) return 'var(--red)';
   if (abs >= 0.4) return 'var(--orange)';
@@ -197,10 +209,10 @@ function ivColor(iv: number | null): string {
   return 'var(--red)';
 }
 
-function ivRankColor(rank: number): string {
-  if (rank >= 70) return 'var(--red)';
-  if (rank >= 50) return 'var(--orange)';
-  if (rank >= 30) return 'var(--yellow)';
+function ivVsRealizedRangeColor(value: number): string {
+  if (value >= 70) return 'var(--red)';
+  if (value >= 50) return 'var(--orange)';
+  if (value >= 30) return 'var(--yellow)';
   return 'var(--green)';
 }
 
@@ -250,10 +262,10 @@ function OptionQuickTooltip({ put, ticker, expirationLabel, dte }: { put: Enrich
         {stale.label && <span>· {stale.label}</span>}
       </div>
       <div className="mt-1 font-mono text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
-        Δ {put.delta.toFixed(2)} · IV {put.impliedVolatility != null ? `${put.impliedVolatility.toFixed(1)}%` : '—'} · {put.otmItmLabel || '—'}
+        Δ {put.delta != null ? put.delta.toFixed(2) : '—'} · IV {put.impliedVolatility != null ? `${put.impliedVolatility.toFixed(1)}%` : '—'} · {put.otmItmLabel || '—'}
       </div>
       <div className="mt-1 font-mono text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
-        Spread {formatSpreadPercent(put.bid, put.ask)} · AY Bid {put.annYieldBid != null ? formatYield(put.annYieldBid) : '—'} · AY Ask {put.annYieldAsk != null ? formatYield(put.annYieldAsk) : '—'}
+        Spread {formatSpreadPercent(put.bid, put.ask)} · Ann. SCY Bid {put.annYieldBid != null ? formatYield(put.annYieldBid) : '—'} · Ann. SCY Ask {put.annYieldAsk != null ? formatYield(put.annYieldAsk) : '—'}
       </div>
       <div className="mt-1 font-mono text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
         Vol {formatNumber(put.volume)} · OI {formatNumber(put.openInterest)}
@@ -356,10 +368,10 @@ function MobileOptionCard({
         {OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => <MobileStat key={field} label={OPTION_QUOTE_DISPLAY_LABELS[field]} value={formatPrice(put[field])} color={field === 'bid' ? 'var(--green)' : undefined} />)}
       </div>
       <div className={`mobile-secondary-grid mt-2 grid gap-2 ${showNominalYield ? 'grid-cols-4' : 'grid-cols-3'}`}>
-        <MobileStat label="Delta" value={put.delta.toFixed(2)} color={deltaColor(put.delta)} />
+        <MobileStat label="Delta" value={put.delta != null ? put.delta.toFixed(2) : '—'} color={deltaColor(put.delta)} />
         <MobileStat label="IV" value={put.impliedVolatility != null ? `${put.impliedVolatility.toFixed(1)}%` : '—'} color={ivColor(put.impliedVolatility)} />
-        <MobileStat label="AY Bid" value={put.annYieldBid != null ? formatYield(put.annYieldBid) : '—'} color={put.annYieldBid != null ? yieldColor(put.annYieldBid) : 'var(--text-dim)'} />
-        {showNominalYield && <MobileStat label="NY Bid" value={put.nomYieldBid != null ? formatYield(put.nomYieldBid) : '—'} />}
+        <MobileStat label="Ann. SCY Bid" value={put.annYieldBid != null ? formatYield(put.annYieldBid) : '—'} color={put.annYieldBid != null ? yieldColor(put.annYieldBid) : 'var(--text-dim)'} />
+        {showNominalYield && <MobileStat label="SCY Bid" value={put.nomYieldBid != null ? formatYield(put.nomYieldBid) : '—'} />}
       </div>
       {showVolOI && (
         <div className="mobile-secondary-grid mt-2 grid grid-cols-3 gap-2 border-t pt-2" style={{ borderColor: 'var(--border)' }}>
@@ -380,12 +392,12 @@ export default function OptionsPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { ticker: routeTicker } = useParams<{ ticker: string }>();
-  const ticker = routeTicker?.trim().toUpperCase();
+  const routeNormalization = normalizeAnalyzeTicker(routeTicker ?? '');
+  const ticker = routeNormalization.ticker ?? undefined;
   const [searchParams] = useSearchParams();
   const expiryParam = searchParams.get('expiry');
   const requestedExpiry = parseRequestedOptionExpiry(expiryParam);
   const openedFromScanner = isScannerNavigationState(location.state);
-  const etf = getScannerEtf(ticker);
 
   const [optionsData, setOptionsData] = useState<OptionsChainData | null>(null);
   const [extendedPrice, setExtendedPrice] = useState<ExtendedPriceData | null>(null);
@@ -397,7 +409,9 @@ export default function OptionsPage() {
   const [sortDir, setSortDir] = useState<SortDirection>('asc');
   const [showVolOI, setShowVolOI] = useState(false);
   const [showNominalYield, setShowNominalYield] = useState(readShowNominalYield);
-  const [ivRankData, setIvRankData] = useState<IVRankData | null>(null);
+  const [volatilityContext, setVolatilityContext] = useState<VolatilityContextData | null>(null);
+  const [detailAvailability, setDetailAvailability] = useState<TickerDetailAvailability | null>(null);
+  const [detailErrorCode, setDetailErrorCode] = useState<TickerDetailErrorCode | null>(null);
   const [watchlistIds, setWatchlistIds] = useState<Set<string>>(new Set());
   const [showScannerPreselectBadge, setShowScannerPreselectBadge] = useState(false);
   const [selectedOption, setSelectedOption] = useState<EnrichedPut | null>(null);
@@ -420,7 +434,7 @@ export default function OptionsPage() {
   }, []);
 
   const loadData = useCallback(async (bypassCache = false, fresh = false) => {
-    if (!ticker || !etf) return;
+    if (!ticker) return;
     const key = `${ticker}:${requestedExpiry ?? 'default'}:${fresh ? 'fresh' : bypassCache ? 'bypass' : 'cached'}`;
     if (inFlightFetchKeyRef.current === key) return;
     inFlightFetchKeyRef.current = key;
@@ -429,14 +443,13 @@ export default function OptionsPage() {
     setLoading(true);
     setError(null);
     try {
-      const [initialOpts, ext] = await Promise.all([
-        fetchOptions(ticker, requestedExpiry ?? undefined, { bypassCache, fresh, source: fresh ? 'OptionsPage:refresh' : 'OptionsPage:load' }).catch(error => {
+      const detail = await fetchTickerDetail(ticker, requestedExpiry ?? undefined, { bypassCache, fresh }).catch(error => {
           const status = (error as Error & { status?: number }).status;
           if (requestedExpiry == null || (status !== 400 && status !== 404)) throw error;
-          return fetchOptions(ticker, undefined, { bypassCache, fresh, source: fresh ? 'OptionsPage:refresh:fallback' : 'OptionsPage:load:fallback' });
-        }),
-        fetchExtendedPrice(ticker, { includeSparkline: true }),
-      ]);
+          return fetchTickerDetail(ticker, undefined, { bypassCache, fresh });
+        });
+      const initialOpts = detail.options;
+      const ext = detail.extendedPrice;
       const returnedExpiration = getReturnedOptionExpiration(initialOpts.chainMeta);
       const preferredExp = resolveOptionExpirySelection(initialOpts.expirations, expiryParam, returnedExpiration);
       const opts = preferredExp.date && preferredExp.needsChainFetch
@@ -448,10 +461,9 @@ export default function OptionsPage() {
       if (requestGeneration !== requestGenerationRef.current) return;
       setOptionsData(opts);
       setExtendedPrice(ext);
-      // Lazy-load IV Rank (non-blocking)
-      fetchIVRank(ticker).then(data => {
-        if (requestGeneration === requestGenerationRef.current) setIvRankData(data);
-      }).catch(() => {});
+      setVolatilityContext(detail.volatilityContext);
+      setDetailAvailability(detail.availability);
+      setDetailErrorCode(null);
       if (preferredExp.date) {
         setSelectedExp(preferredExp.date);
       }
@@ -460,16 +472,18 @@ export default function OptionsPage() {
     } catch (err: unknown) {
       if (requestGeneration !== requestGenerationRef.current) return;
       setError(err instanceof Error ? err.message : 'Failed to load options data');
+      const code = (err as Error & { code?: TickerDetailErrorCode }).code;
+      setDetailErrorCode(code === 'INVALID_INPUT' || code === 'INVALID_SYMBOL' ? code : 'PROVIDER_FAILURE');
     } finally {
       if (requestGeneration === requestGenerationRef.current) {
         inFlightFetchKeyRef.current = '';
         setLoading(false);
       }
     }
-  }, [etf, expiryParam, openedFromScanner, requestedExpiry, ticker]);
+  }, [expiryParam, openedFromScanner, requestedExpiry, ticker]);
 
   const loadExpiration = useCallback(async (expDate: number, bypassCache = false, fresh = false) => {
-    if (!ticker || !etf) return;
+    if (!ticker) return;
     const key = `${ticker}:${expDate}:${fresh ? 'fresh' : bypassCache ? 'bypass' : 'cached'}`;
     if (inFlightFetchKeyRef.current === key) return;
     inFlightFetchKeyRef.current = key;
@@ -498,7 +512,7 @@ export default function OptionsPage() {
         setLoading(false);
       }
     }
-  }, [etf, ticker]);
+  }, [ticker]);
 
   useEffect(() => {
     inFlightFetchKeyRef.current = '';
@@ -506,7 +520,9 @@ export default function OptionsPage() {
     setOptionsData(null);
     setExtendedPrice(null);
     setSelectedExp(null);
-    setIvRankData(null);
+    setVolatilityContext(null);
+    setDetailAvailability(null);
+    setDetailErrorCode(null);
     void loadData();
     return () => {
       requestGenerationRef.current += 1;
@@ -538,6 +554,7 @@ export default function OptionsPage() {
 
   const currentPrice = extendedPrice?.price ?? optionsData?.currentPrice ?? 0;
   const changePositive = extendedPrice ? extendedPrice.changePercent >= 0 : true;
+  const instrument = useMemo(() => resolveTickerDetailInstrument(ticker ?? '', optionsData?.instrument), [optionsData?.instrument, ticker]);
   const holdingsProxy = useMemo(() => getUnderlyingHoldingsProxy(ticker ?? ''), [ticker]);
 
   const toggleWatchlist = useCallback((put: EnrichedPut) => {
@@ -595,17 +612,13 @@ export default function OptionsPage() {
     const dte = exp?.dte ?? 1;
 
     return optionsData.puts.map(p => {
-      let delta: number;
-      if (p.delta != null && p.delta !== 0) {
-        delta = p.delta;
-      } else {
-        const sigma = p.impliedVolatility != null && p.impliedVolatility > 0
-          ? p.impliedVolatility / 100
-          : 0.80;
-        delta = calculatePutDelta(currentPrice, p.strike, dte / 365, 0.045, sigma);
-      }
-      if (delta > 0) delta = -delta;
-      if (delta > -0.01 && delta <= 0) delta = -0.01;
+      const delta = resolvePutDelta({
+        providerDelta: p.delta,
+        underlyingPrice: currentPrice,
+        strike: p.strike,
+        dte,
+        impliedVolatilityPercent: p.impliedVolatility,
+      });
 
       const bidYield = calculateYieldPercent(p.bid, p.strike, dte);
       const askYield = calculateYieldPercent(p.ask, p.strike, dte);
@@ -666,16 +679,7 @@ export default function OptionsPage() {
         }
       };
 
-      const aVal = getValue(a);
-      const bVal = getValue(b);
-      if (aVal == null && bVal == null) return 0;
-      if (aVal == null) return 1;
-      if (bVal == null) return -1;
-
-      const comparison = typeof aVal === 'number' && typeof bVal === 'number'
-        ? aVal - bVal
-        : String(aVal).localeCompare(String(bVal));
-      return sortDir === 'asc' ? comparison : -comparison;
+      return compareNullableValue(getValue(a), getValue(b), sortDir);
     });
   }, [enrichedPuts, sortField, sortDir]);
 
@@ -750,7 +754,7 @@ export default function OptionsPage() {
   const visibleYieldFields = OPTION_YIELD_DISPLAY_ORDER.filter(field => showNominalYield || !isNominalYieldField(field));
   const columns = showVolOI ? [...visibleYieldColumns, ...volOIColumns] : visibleYieldColumns;
   const colCount = columns.length;
-  const hasEmptyOptions = !loading && !!optionsData && (
+  const hasEmptyOptions = !loading && !!optionsData && (detailAvailability === 'no_options' ||
     optionsData.expirations.length === 0 || optionsData.puts.length === 0
   );
   const selectedExpiration = optionsData?.expirations.find(exp => exp.date === selectedExp) ?? null;
@@ -875,7 +879,7 @@ export default function OptionsPage() {
     { field: 'strike', label: 'Strike' },
     ...OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => ({ field, label: OPTION_QUOTE_DISPLAY_LABELS[field] })),
     { field: 'delta', label: 'Delta' },
-    { field: 'annYieldBid', label: 'AY Bid' },
+    { field: 'annYieldBid', label: 'Ann. SCY Bid' },
     { field: 'iv', label: 'IV' },
     { field: 'otmItm', label: 'Moneyness' },
   ];
@@ -884,11 +888,12 @@ export default function OptionsPage() {
   const sparklineData = extendedPrice?.sparkline ?? [];
   const sparklineColor = changePositive ? 'var(--green)' : 'var(--red)';
 
-  if (!etf) {
+  if (!ticker || !instrument) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--bg)' }}>
-        <div className="text-center">
-          <p className="mb-4" style={{ color: 'var(--text-muted)' }}>ETF not found: {ticker}</p>
+        <div className="max-w-md px-6 text-center">
+          <h1 className="mb-2 text-lg font-semibold" style={{ color: 'var(--text)' }}>Invalid ticker</h1>
+          <p className="mb-4 text-sm" style={{ color: 'var(--text-muted)' }}>{routeNormalization.error ?? 'Enter a valid ticker symbol.'}</p>
           <Link to="/" className="inline-block px-4 py-2 text-white rounded-lg text-sm" style={{ backgroundColor: 'var(--accent)' }}>Back to Scanner</Link>
         </div>
       </div>
@@ -937,7 +942,7 @@ export default function OptionsPage() {
               <div className="flex items-baseline justify-center gap-1.5 font-mono text-[12px]"><span style={{ color: 'var(--text)' }}>{currentPrice > 0 ? `$${currentPrice.toFixed(2)}` : '—'}</span>{extendedPrice && <span style={{ color: changePositive ? 'var(--green)' : 'var(--red)' }}>{extendedPrice.changePercent >= 0 ? '+' : ''}{extendedPrice.changePercent.toFixed(2)}%</span>}</div>
             </button>
             <div className="flex justify-end">
-              <button type="button" onClick={() => setShowUnderlyingHoldings(true)} className="pressable flex h-11 w-11 items-center justify-center rounded-lg" aria-label={`Open underlying holdings for ${ticker}`} style={{ color: 'var(--text-muted)' }}><Layers className="h-5 w-5" /></button>
+              {instrument.showHoldings && <button type="button" onClick={() => setShowUnderlyingHoldings(true)} className="pressable flex h-11 w-11 items-center justify-center rounded-lg" aria-label={`Open underlying holdings for ${ticker}`} style={{ color: 'var(--text-muted)' }}><Layers className="h-5 w-5" /></button>}
               <button type="button" onClick={handleRefresh} disabled={loading} className="pressable flex h-11 w-11 items-center justify-center rounded-lg disabled:opacity-50" aria-label="Refresh option chain" style={{ color: 'var(--text-muted)' }}><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /></button>
               <AccountControl />
             </div>
@@ -951,14 +956,15 @@ export default function OptionsPage() {
 
         <div className="flex min-h-[46px] items-center gap-2 border-b px-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
           <span className="mr-auto text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Puts <span className="font-mono font-normal" style={{ color: 'var(--text-muted)' }}>{sortedPuts.length}</span></span>
-          <label className="flex min-h-11 items-center gap-1 text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}><input type="checkbox" checked={showNominalYield} onChange={event => handleShowNominalYieldChange(event.target.checked)} className="rounded" /> NY</label>
+          <label className="flex min-h-11 items-center gap-1 text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}><input type="checkbox" checked={showNominalYield} onChange={event => handleShowNominalYieldChange(event.target.checked)} className="rounded" /> SCY</label>
           <select value={sortField} onChange={event => setSortField(event.target.value as SortField)} className="min-h-11 rounded-lg px-2 text-[12px] outline-none" aria-label="Sort option chain" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>{mobileSortOptions.map(option => <option key={option.field} value={option.field}>{option.label}</option>)}</select>
           <button type="button" onClick={() => setSortDir(current => current === 'asc' ? 'desc' : 'asc')} className="pressable flex h-11 min-w-11 items-center justify-center rounded-lg text-[11px] font-semibold" aria-label={`Sort ${sortDir === 'asc' ? 'descending' : 'ascending'}`} style={{ color: 'var(--accent-light)' }}>{sortDir === 'asc' ? '↑' : '↓'}</button>
         </div>
 
         {freshnessLabel && <div className="border-b px-3 py-1 text-[10px]" style={{ borderColor: 'var(--border)', color: staleCachedChain ? 'var(--yellow)' : 'var(--text-dim)' }}>{freshnessLabel}</div>}
+        {instrument.showLeveragedProductWarning && <div className="border-b px-3 py-2 text-[11px] leading-4" style={{ borderColor: 'var(--border)', color: 'var(--yellow)', backgroundColor: 'var(--surface)' }}>Leveraged ETF · daily reset and compounding make longer-period returns path dependent.</div>}
 
-        {error ? <OptionsEmptyState type="error" onRefresh={handleRefresh} loading={loading} /> : hasEmptyOptions ? <OptionsEmptyState type="empty" onRefresh={handleRefresh} loading={loading} /> : (
+        {error ? <OptionsEmptyState type="error" onRefresh={handleRefresh} loading={loading} title={detailErrorCode === 'INVALID_SYMBOL' ? `We couldn't find ${ticker}.` : `We couldn't load options for ${ticker}.`} subtitle={detailErrorCode === 'INVALID_SYMBOL' ? 'Check the ticker and try again.' : 'Market data may be temporarily unavailable. Try again without changing or saving anything.'} /> : hasEmptyOptions ? <OptionsEmptyState type="empty" onRefresh={handleRefresh} loading={loading} title={`No listed puts found for ${ticker}`} subtitle="This ticker may not have listed options, or its option chain may currently be unavailable." /> : (
           <div className="mobile-financial-list">
             {loading && enrichedPuts.length === 0 ? Array.from({ length: 6 }).map((_, index) => <div key={index} className="mobile-option-row animate-pulse"><div className="h-4 w-24 rounded" style={{ backgroundColor: 'var(--border)' }} /><div className="mt-4 h-8 w-full rounded" style={{ backgroundColor: 'var(--border)' }} /><div className="mt-3 h-3 w-4/5 rounded" style={{ backgroundColor: 'var(--border)' }} /></div>) : sortedPuts.map(put => {
               const expirationIso = selectedExp ? new Date(selectedExp * 1000).toISOString().split('T')[0] : '';
@@ -969,8 +975,8 @@ export default function OptionsPage() {
         )}
 
         {selectedOption && <ErrorBoundary title="Option sheet unavailable" message="Close it and try again."><Suspense fallback={null}><OptionDetailDrawer option={selectedOption} ticker={ticker ?? ''} expirationLabel={selectedExpiration?.label ?? ''} dte={selectedExpiration?.dte ?? null} underlyingPrice={currentPrice > 0 ? currentPrice : null} onAddToPortfolio={addSelectedToPortfolio} onClose={() => setSelectedOption(null)} /></Suspense></ErrorBoundary>}
-        {showUnderlyingHoldings && <ErrorBoundary title="Underlying holdings unavailable" message="Close it and try again."><Suspense fallback={null}><UnderlyingHoldingsModal proxy={holdingsProxy} onClose={() => setShowUnderlyingHoldings(false)} /></Suspense></ErrorBoundary>}
-        {showPriceChart && <ErrorBoundary title="Chart unavailable" message="Close it and try again."><Suspense fallback={null}><InteractivePriceChartModal isOpen ticker={ticker ?? ''} displayTicker={ticker ?? ''} onClose={() => setShowPriceChart(false)} /></Suspense></ErrorBoundary>}
+        {instrument.showHoldings && showUnderlyingHoldings && <ErrorBoundary title="Underlying holdings unavailable" message="Close it and try again."><Suspense fallback={null}><UnderlyingHoldingsModal proxy={holdingsProxy} onClose={() => setShowUnderlyingHoldings(false)} /></Suspense></ErrorBoundary>}
+        {showPriceChart && <ErrorBoundary title="Chart unavailable" message="Close it and try again."><Suspense fallback={null}><InteractivePriceChartModal isOpen ticker={ticker ?? ''} displayTicker={ticker ?? ''} showLeverageContext={instrument.showLeverage} onClose={() => setShowPriceChart(false)} /></Suspense></ErrorBoundary>}
       </div>
     );
   }
@@ -991,9 +997,11 @@ export default function OptionsPage() {
           </button>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-              <h1 className="text-xl sm:text-2xl font-bold font-mono" style={{ color: 'var(--text)' }}>{etf.ticker}</h1>
-              <span className="text-xs sm:text-sm truncate" style={{ color: 'var(--text-muted)' }}>{etf.name}</span>
+              <h1 className="text-xl sm:text-2xl font-bold font-mono" style={{ color: 'var(--text)' }}>{instrument.ticker}</h1>
+              <span className="text-xs sm:text-sm truncate" style={{ color: 'var(--text-muted)' }}>{instrument.name}</span>
+              <span className="rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>{instrument.leveraged ? `${instrument.leverageMultiple ?? ''}x leveraged ETF` : instrument.assetType === 'etf' ? 'ETF' : instrument.assetType === 'stock' ? 'Stock' : 'Ticker'}</span>
             </div>
+            {instrument.showLeveragedProductWarning && <p className="mt-1 text-[11px]" style={{ color: 'var(--yellow)' }}>Daily reset and compounding make longer-period returns path dependent.</p>}
           </div>
         </div>
 
@@ -1073,23 +1081,23 @@ export default function OptionsPage() {
               )}
             </div>
 
-            {/* IV Rank Badge */}
-            {ivRankData && ivRankData.ivRank != null && (
+            {/* ATM implied volatility versus the trailing realized-volatility range. */}
+            {volatilityContext && volatilityContext.rangePosition != null && (
               <div className="flex-shrink-0">
                 <div
                   className="px-3 py-1.5 rounded-lg text-center"
                   style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}
-                  title={`IV Rank: ${ivRankData.ivRank.toFixed(1)}% | IV Percentile: ${ivRankData.ivPercentile?.toFixed(1) ?? '—'}% | Current IV: ${ivRankData.currentIV?.toFixed(1) ?? '—'}%`}
+                  title={`Current ATM put IV (${volatilityContext.currentIV?.toFixed(1) ?? '—'}%) positioned within the trailing 1-year range of 4-week realized volatility (${volatilityContext.realizedVolLow?.toFixed(1) ?? '—'}%–${volatilityContext.realizedVolHigh?.toFixed(1) ?? '—'}%). This is not traditional historical IV Rank.`}
                 >
-                  <div className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>IV Rank</div>
-                  <div className="text-sm font-mono font-bold" style={{ color: ivRankColor(ivRankData.ivRank) }}>
-                    {ivRankData.ivRank.toFixed(0)}%
+                  <div className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>IV vs 1Y Realized Range</div>
+                  <div className="text-sm font-mono font-bold" style={{ color: ivVsRealizedRangeColor(volatilityContext.rangePosition) }}>
+                    {volatilityContext.rangePosition.toFixed(0)}%
                   </div>
                 </div>
               </div>
             )}
 
-            <button
+            {instrument.showHoldings && <button
               type="button"
               onClick={() => setShowUnderlyingHoldings(true)}
               className="pressable min-h-[44px] flex-shrink-0 rounded-lg px-3 py-1.5 text-center transition-all hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-indigo-500/60"
@@ -1106,7 +1114,7 @@ export default function OptionsPage() {
               <div className="text-sm font-mono font-bold" style={{ color: holdingsProxy.meaningful ? 'var(--accent-light)' : 'var(--text-dim)' }}>
                 {holdingsProxy.meaningful && holdingsProxy.proxyTicker ? holdingsProxy.proxyTicker : 'N/A'}
               </div>
-            </button>
+            </button>}
 
             {/* Right side: last updated + refresh + vol/OI toggle */}
             <div data-mobile-controls className="flex w-full flex-wrap items-center gap-2 text-xs sm:ml-auto sm:w-auto sm:gap-3 min-w-0" style={{ color: 'var(--text-muted)' }}>
@@ -1117,7 +1125,7 @@ export default function OptionsPage() {
                   onChange={event => handleShowNominalYieldChange(event.target.checked)}
                   className="rounded"
                 />
-                Show Nominal Yield
+                Show Secured-Cash Yield
               </label>
               <label className="flex items-center gap-1.5 text-xs cursor-pointer min-h-[44px] sm:min-h-0" style={{ color: 'var(--text-muted)' }}>
                 <input
@@ -1258,14 +1266,16 @@ export default function OptionsPage() {
 
         {/* Options table */}
         {error ? (
-          <OptionsEmptyState type="error" onRefresh={handleRefresh} loading={loading} />
+          <OptionsEmptyState type="error" onRefresh={handleRefresh} loading={loading} title={detailErrorCode === 'INVALID_SYMBOL' ? `We couldn't find ${ticker}.` : `We couldn't load options for ${ticker}.`} subtitle={detailErrorCode === 'INVALID_SYMBOL' ? 'Check the ticker and try again, or return to Scanner.' : 'Market data may be temporarily unavailable. Try again without changing or saving anything.'} />
         ) : hasEmptyOptions ? (
           <OptionsEmptyState
             type="empty"
             onRefresh={handleRefresh}
             loading={loading}
-            title="No put contracts returned"
-            subtitle={(chainMeta?.callCount ?? 0) > 0
+            title={`No listed puts found for ${ticker}`}
+            subtitle={detailAvailability === 'no_options'
+              ? 'This ticker may not have listed options, or its option chain may currently be unavailable.'
+              : (chainMeta?.callCount ?? 0) > 0
               ? 'Yahoo returned calls but no puts for this expiration. Compare the app only against Yahoo’s Puts tab.'
               : 'Yahoo returned no put contracts for this expiration. Try Refresh or verify the selected expiration on Yahoo’s Puts tab.'}
           />
@@ -1504,7 +1514,7 @@ export default function OptionsPage() {
                           <td className="w-20 px-1.5 py-1.5 text-right font-mono text-xs tabular-nums hidden md:table-cell" title={`${formatLastTradeDate(put.lastTradeDate)}${getOptionLastTradeFreshness(put.lastTradeDate).label ? ` · ${getOptionLastTradeFreshness(put.lastTradeDate).label}` : ''}`} style={{ color: getOptionLastTradeFreshness(put.lastTradeDate).color }}>{formatOptionLastTradeDate(put.lastTradeDate)}</td>
                           {OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => <td key={field} className={`px-2 py-1.5 text-right text-xs font-mono tabular-nums w-14 ${field === 'last' ? 'hidden md:table-cell' : ''}`} style={{ color: 'var(--text)' }}>{formatPrice(put[field])}</td>)}
                           <td className="px-1.5 py-1.5 text-right text-xs font-mono tabular-nums w-12" style={{ color: deltaColor(put.delta) }}>
-                            {put.delta.toFixed(2)}
+                            {put.delta != null ? put.delta.toFixed(2) : '—'}
                           </td>
                           <td className="px-1.5 py-1.5 text-right text-xs font-mono tabular-nums hidden md:table-cell w-20" style={{ color: put.otmItmColor }}>
                             {put.otmItmLabel || '—'}
@@ -1592,7 +1602,7 @@ export default function OptionsPage() {
         </ErrorBoundary>
       )}
 
-      {showUnderlyingHoldings && (
+      {instrument.showHoldings && showUnderlyingHoldings && (
         <ErrorBoundary title="Underlying holdings unavailable" message="The holdings popup could not render. Close it and try again.">
           <Suspense fallback={null}>
             <UnderlyingHoldingsModal
@@ -1610,6 +1620,7 @@ export default function OptionsPage() {
               isOpen
               ticker={ticker ?? ''}
               displayTicker={ticker ?? ''}
+              showLeverageContext={instrument.showLeverage}
               onClose={() => setShowPriceChart(false)}
             />
           </Suspense>

@@ -9,7 +9,7 @@ import {
   SCREENER_TICKERS,
 } from '../shared/screenerUniverse.js';
 import { buildScreenerBatch, buildScreenerExpirationDataset, responseBytes, SCREENER_BATCH_MAX_BYTES } from '../api/_lib/screenerBatch.js';
-import { calculateIvRankFromCloses, currentAtmIvFromOptionData } from '../api/_lib/ivRank.js';
+import { calculateIvVsRealizedVolFromCloses, currentAtmIvFromOptionData } from '../api/_lib/ivRank.js';
 import {
   createLatestScreenerScanGate,
   fetchScreenerBatch,
@@ -55,7 +55,7 @@ function yahooChain(ticker, expiration = EXPIRATION_ONE, expirationDates = [EXPI
 
 function batchPayload(plan, overrides = {}) {
   return {
-    datasetVersion: 1,
+    datasetVersion: 2,
     chunkId: plan.chunkId,
     targetDate: plan.targetDate,
     fetchedAt: Date.now(),
@@ -66,7 +66,7 @@ function batchPayload(plan, overrides = {}) {
       initialExpiration: EXPIRATION_ONE,
       initial: yahooChain(ticker),
       additionalChains: { [EXPIRATION_TWO]: yahooChain(ticker, EXPIRATION_TWO) },
-      ivRank: 42,
+      ivVsRealizedRange: 42,
     }])),
     errors: [],
     diagnostics: {
@@ -110,7 +110,7 @@ test('batch planning is deterministic and only structural expiration changes alt
   assert.deepEqual(all[1].selectedTickers, ['TQQQ']);
 });
 
-test('server batch reuses initial options for IV rank, isolates failures, and caps Yahoo concurrency at three', async () => {
+test('server batch reuses initial options for realized-vol context, isolates failures, and caps Yahoo concurrency at three', async () => {
   const startedAt = Date.now();
   let active = 0;
   let maximum = 0;
@@ -132,10 +132,10 @@ test('server batch reuses initial options for IV rank, isolates failures, and ca
       if (ticker === 'BOIL' && date === EXPIRATION_TWO) throw new Error('fixture chain failure');
       return yahooChain(ticker, date ?? EXPIRATION_ONE);
     },
-    fetchIvRank: async (ticker, options) => {
-      assert.ok(options.optionData, `${ticker} IV rank should reuse its initial chain`);
+    fetchVolatilityContext: async (ticker, options) => {
+      assert.ok(options.optionData, `${ticker} volatility context should reuse its initial chain`);
       await begin(options.onAttempt);
-      return { currentIV: 80, ivRank: 40, ivPercentile: 50 };
+      return { currentIV: 80, rangePosition: 40, observationPercent: 50 };
     },
   });
   assert.ok(maximum <= SCREENER_SERVER_CONCURRENCY);
@@ -146,7 +146,7 @@ test('server batch reuses initial options for IV rank, isolates failures, and ca
   assert.equal(dataset.complete, false);
   assert.equal(dataset.errors.length, 1);
   assert.equal(Object.keys(dataset.tickers).length, 3);
-  assert.equal(dataset.tickers.AGQ.ivRank, 40);
+  assert.equal(dataset.tickers.AGQ.ivVsRealizedRange, 40);
   assert.deepEqual(Object.keys(dataset.tickers.BOIL.additionalChains), []);
   assert.ok(Date.now() - startedAt < 1_000, 'deterministic mocked cold-batch fixture should complete well below one second');
 });
@@ -309,7 +309,7 @@ test('Screener row reconstruction preserves pricing, Greeks, yields, filters, an
       [canonicalOptionChainKey('TQQQ', EXPIRATION_ONE), first],
       [canonicalOptionChainKey('TQQQ', EXPIRATION_TWO), second],
     ]),
-    ivRankByTicker: new Map([['TQQQ', 42]]),
+    ivVsRealizedRangeByTicker: new Map([['TQQQ', 42]]),
   };
   const all = buildScreenerRows(data, 'all');
   assert.equal(all.rows.length, 3);
@@ -322,24 +322,28 @@ test('Screener row reconstruction preserves pricing, Greeks, yields, filters, an
   );
   assert.equal(all.rows[0].moneynessPct, 10);
   assert.equal(all.rows[0].volOI, 0.2);
-  assert.equal(all.rows[0].ivRank, 42);
+  assert.equal(all.rows[0].ivVsRealizedRange, 42);
   assert.deepEqual(Object.keys(all.rows[0]), [
     'ticker', 'currentPrice', 'expDate', 'expLabel', 'dte', 'strike', 'moneynessPct', 'moneynessLabel',
     'moneynessColor', 'delta', 'bid', 'last', 'lastTradeDate', 'ask', 'iv', 'nomYieldBid', 'nomYieldAsk',
-    'nomYieldLast', 'annYieldBid', 'annYieldAsk', 'annYieldLast', 'volume', 'openInterest', 'volOI', 'ivRank',
+    'nomYieldLast', 'annYieldBid', 'annYieldAsk', 'annYieldLast', 'volume', 'openInterest', 'volOI', 'ivVsRealizedRange',
   ]);
   const exact = buildScreenerRows(data, `date_${EXPIRATION_TWO}`);
   assert.equal(exact.rows.length, 1);
   assert.equal(exact.rows[0].expDate, EXPIRATION_TWO);
-  assert.equal(applyScreenerFilters(all.rows, { deltaFilter: 'below_0.25', moneynessFilter: 'all', yieldFilter: 'all', oiFilter: '>50', volFilter: '>10', ivRankFilter: '20_to_50' }).length, 2);
+  assert.equal(applyScreenerFilters(all.rows, { deltaFilter: 'below_0.25', moneynessFilter: 'all', yieldFilter: 'all', oiFilter: '>50', volFilter: '>10', ivVsRealizedRangeFilter: '20_to_50' }).length, 2);
 });
 
-test('IV-rank extraction preserves the legacy ATM and realized-volatility calculation', () => {
+test('IV-versus-realized-range extraction preserves the audited calculation under truthful names', () => {
   const optionData = yahooChain('TQQQ');
   assert.equal(currentAtmIvFromOptionData(optionData), 80);
   const closes = Array.from({ length: 60 }, (_, index) => 100 + Math.sin(index / 3) * 4 + index * 0.4);
-  const result = calculateIvRankFromCloses(80, closes);
-  assert.deepEqual(result, { currentIV: 80, ivRank: 100, ivPercentile: 100 });
+  const result = calculateIvVsRealizedVolFromCloses(80, closes);
+  assert.equal(result.currentIV, 80);
+  assert.equal(result.rangePosition, 100);
+  assert.equal(result.observationPercent, 100);
+  assert.ok(result.realizedVolLow < result.realizedVolHigh);
+  assert.equal(result.observationCount, 56);
 });
 
 test('representative three-ticker payload remains below the endpoint guard and functions keep a 60-second ceiling', async () => {

@@ -107,6 +107,8 @@ export function calculateEquityAtRisk(strike: number | null | undefined, contrac
   return validStrike != null && validContracts != null ? validStrike * 100 * validContracts : null;
 }
 
+export const calculateGrossSecuredCash = calculateEquityAtRisk;
+
 export function calculateMaxLoss(strike: number | null | undefined, optionPrice: number | null | undefined, contracts: number | null | undefined): number | null {
   const equityAtRisk = calculateEquityAtRisk(strike, contracts);
   const totalPremium = calculateTotalPremium(optionPrice, contracts);
@@ -117,16 +119,22 @@ export function calculateNetCapitalAtRisk(strike: number | null | undefined, opt
   return calculateMaxLoss(strike, optionPrice, contracts);
 }
 
+export const calculateNetMaximumLossCapital = calculateNetCapitalAtRisk;
+
 export function calculateNominalYield(optionPrice: number | null | undefined, strike: number | null | undefined): number | null {
   const price = sanitizePositive(optionPrice);
   const validStrike = sanitizePositive(strike);
   return price != null && validStrike != null ? price / validStrike : null;
 }
 
+export const calculateSecuredCashYield = calculateNominalYield;
+
 export function calculateAnnualizedYield(optionPrice: number | null | undefined, strike: number | null | undefined, dte: number | null | undefined): number | null {
   const nominal = calculateNominalYield(optionPrice, strike);
   return nominal != null && isFiniteNumber(dte) && dte > 0 ? nominal * (365 / dte) : null;
 }
+
+export const calculateAnnualizedSecuredCashYield = calculateAnnualizedYield;
 
 export function calculateYieldPercent(optionPrice: number | null | undefined, strike: number | null | undefined, dte: number | null | undefined): YieldMetrics {
   const nominal = calculateNominalYield(optionPrice, strike);

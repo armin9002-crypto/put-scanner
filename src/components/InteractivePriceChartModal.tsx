@@ -21,6 +21,7 @@ interface InteractivePriceChartModalProps {
   isOpen: boolean;
   ticker: string;
   displayTicker?: string;
+  showLeverageContext?: boolean;
   onClose: () => void;
 }
 
@@ -103,6 +104,7 @@ export default function InteractivePriceChartModal({
   isOpen,
   ticker,
   displayTicker,
+  showLeverageContext = false,
   onClose,
 }: InteractivePriceChartModalProps) {
   const { isPhone, isPhoneLandscape } = useResponsiveMode();
@@ -127,7 +129,7 @@ export default function InteractivePriceChartModal({
   const isVolatility = isVolatilityInstrument(requestedTicker, titleTicker);
   const proxy = useMemo(() => getUnderlyingHoldingsProxy(requestedTicker), [requestedTicker]);
   const normalizedProxyTicker = proxy.proxyTicker?.trim().toUpperCase() ?? null;
-  const shouldFetchProxy = Boolean(proxy.meaningful && normalizedProxyTicker && normalizedProxyTicker !== requestedTicker);
+  const shouldFetchProxy = Boolean(showLeverageContext && proxy.meaningful && normalizedProxyTicker && normalizedProxyTicker !== requestedTicker);
 
   const loadChart = useCallback(async (forceRefresh = false) => {
     if (!requestedTicker) return;
@@ -388,7 +390,7 @@ export default function InteractivePriceChartModal({
                 </button>
               ))}
             </div>
-            <div
+            {showLeverageContext && <div
               className="min-w-0 rounded-lg border px-2.5 py-1.5 text-xs leading-tight lg:max-w-[520px] lg:flex-shrink-0"
               style={{ backgroundColor: 'var(--surface-alt)', borderColor: 'var(--border)' }}
               title="True Leverage compares the ETF's actual return to the proxy ETF's return over the same period. Because leveraged ETFs rebalance daily, realized leverage can differ materially over longer periods."
@@ -436,7 +438,7 @@ export default function InteractivePriceChartModal({
                   )}
                 </div>
               )}
-            </div>
+            </div>}
           </div>
 
           {error ? (

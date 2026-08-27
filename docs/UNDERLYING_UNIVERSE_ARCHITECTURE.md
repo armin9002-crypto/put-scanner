@@ -1,5 +1,27 @@
 # Underlying Universe Architecture
 
+Stage 6B.1 implementation date: 2026-08-26
+
+## Implemented on-demand and asset-aware layer
+
+Stage 6B.1 implements one explicit on-demand ticker at a time while leaving Scanner, Screener, Pulse, Watchlist, Portfolio, and cloud schemas unchanged.
+
+- `AnalyzeTickerForm` normalizes trimmed case while preserving supported `.`, `^`, and `-` punctuation, then navigates to `/options/:ticker` only on explicit form submission.
+- The form performs no focus, hover, typing, suggestion, preflight-validation, storage, or Supabase work.
+- `tickerDetail` resolves local registry identity first and provider-confirmed `quoteType` second. Unknown metadata remains unknown rather than guessed.
+- Leveraged ETFs retain holdings/proxy capability, leverage multiple, True Leverage access, and daily-reset/compounding warning.
+- Normal ETFs may show provider-supported ETF identity and holdings, but never leverage or daily-reset copy.
+- Stocks hide holdings, benchmark proxy, leverage, and ETF warnings.
+- Unknown provider-valid symbols use generic identity and hide metadata-dependent modules.
+- Invalid, non-optionable, and temporary provider-failure states use distinct product copy with Try Again and Back to Scanner. Raw provider errors are not shown.
+- Merely viewing a ticker makes no Watchlist, Portfolio, preference, migration, sync, or cloud mutation. Existing explicit contract-save actions remain unchanged.
+
+The initial detail browser path is consolidated behind one `/api/ticker-detail` call. The request reuses its initial option chain for row data, Delta inputs, and the current ATM-IV observation, while separately and concurrently acquiring bounded daily/intraday price context and one trailing weekly realized-volatility series. Browser-local caching remains bounded by ticker/expiry; there is no giant global cache, prefetch, polling, crawler, background refresh, or cross-user database cache.
+
+The current recommended next curated size is **25–30 total reviewed discovery symbols** as a first experiment, not 42 leveraged ETFs plus 35–50 stocks. Saved Underlyings should precede broad Scanner expansion. A later 35–50-symbol selectable Screener needs a capped exact-symbol batch endpoint, canonical keys, maximum two expiries per symbol, partial-safe results, concurrency/payload limits, and visible request budgeting before activation.
+
+## Stage 6A baseline and long-range reference
+
 Stage 6A decision: use a layered, local-first universe with explicit market-data acquisition. Do not build a market crawler or a ticker-metadata database.
 
 ## Goals and non-goals

@@ -413,7 +413,7 @@ let brokerCalls = 0;
 const brokerOptions = {
   key: brokerKey,
   source: 'selfcheck',
-  endpoint: 'ivrank',
+  endpoint: 'volatility-context',
   softTtlMs: 0,
   hardTtlMs: 60_000,
   schemaVersion: 1,

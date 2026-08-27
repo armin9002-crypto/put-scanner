@@ -71,6 +71,10 @@ export interface OptionsChainData {
   expirations: ExpirationDate[];
   puts: OptionContract[];
   currentPrice: number;
+  instrument?: {
+    name: string | null;
+    quoteType: string | null;
+  };
   chainMeta?: OptionChainMeta;
 }
 

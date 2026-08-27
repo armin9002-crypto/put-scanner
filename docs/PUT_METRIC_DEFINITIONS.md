@@ -1,5 +1,77 @@
 # Put Metric Definitions
 
+Stage 6B.1 contract date: 2026-08-26
+
+This section is the authoritative product contract as of Stage 6B.1. It supersedes the historical Stage 6A audit retained below.
+
+## Canonical capital and return terminology
+
+| Product label | Exact formula | Denominator and use |
+|---|---|---|
+| Premium per Contract | `option price × 100` | No denominator. Total premium additionally multiplies by contracts. |
+| Gross Secured Cash | `strike × 100 × contracts` | Full cash-secured assignment requirement before premium; not broker margin or buying-power reduction. |
+| Net Maximum-Loss Capital | `gross secured cash - total premium` | Assumes the underlying can fall to zero. |
+| Secured-Cash Yield (SCY) | `premium / gross secured cash` | Gross secured cash. Used for Scanner, Screener, ticker detail, and Watchlist discovery quotes. |
+| Annualized Secured-Cash Yield (Ann. SCY) | `SCY × 365 / DTE` | Gross secured cash. Simple annualization; unavailable at `DTE <= 0`. |
+| Entry Net-Risk Return | `premium collected / entry net maximum-loss capital` | Entry net maximum-loss capital. Used for an entered position in the drawer and Portfolio. |
+| Annualized Entry Net-Risk Return | `entry net-risk return × 365 / original DTE` | Entry net maximum-loss capital. Simple annualization. |
+| Remaining Liability / Entry Net Risk | `current buyback cost / entry net maximum-loss capital` | Original entry net maximum-loss capital. This is a remaining-liability ratio, not earned yield. |
+| Annualized Remaining Liability / Entry Net Risk | preceding ratio `× 365 / remaining DTE` | Original entry net maximum-loss capital. |
+| Annualized Remaining Premium / Current Net Risk | `current buyback cost / (gross secured cash - current buyback cost) × 365 / remaining DTE` | Current net maximum-loss capital. Kept distinct because its denominator is intentionally different. |
+
+The same label now means the same formula everywhere. Discovery values remain distinct from entered-position economics because they answer different questions. Internal persisted field names such as `originalAnnualizedYield` remain for schema compatibility; visible labels and tooltips carry the canonical meaning.
+
+## Quote, contract, and lifecycle definitions
+
+- Bid, Ask, and Last are normalized provider values. A valid zero remains zero. Invalid, negative where invalid, or non-finite values are unavailable.
+- Mid is `(bid + ask) / 2` only for valid ordered quotes. It is a reference value, not a fill guarantee.
+- Selected mark is the user-visible Bid, Ask, Last, or Mid basis used for position calculations. Mark basis remains visible.
+- Breakeven is `strike - option price` per share.
+- OTM % is `(underlying - strike) / underlying × 100`; positive is OTM for a put. It is not assignment probability.
+- DTE is UTC expiration date minus the UTC current date. Expiration day is 0 DTE; a contract is expired only below 0 DTE.
+- Bid-Ask Spread is `ask - bid`. Spread % is `(ask - bid) / ((bid + ask) / 2)` and is unavailable when quotes are invalid or the midpoint is zero.
+- Premium Captured is open-position gain/loss divided by premium collected. It is mark-dependent and not clamped.
+- Realized IRR is `(1 + realized P&L / original net risk)^(365.25 / days held) - 1`; invalid capital or holding periods produce unavailable.
+
+Volume and Open Interest remain transparent primitives. Put Scanner does not create a proprietary liquidity score. A user can inspect Bid, Ask, spread, Spread %, Volume, Open Interest, and quote age where supported.
+
+## Volatility-context correction
+
+The current metric is **IV vs 1Y Realized Range**, not IV Rank or IV Percentile.
+
+1. Select the nearest-strike current put IV from the already acquired initial option chain.
+2. Acquire trailing one-year weekly closes.
+3. Build a series of annualized four-week realized-volatility observations from rolling weekly log returns.
+4. Position current ATM put IV within the minimum/maximum of that realized-volatility series, clamped to 0–100.
+
+The observation percentage is the share of realized-volatility observations below current ATM put IV. Neither number is traditional historical IV Rank/Percentile because the historical comparison series is realized volatility, not implied volatility. True IV Rank and IV Percentile remain unavailable until a reliable historical implied-volatility source, retention policy, licensing basis, and quality rules exist.
+
+## Value availability and sorting
+
+Stage 6B.1 uses four explicit states: `available`, `unavailable`, `stale`, and `loading`. `0` is available and formats as zero; it is not folded into unavailable. `null`, `undefined`, empty input, and non-finite numeric values do not receive plausible numeric formatting. Cache or quote freshness is tracked separately from numeric validity, so a valid number can be marked stale.
+
+Shared nullable comparators rank valid numeric values normally and put unavailable/non-finite values last in both ascending and descending order. Equal values return a comparator tie so JavaScript's stable sort preserves source order. This contract is applied to Scanner, Screener, Watchlist, ticker detail, and applicable Portfolio tables.
+
+## Delta source and fallback rules
+
+- A finite provider put Delta in `[-1, 0]` is preferred, including on expiration day.
+- A calculated Black-Scholes put Delta is allowed only when underlying, strike, time, and IV are finite and strictly positive and the risk-free rate is finite.
+- Missing/zero/negative underlying, invalid strike, missing/zero/negative IV, non-positive modeled time, expired contracts, or non-finite intermediates produce unavailable.
+- There is no fabricated `-0.5`, zero-Delta, or 80% IV fallback.
+- Staleness is shown as freshness context; it does not make an invalid fallback permissible.
+
+Delta remains a model sensitivity, not a guaranteed probability of assignment.
+
+## Cross-surface regression contract
+
+Deterministic fixtures cover a liquid contract, wide spread, missing Bid/Ask/Last/Delta, invalid underlying, expired contract, 0-DTE contract, and non-finite provider values. For the same contract and price basis, tests reconcile premium, gross secured cash, net maximum-loss capital, SCY, Ann. SCY, entry net-risk return, breakeven, OTM %, DTE, and spread across applicable Scanner, Screener, ticker-detail, drawer, Watchlist, and Portfolio code. Intentional differences are asserted by denominator rather than allowed as unexplained drift.
+
+## Historical-value safety
+
+Stage 6B.1 changes labels, shared helpers, and invalid-input behavior; it does not rewrite saved Portfolio trades, Watchlist contracts, backups, cloud payloads, revisions, prices, premiums, or historical return fields. Existing saved financial values retain their original arithmetic and durable schema interpretation.
+
+## Historical Stage 6A audit (superseded above)
+
 Stage 6A audit date: 2026-08-26
 
 This is the product contract for the financial metrics currently shown by Put Scanner. It documents what the code calculates; it is not investment advice. Unless noted otherwise, one U.S. equity-option contract represents 100 shares, percentages are stored as decimals in portfolio code and as percentage points in discovery-row code, and UI formatters perform display rounding only.

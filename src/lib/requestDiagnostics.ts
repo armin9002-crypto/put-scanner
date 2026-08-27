@@ -1,4 +1,4 @@
-export type RequestEndpoint = 'options' | 'prices' | 'price' | 'chart-history' | 'etf-pulse' | 'screener-batch' | 'screener-expirations' | 'ivrank' | 'holdings' | 'fund-metadata';
+export type RequestEndpoint = 'options' | 'ticker-detail' | 'prices' | 'price' | 'chart-history' | 'etf-pulse' | 'screener-batch' | 'screener-expirations' | 'volatility-context' | 'holdings' | 'fund-metadata';
 export type RequestDiagnosticKind = 'attempted' | 'cacheHit' | 'memoryHit' | 'persistentHit' | 'network' | 'deduped' | 'staleFallback' | 'success' | 'failure' | 'circuitRejected';
 
 export interface RequestDiagnosticEntry {
@@ -26,7 +26,7 @@ export interface RequestDiagnosticEntry {
 
 export type RequestDiagnosticsSnapshot = Record<RequestEndpoint, RequestDiagnosticEntry>;
 
-const endpoints: RequestEndpoint[] = ['options', 'prices', 'price', 'chart-history', 'etf-pulse', 'screener-batch', 'screener-expirations', 'ivrank', 'holdings', 'fund-metadata'];
+const endpoints: RequestEndpoint[] = ['options', 'ticker-detail', 'prices', 'price', 'chart-history', 'etf-pulse', 'screener-batch', 'screener-expirations', 'volatility-context', 'holdings', 'fund-metadata'];
 const state: RequestDiagnosticsSnapshot = endpoints.reduce((acc, endpoint) => {
   acc[endpoint] = { attempted: 0, cacheHits: 0, networkRequests: 0, memoryHits: 0, persistentCacheHits: 0, inFlightDedupes: 0, staleFallbacks: 0, failures: 0, serverEndpointResponses: 0, yahooUpstreamAttempts: 0, chainsDeduplicated: 0, maxObservedConcurrency: 0, circuitBreakerRejections: 0, lastDatasetVersion: null, cacheStrategies: {}, plannedChains: 0, responseBytes: 0, lastDurationMs: null, lastRequestAt: null, sources: {} };
   return acc;

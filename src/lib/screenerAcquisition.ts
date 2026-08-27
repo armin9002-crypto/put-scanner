@@ -17,7 +17,7 @@ import {
 import type { OptionsChainData, OptionChainSource } from './types.ts';
 import { normalizeOptionChainData } from './yahooOptionAdapter.ts';
 
-const SCREENER_DATASET_VERSION = 1;
+const SCREENER_DATASET_VERSION = 2;
 const BATCH_SOFT_TTL_MS = 5 * 60 * 1_000;
 const BATCH_HARD_TTL_MS = 45 * 60 * 1_000;
 const EXPIRATION_SOFT_TTL_MS = 2 * 60 * 60 * 1_000;
@@ -29,7 +29,7 @@ interface BatchTickerPayload {
   initialExpiration: number | null;
   initial: unknown;
   additionalChains: Record<string, unknown>;
-  ivRank: number | null;
+  ivVsRealizedRange: number | null;
 }
 
 export interface ScreenerBatchPayload {
@@ -80,7 +80,7 @@ export interface ScreenerBatchFetchResult {
 export interface ScreenerScanResult {
   initialResults: Map<string, OptionsChainData>;
   chainsByKey: Map<string, OptionsChainData>;
-  ivRankByTicker: Map<string, number | null>;
+  ivVsRealizedRangeByTicker: Map<string, number | null>;
   errors: Array<{ batchId: number; ticker?: string; message: string }>;
   plannedBatches: number;
   completedBatches: number;
@@ -220,7 +220,7 @@ export async function runScreenerBatchScan(options: {
   const fetchBatch = options.fetchBatch ?? fetchScreenerBatch;
   const initialResults = new Map<string, OptionsChainData>();
   const chainsByKey = new Map<string, OptionsChainData>();
-  const ivRankByTicker = new Map<string, number | null>();
+  const ivVsRealizedRangeByTicker = new Map<string, number | null>();
   const errors: ScreenerScanResult['errors'] = [];
   let completedEtfs = 0;
   let rejectedBatchFailures = 0;
@@ -279,7 +279,7 @@ export async function runScreenerBatchScan(options: {
         chainsByKey.set(canonicalOptionChainKey(ticker, date), chain);
         primeOptionsChainCache(ticker, date, chain);
       });
-      ivRankByTicker.set(ticker, Number.isFinite(tickerPayload.ivRank) ? tickerPayload.ivRank : null);
+      ivVsRealizedRangeByTicker.set(ticker, Number.isFinite(tickerPayload.ivVsRealizedRange) ? tickerPayload.ivVsRealizedRange : null);
     });
   });
   finishScreenerScanDiagnostics(options.scanId, rejectedBatchFailures);
@@ -287,7 +287,7 @@ export async function runScreenerBatchScan(options: {
   return {
     initialResults,
     chainsByKey,
-    ivRankByTicker,
+    ivVsRealizedRangeByTicker,
     errors,
     plannedBatches: plans.length,
     completedBatches: settled.filter(result => result.status === 'fulfilled').length,

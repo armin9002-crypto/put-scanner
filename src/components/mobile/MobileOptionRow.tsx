@@ -73,8 +73,8 @@ export default function MobileOptionRow(props: MobileOptionRowProps) {
           ))}
         </div>
         <div className={`mt-1.5 grid gap-1 text-[10px] ${props.showNominalYield ? 'grid-cols-5' : 'grid-cols-4'}`}>
-          <span className="truncate"><span style={{ color: 'var(--text-dim)' }}>AY </span><b className="font-mono" style={{ color: 'var(--accent-light)' }}>{percent(props.annualYield)}</b></span>
-          {props.showNominalYield && <span className="truncate"><span style={{ color: 'var(--text-dim)' }}>NY </span><b className="font-mono" style={{ color: 'var(--text-secondary)' }}>{percent(props.nominalYield)}</b></span>}
+          <span className="truncate" title="Annualized secured-cash yield"><span style={{ color: 'var(--text-dim)' }}>Ann SCY </span><b className="font-mono" style={{ color: 'var(--accent-light)' }}>{percent(props.annualYield)}</b></span>
+          {props.showNominalYield && <span className="truncate" title="Premium divided by gross strike cash"><span style={{ color: 'var(--text-dim)' }}>SCY </span><b className="font-mono" style={{ color: 'var(--text-secondary)' }}>{percent(props.nominalYield)}</b></span>}
           <span className="truncate"><span style={{ color: 'var(--text-dim)' }}>Δ </span><b className="font-mono" style={{ color: 'var(--text-secondary)' }}>{props.delta == null ? '—' : props.delta.toFixed(2)}</b></span>
           <span className="truncate"><span style={{ color: 'var(--text-dim)' }}>IV </span><b className="font-mono" style={{ color: 'var(--text-secondary)' }}>{percent(props.impliedVolatility)}</b></span>
           <span className="truncate text-right"><span style={{ color: 'var(--text-dim)' }}>OI </span><b className="font-mono" style={{ color: 'var(--text-secondary)' }}>{integer(props.openInterest)}</b></span>

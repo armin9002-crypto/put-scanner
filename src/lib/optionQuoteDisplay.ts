@@ -1,3 +1,5 @@
+import { PUT_METRIC_CONTRACT } from './putMetricContract.ts';
+
 export const OPTION_QUOTE_DISPLAY_ORDER = ['last', 'bid', 'mid', 'ask'] as const;
 export const OPTION_QUOTE_TABLE_DISPLAY_ORDER = ['last', 'bid', 'ask'] as const;
 export const OPTION_YIELD_DISPLAY_ORDER = [
@@ -21,12 +23,12 @@ export const OPTION_QUOTE_DISPLAY_LABELS: Record<OptionQuoteDisplayField, string
 };
 
 export const OPTION_YIELD_DISPLAY_LABELS: Record<OptionYieldDisplayField, { short: string; full: string }> = {
-  nomYieldLast: { short: 'NY Last', full: 'Nom. Yield (Last)' },
-  annYieldLast: { short: 'AY Last', full: 'Ann. Yield (Last)' },
-  nomYieldBid: { short: 'NY Bid', full: 'Nom. Yield (Bid)' },
-  annYieldBid: { short: 'AY Bid', full: 'Ann. Yield (Bid)' },
-  nomYieldAsk: { short: 'NY Ask', full: 'Nom. Yield (Ask)' },
-  annYieldAsk: { short: 'AY Ask', full: 'Ann. Yield (Ask)' },
+  nomYieldLast: { short: 'SCY Last', full: `${PUT_METRIC_CONTRACT.securedCashYield.label} (Last): ${PUT_METRIC_CONTRACT.securedCashYield.formula}` },
+  annYieldLast: { short: 'Ann. SCY Last', full: `${PUT_METRIC_CONTRACT.annualizedSecuredCashYield.label} (Last): ${PUT_METRIC_CONTRACT.annualizedSecuredCashYield.formula}` },
+  nomYieldBid: { short: 'SCY Bid', full: `${PUT_METRIC_CONTRACT.securedCashYield.label} (Bid): ${PUT_METRIC_CONTRACT.securedCashYield.formula}` },
+  annYieldBid: { short: 'Ann. SCY Bid', full: `${PUT_METRIC_CONTRACT.annualizedSecuredCashYield.label} (Bid): ${PUT_METRIC_CONTRACT.annualizedSecuredCashYield.formula}` },
+  nomYieldAsk: { short: 'SCY Ask', full: `${PUT_METRIC_CONTRACT.securedCashYield.label} (Ask): ${PUT_METRIC_CONTRACT.securedCashYield.formula}` },
+  annYieldAsk: { short: 'Ann. SCY Ask', full: `${PUT_METRIC_CONTRACT.annualizedSecuredCashYield.label} (Ask): ${PUT_METRIC_CONTRACT.annualizedSecuredCashYield.formula}` },
 };
 
 export function isNominalYieldField(field: OptionYieldDisplayField): boolean {

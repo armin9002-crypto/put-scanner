@@ -15,11 +15,12 @@ import { Search, X, ChevronUp, ChevronDown, Loader2, AlertTriangle, RefreshCw, S
 import { useResponsiveMode } from '../lib/responsive';
 import MobileBottomSheet from '../components/mobile/MobileBottomSheet';
 import MobileOptionRow from '../components/mobile/MobileOptionRow';
-import { OPTION_QUOTE_TABLE_DISPLAY_ORDER, OPTION_YIELD_DISPLAY_ORDER, isNominalYieldField, type OptionQuoteTableDisplayField, type OptionYieldDisplayField } from '../lib/optionQuoteDisplay';
+import { OPTION_QUOTE_TABLE_DISPLAY_ORDER, OPTION_YIELD_DISPLAY_LABELS, OPTION_YIELD_DISPLAY_ORDER, isNominalYieldField, type OptionQuoteTableDisplayField, type OptionYieldDisplayField } from '../lib/optionQuoteDisplay';
+import { compareNullableValue } from '../lib/metricValue';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 
-type ScreenerSortField = 'ticker' | 'price' | 'expDate' | 'strike' | 'moneyness' | 'delta' | 'bid' | 'last' | 'ask' | 'iv' | 'nomYieldBid' | 'nomYieldAsk' | 'nomYieldLast' | 'annYieldBid' | 'annYieldAsk' | 'annYieldLast' | 'volume' | 'openInterest' | 'volOI' | 'ivRank';
+type ScreenerSortField = 'ticker' | 'price' | 'expDate' | 'strike' | 'moneyness' | 'delta' | 'bid' | 'last' | 'ask' | 'iv' | 'nomYieldBid' | 'nomYieldAsk' | 'nomYieldLast' | 'annYieldBid' | 'annYieldAsk' | 'annYieldLast' | 'volume' | 'openInterest' | 'volOI' | 'ivVsRealizedRange';
 type SortDir = 'asc' | 'desc';
 
 interface ScreenerCriteria {
@@ -30,7 +31,7 @@ interface ScreenerCriteria {
   yieldFilter: string;
   oiFilter: string;
   volFilter: string;
-  ivRankFilter: string;
+  ivVsRealizedRangeFilter: string;
 }
 
 interface DrawerSelection {
@@ -121,7 +122,7 @@ const VOL_OPTIONS = [
   { value: '>100', label: '>100' },
 ];
 
-const IVRANK_OPTIONS = [
+const IV_VS_REALIZED_RANGE_OPTIONS = [
   { value: 'all', label: 'All' },
   { value: 'below_20', label: 'Below 20%' },
   { value: 'below_40', label: 'Below 40%' },
@@ -169,7 +170,8 @@ function optionLabel(options: { value: string; label: string }[], value: string)
   return options.find(option => option.value === value)?.label ?? value;
 }
 
-function deltaColor(d: number): string {
+function deltaColor(d: number | null): string {
+  if (d == null || !Number.isFinite(d)) return 'var(--text-dim)';
   const abs = Math.abs(d);
   if (abs >= 0.7) return '#dc2626';
   if (abs >= 0.5) return '#ef4444';
@@ -194,10 +196,10 @@ function ivColor(iv: number | null): string {
   return 'var(--red)';
 }
 
-function ivRankColor(rank: number): string {
-  if (rank >= 70) return 'var(--red)';
-  if (rank >= 50) return 'var(--orange)';
-  if (rank >= 30) return 'var(--yellow)';
+function ivVsRealizedRangeColor(value: number): string {
+  if (value >= 70) return 'var(--red)';
+  if (value >= 50) return 'var(--orange)';
+  if (value >= 30) return 'var(--yellow)';
   return 'var(--green)';
 }
 
@@ -233,7 +235,7 @@ export default function ScreenerPage() {
   const [yieldFilter, setYieldFilter] = useState('all');
   const [oiFilter, setOiFilter] = useState('all');
   const [volFilter, setVolFilter] = useState('all');
-  const [ivRankFilter, setIvRankFilter] = useState('all');
+  const [ivVsRealizedRangeFilter, setIvVsRealizedRangeFilter] = useState('all');
   const [showVolOI, setShowVolOI] = useState(false);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
@@ -352,7 +354,7 @@ export default function ScreenerPage() {
     setYieldFilter('all');
     setOiFilter('all');
     setVolFilter('all');
-    setIvRankFilter('all');
+    setIvVsRealizedRangeFilter('all');
   };
 
   // Snapshot the visible criteria so Load always uses the current controls.
@@ -364,8 +366,8 @@ export default function ScreenerPage() {
     yieldFilter,
     oiFilter,
     volFilter,
-    ivRankFilter,
-  }), [selectedETFs, expFilter, deltaFilter, moneynessFilter, yieldFilter, oiFilter, volFilter, ivRankFilter]);
+    ivVsRealizedRangeFilter,
+  }), [selectedETFs, expFilter, deltaFilter, moneynessFilter, yieldFilter, oiFilter, volFilter, ivVsRealizedRangeFilter]);
 
   const currentCriteria = useMemo(() => getCurrentCriteria(), [getCurrentCriteria]);
 
@@ -378,10 +380,10 @@ export default function ScreenerPage() {
       ['Expiration', optionLabel(expDropdownOptions, currentCriteria.expFilter)],
       ['Delta', optionLabel(DELTA_OPTIONS, currentCriteria.deltaFilter)],
       ['Moneyness', optionLabel(MONEYNESS_OPTIONS, currentCriteria.moneynessFilter)],
-      ['Ann. Yield Bid', optionLabel(YIELD_OPTIONS, currentCriteria.yieldFilter)],
+      ['Ann. Secured-Cash Yield Bid', optionLabel(YIELD_OPTIONS, currentCriteria.yieldFilter)],
       ['Min OI', optionLabel(OI_OPTIONS, currentCriteria.oiFilter)],
       ['Min Volume', optionLabel(VOL_OPTIONS, currentCriteria.volFilter)],
-      ['IV Rank', optionLabel(IVRANK_OPTIONS, currentCriteria.ivRankFilter)],
+      ['IV vs 1Y Realized Range', optionLabel(IV_VS_REALIZED_RANGE_OPTIONS, currentCriteria.ivVsRealizedRangeFilter)],
     ];
   }, [currentCriteria, expDropdownOptions]);
 
@@ -458,7 +460,7 @@ export default function ScreenerPage() {
   const sortedRows = useMemo(() => {
     const sorted = [...rows];
     sorted.sort((a, b) => {
-      let aVal: number | string, bVal: number | string;
+      let aVal: number | string | null, bVal: number | string | null;
       switch (sortField) {
         case 'ticker': aVal = a.ticker; bVal = b.ticker; break;
         case 'price': aVal = a.currentPrice; bVal = b.currentPrice; break;
@@ -466,26 +468,23 @@ export default function ScreenerPage() {
         case 'strike': aVal = a.strike; bVal = b.strike; break;
         case 'moneyness': aVal = a.moneynessPct; bVal = b.moneynessPct; break;
         case 'delta': aVal = a.delta; bVal = b.delta; break;
-        case 'bid': aVal = a.bid ?? -1; bVal = b.bid ?? -1; break;
-        case 'last': aVal = a.last ?? -1; bVal = b.last ?? -1; break;
-        case 'ask': aVal = a.ask ?? -1; bVal = b.ask ?? -1; break;
-        case 'iv': aVal = a.iv ?? -1; bVal = b.iv ?? -1; break;
-        case 'nomYieldBid': aVal = a.nomYieldBid ?? -1; bVal = b.nomYieldBid ?? -1; break;
-        case 'nomYieldAsk': aVal = a.nomYieldAsk ?? -1; bVal = b.nomYieldAsk ?? -1; break;
-        case 'nomYieldLast': aVal = a.nomYieldLast ?? -1; bVal = b.nomYieldLast ?? -1; break;
-        case 'annYieldBid': aVal = a.annYieldBid ?? -1; bVal = b.annYieldBid ?? -1; break;
-        case 'annYieldAsk': aVal = a.annYieldAsk ?? -1; bVal = b.annYieldAsk ?? -1; break;
-        case 'annYieldLast': aVal = a.annYieldLast ?? -1; bVal = b.annYieldLast ?? -1; break;
-        case 'volume': aVal = a.volume ?? -1; bVal = b.volume ?? -1; break;
-        case 'openInterest': aVal = a.openInterest ?? -1; bVal = b.openInterest ?? -1; break;
-        case 'volOI': aVal = a.volOI ?? -1; bVal = b.volOI ?? -1; break;
-        case 'ivRank': aVal = a.ivRank ?? -1; bVal = b.ivRank ?? -1; break;
-        default: aVal = a.annYieldBid ?? -1; bVal = b.annYieldBid ?? -1;
+        case 'bid': aVal = a.bid; bVal = b.bid; break;
+        case 'last': aVal = a.last; bVal = b.last; break;
+        case 'ask': aVal = a.ask; bVal = b.ask; break;
+        case 'iv': aVal = a.iv; bVal = b.iv; break;
+        case 'nomYieldBid': aVal = a.nomYieldBid; bVal = b.nomYieldBid; break;
+        case 'nomYieldAsk': aVal = a.nomYieldAsk; bVal = b.nomYieldAsk; break;
+        case 'nomYieldLast': aVal = a.nomYieldLast; bVal = b.nomYieldLast; break;
+        case 'annYieldBid': aVal = a.annYieldBid; bVal = b.annYieldBid; break;
+        case 'annYieldAsk': aVal = a.annYieldAsk; bVal = b.annYieldAsk; break;
+        case 'annYieldLast': aVal = a.annYieldLast; bVal = b.annYieldLast; break;
+        case 'volume': aVal = a.volume; bVal = b.volume; break;
+        case 'openInterest': aVal = a.openInterest; bVal = b.openInterest; break;
+        case 'volOI': aVal = a.volOI; bVal = b.volOI; break;
+        case 'ivVsRealizedRange': aVal = a.ivVsRealizedRange; bVal = b.ivVsRealizedRange; break;
+        default: aVal = a.annYieldBid; bVal = b.annYieldBid;
       }
-      if (typeof aVal === 'string' && typeof bVal === 'string') {
-        return sortDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
-      }
-      return sortDir === 'asc' ? (aVal as number) - (bVal as number) : (bVal as number) - (aVal as number);
+      return compareNullableValue(aVal, bVal, sortDir);
     });
     return sorted;
   }, [rows, sortField, sortDir]);
@@ -513,12 +512,12 @@ export default function ScreenerPage() {
     ask: { field: 'ask', label: 'Ask', align: 'text-right', hideOnMobile: true },
   };
   const yieldColumns: Record<OptionYieldDisplayField, ScreenerColumn> = {
-    nomYieldLast: { field: 'nomYieldLast', label: 'Nom. Yield Last', align: 'text-right', hideOnMobile: true, hideOnTablet: true },
-    annYieldLast: { field: 'annYieldLast', label: 'Ann. Yield Last', align: 'text-right', hideOnMobile: true, hideOnTablet: true },
-    nomYieldBid: { field: 'nomYieldBid', label: 'Nom. Yield Bid', align: 'text-right', hideOnMobile: true, hideOnTablet: true },
-    annYieldBid: { field: 'annYieldBid', label: 'Ann. Yield Bid', align: 'text-right' },
-    nomYieldAsk: { field: 'nomYieldAsk', label: 'Nom. Yield Ask', align: 'text-right', hideOnMobile: true, hideOnTablet: true },
-    annYieldAsk: { field: 'annYieldAsk', label: 'Ann. Yield Ask', align: 'text-right', hideOnMobile: true },
+    nomYieldLast: { field: 'nomYieldLast', label: OPTION_YIELD_DISPLAY_LABELS.nomYieldLast.short, align: 'text-right', hideOnMobile: true, hideOnTablet: true },
+    annYieldLast: { field: 'annYieldLast', label: OPTION_YIELD_DISPLAY_LABELS.annYieldLast.short, align: 'text-right', hideOnMobile: true, hideOnTablet: true },
+    nomYieldBid: { field: 'nomYieldBid', label: OPTION_YIELD_DISPLAY_LABELS.nomYieldBid.short, align: 'text-right', hideOnMobile: true, hideOnTablet: true },
+    annYieldBid: { field: 'annYieldBid', label: OPTION_YIELD_DISPLAY_LABELS.annYieldBid.short, align: 'text-right' },
+    nomYieldAsk: { field: 'nomYieldAsk', label: OPTION_YIELD_DISPLAY_LABELS.nomYieldAsk.short, align: 'text-right', hideOnMobile: true, hideOnTablet: true },
+    annYieldAsk: { field: 'annYieldAsk', label: OPTION_YIELD_DISPLAY_LABELS.annYieldAsk.short, align: 'text-right', hideOnMobile: true },
   };
   const baseColumns: ScreenerColumn[] = [
     { field: 'ticker', label: 'Symbol', align: 'text-left' },
@@ -530,7 +529,7 @@ export default function ScreenerPage() {
     ...OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => quoteColumns[field]),
     { field: 'iv', label: 'Imp Vol', align: 'text-right', hideOnMobile: true },
     ...OPTION_YIELD_DISPLAY_ORDER.map(field => yieldColumns[field]),
-    { field: 'ivRank', label: 'IV Rank', align: 'text-right', hideOnMobile: true },
+    { field: 'ivVsRealizedRange', label: 'IV vs 1Y RV', align: 'text-right', hideOnMobile: true },
   ];
 
   const volOIColumns: ScreenerColumn[] = [
@@ -550,14 +549,14 @@ export default function ScreenerPage() {
     yieldFilter !== 'all',
     oiFilter !== 'all',
     volFilter !== 'all',
-    ivRankFilter !== 'all',
+    ivVsRealizedRangeFilter !== 'all',
   ].filter(Boolean).length;
 
   if (isPhone) {
     const activeCriteria = [
       deltaFilter !== 'all' ? `Δ ${DELTA_OPTIONS.find(option => option.value === deltaFilter)?.label}` : null,
       moneynessFilter !== 'all' ? MONEYNESS_OPTIONS.find(option => option.value === moneynessFilter)?.label : null,
-      yieldFilter !== 'all' ? `AY ${YIELD_OPTIONS.find(option => option.value === yieldFilter)?.label}` : null,
+      yieldFilter !== 'all' ? `Ann. SCY ${YIELD_OPTIONS.find(option => option.value === yieldFilter)?.label}` : null,
       oiFilter !== 'all' ? `OI ${OI_OPTIONS.find(option => option.value === oiFilter)?.label}` : null,
     ].filter(Boolean).join(' · ') || 'All deltas · All moneyness · All yields';
     const resetFilters = () => clearFilters();
@@ -577,7 +576,7 @@ export default function ScreenerPage() {
 
         <div className="flex min-h-[46px] items-center gap-2 border-b px-3.5" style={{ borderColor: 'var(--border)' }}>
           <h2 className="mr-auto text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Results <span className="font-mono font-normal" style={{ color: 'var(--text-muted)' }}>{loaded ? sortedRows.length : '—'}</span></h2>
-          <select value={sortField} onChange={event => setSortField(event.target.value as ScreenerSortField)} className="min-h-11 min-w-0 rounded-lg px-2 text-[12px] outline-none" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} aria-label="Sort screener results"><option value="annYieldBid">Annualized yield</option><option value="ticker">Ticker</option><option value="expDate">Expiration</option><option value="strike">Strike</option><option value="delta">Delta</option><option value="last">Last</option><option value="bid">Bid</option><option value="ask">Ask</option><option value="iv">IV</option><option value="openInterest">Open interest</option></select>
+          <select value={sortField} onChange={event => setSortField(event.target.value as ScreenerSortField)} className="min-h-11 min-w-0 rounded-lg px-2 text-[12px] outline-none" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} aria-label="Sort screener results"><option value="annYieldBid">Ann. secured-cash yield</option><option value="ticker">Ticker</option><option value="expDate">Expiration</option><option value="strike">Strike</option><option value="delta">Delta</option><option value="last">Last</option><option value="bid">Bid</option><option value="ask">Ask</option><option value="iv">IV</option><option value="openInterest">Open interest</option></select>
           <button type="button" onClick={() => setSortDir(current => current === 'asc' ? 'desc' : 'asc')} className="pressable flex h-11 w-11 items-center justify-center rounded-lg text-sm font-semibold" aria-label={`Sort ${sortDir === 'asc' ? 'descending' : 'ascending'}`} style={{ color: 'var(--accent-light)' }}>{sortDir === 'asc' ? '↑' : '↓'}</button>
         </div>
 
@@ -589,7 +588,7 @@ export default function ScreenerPage() {
           <div className="space-y-4">
             <div><span className="mobile-sheet-label">ETFs</span><div className="flex min-h-11 flex-wrap gap-1.5 rounded-lg border p-1.5" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--input-bg)' }}>{selectedETFs.map(etf => <span key={etf.ticker} className="inline-flex items-center gap-1 rounded-md px-2 text-xs" style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)' }}>{etf.ticker}<button type="button" onClick={() => removeETF(etf.ticker)} className="flex h-7 w-7 items-center justify-center" aria-label={`Remove ${etf.ticker}`}><X className="h-3 w-3" /></button></span>)}<input value={etfSearch} onChange={event => { setEtfSearch(event.target.value); setShowEtfDropdown(true); }} onFocus={() => setShowEtfDropdown(true)} placeholder={selectedETFs.length ? 'Add ETF' : 'All ETFs'} className="min-w-[100px] flex-1 bg-transparent px-2 text-base outline-none" style={{ color: 'var(--text)' }} /></div>{showEtfDropdown && etfOptions.length > 0 && <div className="mt-1 max-h-40 overflow-y-auto rounded-lg border" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>{etfOptions.slice(0, 20).map(etf => <button type="button" key={etf.ticker} onClick={() => addETF(etf)} className="flex min-h-11 w-full items-center gap-2 border-b px-3 text-left" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}><b className="font-mono">{etf.ticker}</b><span className="truncate text-xs" style={{ color: 'var(--text-muted)' }}>{etf.name}</span></button>)}</div>}</div>
             <ExpirationFilter value={expFilter} onChange={setExpFilter} options={expDropdownOptions} loadingDates={loadingDates} datesLoaded={datesLoaded} />
-            {([['Delta (abs)', deltaFilter, setDeltaFilter, DELTA_OPTIONS], ['Moneyness', moneynessFilter, setMoneynessFilter, MONEYNESS_OPTIONS], ['Ann. Yield Bid', yieldFilter, setYieldFilter, YIELD_OPTIONS], ['Minimum OI', oiFilter, setOiFilter, OI_OPTIONS], ['Minimum Volume', volFilter, setVolFilter, VOL_OPTIONS], ['IV Rank', ivRankFilter, setIvRankFilter, IVRANK_OPTIONS]] as const).map(([label, value, setter, options]) => <label key={label} className="block"><span className="mobile-sheet-label">{label}</span><select value={value} onChange={event => setter(event.target.value)} className="mobile-control-field w-full">{options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>)}
+            {([['Delta (abs)', deltaFilter, setDeltaFilter, DELTA_OPTIONS], ['Moneyness', moneynessFilter, setMoneynessFilter, MONEYNESS_OPTIONS], ['Ann. Secured-Cash Yield Bid', yieldFilter, setYieldFilter, YIELD_OPTIONS], ['Minimum OI', oiFilter, setOiFilter, OI_OPTIONS], ['Minimum Volume', volFilter, setVolFilter, VOL_OPTIONS], ['IV vs 1Y Realized Range', ivVsRealizedRangeFilter, setIvVsRealizedRangeFilter, IV_VS_REALIZED_RANGE_OPTIONS]] as const).map(([label, value, setter, options]) => <label key={label} className="block"><span className="mobile-sheet-label">{label}</span><select value={value} onChange={event => setter(event.target.value)} className="mobile-control-field w-full">{options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>)}
           </div>
         </MobileBottomSheet>}
 
@@ -705,7 +704,7 @@ export default function ScreenerPage() {
 
             {/* Ann Yield */}
             <div className="w-full sm:w-auto min-w-0">
-              <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Ann. Yield Bid</label>
+              <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Ann. Secured-Cash Yield Bid</label>
               <select value={yieldFilter} onChange={e => setYieldFilter(e.target.value)}
                 className="w-full sm:w-auto rounded-lg px-3 py-2 sm:py-1.5 text-base sm:text-xs outline-none cursor-pointer min-h-[44px] sm:min-h-0"
                 style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
@@ -733,13 +732,13 @@ export default function ScreenerPage() {
               </select>
             </div>
 
-            {/* IV Rank */}
+            {/* Current ATM implied volatility versus trailing realized-volatility range. */}
             <div className="w-full sm:w-auto min-w-0">
-              <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>IV Rank</label>
-              <select value={ivRankFilter} onChange={e => setIvRankFilter(e.target.value)}
+              <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }} title="Current ATM put IV positioned in the trailing 1-year range of 4-week realized volatility. Not traditional historical IV Rank.">IV vs 1Y Realized Range</label>
+              <select value={ivVsRealizedRangeFilter} onChange={e => setIvVsRealizedRangeFilter(e.target.value)}
                 className="w-full sm:w-auto rounded-lg px-3 py-2 sm:py-1.5 text-base sm:text-xs outline-none cursor-pointer min-h-[44px] sm:min-h-0"
                 style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
-                {IVRANK_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                {IV_VS_REALIZED_RANGE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
 
@@ -912,7 +911,7 @@ export default function ScreenerPage() {
           {loaded && sortedRows.length === 0 && (
             <div className="rounded-xl px-5 py-10 text-center" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
               <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No matching options</p>
-              <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Try relaxing Delta, Moneyness, or Annualized Yield.</p>
+              <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Try relaxing Delta, Moneyness, or Annualized Secured-Cash Yield.</p>
               <button type="button" onClick={() => setMobileFiltersOpen(true)} className="tap-target mt-4 rounded-lg px-4 text-xs font-semibold" style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)', border: '1px solid var(--accent-border)' }}>Adjust filters</button>
             </div>
           )}
@@ -942,7 +941,7 @@ export default function ScreenerPage() {
                   ['Last', `$${formatPrice(row.last)}`, 'var(--text)'],
                   ['Bid', `$${formatPrice(row.bid)}`, 'var(--green)'],
                   ['Ask', `$${formatPrice(row.ask)}`, 'var(--text)'],
-                  ['AY Bid', row.annYieldBid != null ? `${row.annYieldBid.toFixed(1)}%` : '—', annYieldColor(row.annYieldBid)],
+                  ['Ann. SCY Bid', row.annYieldBid != null ? `${row.annYieldBid.toFixed(1)}%` : '—', annYieldColor(row.annYieldBid)],
                 ].map(([label, value, color]) => (
                   <div key={label} className="min-w-0 rounded-lg p-2 text-center" style={{ backgroundColor: 'var(--surface-alt)' }}>
                     <div className="truncate text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>{label}</div>
@@ -950,7 +949,7 @@ export default function ScreenerPage() {
                   </div>
                 ))}
               </div>
-              <p className="mt-2 text-[11px] font-mono" style={{ color: 'var(--text-muted)' }}>Δ {row.delta.toFixed(2)} · IV {row.iv != null ? `${row.iv.toFixed(1)}%` : '—'}</p>
+              <p className="mt-2 text-[11px] font-mono" style={{ color: 'var(--text-muted)' }}>Δ {row.delta != null ? row.delta.toFixed(2) : '—'} · IV {row.iv != null ? `${row.iv.toFixed(1)}%` : '—'}</p>
               {showVolOI && <p className="mt-2 text-[11px] font-mono" style={{ color: 'var(--text-muted)' }}>Vol {formatNumber(row.volume)} · OI {formatNumber(row.openInterest)} · Vol/OI {row.volOI?.toFixed(2) ?? '—'}</p>}
             </article>
           ))}
@@ -1052,7 +1051,7 @@ export default function ScreenerPage() {
                         {row.moneynessLabel}
                       </td>
                       <td className="px-2 py-1 text-right font-mono" style={{ color: deltaColor(row.delta) }}>
-                        {row.delta.toFixed(2)}
+                        {row.delta != null ? row.delta.toFixed(2) : '—'}
                       </td>
                       {OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => <td key={field} className={`px-2 py-1 text-right font-mono ${field === 'bid' ? '' : 'hidden md:table-cell'}`} style={{ color: 'var(--text)' }}>{formatPrice(row[field])}</td>)}
                       <td className="px-2 py-1 text-right font-mono hidden md:table-cell" style={{ color: ivColor(row.iv) }}>
@@ -1064,8 +1063,8 @@ export default function ScreenerPage() {
                         const nominal = isNominalYieldField(field);
                         return <td key={field} className={`px-2 py-1 text-right font-mono ${nominal ? '' : 'font-medium'} ${column.hideOnMobile ? 'hidden md:table-cell' : ''} ${column.hideOnTablet ? 'hidden lg:table-cell' : ''}`} style={{ color: nominal ? 'var(--text-secondary)' : annYieldColor(value) }}>{value != null ? value.toFixed(2) + '%' : '—'}</td>;
                       })}
-                      <td className="px-2 py-1 text-right font-mono hidden md:table-cell" style={{ color: row.ivRank != null ? ivRankColor(row.ivRank) : 'var(--text-dim)' }}>
-                        {row.ivRank != null ? row.ivRank.toFixed(0) + '%' : '—'}
+                      <td className="px-2 py-1 text-right font-mono hidden md:table-cell" title="Current ATM put IV positioned in the trailing 1-year range of 4-week realized volatility. Not traditional historical IV Rank." style={{ color: row.ivVsRealizedRange != null ? ivVsRealizedRangeColor(row.ivVsRealizedRange) : 'var(--text-dim)' }}>
+                        {row.ivVsRealizedRange != null ? row.ivVsRealizedRange.toFixed(0) + '%' : '—'}
                       </td>
                       {showVolOI && (
                         <>

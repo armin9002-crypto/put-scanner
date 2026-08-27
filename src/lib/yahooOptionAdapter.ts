@@ -82,7 +82,7 @@ function mapYahooPut(contract: YahooOptionContract & { strike: number }): Option
     lastTradeDate: normalizeTimestampSeconds(contract.lastTradeDate),
     bid: normalizeNonNegativeNumber(contract.bid),
     ask: normalizeNonNegativeNumber(contract.ask),
-    delta: yahooDelta != null && yahooDelta !== 0 ? (yahooDelta > 0 ? -yahooDelta : yahooDelta) : null,
+    delta: yahooDelta != null && Math.abs(yahooDelta) <= 1 ? (yahooDelta > 0 ? -yahooDelta : yahooDelta) : null,
     gamma: contract.greeks?.gamma ?? contract.gamma ?? null,
     theta: contract.greeks?.theta ?? contract.theta ?? null,
     vega: contract.greeks?.vega ?? contract.vega ?? null,
@@ -128,13 +128,14 @@ function validateYahooPutContract(contract: YahooOptionContract, requestedExpira
 
 export function normalizeOptionChainData(data: unknown, ticker: string, date: number | undefined, cacheKey: string, source: OptionChainSource, previousCachedPutCount: number | null): OptionsChainData {
   const result = (data as { optionChain?: { result?: unknown[] } })?.optionChain?.result?.[0] as {
-    quote?: { regularMarketPrice?: number | null };
+    quote?: { regularMarketPrice?: number | null; longName?: string | null; shortName?: string | null; quoteType?: string | null };
     expirationDates?: number[];
     options?: Array<{ puts?: YahooOptionContract[]; calls?: YahooOptionContract[]; expirationDate?: number }>;
   } | undefined;
   const fetchedAt = Date.now();
   if (!result) return {
     expirations: [], puts: [], currentPrice: 0,
+    instrument: { name: null, quoteType: null },
     chainMeta: { ticker, requestedExpiration: date ?? null, returnedExpiration: null, expirationDate: null, fetchedAt, source, fresh: source === 'fresh', cacheKey, putCount: 0, callCount: 0, putStrikeMin: null, putStrikeMax: null, callStrikeMin: null, callStrikeMax: null, yahooExpirationDatesCount: 0, previousCachedPutCount },
   };
 
@@ -163,6 +164,10 @@ export function normalizeOptionChainData(data: unknown, ticker: string, date: nu
   const puts = [...putsByStrike.values()].sort((a, b) => a.strike - b.strike);
   return {
     expirations, puts, currentPrice,
+    instrument: {
+      name: result.quote?.longName?.trim() || result.quote?.shortName?.trim() || null,
+      quoteType: result.quote?.quoteType?.trim().toUpperCase() || null,
+    },
     chainMeta: { ticker, requestedExpiration, returnedExpiration: chainExpiration, expirationDate: chainExpiration, fetchedAt, source, fresh: source === 'fresh', cacheKey, putCount: puts.length, callCount: callsRaw.length, putStrikeMin: putRange.min, putStrikeMax: putRange.max, callStrikeMin: callRange.min, callStrikeMax: callRange.max, yahooExpirationDatesCount: expirationDates.length, previousCachedPutCount, validationWarnings },
   };
 }

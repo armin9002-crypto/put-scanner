@@ -4,7 +4,8 @@
   "functions": {
     "api/etf-pulse.js": { "maxDuration": 60 },
     "api/screener-batch.js": { "maxDuration": 60 },
-    "api/screener-expirations.js": { "maxDuration": 60 }
+    "api/screener-expirations.js": { "maxDuration": 60 },
+    "api/ticker-detail.js": { "maxDuration": 60 }
   },
   "rewrites": [
     { "source": "/((?!api/).*)", "destination": "/index.html" }

@@ -8,8 +8,36 @@ function normalCDF(value: number): number {
   return 0.5 * (1.0 + sign * y);
 }
 
-export function calculatePutDelta(S: number, K: number, T: number, r: number, sigma: number): number {
-  if (T <= 0 || sigma <= 0) return -0.5;
+function positiveFinite(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0;
+}
+
+export function calculatePutDelta(S: number, K: number, T: number, r: number, sigma: number): number | null {
+  if (!positiveFinite(S) || !positiveFinite(K) || !positiveFinite(T) || !positiveFinite(sigma) || !Number.isFinite(r)) return null;
   const d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * Math.sqrt(T));
-  return normalCDF(d1) - 1;
+  const delta = normalCDF(d1) - 1;
+  return Number.isFinite(delta) && delta >= -1 && delta <= 0 ? delta : null;
+}
+
+export function resolvePutDelta({
+  providerDelta,
+  underlyingPrice,
+  strike,
+  dte,
+  impliedVolatilityPercent,
+  riskFreeRate = 0.045,
+}: {
+  providerDelta: number | null | undefined;
+  underlyingPrice: number | null | undefined;
+  strike: number | null | undefined;
+  dte: number | null | undefined;
+  impliedVolatilityPercent: number | null | undefined;
+  riskFreeRate?: number;
+}): number | null {
+  if (typeof dte === 'number' && Number.isFinite(dte) && dte < 0) return null;
+  if (typeof providerDelta === 'number' && Number.isFinite(providerDelta) && Math.abs(providerDelta) <= 1) {
+    return providerDelta > 0 ? -providerDelta : providerDelta;
+  }
+  if (!positiveFinite(underlyingPrice) || !positiveFinite(strike) || !positiveFinite(dte) || !positiveFinite(impliedVolatilityPercent)) return null;
+  return calculatePutDelta(underlyingPrice, strike, dte / 365, riskFreeRate, impliedVolatilityPercent / 100);
 }

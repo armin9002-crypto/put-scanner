@@ -10,7 +10,7 @@ import {
   type WatchlistSnapshot,
   type WatchlistStatus,
 } from '../lib/watchlist';
-import { fetchOptions, fetchBatchPrices, calculatePutDelta } from '../lib/api';
+import { fetchOptions, fetchBatchPrices } from '../lib/api';
 import type { OptionsChainData } from '../lib/types';
 import { calculateDte, calculateMoneyness, calculateYieldPercent, isFiniteNumber } from '../lib/optionMetrics';
 import { formatDate as formatDisplayDate, formatOptionPrice, formatPercentPoints } from '../lib/format';
@@ -21,6 +21,8 @@ import { useResponsiveMode } from '../lib/responsive';
 import MobileOptionRow from '../components/mobile/MobileOptionRow';
 import { OPTION_QUOTE_DISPLAY_LABELS, OPTION_QUOTE_TABLE_DISPLAY_ORDER, OPTION_YIELD_DISPLAY_LABELS, OPTION_YIELD_DISPLAY_ORDER, isNominalYieldField, type OptionQuoteTableDisplayField, type OptionYieldDisplayField } from '../lib/optionQuoteDisplay';
 import { acquireOptionChains, canonicalOptionChainKey } from '../lib/optionChainRequests';
+import { resolvePutDelta } from '../lib/putDelta';
+import { compareNullableValue } from '../lib/metricValue';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 
@@ -207,13 +209,13 @@ function mergeLiveItem(item: WatchlistItem, optData: OptionsChainData | null, cu
   }
 
   const iv = put.impliedVolatility ?? null;
-  let delta = put.delta;
-  if ((!isFiniteNumber(delta) || delta === 0) && isFiniteNumber(underlyingPrice) && underlyingPrice > 0 && isFiniteNumber(dte) && dte > 0) {
-    const sigma = isFiniteNumber(iv) && iv > 0 ? iv / 100 : 0.80;
-    delta = calculatePutDelta(underlyingPrice, item.strike, dte / 365, 0.045, sigma);
-  }
-  if (isFiniteNumber(delta) && delta > 0) delta = -delta;
-  if (isFiniteNumber(delta) && delta > -0.01 && delta <= 0) delta = -0.01;
+  const delta = resolvePutDelta({
+    providerDelta: put.delta,
+    underlyingPrice,
+    strike: item.strike,
+    dte,
+    impliedVolatilityPercent: iv,
+  });
 
   const bidYield = calculateYieldPercent(put.bid, item.strike, dte);
   const askYield = calculateYieldPercent(put.ask, item.strike, dte);
@@ -330,31 +332,28 @@ export default function WatchlistPage() {
   const sortedRows = useMemo(() => {
     const sorted = [...rows];
     sorted.sort((a, b) => {
-      let aVal: number | string, bVal: number | string;
+      let aVal: number | string | null, bVal: number | string | null;
       switch (sortField) {
         case 'ticker': aVal = a.ticker; bVal = b.ticker; break;
         case 'strike': aVal = a.strike; bVal = b.strike; break;
         case 'expiry': aVal = a.expiry; bVal = b.expiry; break;
-        case 'dte': aVal = a.dte ?? Number.MAX_SAFE_INTEGER; bVal = b.dte ?? Number.MAX_SAFE_INTEGER; break;
-        case 'moneyness': aVal = a.moneynessPct ?? -999; bVal = b.moneynessPct ?? -999; break;
-        case 'bid': aVal = a.bid ?? -1; bVal = b.bid ?? -1; break;
-        case 'ask': aVal = a.ask ?? -1; bVal = b.ask ?? -1; break;
-        case 'last': aVal = a.last ?? -1; bVal = b.last ?? -1; break;
-        case 'delta': aVal = a.delta ?? -999; bVal = b.delta ?? -999; break;
-        case 'iv': aVal = a.iv ?? -1; bVal = b.iv ?? -1; break;
-        case 'nomYieldBid': aVal = a.nomYieldBid ?? -1; bVal = b.nomYieldBid ?? -1; break;
-        case 'annYieldBid': aVal = a.annYieldBid ?? -1; bVal = b.annYieldBid ?? -1; break;
-        case 'nomYieldAsk': aVal = a.nomYieldAsk ?? -1; bVal = b.nomYieldAsk ?? -1; break;
-        case 'annYieldAsk': aVal = a.annYieldAsk ?? -1; bVal = b.annYieldAsk ?? -1; break;
-        case 'nomYieldLast': aVal = a.nomYieldLast ?? -1; bVal = b.nomYieldLast ?? -1; break;
-        case 'annYieldLast': aVal = a.annYieldLast ?? -1; bVal = b.annYieldLast ?? -1; break;
+        case 'dte': aVal = a.dte; bVal = b.dte; break;
+        case 'moneyness': aVal = a.moneynessPct; bVal = b.moneynessPct; break;
+        case 'bid': aVal = a.bid; bVal = b.bid; break;
+        case 'ask': aVal = a.ask; bVal = b.ask; break;
+        case 'last': aVal = a.last; bVal = b.last; break;
+        case 'delta': aVal = a.delta; bVal = b.delta; break;
+        case 'iv': aVal = a.iv; bVal = b.iv; break;
+        case 'nomYieldBid': aVal = a.nomYieldBid; bVal = b.nomYieldBid; break;
+        case 'annYieldBid': aVal = a.annYieldBid; bVal = b.annYieldBid; break;
+        case 'nomYieldAsk': aVal = a.nomYieldAsk; bVal = b.nomYieldAsk; break;
+        case 'annYieldAsk': aVal = a.annYieldAsk; bVal = b.annYieldAsk; break;
+        case 'nomYieldLast': aVal = a.nomYieldLast; bVal = b.nomYieldLast; break;
+        case 'annYieldLast': aVal = a.annYieldLast; bVal = b.annYieldLast; break;
         case 'added': aVal = a.addedAt; bVal = b.addedAt; break;
-        default: aVal = a.dte ?? Number.MAX_SAFE_INTEGER; bVal = b.dte ?? Number.MAX_SAFE_INTEGER;
+        default: aVal = a.dte; bVal = b.dte;
       }
-      if (typeof aVal === 'string' && typeof bVal === 'string') {
-        return sortDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
-      }
-      return sortDir === 'asc' ? (aVal as number) - (bVal as number) : (bVal as number) - (aVal as number);
+      return compareNullableValue(aVal, bVal, sortDir);
     });
     return sorted;
   }, [rows, sortField, sortDir]);
@@ -401,7 +400,7 @@ export default function WatchlistPage() {
       <div className="mobile-route-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
         <div className="flex min-h-[52px] items-center gap-2 border-b px-3.5" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
           <div className="mr-auto"><div className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{items.length} saved {items.length === 1 ? 'contract' : 'contracts'}</div><div className="text-[10px]" style={{ color: 'var(--text-dim)' }}>{lastRefreshed ? `Updated ${lastRefreshed.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Saved snapshots'}</div></div>
-          <select value={sortField} onChange={event => setSortField(event.target.value as SortField)} className="min-h-11 min-w-0 max-w-[94px] rounded-lg px-2 text-[12px] outline-none" aria-label="Sort watchlist" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}><option value="dte">DTE</option><option value="ticker">Ticker</option><option value="annYieldBid">AY Bid</option><option value="strike">Strike</option><option value="delta">Delta</option><option value="iv">IV</option><option value="added">Added</option></select>
+          <select value={sortField} onChange={event => setSortField(event.target.value as SortField)} className="min-h-11 min-w-0 max-w-[112px] rounded-lg px-2 text-[12px] outline-none" aria-label="Sort watchlist" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}><option value="dte">DTE</option><option value="ticker">Ticker</option><option value="annYieldBid">Ann. SCY Bid</option><option value="strike">Strike</option><option value="delta">Delta</option><option value="iv">IV</option><option value="added">Added</option></select>
           <button type="button" onClick={() => setSortDir(current => current === 'asc' ? 'desc' : 'asc')} className="pressable flex h-11 w-11 flex-none items-center justify-center rounded-lg text-sm font-semibold" aria-label={`Sort ${sortDir === 'asc' ? 'descending' : 'ascending'}`} style={{ color: 'var(--accent-light)' }}>{sortDir === 'asc' ? '↑' : '↓'}</button>
           <button type="button" onClick={() => void handleRefresh(true)} disabled={loading || items.length === 0} className="pressable flex h-11 w-11 items-center justify-center rounded-lg disabled:opacity-40" aria-label="Refresh watchlist" style={{ color: 'var(--accent-light)' }}>{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}</button>
         </div>
