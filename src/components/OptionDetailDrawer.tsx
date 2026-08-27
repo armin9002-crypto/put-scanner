@@ -4,8 +4,10 @@ import { X } from 'lucide-react';
 import {
   calculateBidAskSpread,
   calculateBidAskSpreadPercent,
+  calculateAnnualizedSecuredCashYield,
   calculateBreakeven,
   calculatePositionMetrics,
+  calculateSecuredCashYield,
   isFiniteNumber,
 } from '../lib/optionMetrics';
 import { formatCurrency, formatNumber, formatPercent, normalizeTimestampMs } from '../lib/format';
@@ -239,6 +241,8 @@ export default function OptionDetailDrawer({
     underlyingPrice,
   });
   const topBreakeven = calculateBreakeven(option.strike, activeSoldPrice);
+  const securedCashYield = calculateSecuredCashYield(activeSoldPrice, option.strike);
+  const annualizedSecuredCashYield = calculateAnnualizedSecuredCashYield(activeSoldPrice, option.strike, dte);
 
   const setSoldPriceFromQuote = (value: number | null | undefined) => {
     if (isFiniteNumber(value) && value >= 0) setSoldPrice(value.toFixed(2));
@@ -277,7 +281,9 @@ export default function OptionDetailDrawer({
                 <span className="font-mono text-[26px] font-semibold tabular-nums" style={{ color: 'var(--accent-light)' }}>{formatCurrency(activeSoldPrice)}</span>
               </div>
               <div className="mt-1 divide-y" style={{ borderColor: 'var(--border)' }}>
-                <DetailRow label="Annualized Net-Risk Return" value={formatPercent(positionMetrics.annualizedReturn)} color="var(--green)" />
+                <DetailRow label="Secured-Cash Yield" value={formatPercent(securedCashYield)} color="var(--accent-light)" />
+                <DetailRow label="Annualized Secured-Cash Yield" value={formatPercent(annualizedSecuredCashYield)} color="var(--green)" />
+                <DetailRow label="Annualized Net-Risk Return" value={formatPercent(positionMetrics.annualizedReturn)} />
                 <DetailRow label="Delta" value={formatPlainNumber(option.delta, 3)} />
                 <DetailRow label="Moneyness" value={option.otmItmLabel || '—'} color={option.otmItmColor || undefined} />
                 <DetailRow label="Breakeven" value={formatCurrency(topBreakeven)} />
@@ -295,6 +301,8 @@ export default function OptionDetailDrawer({
               <div className="mt-3 divide-y" style={{ borderColor: 'var(--border)' }}>
                 <DetailRow label="Premium" value={formatCurrency(positionMetrics.totalPremium)} color="var(--green)" />
                 <DetailRow label="Net Maximum-Loss Capital" value={formatCurrency(positionMetrics.netCapitalAtRisk)} />
+                <DetailRow label="Secured-Cash Yield" value={formatPercent(securedCashYield)} color="var(--accent-light)" />
+                <DetailRow label="Annualized Secured-Cash Yield" value={formatPercent(annualizedSecuredCashYield)} color="var(--green)" />
                 <DetailRow label="Net-Risk Return" value={formatPercent(positionMetrics.returnOnRisk)} color="var(--accent-light)" />
                 <DetailRow label="Annualized Net-Risk Return" value={formatPercent(positionMetrics.annualizedReturn)} color="var(--green)" />
               </div>
@@ -357,7 +365,7 @@ export default function OptionDetailDrawer({
           <MetricCard label="Option Price" value={formatCurrency(activeSoldPrice)} color="var(--accent-light)" />
           <MetricCard label="Breakeven" value={formatCurrency(topBreakeven)} />
           <MetricCard label="Downside Cushion" value={formatPercent(positionMetrics.downsideCushion)} color={isFiniteNumber(positionMetrics.downsideCushion) && positionMetrics.downsideCushion >= 0 ? 'var(--green)' : 'var(--red)'} />
-          <MetricCard label="Ann. Net-Risk Return" value={formatPercent(positionMetrics.annualizedReturn)} color={isFiniteNumber(positionMetrics.annualizedReturn) && positionMetrics.annualizedReturn >= 0.25 ? 'var(--green)' : 'var(--yellow)'} />
+          <MetricCard label="Ann. Secured-Cash Yield" value={formatPercent(annualizedSecuredCashYield)} color={isFiniteNumber(annualizedSecuredCashYield) && annualizedSecuredCashYield >= 0.25 ? 'var(--green)' : 'var(--yellow)'} />
         </div>
 
         <div className="space-y-3">
@@ -439,6 +447,8 @@ export default function OptionDetailDrawer({
             <DetailRow label="Gross Secured Cash" value={formatCurrency(positionMetrics.equityAtRisk)} />
             <DetailRow label="Net Maximum-Loss Capital" value={formatCurrency(positionMetrics.netCapitalAtRisk)} color="var(--red)" />
             <DetailRow label="Breakeven" value={formatCurrency(positionMetrics.breakeven)} />
+            <DetailRow label="Secured-Cash Yield" value={formatPercent(securedCashYield)} color="var(--accent-light)" />
+            <DetailRow label="Annualized Secured-Cash Yield" value={formatPercent(annualizedSecuredCashYield)} color="var(--green)" />
             <DetailRow label="Net-Risk Return" value={formatPercent(positionMetrics.returnOnRisk)} color="var(--accent-light)" />
             <DetailRow label="Annualized Net-Risk Return" value={formatPercent(positionMetrics.annualizedReturn)} color="var(--green)" />
           </Section>

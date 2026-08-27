@@ -2,6 +2,8 @@
 
 Stage 6B.1 implementation date: 2026-08-26
 
+> **Status after Stage 6B.2:** this document is a future separate-product/design reference, not the current Put Scanner implementation roadmap. Put Scanner retains its existing bounded universe and should prioritize reliability, observability, and browser E2E. No broader universe or Saved Underlyings work is currently recommended.
+
 ## Implemented on-demand and asset-aware layer
 
 Stage 6B.1 implements one explicit on-demand ticker at a time while leaving Scanner, Screener, Pulse, Watchlist, Portfolio, and cloud schemas unchanged.
@@ -18,7 +20,7 @@ Stage 6B.1 implements one explicit on-demand ticker at a time while leaving Scan
 
 The initial detail browser path is consolidated behind one `/api/ticker-detail` call. The request reuses its initial option chain for row data, Delta inputs, and the current ATM-IV observation, while separately and concurrently acquiring bounded daily/intraday price context and one trailing weekly realized-volatility series. Browser-local caching remains bounded by ticker/expiry; there is no giant global cache, prefetch, polling, crawler, background refresh, or cross-user database cache.
 
-The current recommended next curated size is **25–30 total reviewed discovery symbols** as a first experiment, not 42 leveraged ETFs plus 35–50 stocks. Saved Underlyings should precede broad Scanner expansion. A later 35–50-symbol selectable Screener needs a capped exact-symbol batch endpoint, canonical keys, maximum two expiries per symbol, partial-safe results, concurrency/payload limits, and visible request budgeting before activation.
+If a separate future product reopens broad-universe discovery, an early experiment could use **25–30 total reviewed discovery symbols**, not 42 leveraged ETFs plus 35–50 stocks. Such a product would need capped exact-symbol batching, canonical keys, maximum expiry limits, partial-safe results, concurrency/payload limits, and visible request budgeting before activation.
 
 ## Stage 6A baseline and long-range reference
 

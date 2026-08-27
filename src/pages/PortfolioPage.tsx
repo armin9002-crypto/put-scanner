@@ -62,8 +62,7 @@ import ErrorBoundary from '../components/ErrorBoundary';
 import DataFreshness from '../components/DataFreshness';
 import { persistCollapsedExpirationGroups, persistCollapsedUnderlyingGroups, persistPortfolioGroupMode, readCollapsedExpirationGroups, readCollapsedUnderlyingGroups, readPortfolioGroupMode, setAllExpirationGroupsCollapsed, toggleCollapsedExpirationGroup, type PortfolioGroupMode } from '../lib/portfolioSchedulePreferences';
 import { buildHistoryAnalytics, buildMonthlyRealizedPnl, filterHistoryTrades, historyDaysHeld, historyRealizedIrr, type HistoryOutcome } from '../lib/portfolioHistoryAnalytics';
-import { resolvePortfolioEntryVix } from '../lib/portfolioEntryVix';
-import { applyTransientPortfolioMarketData } from '../lib/portfolioMarketRefresh';
+import { applyTransientPortfolioMarketData, mergePortfolioLifecycleResults, mergePortfolioMarketRefresh } from '../lib/portfolioMarketRefresh';
 import { useResponsiveMode } from '../lib/responsive';
 import MobileBottomSheet from '../components/mobile/MobileBottomSheet';
 import MobileSegmentedControl from '../components/mobile/MobileSegmentedControl';
@@ -80,6 +79,7 @@ import {
 import { OPTION_QUOTE_TABLE_DISPLAY_ORDER, orderedOptionQuoteEntries } from '../lib/optionQuoteDisplay';
 import { persistPortfolioMarkBasis, readPortfolioMarkBasis } from '../lib/portfolioMarkPreference';
 import { persistShowNominalYield, readShowNominalYield } from '../lib/optionTablePreferences';
+import { buildCloseCandidates, buildNeedsAttention, getRedeployBadges, type CloseCandidate } from '../lib/portfolioPolicies';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 const PortfolioScreenshotImportModal = lazy(() => import('../components/PortfolioScreenshotImportModal'));
@@ -99,16 +99,6 @@ interface DrawerSelection {
   expirationLabel: string;
   dte: number | null;
   underlyingPrice: number | null;
-}
-
-interface CloseCandidate {
-  trade: PortfolioTrade;
-  percentCaptured: number | null;
-  currentAnnualizedYield: number | null;
-  remainingPremium: number | null;
-  dte: number | null;
-  score: number;
-  reasons: string[];
 }
 
 type PortfolioScheduleGroup = PortfolioExpirationScheduleGroup | PortfolioUnderlyingScheduleGroup;
@@ -666,6 +656,7 @@ function CloseCandidatesCard({ candidates, onNavigate }: { candidates: CloseCand
                 <span className="font-mono tabular-nums">{formatPctValue(candidate.currentAnnualizedYield)} Ann. Liab.</span>
                 <span className="font-mono tabular-nums">{formatDteValue(candidate.dte)}</span>
               </button>
+              <div className="mt-1 text-[10px] leading-4" style={{ color: 'var(--text-dim)' }}>{candidate.reasons.join(' · ')}</div>
             </div>
           ))}
         </div>
@@ -721,74 +712,6 @@ function ConcentrationBars({
       )}
     </section>
   );
-}
-
-function buildNeedsAttention(trades: PortfolioTrade[]): PortfolioTrade[] {
-  return [...trades].sort((a, b) => attentionScore(b) - attentionScore(a));
-}
-
-function attentionScore(trade: PortfolioTrade): number {
-  const distanceToBreakeven = getTradeDistanceToBreakeven(trade);
-  const distanceToStrike = getTradeDistanceToStrike(trade);
-  const dte = calculateRemainingDte(trade);
-  const grossRisk = getTradeGrossRisk(trade) ?? 0;
-  const delta = trade.latestMarketData?.delta;
-  let score = 0;
-
-  if (!isFiniteNumber(distanceToBreakeven)) score += 20;
-  else if (distanceToBreakeven < 0) score += 120 + Math.min(60, Math.abs(distanceToBreakeven) * 300);
-  else score += Math.max(0, 80 - distanceToBreakeven * 800);
-
-  if (isFiniteNumber(distanceToStrike)) score += distanceToStrike < 0 ? 60 : Math.max(0, 45 - distanceToStrike * 450);
-  if (isFiniteNumber(dte)) score += dte <= 0 ? 40 : Math.max(0, 35 - dte);
-  if (isFiniteNumber(delta)) score += Math.min(45, Math.abs(delta) * 70);
-  score += Math.min(35, grossRisk / 10_000);
-
-  return score;
-}
-
-function buildCloseCandidates(trades: PortfolioTrade[], basis: MarkBasis): CloseCandidate[] {
-  return trades
-    .map(trade => {
-      const percentCaptured = calculatePercentCaptured(trade, basis);
-      const currentAnnualizedYield = calculateCurrentAnnualizedYield(trade, basis);
-      const remainingPremium = calculateCurrentMarkValueAbsolute(trade, basis);
-      const currentMark = calculateCurrentOptionMark(trade, basis);
-      const dte = calculateRemainingDte(trade);
-      const breakevenCushion = getTradeDistanceToBreakeven(trade);
-      const reasons: string[] = [];
-
-      if (isFiniteNumber(percentCaptured) && percentCaptured >= 0.75) reasons.push('75%+ captured');
-      else if (isFiniteNumber(percentCaptured) && percentCaptured >= 0.50) reasons.push('50%+ captured');
-      if (isFiniteNumber(percentCaptured) && percentCaptured >= 0.50 && isFiniteNumber(currentAnnualizedYield) && currentAnnualizedYield < 0.05) reasons.push('low annualized remaining liability');
-      if (isFiniteNumber(currentMark) && currentMark <= 0.05) reasons.push('small remaining premium');
-      if (isFiniteNumber(dte) && dte <= 14 && isFiniteNumber(breakevenCushion) && breakevenCushion >= 0.20) reasons.push('near expiry with cushion');
-
-      let score = 0;
-      if (isFiniteNumber(percentCaptured)) score += percentCaptured * 100;
-      if (isFiniteNumber(currentAnnualizedYield)) score += Math.max(0, 20 - currentAnnualizedYield * 200);
-      if (isFiniteNumber(currentMark) && currentMark <= 0.05) score += 30;
-      if (isFiniteNumber(dte)) score += Math.max(0, 20 - dte);
-      if (isFiniteNumber(breakevenCushion)) score += Math.min(20, breakevenCushion * 50);
-
-      return { trade, percentCaptured, currentAnnualizedYield, remainingPremium, dte, score, reasons };
-    })
-    .filter(candidate => candidate.reasons.length > 0)
-    .sort((a, b) => b.score - a.score);
-}
-
-function getRedeployBadges(trade: PortfolioTrade, basis: MarkBasis): string[] {
-  const percentCaptured = calculatePercentCaptured(trade, basis);
-  const currentAnnualizedYield = calculateCurrentAnnualizedYield(trade, basis);
-  const dte = calculateRemainingDte(trade);
-  const badges: string[] = [];
-
-  if (isFiniteNumber(percentCaptured) && percentCaptured >= 0.75) badges.push('75%+ Captured');
-  else if (isFiniteNumber(percentCaptured) && percentCaptured >= 0.50) badges.push('50%+ Captured');
-  if (isFiniteNumber(currentAnnualizedYield) && currentAnnualizedYield < 0.05) badges.push('Low Ann. Remaining Liability');
-  if (isFiniteNumber(dte) && dte <= 14) badges.push('Near Expiry');
-
-  return badges;
 }
 
 function percentOfTotal(value: number | null | undefined, total: number | null | undefined): number | null {
@@ -1101,6 +1024,8 @@ export default function PortfolioPage() {
   const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false);
   const scheduleRef = useRef<HTMLDivElement | null>(null);
   const highlightTimerRef = useRef<number | null>(null);
+  const quoteRefreshInFlightRef = useRef(false);
+  const quoteRefreshGenerationRef = useRef(0);
 
   useEffect(() => {
     let active = true;
@@ -1111,11 +1036,16 @@ export default function PortfolioPage() {
     void (async () => {
       const archived = await archiveExpiredOpenTrades(stored);
       if (!active) return;
-      if (archived.changed) {
-        savePortfolioTrades(archived.trades);
+      const latest = loadPortfolioTrades();
+      const reconciled = archived.changed
+        ? mergePortfolioLifecycleResults(latest, stored, archived.trades)
+        : latest;
+      const lifecycleApplied = reconciled.some((trade, index) => trade !== latest[index]);
+      if (lifecycleApplied) {
+        savePortfolioTrades(reconciled);
         setDurableActivityNotice('Expired positions were durably moved into lifecycle history. Review Account Sync before enrollment.');
       }
-      setTrades(archived.trades);
+      setTrades(reconciled);
     })();
     return () => {
       active = false;
@@ -1148,6 +1078,8 @@ export default function PortfolioPage() {
 
   useEffect(() => () => {
     if (highlightTimerRef.current) window.clearTimeout(highlightTimerRef.current);
+    quoteRefreshGenerationRef.current += 1;
+    quoteRefreshInFlightRef.current = false;
   }, []);
 
   const expirationGroups = useMemo(() => {
@@ -1248,8 +1180,13 @@ export default function PortfolioPage() {
   const handleSaveTrade = useCallback(async (input: PortfolioTradeInput, id?: string) => {
     const next = id ? updatePortfolioTrade(id, input as Partial<PortfolioTrade>) : addPortfolioTrade(input);
     const archived = await archiveExpiredOpenTrades(next);
-    if (archived.changed) savePortfolioTrades(archived.trades);
-    setTrades(archived.trades);
+    const latest = loadPortfolioTrades();
+    const reconciled = archived.changed
+      ? mergePortfolioLifecycleResults(latest, next, archived.trades)
+      : latest;
+    const lifecycleApplied = reconciled.some((trade, index) => trade !== latest[index]);
+    if (lifecycleApplied) savePortfolioTrades(reconciled);
+    setTrades(reconciled);
     setShowAddModal(false);
     setEditingTrade(null);
   }, []);
@@ -1269,127 +1206,123 @@ export default function PortfolioPage() {
   }, []);
 
   const handleRefreshOpenTrades = useCallback(async () => {
+    if (quoteRefreshInFlightRef.current) return;
+    quoteRefreshInFlightRef.current = true;
+    const refreshGeneration = ++quoteRefreshGenerationRef.current;
     setRefreshing(true);
     setRefreshWarning(false);
     setDurableActivityNotice('');
-    const current = loadPortfolioTrades();
-    const archived = await archiveExpiredOpenTrades(current);
-    const withEntryVix = await resolvePortfolioEntryVix(archived.trades).catch(() => ({
-      trades: archived.trades,
-      changed: false,
-      networkRequests: 0,
-      resolved: 0,
-      unresolved: 0,
-    }));
-    if (archived.changed || withEntryVix.changed) savePortfolioTrades(withEntryVix.trades);
-    const durableMessages = [
-      archived.changed ? 'Expired positions were durably moved into lifecycle history.' : '',
-      withEntryVix.resolved > 0
-        ? `Entry VIX history was durably enriched for ${withEntryVix.resolved} ${withEntryVix.resolved === 1 ? 'position' : 'positions'}.`
-        : '',
-    ].filter(Boolean);
-    if (durableMessages.length > 0) {
-      setDurableActivityNotice(`${durableMessages.join(' ')} This was more than a quote-only refresh.`);
-    }
-    const sweepTrades = withEntryVix.trades;
-    const open = sweepTrades.filter(trade => trade.status === 'open');
-    setTrades(sweepTrades);
-    if (open.length === 0) {
-      setLastRefreshed(new Date());
-      setRefreshing(false);
-      return;
-    }
-
-    const nowIso = new Date().toISOString();
-    const tickers = [...new Set(open.map(trade => trade.ticker))];
-    const batchPriceResult = await fetchBatchPricesResult(tickers, { mode: 'revalidate' }).catch(() => null);
-    const batchPrices = batchPriceResult?.data ?? null;
-    if (batchPriceResult?.staleFallbackUsed) setRefreshWarning(true);
-    const requestItems = open.map(trade => {
-      const timestamp = isoToUnixSeconds(trade.expiration);
-      return timestamp == null ? null : { ticker: trade.ticker, expirationTimestamp: timestamp };
-    }).filter((item): item is { ticker: string; expirationTimestamp: number } => item != null);
-    const acquired = await acquireOptionChains<OptionsChainData>(requestItems, {
-      source: 'Portfolio:refreshOpenTrades',
-      limit: 3,
-      fetchChain: (ticker, timestamp) => fetchOptions(ticker, timestamp, { source: 'Portfolio:refreshOpenTrades', refreshMode: 'revalidate' }),
-    });
-    const optionsByKey = acquired.byKey;
-    const failedKeys = new Set(acquired.failedKeys);
-    acquired.byKey.forEach((data, key) => {
-      if (data?.chainMeta?.staleFallbackUsed) failedKeys.add(key);
-    });
-
-    const refreshed = sweepTrades.map(trade => {
-      if (trade.status !== 'open') return trade;
-      const remainingDte = calculateDte(trade.expiration);
-      if (isFiniteNumber(remainingDte) && remainingDte < 0) {
-        return applyTransientPortfolioMarketData(trade, {
-          dte: remainingDte,
-          refreshedAt: nowIso,
-          availabilityStatus: 'expired',
-        });
+    try {
+      const sweepTrades = loadPortfolioTrades();
+      const open = sweepTrades.filter(trade => trade.status === 'open');
+      if (open.length === 0) {
+        if (refreshGeneration !== quoteRefreshGenerationRef.current) return;
+        setTrades(sweepTrades);
+        setLastRefreshed(new Date());
+        return;
       }
 
-      const timestamp = isoToUnixSeconds(trade.expiration);
-      const key = timestamp == null ? '' : canonicalOptionChainKey(trade.ticker, timestamp);
-      const optData = optionsByKey.get(key) ?? null;
-      const failed = failedKeys.has(key);
-      const underlying = batchPrices?.[trade.ticker]?.price ?? optData?.currentPrice ?? trade.latestMarketData?.underlyingPrice ?? trade.entrySnapshot?.underlyingPrice ?? null;
-
-      if (failed || !optData) {
-        setRefreshWarning(true);
-        return applyTransientPortfolioMarketData(trade, {
-          underlyingPrice: underlying,
-          dte: remainingDte,
-          refreshedAt: nowIso,
-          availabilityStatus: 'refresh_failed',
-        });
-      }
-
-      const put = optData.puts.find(candidate => Math.abs(candidate.strike - trade.strike) < 0.01);
-      if (!put) {
-        setRefreshWarning(true);
-        return applyTransientPortfolioMarketData(trade, {
-          underlyingPrice: underlying,
-          dte: remainingDte,
-          refreshedAt: nowIso,
-          availabilityStatus: 'unavailable',
-        });
-      }
-
-      const iv = put.impliedVolatility ?? null;
-      const delta = resolvePutDelta({
-        providerDelta: put.delta,
-        underlyingPrice: underlying,
-        strike: trade.strike,
-        dte: remainingDte,
-        impliedVolatilityPercent: iv,
+      const nowIso = new Date().toISOString();
+      const tickers = [...new Set(open.map(trade => trade.ticker))];
+      const batchPriceResult = await fetchBatchPricesResult(tickers, { mode: 'revalidate' }).catch(() => null);
+      const batchPrices = batchPriceResult?.data ?? null;
+      let partialFailure = batchPriceResult?.staleFallbackUsed === true;
+      const requestItems = open.map(trade => {
+        const timestamp = isoToUnixSeconds(trade.expiration);
+        return timestamp == null ? null : { ticker: trade.ticker, expirationTimestamp: timestamp };
+      }).filter((item): item is { ticker: string; expirationTimestamp: number } => item != null);
+      const acquired = await acquireOptionChains<OptionsChainData>(requestItems, {
+        source: 'Portfolio:refreshOpenTrades',
+        limit: 3,
+        fetchChain: (ticker, timestamp) => fetchOptions(ticker, timestamp, { source: 'Portfolio:refreshOpenTrades', refreshMode: 'revalidate' }),
+      });
+      const optionsByKey = acquired.byKey;
+      const failedKeys = new Set(acquired.failedKeys);
+      acquired.byKey.forEach((data, key) => {
+        if (data?.chainMeta?.staleFallbackUsed) failedKeys.add(key);
       });
 
-      const bid = put.bid ?? null;
-      const ask = put.ask ?? null;
-      const mid = isFiniteNumber(bid) && isFiniteNumber(ask) && ask >= bid ? (bid + ask) / 2 : null;
-      return applyTransientPortfolioMarketData(trade, {
-        underlyingPrice: underlying,
-        optionBid: bid,
-        optionAsk: ask,
-        optionMid: mid,
-        optionLast: put.last ?? null,
-        lastTradeDate: put.lastTradeDate ?? null,
-        iv,
-        delta,
-        volume: put.volume ?? null,
-        openInterest: put.openInterest ?? null,
-        dte: remainingDte,
-        refreshedAt: nowIso,
-        availabilityStatus: 'live',
-      }, 'replace');
-    });
+      const refreshed = sweepTrades.map(trade => {
+        if (trade.status !== 'open') return trade;
+        const remainingDte = calculateDte(trade.expiration);
+        if (isFiniteNumber(remainingDte) && remainingDte < 0) {
+          return applyTransientPortfolioMarketData(trade, {
+            dte: remainingDte,
+            refreshedAt: nowIso,
+            availabilityStatus: 'expired',
+          });
+        }
 
-    persistTrades(refreshed);
-    setLastRefreshed(new Date());
-    setRefreshing(false);
+        const timestamp = isoToUnixSeconds(trade.expiration);
+        const key = timestamp == null ? '' : canonicalOptionChainKey(trade.ticker, timestamp);
+        const optData = optionsByKey.get(key) ?? null;
+        const failed = failedKeys.has(key);
+        const underlying = batchPrices?.[trade.ticker]?.price ?? optData?.currentPrice ?? trade.latestMarketData?.underlyingPrice ?? trade.entrySnapshot?.underlyingPrice ?? null;
+
+        if (failed || !optData) {
+          partialFailure = true;
+          return applyTransientPortfolioMarketData(trade, {
+            underlyingPrice: underlying,
+            dte: remainingDte,
+            refreshedAt: nowIso,
+            availabilityStatus: 'refresh_failed',
+          });
+        }
+
+        const put = optData.puts.find(candidate => Math.abs(candidate.strike - trade.strike) < 0.01);
+        if (!put) {
+          partialFailure = true;
+          return applyTransientPortfolioMarketData(trade, {
+            underlyingPrice: underlying,
+            dte: remainingDte,
+            refreshedAt: nowIso,
+            availabilityStatus: 'unavailable',
+          });
+        }
+
+        const iv = put.impliedVolatility ?? null;
+        const delta = resolvePutDelta({
+          providerDelta: put.delta,
+          underlyingPrice: underlying,
+          strike: trade.strike,
+          dte: remainingDte,
+          impliedVolatilityPercent: iv,
+        });
+
+        const bid = put.bid ?? null;
+        const ask = put.ask ?? null;
+        const mid = isFiniteNumber(bid) && isFiniteNumber(ask) && ask >= bid ? (bid + ask) / 2 : null;
+        return applyTransientPortfolioMarketData(trade, {
+          underlyingPrice: underlying,
+          optionBid: bid,
+          optionAsk: ask,
+          optionMid: mid,
+          optionLast: put.last ?? null,
+          lastTradeDate: put.lastTradeDate ?? null,
+          iv,
+          delta,
+          volume: put.volume ?? null,
+          openInterest: put.openInterest ?? null,
+          dte: remainingDte,
+          refreshedAt: nowIso,
+          availabilityStatus: 'live',
+        }, 'replace');
+      });
+
+      if (refreshGeneration !== quoteRefreshGenerationRef.current) return;
+      const latest = loadPortfolioTrades();
+      const reconciled = mergePortfolioMarketRefresh(latest, refreshed);
+      persistTrades(reconciled);
+      setRefreshWarning(partialFailure);
+      setLastRefreshed(new Date());
+    } catch {
+      if (refreshGeneration === quoteRefreshGenerationRef.current) setRefreshWarning(true);
+    } finally {
+      if (refreshGeneration === quoteRefreshGenerationRef.current) {
+        quoteRefreshInFlightRef.current = false;
+        setRefreshing(false);
+      }
+    }
   }, [persistTrades]);
 
   const handleRetryResolve = useCallback(async (trade: PortfolioTrade) => {

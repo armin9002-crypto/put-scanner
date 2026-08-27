@@ -561,18 +561,28 @@ export function updateWatchlistNote(id: string, note: string): WatchlistItem[] {
   return saveWatchlist(updated).status === 'ok' ? updated : items;
 }
 
-export function markWatchlistItems(updatedItems: WatchlistItem[]): WatchlistItem[] {
-  const existing = watchlistItemsForMutation();
+export function mergeWatchlistRefreshItems(existing: WatchlistItem[], updatedItems: WatchlistItem[]): WatchlistItem[] {
   const byId = new Map(existing.map(item => [item.id, item]));
   updatedItems.forEach(item => {
     const normalized = normalizeWatchlistItem(item);
     if (!normalized) return;
     const previous = byId.get(normalized.id);
-    byId.set(normalized.id, previous
-      ? { ...normalized, note: previous.note, addedAt: previous.addedAt, savedAt: previous.savedAt }
-      : normalized);
+    // A quote refresh is not an add operation. If the contract was removed
+    // while its request was in flight, never resurrect the stale snapshot.
+    if (!previous) return;
+    byId.set(normalized.id, {
+      ...normalized,
+      note: previous.note,
+      addedAt: previous.addedAt,
+      savedAt: previous.savedAt,
+    });
   });
-  const updated = [...byId.values()];
+  return [...byId.values()];
+}
+
+export function markWatchlistItems(updatedItems: WatchlistItem[]): WatchlistItem[] {
+  const existing = watchlistItemsForMutation();
+  const updated = mergeWatchlistRefreshItems(existing, updatedItems);
   return saveWatchlist(updated).status === 'ok' ? updated : existing;
 }
 import {

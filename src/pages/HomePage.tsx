@@ -184,7 +184,7 @@ export default function HomePage() {
   const [pricesUpdatedAt, setPricesUpdatedAt] = useState<number | null>(null);
   const [pricesFreshness, setPricesFreshness] = useState<DataFreshnessStatus>('updating');
   const [fundAssets, setFundAssets] = useState<FundAssetsData>({});
-  const skeletonTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const priceRequestGenerationRef = useRef(0);
 
   // Market sparkline data (manual refresh only)
   const [qqqData, setQqqData] = useState<SparklineData | null>(null);
@@ -198,29 +198,19 @@ export default function HomePage() {
 
   // Load batch prices with 10-second hard timeout
   const loadPrices = useCallback(async (forceRefresh = false) => {
+    const requestGeneration = ++priceRequestGenerationRef.current;
     setPricesLoading(true);
     setPricesError(null);
     setPricesFreshness('updating');
-
-    // Max 10 seconds for skeleton loader
-    if (skeletonTimerRef.current) clearTimeout(skeletonTimerRef.current);
-    skeletonTimerRef.current = setTimeout(() => {
-      setPricesLoading(false);
-      setPrices(current => {
-        if (Object.keys(current).length === 0) setPricesError('Price data unavailable');
-        return current;
-      });
-    }, 10000);
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     try {
       const fetchPromise = fetchBatchPricesResult(SCANNER_PRICE_TICKERS, { mode: forceRefresh ? 'revalidate' : 'cache-first' });
-
-      // 10-second hard timeout
-      const timeoutPromise = new Promise<null>((_, reject) =>
-        setTimeout(() => reject(new Error('Request timed out')), 10000)
-      );
-
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('Request timed out')), 10000);
+      });
       const response = await Promise.race([fetchPromise, timeoutPromise]);
+      if (requestGeneration !== priceRequestGenerationRef.current) return;
       if (!response) throw new Error('Price data unavailable');
       const data = response.data as BatchPriceData;
 
@@ -237,18 +227,19 @@ export default function HomePage() {
         if (response.staleFallbackUsed) setPricesError('Refresh failed - showing cached prices');
       }
     } catch (err: unknown) {
+      if (requestGeneration !== priceRequestGenerationRef.current) return;
       setPricesError(err instanceof Error ? err.message : 'Price data unavailable');
       setPricesFreshness('failed');
     } finally {
-      if (skeletonTimerRef.current) {
-        clearTimeout(skeletonTimerRef.current);
-        skeletonTimerRef.current = null;
-      }
-      setPricesLoading(false);
+      if (timeoutId) clearTimeout(timeoutId);
+      if (requestGeneration === priceRequestGenerationRef.current) setPricesLoading(false);
     }
   }, []);
 
-  useEffect(() => { loadPrices(); }, [loadPrices]);
+  useEffect(() => {
+    void loadPrices();
+    return () => { priceRequestGenerationRef.current += 1; };
+  }, [loadPrices]);
 
   useEffect(() => {
     let cancelled = false;

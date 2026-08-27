@@ -80,6 +80,6 @@ Unavailable/non-finite values sort last both ways, zero remains valid, stale is 
 - Market data can be stale, delayed, incomplete, retried, or unavailable. A displayed quote is not a fill guarantee.
 - Earnings, dividends, fundamentals, true historical IV, assignment probability, and proprietary liquidity scoring remain out of scope.
 
-## Recommended Stage 6B.2 — design direction only
+## Recommended follow-up after Stage 6B.1
 
-Metric integrity is strong enough for bounded testing, and the on-demand path supports real stocks such as NVDA without ETF leakage. Next, design a roughly 25–30-symbol total curated universe plus Saved Underlyings and explicit Screener universe selection. Saved Underlyings should precede broad Scanner expansion. Before 35–50 symbols can be exposed to contract scanning, implement server-validated exact-symbol batching, canonical sorted keys, hard per-action and per-expiry caps, partial retry, current concurrency/payload guards, and visible request budgets. Do not start that expansion as part of Stage 6B.1.
+Stage 6B.2 should harden the existing Scanner, Screener, Watchlist, Portfolio, detail, and Pulse workflows before any product expansion. A broader universe or Saved Underlyings is not a current Put Scanner recommendation; keep those ideas in a separate future product/design track unless usage evidence later justifies reopening scope.

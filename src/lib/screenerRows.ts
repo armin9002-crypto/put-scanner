@@ -179,18 +179,22 @@ export function formatScreenerExpiration(timestamp: number, dte: number): string
 
 export function buildScreenerRows(data: ScreenerAcquiredData, expFilter: string): { rows: ScreenerRow[]; expirations: ScreenerExpirationCandidate[] } {
   const expirations = collectScreenerExpirations(data.initialResults);
-  const selectedExpirations = getExpsToFetchForFilter(expirations, expFilter);
   const rows: ScreenerRow[] = [];
 
   for (const [ticker, initialData] of data.initialResults) {
     const currentPrice = initialData.currentPrice;
-    const tickerExpirations = selectedExpirations.filter(expiration => initialData.expirations.some(candidate => candidate.date === expiration.date));
+    // "Nearest" is a per-ticker property. Selecting from the global union can
+    // exclude a ticker whose own first two expirations differ from another
+    // ticker's calendar, even though both chains were acquired successfully.
+    const tickerExpirations = getExpsToFetchForFilter(initialData.expirations, expFilter);
     for (const expiration of tickerExpirations) {
       const chain = data.chainsByKey.get(canonicalOptionChainKey(ticker, expiration.date))
         ?? (expiration.date === initialData.expirations[0]?.date ? initialData : null);
       if (!chain) continue;
       const price = chain.currentPrice || currentPrice;
-      const dte = Math.max(1, expiration.dte);
+      // Preserve 0-DTE as 0. Yield annualization and model-Delta fallback are
+      // intentionally unavailable at 0 DTE; provider Delta can still survive.
+      const dte = Math.max(0, expiration.dte);
       for (const put of chain.puts) {
         const delta = resolvePutDelta({
           providerDelta: put.delta,

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Activity, AlertTriangle, Loader2, RefreshCw, X, SlidersHorizontal, ChevronDown } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { buildEtfPulseRows, getEtfPulseUniverse, type EtfPulseLoadResult, type EtfPulseProgress } from '../lib/etfPulseData';
@@ -503,28 +503,35 @@ export default function EtfPulsePage() {
   const [showMarketRead, setShowMarketRead] = useState(false);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [mobileVisual, setMobileVisual] = useState<'list' | 'heatmap' | 'momentum'>('list');
+  const requestGenerationRef = useRef(0);
 
-  const loadRows = async (forceRefresh = false) => {
+  const loadRows = useCallback(async (forceRefresh = false) => {
+    const requestGeneration = ++requestGenerationRef.current;
     setLoading(true);
     setError('');
     setProgress({ loaded: 0, total: getEtfPulseUniverse().length });
     try {
       const next = await buildEtfPulseRows({
         forceRefresh,
-        onProgress: setProgress,
+        onProgress: progress => {
+          if (requestGeneration === requestGenerationRef.current) setProgress(progress);
+        },
       });
+      if (requestGeneration !== requestGenerationRef.current) return;
       setResult(next);
       setProgress({ loaded: next.loaded + next.failed, total: next.total });
     } catch (err) {
+      if (requestGeneration !== requestGenerationRef.current) return;
       setError(err instanceof Error ? err.message : 'ETF Pulse data could not be loaded.');
     } finally {
-      setLoading(false);
+      if (requestGeneration === requestGenerationRef.current) setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     void loadRows(false);
-  }, []);
+    return () => { requestGenerationRef.current += 1; };
+  }, [loadRows]);
 
   const rows = useMemo(() => result?.rows ?? [], [result]);
   const regime = useMemo(() => rows.length > 0 ? analyzeRegime(rows, result?.fetchedAt ?? null) : null, [result?.fetchedAt, rows]);

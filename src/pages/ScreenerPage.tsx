@@ -247,6 +247,7 @@ export default function ScreenerPage() {
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [slowWarning, setSlowWarning] = useState(false);
   const [scanFailureCount, setScanFailureCount] = useState(0);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedOption, setSelectedOption] = useState<DrawerSelection | null>(null);
 
   // Confirmation dialog
@@ -403,8 +404,12 @@ export default function ScreenerPage() {
     const scan = scanGateRef.current.begin();
     setShowConfirm(false);
     setLoading(true);
+    setLoaded(false);
     setSlowWarning(false);
     setScanFailureCount(0);
+    setLoadError(null);
+    rawRowsRef.current = [];
+    setLastLoadedCriteria(null);
     setRows([]);
     setProgress({ current: 0, total: criteria.selectedETFs.length });
     const startTime = Date.now();
@@ -423,6 +428,9 @@ export default function ScreenerPage() {
         },
       });
       if (!scan.isCurrent()) return;
+      if (acquired.initialResults.size === 0) {
+        throw new Error(acquired.errors[0]?.message ?? 'No Screener market data was returned. Try again.');
+      }
 
       const built = buildScreenerRows(acquired, criteria.expFilter);
       const sortedExps = built.expirations.map(expiration => ({
@@ -439,7 +447,10 @@ export default function ScreenerPage() {
       setLastLoadedCriteria(criteria);
 
     } catch (error) {
-      if (scan.isCurrent() && (error as Error)?.name !== 'AbortError') setScanFailureCount(1);
+      if (scan.isCurrent() && (error as Error)?.name !== 'AbortError') {
+        setScanFailureCount(0);
+        setLoadError(error instanceof Error ? error.message : 'The Screener could not load market data. Try again.');
+      }
     } finally {
       clearInterval(slowCheck);
       if (scan.isCurrent()) setLoading(false);
@@ -572,6 +583,7 @@ export default function ScreenerPage() {
           {loading && progress.total > 0 && <div className="mt-2 h-1 overflow-hidden rounded-full" style={{ backgroundColor: 'var(--border)' }}><div className="h-full rounded-full" style={{ width: `${progressPct}%`, backgroundColor: 'var(--accent)' }} /></div>}
           {slowWarning && <p className="mt-2 flex items-center gap-1 text-[11px]" style={{ color: 'var(--yellow)' }}><AlertTriangle className="h-3.5 w-3.5" /> Narrow filters for a faster scan.</p>}
           {scanFailureCount > 0 && <p className="mt-2 flex items-center gap-1 text-[11px]" style={{ color: 'var(--yellow)' }}><AlertTriangle className="h-3.5 w-3.5" /> Partial results: {scanFailureCount} market-data operation{scanFailureCount === 1 ? '' : 's'} could not be completed.</p>}
+          {loadError && !loading && <p role="alert" className="mt-2 flex items-start gap-1 text-[11px]" style={{ color: 'var(--red)' }}><AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-none" /> <span>{loadError} Run Screener to retry.</span></p>}
         </div>
 
         <div className="flex min-h-[46px] items-center gap-2 border-b px-3.5" style={{ borderColor: 'var(--border)' }}>
@@ -580,7 +592,9 @@ export default function ScreenerPage() {
           <button type="button" onClick={() => setSortDir(current => current === 'asc' ? 'desc' : 'asc')} className="pressable flex h-11 w-11 items-center justify-center rounded-lg text-sm font-semibold" aria-label={`Sort ${sortDir === 'asc' ? 'descending' : 'ascending'}`} style={{ color: 'var(--accent-light)' }}>{sortDir === 'asc' ? '↑' : '↓'}</button>
         </div>
 
-        {!loaded && !loading ? <div className="px-6 py-14 text-center"><Search className="mx-auto mb-3 h-6 w-6" style={{ color: 'var(--text-dim)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Ready to screen</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Choose criteria, then run the screener.</p></div> : loaded && sortedRows.length === 0 ? <div className="px-6 py-14 text-center"><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No screener matches</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Try widening delta, moneyness, or yield.</p><button type="button" onClick={() => setMobileFiltersOpen(true)} className="mobile-sheet-action secondary mt-4">Adjust filters</button></div> : (
+        {hasStructuralCriteriaChanged && <div role="status" className="border-b px-3.5 py-2 text-[11px]" style={{ borderColor: 'var(--border)', color: 'var(--yellow)', backgroundColor: 'rgba(250,204,21,0.08)' }}>ETF or expiration changed since the last Load. Run Screener to refresh the dataset.</div>}
+
+        {loadError && !loading ? <div className="px-6 py-14 text-center"><AlertTriangle className="mx-auto mb-3 h-6 w-6" style={{ color: 'var(--red)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Screener load failed</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>{loadError}</p><button type="button" onClick={() => void handleLoad()} className="mobile-sheet-action secondary mt-4"><RefreshCw className="h-4 w-4" /> Retry</button></div> : !loaded && !loading ? <div className="px-6 py-14 text-center"><Search className="mx-auto mb-3 h-6 w-6" style={{ color: 'var(--text-dim)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Ready to screen</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Choose criteria, then run the screener.</p></div> : loaded && sortedRows.length === 0 ? <div className="px-6 py-14 text-center"><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No screener matches</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Try widening delta, moneyness, or yield.</p><button type="button" onClick={() => setMobileFiltersOpen(true)} className="mobile-sheet-action secondary mt-4">Adjust filters</button></div> : (
           <div className="mobile-financial-list">{sortedRows.map(row => <MobileOptionRow key={`${row.ticker}-${row.expDate}-${row.strike}`} ticker={row.ticker} strike={row.strike} expirationLabel={row.expLabel} dte={row.dte} bid={row.bid} ask={row.ask} last={row.last} annualYield={row.annYieldBid} delta={row.delta} impliedVolatility={row.iv} openInterest={row.openInterest} moneynessLabel={row.moneynessLabel} moneynessColor={row.moneynessColor} statusText={`Vol ${formatNumber(row.volume)} · OI ${formatNumber(row.openInterest)}`} onSelect={() => setSelectedOption({ option: optionDetailFromScreenerRow(row), ticker: row.ticker, expirationLabel: row.expLabel, dte: row.dte, underlyingPrice: row.currentPrice > 0 ? row.currentPrice : null })} />)}</div>
         )}
 
@@ -826,6 +840,12 @@ export default function ScreenerPage() {
               Partial results: {scanFailureCount} market-data operation{scanFailureCount === 1 ? '' : 's'} could not be completed.
             </div>
           )}
+          {loadError && !loading && (
+            <div role="alert" className="flex items-center gap-2 mt-3 text-xs" style={{ color: 'var(--red)' }}>
+              <AlertTriangle className="w-3.5 h-3.5" />
+              <span>{loadError} Click Load to retry.</span>
+            </div>
+          )}
         </div>
 
         {/* Confirmation dialog */}
@@ -883,7 +903,7 @@ export default function ScreenerPage() {
           <label className="min-w-0">
             <span className="sr-only">Sort results</span>
             <select value={sortField} onChange={event => setSortField(event.target.value as ScreenerSortField)} className="min-h-[44px] w-full rounded-lg px-3 text-base outline-none" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}>
-              <option value="annYieldBid">Annualized yield</option>
+              <option value="annYieldBid">Ann. SCY Bid</option>
               <option value="ticker">Ticker</option>
               <option value="expDate">Expiration</option>
               <option value="strike">Strike</option>

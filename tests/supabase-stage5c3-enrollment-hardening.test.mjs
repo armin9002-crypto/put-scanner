@@ -385,7 +385,8 @@ test('entry VIX remains durable but passive Portfolio mount does not resolve or 
   const source = await readFile(path.join(root, 'src/pages/PortfolioPage.tsx'), 'utf8');
   const mount = source.slice(source.indexOf('useEffect(() => {\n    let active = true;'), source.indexOf('  const summary = useMemo'));
   assert.doesNotMatch(mount, /resolvePortfolioEntryVix/);
-  assert.match(mount, /if \(archived\.changed\)[\s\S]*?savePortfolioTrades\(archived\.trades\)/);
+  assert.match(mount, /mergePortfolioLifecycleResults\(latest, stored, archived\.trades\)/);
+  assert.match(mount, /if \(lifecycleApplied\)[\s\S]*?savePortfolioTrades\(reconciled\)/);
 });
 
 test('a restored non-expired trade with missing entry VIX remains enrollable after passive Portfolio lifecycle inspection', async () => {

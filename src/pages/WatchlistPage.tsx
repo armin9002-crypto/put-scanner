@@ -249,6 +249,7 @@ export default function WatchlistPage() {
   const { isPhone } = useResponsiveMode();
   const [items, setItems] = useState<WatchlistItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [sortField, setSortField] = useState<SortField>('dte');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
@@ -256,6 +257,8 @@ export default function WatchlistPage() {
   const [noteText, setNoteText] = useState('');
   const [selectedOption, setSelectedOption] = useState<DrawerSelection | null>(null);
   const initialLoadDone = useRef(false);
+  const refreshInFlightRef = useRef(false);
+  const refreshGenerationRef = useRef(0);
 
   useEffect(() => {
     const stored = getWatchlist();
@@ -267,47 +270,66 @@ export default function WatchlistPage() {
   const rows = useMemo(() => items.map(buildRow), [items]);
 
   const handleRefresh = useCallback(async (explicit = true) => {
+    if (refreshInFlightRef.current) return;
     const currentItems = getWatchlist();
     if (currentItems.length === 0) {
       setItems([]);
       return;
     }
 
+    refreshInFlightRef.current = true;
+    const refreshGeneration = ++refreshGenerationRef.current;
     setItems(currentItems);
     setLoading(true);
+    setRefreshError(null);
+    try {
+      const uniqueTickers = [...new Set(currentItems.map(item => item.ticker))];
+      const refreshMode = explicit ? 'revalidate' : 'cache-first';
+      const batchResult = await fetchBatchPrices(uniqueTickers, { mode: refreshMode }).catch(() => null);
 
-    const uniqueTickers = [...new Set(currentItems.map(item => item.ticker))];
-    const refreshMode = explicit ? 'revalidate' : 'cache-first';
-    const batchResult = await fetchBatchPrices(uniqueTickers, { mode: refreshMode }).catch(() => null);
-
-    const requestItems = currentItems
-      .filter(item => {
-        const rawDte = calculateDte(item.expiry);
-        return !isPastWatchlistExpirationDte(rawDte);
-      })
-      .map(item => ({ ticker: item.ticker, expirationTimestamp: item.expiryTimestamp }));
-    const acquired = await acquireOptionChains<OptionsChainData>(requestItems, {
-      source: explicit ? 'Watchlist:refreshAll' : 'Watchlist:autoRefresh',
-      limit: 3,
-      fetchChain: (ticker, timestamp) => fetchOptions(ticker, timestamp, {
+      const requestItems = currentItems
+        .filter(item => {
+          const rawDte = calculateDte(item.expiry);
+          return !isPastWatchlistExpirationDte(rawDte);
+        })
+        .map(item => ({ ticker: item.ticker, expirationTimestamp: item.expiryTimestamp }));
+      const acquired = await acquireOptionChains<OptionsChainData>(requestItems, {
         source: explicit ? 'Watchlist:refreshAll' : 'Watchlist:autoRefresh',
-        refreshMode,
-      }),
-    });
-    const optionsByKey = acquired.byKey;
+        limit: 3,
+        fetchChain: (ticker, timestamp) => fetchOptions(ticker, timestamp, {
+          source: explicit ? 'Watchlist:refreshAll' : 'Watchlist:autoRefresh',
+          refreshMode,
+        }),
+      });
+      const optionsByKey = acquired.byKey;
 
-    const refreshed = currentItems.map(item => {
-      const key = canonicalOptionChainKey(item.ticker, item.expiryTimestamp);
-      const hasRequest = optionsByKey.has(key);
-      const optData = optionsByKey.get(key) ?? null;
-      const price = batchResult?.[item.ticker]?.price ?? optData?.currentPrice ?? item.snapshot?.underlyingPrice ?? null;
-      return mergeLiveItem(item, optData, price, hasRequest && (optData == null || optData.chainMeta?.staleFallbackUsed === true));
-    });
+      const refreshed = currentItems.map(item => {
+        const key = canonicalOptionChainKey(item.ticker, item.expiryTimestamp);
+        const hasRequest = optionsByKey.has(key);
+        const optData = optionsByKey.get(key) ?? null;
+        const price = batchResult?.[item.ticker]?.price ?? optData?.currentPrice ?? item.snapshot?.underlyingPrice ?? null;
+        return mergeLiveItem(item, optData, price, hasRequest && (optData == null || optData.chainMeta?.staleFallbackUsed === true));
+      });
 
-    const stored = markWatchlistItems(refreshed);
-    setItems(stored);
-    setLastRefreshed(new Date());
-    setLoading(false);
+      if (refreshGeneration !== refreshGenerationRef.current) return;
+      const stored = markWatchlistItems(refreshed);
+      setItems(stored);
+      setLastRefreshed(new Date());
+    } catch {
+      if (refreshGeneration === refreshGenerationRef.current) {
+        setRefreshError('Watchlist refresh could not be completed. Saved contracts were preserved.');
+      }
+    } finally {
+      if (refreshGeneration === refreshGenerationRef.current) {
+        refreshInFlightRef.current = false;
+        setLoading(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => () => {
+    refreshGenerationRef.current += 1;
+    refreshInFlightRef.current = false;
   }, []);
 
   useEffect(() => {
@@ -404,6 +426,7 @@ export default function WatchlistPage() {
           <button type="button" onClick={() => setSortDir(current => current === 'asc' ? 'desc' : 'asc')} className="pressable flex h-11 w-11 flex-none items-center justify-center rounded-lg text-sm font-semibold" aria-label={`Sort ${sortDir === 'asc' ? 'descending' : 'ascending'}`} style={{ color: 'var(--accent-light)' }}>{sortDir === 'asc' ? '↑' : '↓'}</button>
           <button type="button" onClick={() => void handleRefresh(true)} disabled={loading || items.length === 0} className="pressable flex h-11 w-11 items-center justify-center rounded-lg disabled:opacity-40" aria-label="Refresh watchlist" style={{ color: 'var(--accent-light)' }}>{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}</button>
         </div>
+        {refreshError && <div role="alert" className="flex items-start gap-2 border-b px-3.5 py-2 text-[11px]" style={{ borderColor: 'var(--border)', color: 'var(--red)', backgroundColor: 'rgba(239,68,68,0.08)' }}><AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-none" /><span>{refreshError} Tap refresh to retry.</span></div>}
         {items.length === 0 ? <div className="px-6 py-16 text-center"><Star className="mx-auto mb-3 h-7 w-7" style={{ color: 'var(--text-dim)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No saved puts</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Star a contract from an option chain to save it here.</p></div> : (
           <div className="mobile-financial-list">{sortedRows.map(row => (
             <div key={row.id} className="mobile-watchlist-entry" style={{ opacity: row.expired || row.status === 'unavailable' ? 0.65 : 1 }}>
@@ -441,11 +464,12 @@ export default function WatchlistPage() {
             ? `Last refreshed: ${lastRefreshed.toLocaleString()}`
             : 'Last refreshed: not yet in this session. Saved snapshots are shown until prices are refreshed.'}
         </div>
+        {refreshError && <div role="alert" className="mb-3 flex items-center gap-2 rounded-lg px-3 py-2 text-xs" style={{ backgroundColor: 'rgba(239,68,68,0.08)', color: 'var(--red)', border: '1px solid rgba(239,68,68,0.24)' }}><AlertTriangle className="h-4 w-4 flex-none" /> <span>{refreshError} Click Refresh All to retry.</span></div>}
 
         {items.length > 0 && (
           <div className="mb-3 grid grid-cols-[1fr_auto] gap-2 md:hidden">
             <select value={sortField} onChange={event => setSortField(event.target.value as SortField)} className="min-h-[44px] min-w-0 rounded-lg px-3 text-base outline-none" aria-label="Sort watchlist" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
-              <option value="dte">Days to expiry</option><option value="ticker">Ticker</option><option value="annYieldBid">Annualized yield</option><option value="strike">Strike</option><option value="delta">Delta</option><option value="iv">IV</option><option value="added">Recently added</option>
+              <option value="dte">Days to expiry</option><option value="ticker">Ticker</option><option value="annYieldBid">Ann. SCY Bid</option><option value="strike">Strike</option><option value="delta">Delta</option><option value="iv">IV</option><option value="added">Recently added</option>
             </select>
             <button type="button" onClick={() => setSortDir(current => current === 'asc' ? 'desc' : 'asc')} className="pressable tap-target rounded-lg px-3 text-xs font-semibold" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>{sortDir === 'asc' ? 'Low → High' : 'High → Low'}</button>
           </div>
