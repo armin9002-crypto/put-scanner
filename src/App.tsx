@@ -1,6 +1,6 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom';
-import { ShieldCheck, ScanLine, BarChart3, Moon, Sun, BookOpen, Star, Square, Briefcase, Activity } from 'lucide-react';
+import { ShieldCheck, ScanLine, BarChart3, Moon, MoonStar, Sun, BookOpen, Star, Briefcase, Activity } from 'lucide-react';
 import { ThemeProvider, useTheme } from './lib/theme';
 import { AuthProvider } from './lib/auth';
 import { useResponsiveMode } from './lib/responsive';
@@ -28,9 +28,9 @@ function ThemeToggle() {
   const { theme, cycleTheme } = useTheme();
 
   const icon = theme === 'dark'
-      ? <Square className="w-4 h-4" />
-    : theme === 'dark-blue'
       ? <Moon className="w-4 h-4" />
+    : theme === 'dark-blue'
+      ? <MoonStar className="w-4 h-4" />
       : theme === 'light'
         ? <Sun className="w-4 h-4" />
         : <BookOpen className="w-4 h-4" />;

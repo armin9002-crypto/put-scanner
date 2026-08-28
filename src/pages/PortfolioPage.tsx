@@ -467,9 +467,9 @@ function completeSumValues(values: Array<number | null | undefined>): number | n
 
 function SummaryCard({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
-    <div className="rounded-lg p-2 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-      <div className="text-[9px] uppercase tracking-wider mb-0.5 truncate" title={label} style={{ color: 'var(--text-dim)' }}>{label}</div>
-      <div className="text-xs xl:text-sm font-mono font-semibold tabular-nums truncate" title={value} style={{ color: color ?? 'var(--text)' }}>{value}</div>
+    <div className="portfolio-summary-card rounded-lg p-2 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <div className="portfolio-summary-card__label text-[9px] uppercase tracking-wider mb-0.5" title={label} style={{ color: 'var(--text-dim)' }}>{label}</div>
+      <div className="portfolio-summary-card__value text-xs xl:text-sm font-mono font-semibold tabular-nums" title={value} style={{ color: color ?? 'var(--text)' }}>{value}</div>
     </div>
   );
 }
@@ -1479,20 +1479,20 @@ export default function PortfolioPage() {
         {trades.length === 0 ? <div className="px-6 py-16 text-center"><Briefcase className="mx-auto mb-3 h-7 w-7" style={{ color: 'var(--text-dim)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No open positions</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Add a trade or import a brokerage screenshot.</p><div className="mx-auto mt-4 grid max-w-xs grid-cols-2 gap-2"><button type="button" onClick={() => setShowAddModal(true)} className="mobile-sheet-action primary"><Plus className="h-4 w-4" /> Add Trade</button><button type="button" onClick={() => setShowImportModal(true)} className="mobile-sheet-action secondary"><FileImage className="h-4 w-4" /> Import</button></div><button type="button" onClick={() => setShowDataBackup(true)} className="pressable mt-3 inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-xs font-semibold" style={{ color: 'var(--text-muted)' }}><Download className="h-4 w-4" /> Data Backup</button></div> : (
           <>
             <section className="mobile-portfolio-hero px-4 pb-3 pt-3" style={{ backgroundColor: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
-              <div className="flex items-start justify-between gap-3">
+              <div className="portfolio-mobile-headline flex items-start justify-between gap-3">
                 <div><div className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: 'var(--text-dim)' }}>Total gain / loss</div><div className="mt-0.5 font-mono text-[28px] font-bold tracking-tight tabular-nums" style={{ color: pnlColor(markSummary.totalGainLoss) }}>{formatCurrency(markSummary.totalGainLoss, 0)}</div><div className="font-mono text-[13px] font-semibold" style={{ color: pnlColor(markSummary.percentCaptured) }}>{formatPctValue(markSummary.percentCaptured)} captured</div></div>
                 <button type="button" onClick={() => setMobileActionsOpen(true)} className="pressable flex h-11 w-11 items-center justify-center rounded-full" aria-label="Portfolio actions" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }}><MoreHorizontal className="h-5 w-5" /></button>
               </div>
-              <div className="mt-3 grid grid-cols-4 gap-2 border-t pt-3" style={{ borderColor: 'var(--border)' }}>
+              <div className="portfolio-mobile-metrics mt-3 grid grid-cols-4 gap-2 border-t pt-3" style={{ borderColor: 'var(--border)' }}>
                 {[
-                  ['Gross Secured Cash', formatCurrency(summary.totalEquityAtRisk, 0)],
-                  ['Net Max-Loss Capital', formatCurrency(summary.totalNetCapitalAtRisk, 0)],
-                  ['Ann. Remaining Liability / Entry Net Risk', formatPctValue(markSummary.portfolioCurrentAnnualizedYield)],
+                  ['Secured cash', formatCurrency(summary.totalEquityAtRisk, 0)],
+                  ['Net max-loss', formatCurrency(summary.totalNetCapitalAtRisk, 0)],
+                  ['Ann. remaining', formatPctValue(markSummary.portfolioCurrentAnnualizedYield)],
                   ['Weighted Δ', formatDelta(markSummary.weightedAverageDelta)],
-                ].map(([label, value]) => <div key={label} className="min-w-0"><div className="truncate text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>{label}</div><div className="truncate font-mono text-[12px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{value}</div></div>)}
+                ].map(([label, value]) => <div key={label} className="min-w-0"><div className="portfolio-mobile-metric-label text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>{label}</div><div className="font-mono text-[12px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{value}</div></div>)}
               </div>
-              <div className="mt-3 flex items-center gap-3"><span className="flex-none text-[12px] font-semibold" style={{ color: 'var(--text-muted)' }}>Mark at</span><div className="min-w-0 flex-1"><MobileSegmentedControl value={markBasis} onChange={setMarkBasis} label="Portfolio mark basis" options={MARK_BASIS_OPTIONS.map(value => ({ value, label: value.charAt(0).toUpperCase() + value.slice(1) }))} /></div></div>
-              <DataFreshness updatedAt={lastRefreshed} status={refreshing ? 'updating' : refreshWarning ? 'failed' : lastRefreshed ? 'cached' : 'stale'} label="Portfolio marks" />
+              <div className="portfolio-mobile-mark-control mt-3 flex items-center gap-3"><span className="flex-none text-[12px] font-semibold" style={{ color: 'var(--text-muted)' }}>Mark at</span><div className="min-w-0 flex-1"><MobileSegmentedControl value={markBasis} onChange={setMarkBasis} label="Portfolio mark basis" options={MARK_BASIS_OPTIONS.map(value => ({ value, label: value.charAt(0).toUpperCase() + value.slice(1) }))} /></div></div>
+              <DataFreshness className="portfolio-mobile-freshness" updatedAt={lastRefreshed} status={refreshing ? 'updating' : refreshWarning ? 'failed' : lastRefreshed ? 'cached' : 'stale'} label="Portfolio marks" />
               {markSummary.totalGainLoss == null && <p className="portfolio-partial-mark" role="status">Partial marks · one or more open quotes are unavailable; aggregate P&amp;L stays — until refreshed.</p>}
               {durableActivityNotice && <p role="status" className="mt-2 text-[11px] leading-4" style={{ color: 'var(--yellow)' }}>{durableActivityNotice}</p>}
             </section>
@@ -1606,7 +1606,7 @@ export default function PortfolioPage() {
               </details>
             </div>
 
-            <div className="portfolio-summary-grid hidden grid-cols-2 md:grid md:grid-cols-5 xl:grid-cols-10 gap-1.5 mb-3">
+            <div className="portfolio-summary-grid hidden grid-cols-2 md:grid md:grid-cols-5 2xl:grid-cols-10 gap-1.5 mb-3">
               <SummaryCard label="Open Trades" value={String(summary.totalOpenTrades)} />
               <SummaryCard label="Premium Collected" value={formatCurrency(summary.totalPremiumCollected, 0)} color="var(--green)" />
               <SummaryCard label="Gross Secured Cash" value={formatCurrency(summary.totalEquityAtRisk, 0)} />

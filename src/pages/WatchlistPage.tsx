@@ -394,7 +394,7 @@ export default function WatchlistPage() {
   }
 
   function SortIcon({ field }: { field: SortField }) {
-    if (sortField !== field) return <ChevronUp className="w-3 h-3 opacity-40" style={{ color: 'var(--text-muted)' }} />;
+    if (sortField !== field) return null;
     return sortDir === 'asc'
       ? <ChevronUp className="w-3 h-3" style={{ color: 'var(--accent)' }} />
       : <ChevronDown className="w-3 h-3" style={{ color: 'var(--accent)' }} />;
@@ -607,8 +607,11 @@ export default function WatchlistPage() {
             </div>
 
           <div className="watchlist-table-surface hidden md:block rounded-xl overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-            <div className="watchlist-table-toolbar"><div><h2>Saved contracts</h2><p>Quotes, yield context, and the next review note.</p></div><span>{sortedRows.length} saved</span></div>
-            <div className="overflow-x-auto max-w-full overscroll-contain">
+            <div className="watchlist-table-toolbar">
+              <div><h2>Saved contracts</h2><p>Quotes, yield context, and the next review note.</p></div>
+              <div className="watchlist-table-toolbar__meta"><span className="watchlist-table-scroll-hint">Scroll for status &amp; notes →</span><span>{sortedRows.length} saved</span></div>
+            </div>
+            <div className="watchlist-table-scroll overflow-x-auto max-w-full overscroll-contain" tabIndex={0} aria-label="Saved contracts table. Scroll horizontally for status and notes.">
               <table className="financial-table min-w-max w-full text-[11px]">
                 <thead className="sticky top-0 z-10">
                   <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
@@ -650,7 +653,7 @@ export default function WatchlistPage() {
                             <Star className="w-3.5 h-3.5 fill-current" style={{ color: 'var(--accent-light)' }} />
                           </button>
                         </td>
-                        <td className="px-1.5 py-0.5 text-left whitespace-nowrap" style={mutedStyle}>
+                        <td className="watchlist-ticker-cell px-1.5 py-0.5 text-left whitespace-nowrap" style={mutedStyle}>
                           <Link
                             to={`/options/${row.ticker}?expiry=${row.expiryTimestamp}`}
                             className="inline-flex items-center font-mono font-bold hover:opacity-80 transition-opacity min-h-[34px]"

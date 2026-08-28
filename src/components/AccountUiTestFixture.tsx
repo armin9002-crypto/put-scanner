@@ -9,7 +9,7 @@ import {
 } from '../lib/cloudState/productionSyncContext';
 import type { NamespaceSyncStatus } from '../lib/cloudState/syncEngineMetadata';
 import { useResponsiveMode } from '../lib/responsive';
-import { AccountPanel } from './AccountControl';
+import { AccountPanel, DesktopAccountDialog } from './AccountControl';
 import { CloudRestore } from './AccountDataSection';
 import MobileAccountSheet from './MobileAccountSheet';
 
@@ -174,7 +174,7 @@ const fixtureTabs = [
 ] as const;
 
 export default function AccountUiTestFixture({ requestedState }: { requestedState: string }) {
-  const { isPhoneLandscape } = useResponsiveMode();
+  const { isPhone, isPhoneLandscape } = useResponsiveMode();
   const state: AccountUiFixtureState = ['signed-out', 'not-enrolled', 'synced', 'pending', 'conflict', 'conflict-backed-up', 'account-mismatch', 'attention', 'restore'].includes(requestedState)
     ? requestedState as AccountUiFixtureState
     : 'signed-out';
@@ -204,20 +204,20 @@ export default function AccountUiTestFixture({ requestedState }: { requestedStat
       </nav>
       <AuthContext.Provider value={authFixture(state)}>
         <ProductionSyncContext.Provider value={syncFixture(state, backupCompleted, setBackupCompleted)}>
-          {accountOpen && (
-            <MobileAccountSheet
-              identity={user?.email ?? null}
-              status={user ? 'Signed in' : undefined}
-              description={user ? undefined : 'Sign in to use your account across devices'}
-              onClose={() => setAccountOpen(false)}
-            >
-              <AccountPanel
-                presentation="mobile"
-                onSignedOut={() => setAccountOpen(false)}
-                accountDataContent={state === 'restore' ? <AccountDataRestoreFixture /> : undefined}
-              />
-            </MobileAccountSheet>
-          )}
+          {accountOpen && (isPhone ? (
+              <MobileAccountSheet
+                identity={user?.email ?? null}
+                status={user ? 'Signed in' : undefined}
+                description={user ? undefined : 'Sign in to use your account across devices'}
+                onClose={() => setAccountOpen(false)}
+              >
+                <AccountPanel
+                  presentation="mobile"
+                  onSignedOut={() => setAccountOpen(false)}
+                  accountDataContent={state === 'restore' ? <AccountDataRestoreFixture /> : undefined}
+                />
+              </MobileAccountSheet>
+            ) : <DesktopAccountDialog onClose={() => setAccountOpen(false)} />)}
         </ProductionSyncContext.Provider>
       </AuthContext.Provider>
     </div>

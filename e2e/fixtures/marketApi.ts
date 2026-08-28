@@ -66,7 +66,7 @@ export async function installDeterministicMarketApi(page: Page, options: { failS
       const requestedExpiration = Number(url.searchParams.get('date')) || EXPIRATION;
       const optionsPayload = optionChain(ticker, unavailableRequestedExpiry.has(ticker) ? NEAR_EXPIRATION : requestedExpiration);
       if (unavailableRequestedExpiry.has(ticker)) optionsPayload.optionChain.result[0].expirationDates = [NEAR_EXPIRATION, SECOND_EXPIRATION];
-      return json(route, { availability: 'optionable', options: optionsPayload, extendedPrice: { price: 100, change: 1, changePercent: 1, fiveDay: 2, oneMonth: 4, threeMonth: 8, fiftyTwoWeekHighPct: -5, previousClose: 99, sparkline: [98, 99, 100] }, volatilityContext: { currentIV: 48, rangePosition: 52, observationPercent: 55, realizedVolLow: 20, realizedVolHigh: 60, observationCount: 252 } }, 200, { 'X-PutScanner-Upstream-Requests': '3' });
+      return json(route, { availability: ticker === 'AAPL' ? 'no_options' : 'optionable', options: optionsPayload, extendedPrice: { price: 100, change: 1, changePercent: 1, fiveDay: 2, oneMonth: 4, threeMonth: 8, fiftyTwoWeekHighPct: -5, previousClose: 99, sparkline: [98, 99, 100] }, volatilityContext: { currentIV: 48, rangePosition: 52, observationPercent: 55, realizedVolLow: 20, realizedVolHigh: 60, observationCount: 252 } }, 200, { 'X-PutScanner-Upstream-Requests': '3' });
     }
     if (endpoint === 'prices') {
       const tickers = (url.searchParams.get('tickers') || 'TQQQ').split(',');

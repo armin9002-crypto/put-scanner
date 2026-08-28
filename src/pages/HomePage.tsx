@@ -431,12 +431,12 @@ export default function HomePage() {
           onOpen: () => item.data && setChartModal({ ticker: item.chartTicker, displayTicker: item.ticker }),
         }))} />
 
-        <div className="px-3.5 pb-3 pt-3">
-          <div className="mb-3 rounded-xl p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+        <div className="mobile-scanner-controls px-3.5 pb-3 pt-3">
+          <div className="mobile-scanner-analyze mb-3 rounded-xl p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
             <div className="mb-2 text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Analyze Ticker</div>
             <AnalyzeTickerForm compact />
           </div>
-          <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+          <div className="mobile-scanner-filter-row grid grid-cols-[minmax(0,1fr)_auto] gap-2">
             <label className="min-w-0">
               <span className="sr-only">Expiration</span>
               <select value={expFilter} onChange={event => handleExpirationChange(event.target.value)} className="mobile-control-field w-full" aria-label="Scanner expiration">
@@ -448,14 +448,14 @@ export default function HomePage() {
             </button>
           </div>
 
-          <label className="relative mt-2 block">
+          <label className="mobile-scanner-search relative mt-2 block">
             <span className="sr-only">Search ETFs</span>
             <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: 'var(--text-dim)' }} />
             <input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search ETFs" className="mobile-control-field w-full pl-10" />
           </label>
         </div>
 
-        <div className="flex items-center justify-between gap-3 border-y px-3.5 py-2" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+        <div className="mobile-scanner-results-header flex items-center justify-between gap-3 border-y px-3.5 py-2" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
           <div className="min-w-0">
             <h2 className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>ETF opportunities</h2>
             <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{filtered.length} results · {expDropdownOptions.find(option => option.value === expFilter)?.label ?? 'All dates'}</p>

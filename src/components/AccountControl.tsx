@@ -174,7 +174,7 @@ function AccountError({ children }: { children: ReactNode }) {
   );
 }
 
-function DesktopAccountDialog({ onClose }: { onClose: () => void }) {
+export function DesktopAccountDialog({ onClose }: { onClose: () => void }) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement | null>(null);
 

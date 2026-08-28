@@ -3,7 +3,7 @@ import { defineConfig } from '@playwright/test';
 const systemChrome = process.platform === 'win32'
   ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
   : undefined;
-const visualCapture = process.env.UI_OVERHAUL_CAPTURE === 'before' || process.env.UI_OVERHAUL_CAPTURE === 'after';
+const visualCapture = ['before', 'after', 'baseline', 'final'].includes(process.env.UI_OVERHAUL_CAPTURE || '');
 const visualBuildCommand = process.platform === 'win32'
   ? 'set VITE_UI_VISUAL_FIXTURES=true&& npm run build && npm run preview -- --host 127.0.0.1 --port 4317'
   : 'VITE_UI_VISUAL_FIXTURES=true npm run build && npm run preview -- --host 127.0.0.1 --port 4317';

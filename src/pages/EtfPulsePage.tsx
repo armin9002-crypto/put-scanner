@@ -569,6 +569,8 @@ export default function EtfPulsePage() {
   const pulseProgressPct = progress.total > 0 ? Math.round((progress.loaded / progress.total) * 100) : 0;
   const pulseFilterCount = [search.trim() !== '', leverageFilter !== 'All', typeFilter !== 'All', trendFilter !== 'All'].filter(Boolean).length;
   const sortLabel = sort.field === 'ticker' ? 'Ticker' : sort.field === 'oneDay' ? '1D return' : sort.field === 'thirtyDay' ? '30D return' : sort.field === 'threeMonth' ? '3M return' : sort.field === 'rsi14' ? 'RSI' : sort.field === 'realizedVolatility20' ? '20D volatility' : sort.field === 'drawdown52Week' ? '52W drawdown' : 'Trend';
+  const selectedPerformanceColumn = ({ '1D': 'oneDay', '5D': 'fiveDay', '30D': 'thirtyDay', '3M': 'threeMonth', '6M': 'sixMonth', YTD: 'yearToDate', '1Y': 'oneYear' } as const)[selectedVisualPeriod];
+  const performanceColumns = new Set(['oneDay', 'fiveDay', 'thirtyDay', 'threeMonth', 'sixMonth', 'yearToDate', 'oneYear']);
 
   const columns = useMemo<PulseColumn[]>(() => [
     {
@@ -709,12 +711,13 @@ export default function EtfPulsePage() {
   const headerCell = (column: PulseColumn) => {
     const alignClass = column.align === 'left' ? 'text-left' : column.align === 'center' ? 'text-center' : 'text-right';
     const sorted = column.sortField && sort.field === column.sortField;
+    const performanceClass = performanceColumns.has(column.key) ? `pulse-performance-column ${column.key === selectedPerformanceColumn ? 'is-selected' : 'is-muted'}` : '';
     const content = `${column.label}${sorted ? sort.direction === 'asc' ? ' ^' : ' v' : ''}`;
     const sortField = column.sortField;
     return (
       <th
         key={column.key}
-        className={`px-2 py-2 text-[11px] font-medium whitespace-nowrap ${alignClass} ${column.sticky ? 'sticky left-0 z-40' : ''}`}
+        className={`px-2 py-2 text-[11px] font-medium whitespace-nowrap ${alignClass} ${performanceClass} ${column.sticky ? 'sticky left-0 z-40' : ''}`}
         style={{
           color: 'var(--text-muted)',
           backgroundColor: 'var(--surface-alt)',
@@ -740,10 +743,11 @@ export default function EtfPulsePage() {
   const bodyCell = (column: PulseColumn, row: EtfPulseRow, rowIndex: number) => {
     const alignClass = column.align === 'left' ? 'text-left' : column.align === 'center' ? 'text-center' : 'text-right';
     const stickyBg = rowIndex % 2 ? 'var(--row-alt)' : 'var(--surface)';
+    const performanceClass = performanceColumns.has(column.key) ? `pulse-performance-column ${column.key === selectedPerformanceColumn ? 'is-selected' : 'is-muted'}` : '';
     return (
       <td
         key={column.key}
-        className={`px-2 py-1 whitespace-nowrap tabular-nums overflow-hidden ${alignClass} ${column.key === 'ticker' ? 'font-mono font-bold' : ''} ${column.sticky ? 'sticky left-0 z-20' : ''}`}
+        className={`px-2 py-1 whitespace-nowrap tabular-nums overflow-hidden ${alignClass} ${performanceClass} ${column.key === 'ticker' ? 'font-mono font-bold' : ''} ${column.sticky ? 'sticky left-0 z-20' : ''}`}
         style={{
           width: column.width,
           minWidth: column.width,

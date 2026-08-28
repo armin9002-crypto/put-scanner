@@ -32,11 +32,12 @@ The legacy aliases (`--bg`, `--surface`, `--surface-alt`, `--border`, `--text`, 
 Use the working scale `2, 4, 6, 8, 12, 16, 20, 24, 32` pixels. Avoid adjacent one-off values unless required by an existing chart or table calculation.
 
 - `page-frame` owns common responsive gutters and a 1600px data-page maximum.
-- `page-frame--standard` uses a 1360px maximum for Scanner-like compositions.
+- `page-frame--standard` uses the same 1600px maximum so route titles and primary content share a stable desktop gutter.
 - `page-frame--wide` uses an 1840px maximum for Portfolio, Watchlist, and other wide tables.
 - Default section separation is 12–16px. Related control groups use 6–8px.
 - Desktop control height is normally 36–40px. Phone controls remain at least 44px.
 - Dense desktop table headers are 34px; row content remains compact without becoming spreadsheet-small.
+- Summary grids choose a column count that preserves labels before optimizing for one-row height. Long financial labels may use two controlled lines; they should not visibly ellipsize in primary book summaries.
 
 ## Radius and elevation
 
@@ -87,6 +88,7 @@ These primitives are deliberately small. Page-specific composition remains in pa
 - Disabled controls keep their geometry and reduce opacity; they do not disappear.
 - Mobile segmented controls use an inset track and an accent-tinted selected segment.
 - Keyboard focus is always visible and independent of hover.
+- Styled numeric inputs suppress native spin-button chrome while preserving numeric input semantics and keyboard behavior.
 
 ## Cards and surfaces
 
@@ -106,9 +108,11 @@ Do not add cards solely to wrap another heading. Prefer section spacing, backgro
 - Headers use a consistent quiet uppercase role and 34px height.
 - Row hover is a four-percent accent tint without movement.
 - Sticky headers use the elevated/secondary theme surface.
+- A wide table keeps its primary identifier sticky. At widths where important trailing fields are initially off-screen, provide a concise horizontal-scroll cue rather than removing columns.
 - Selected rows use accent tint plus a narrow accent edge where the selection needs to survive horizontal scanning.
 - Two-line cells use a stronger primary line and smaller tertiary supporting line.
 - Horizontal scrolling belongs to the table wrapper, never the page root.
+- When one comparison period is selected, its table column may receive restrained background/weight emphasis while other semantically colored periods remain quieter.
 
 ## Charts
 
@@ -121,7 +125,7 @@ Charts retain their existing calculations and SVG/canvas behavior. Chart chrome 
 
 ## Overlays
 
-Modal, drawer, and sheet surfaces share the overlay shadow, border hierarchy, 14px desktop radius, close-button language, and short transitions. Mobile bottom sheets keep their safe-area padding and purpose-built Account behavior. Drawers do not animate or translate gratuitously, and reduced-motion preferences are respected.
+Modal, drawer, and sheet surfaces share the overlay shadow, border hierarchy, 14px desktop radius, close-button language, and short transitions. Mobile bottom sheets keep their safe-area padding and purpose-built Account behavior. Short Account states are content-fit up to the dynamic-viewport maximum; long sync/conflict states scroll inside the same safe container. Drawers do not animate or translate gratuitously, and reduced-motion preferences are respected.
 
 ## Theme rules
 
@@ -134,11 +138,14 @@ All four themes map the same roles:
 
 Theme-specific CSS may change token values, not component hierarchy, geometry, or interaction semantics. Stronger borders or shadows in one theme require a contrast reason, not aesthetic preference.
 
+Theme utilities use distinct, recognizable icons. A bare square is not an acceptable dark-theme glyph because it reads as checkbox chrome.
+
 ## Mobile and landscape rules
 
 - Preserve five existing navigation destinations; do not add an Account tab.
 - Portrait bottom navigation uses a subtle selected container, 52px target height, and safe-area padding.
 - Landscape navigation remains 42px high and combines icon with label.
+- Phone landscape may re-compose existing controls and summaries into side-by-side grids so primary decisions appear above the navigation; it must not remove financial context or reduce portrait touch targets.
 - Phone inputs remain at least 16px text to prevent iOS zoom.
 - Interactive targets remain at least 44px on phones.
 - Full-screen option detail, chart, and Account workflows retain body locking, focus restoration, and safe-area treatment.
