@@ -5,7 +5,7 @@ import type { ETFInfo } from '../lib/types';
 import { fetchSparkline, formatPrice, formatNumber } from '../lib/api';
 import type { SparklineData } from '../lib/api';
 import { getExpirationsCache, setExpirationsCache } from '../lib/cache';
-import { createLatestScreenerScanGate, fetchScreenerExpirations, retryFailedScreenerBatches, runScreenerBatchScan, type ScreenerScanResult } from '../lib/screenerAcquisition';
+import { createLatestScreenerScanGate, fetchScreenerExpirations, retryFailedScreenerBatches, runScreenerBatchScan, screenerDatasetScopeKey, type ScreenerScanResult } from '../lib/screenerAcquisition';
 import { applyScreenerFilters, buildScreenerRows, type ScreenerRow } from '../lib/screenerRows';
 import SparklineChart from '../components/SparklineChart';
 import ExpirationFilter, { buildExpirationOptions, formatExpirationDropdownLabel } from '../components/ExpirationFilter';
@@ -269,18 +269,32 @@ export default function ScreenerPage() {
   const [vixData, setVixData] = useState<SparklineData | null>(null);
   const [vixLoading, setVixLoading] = useState(true);
   const [lastVixUpdate, setLastVixUpdate] = useState<Date | null>(null);
+  const vixAbortRef = useRef<AbortController | null>(null);
 
   const loadVix = useCallback(async () => {
+    vixAbortRef.current?.abort(new DOMException('Superseded Screener VIX request', 'AbortError'));
+    const controller = new AbortController();
+    vixAbortRef.current = controller;
     setVixLoading(true);
     try {
-      const data = await fetchSparkline('^VIX');
+      const data = await fetchSparkline('^VIX', { signal: controller.signal });
+      if (controller.signal.aborted) return;
       setVixData(data);
       setLastVixUpdate(new Date());
     } catch { /* ignore */ }
-    setVixLoading(false);
+    if (vixAbortRef.current === controller) {
+      vixAbortRef.current = null;
+      setVixLoading(false);
+    }
   }, []);
 
-  useEffect(() => { loadVix(); }, [loadVix]);
+  useEffect(() => {
+    void loadVix();
+    return () => {
+      vixAbortRef.current?.abort(new DOMException('Screener route closed', 'AbortError'));
+      vixAbortRef.current = null;
+    };
+  }, [loadVix]);
 
   const vixLineColor = vixData ? vixColor(vixData.price) : 'var(--yellow)';
   const vixStatus = vixData ? vixLabel(vixData.price) : { text: '', color: '' };
@@ -293,12 +307,12 @@ export default function ScreenerPage() {
       return;
     }
 
-    let cancelled = false;
+    const controller = new AbortController();
     (async () => {
       setLoadingDates(true);
       try {
-        const expirations = await fetchScreenerExpirations();
-        if (cancelled) return;
+        const expirations = await fetchScreenerExpirations({ signal: controller.signal });
+        if (controller.signal.aborted) return;
         const sorted = expirations.map(expiration => ({
           ...expiration,
           label: formatExpirationDropdownLabel(expiration.date),
@@ -307,13 +321,13 @@ export default function ScreenerPage() {
         setExpirationsCache(sorted);
       } catch { /* keep the date filter usable with its generic options */ }
       finally {
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           setDatesLoaded(true);
           setLoadingDates(false);
         }
       }
     })();
-    return () => { cancelled = true; };
+    return () => controller.abort(new DOMException('Screener route closed', 'AbortError'));
   }, []);
 
   // ETF dropdown
@@ -390,10 +404,9 @@ export default function ScreenerPage() {
     ];
   }, [currentCriteria, expDropdownOptions]);
 
-  const hasStructuralCriteriaChanged = loaded && lastLoadedCriteria != null && (
-    expFilter !== lastLoadedCriteria.expFilter ||
-    selectedEtfKey(selectedETFs) !== selectedEtfKey(lastLoadedCriteria.selectedETFs)
-  );
+  const hasStructuralCriteriaChanged = loaded && lastLoadedCriteria != null
+    && screenerDatasetScopeKey(selectedEtfKey(selectedETFs), expFilter)
+      !== screenerDatasetScopeKey(selectedEtfKey(lastLoadedCriteria.selectedETFs), lastLoadedCriteria.expFilter);
 
   useEffect(() => {
     if (hasStructuralCriteriaChanged) setRetryState(null);

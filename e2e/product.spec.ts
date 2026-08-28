@@ -38,6 +38,7 @@ test.afterEach(async ({ page }, testInfo) => {
 });
 
 test('viewport workflow smoke is local, deterministic, and usable', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
   const project = testInfo.project.name;
   if (project === 'desktop-1440x900') {
     await page.goto('/');
@@ -136,6 +137,12 @@ test('Screener retries failed batches only and preserves successful rows', async
   await page.getByRole('button', { name: /Load|Run Screener/i }).first().click();
   await page.getByRole('button', { name: /Run scan|Confirm/i }).click();
   await expect(page.getByText('Some results could not be loaded.')).toBeVisible();
+  const requestsBeforeLocalExpirationFilter = [...harness.counts.values()].reduce((sum, count) => sum + count, 0);
+  const expirationFilter = page.locator('label').filter({ hasText: /^Expiration/ }).locator('..').locator('select').first();
+  await expirationFilter.selectOption('all');
+  await expect(page.getByRole('button', { name: 'Retry failed results' })).toBeVisible();
+  await page.waitForTimeout(100);
+  expect([...harness.counts.values()].reduce((sum, count) => sum + count, 0)).toBe(requestsBeforeLocalExpirationFilter);
   const rowsBefore = await page.locator('tbody tr').count();
   await page.getByRole('button', { name: 'Retry failed results' }).click();
   await expect(page.getByText('Some results could not be loaded.')).toHaveCount(0);
@@ -189,11 +196,16 @@ test('Watchlist refresh races and failures preserve current durable intent', asy
   test.skip(testInfo.project.name !== 'desktop-1440x900', 'one deterministic Watchlist race scenario');
   await page.goto('/watchlist');
   await expect(page.getByRole('table').getByText('keep current note')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Refresh All' })).toBeEnabled();
+  const priceCallsBeforeRefresh = marketHarness.counts.get('prices') ?? 0;
+  const optionCallsBeforeRefresh = marketHarness.counts.get('options') ?? 0;
   marketHarness.delays.set('options', 400);
   await page.getByRole('button', { name: 'Refresh All' }).click();
   await page.getByRole('button', { name: /Remove TQQQ/i }).first().click();
   await page.waitForTimeout(650);
   await expect(page.getByText(/No saved puts yet/)).toBeVisible();
+  expect((marketHarness.counts.get('prices') ?? 0) - priceCallsBeforeRefresh).toBe(1);
+  expect((marketHarness.counts.get('options') ?? 0) - optionCallsBeforeRefresh).toBe(1);
   expect(JSON.parse(await page.evaluate(() => localStorage.getItem('put_scanner_watchlist') || '[]')).data ?? []).toEqual([]);
 
   await page.evaluate(items => localStorage.setItem('put_scanner_watchlist', JSON.stringify(items)), seededWatchlist());
@@ -222,6 +234,28 @@ test('Portfolio analytics is local-only and quote refresh leaves durable trade f
   await page.goto('/portfolio');
   await expect(page.getByRole('heading', { name: 'Portfolio', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Refresh Open Trades' })).toBeEnabled();
+  await page.evaluate(() => {
+    const holder = window as typeof window & { __putScannerOriginalSetItem?: Storage['setItem'] };
+    const original = Storage.prototype.setItem;
+    holder.__putScannerOriginalSetItem = original;
+    Storage.prototype.setItem = function setItem(key: string, value: string) {
+      if (key === 'put_scanner_portfolio_trades') throw new DOMException('E2E quota fixture', 'QuotaExceededError');
+      return original.call(this, key, value);
+    };
+  });
+  await page.getByTitle('Delete').first().click();
+  await expect(page.getByRole('alert')).toContainText("Put Scanner couldn't save this change on this browser.");
+  await expect(page.getByRole('row').filter({ hasText: 'TQQQ' }).last()).toBeVisible();
+  expect(await page.evaluate(() => {
+    const parsed = JSON.parse(localStorage.getItem('put_scanner_portfolio_trades') || '[]');
+    return (parsed.data ?? parsed).some((trade: { id: string }) => trade.id === 'e2e-trade-1');
+  })).toBe(true);
+  await page.evaluate(() => {
+    const holder = window as typeof window & { __putScannerOriginalSetItem?: Storage['setItem'] };
+    if (holder.__putScannerOriginalSetItem) Storage.prototype.setItem = holder.__putScannerOriginalSetItem;
+    delete holder.__putScannerOriginalSetItem;
+  });
+  await page.getByRole('button', { name: 'Dismiss local save warning' }).click();
   const requestsBeforeToggle = [...marketHarness.counts.values()].reduce((sum, count) => sum + count, 0);
   const analytics = page.getByRole('button', { name: 'Expand Portfolio Analytics' });
   await expect(analytics).toHaveAttribute('aria-expanded', 'false');
@@ -245,8 +279,14 @@ test('Portfolio analytics is local-only and quote refresh leaves durable trade f
     const parsed = JSON.parse(localStorage.getItem('put_scanner_portfolio_trades') || '[]');
     return (parsed.data ?? parsed).map((trade: Record<string, unknown>) => Object.fromEntries(Object.entries(trade).filter(([key]) => key !== 'latestMarketData')));
   });
+  const portfolioPricesBeforeRefresh = marketHarness.counts.get('prices') ?? 0;
+  const portfolioOptionsBeforeRefresh = marketHarness.counts.get('options') ?? 0;
+  const portfolioMaintenanceBeforeRefresh = marketHarness.counts.get('chart-history') ?? 0;
   await page.getByRole('button', { name: 'Refresh Open Trades' }).click();
   await expect(page.getByRole('button', { name: 'Refresh Open Trades' })).toBeEnabled();
+  expect((marketHarness.counts.get('prices') ?? 0) - portfolioPricesBeforeRefresh).toBe(1);
+  expect((marketHarness.counts.get('options') ?? 0) - portfolioOptionsBeforeRefresh).toBe(1);
+  expect((marketHarness.counts.get('chart-history') ?? 0) - portfolioMaintenanceBeforeRefresh).toBe(0);
   const durableAfter = await page.evaluate(() => {
     const parsed = JSON.parse(localStorage.getItem('put_scanner_portfolio_trades') || '[]');
     return (parsed.data ?? parsed).map((trade: Record<string, unknown>) => Object.fromEntries(Object.entries(trade).filter(([key]) => key !== 'latestMarketData')));
@@ -267,6 +307,30 @@ test('Detail, drawer, Pulse cancellation, and mocked Account states remain bound
   await expect(page.getByText('SPY', { exact: true }).first()).toBeVisible();
   await expect(page.getByRole('row').filter({ hasText: '90.00' }).last()).toBeVisible();
   await expect(page.getByRole('button', { name: /Jan 1 '27/ })).toHaveAttribute('aria-pressed', 'true');
+  await page.evaluate(() => {
+    const holder = window as typeof window & { __putScannerOriginalSetItem?: Storage['setItem'] };
+    const original = Storage.prototype.setItem;
+    holder.__putScannerOriginalSetItem = original;
+    Storage.prototype.setItem = function setItem(key: string, value: string) {
+      if (key === 'put_scanner_watchlist') throw new DOMException('E2E quota fixture', 'QuotaExceededError');
+      return original.call(this, key, value);
+    };
+  });
+  const addToWatchlist = page.getByTitle('Add to watchlist').first();
+  await addToWatchlist.click();
+  await expect(page.getByRole('alert')).toContainText("Put Scanner couldn't save this change on this browser.");
+  await expect(addToWatchlist).toBeVisible();
+  const storedTickers = await page.evaluate(() => {
+    const parsed = JSON.parse(localStorage.getItem('put_scanner_watchlist') || '[]');
+    return (parsed.data ?? parsed).map((item: { ticker: string }) => item.ticker);
+  });
+  expect(storedTickers).not.toContain('SPY');
+  await page.evaluate(() => {
+    const holder = window as typeof window & { __putScannerOriginalSetItem?: Storage['setItem'] };
+    if (holder.__putScannerOriginalSetItem) Storage.prototype.setItem = holder.__putScannerOriginalSetItem;
+    delete holder.__putScannerOriginalSetItem;
+  });
+  await page.getByRole('button', { name: 'Dismiss local save warning' }).click();
   const detailCalls = marketHarness.counts.get('ticker-detail') ?? 0;
   expect(detailCalls).toBeGreaterThanOrEqual(1);
   expect(detailCalls).toBeLessThanOrEqual(2);
@@ -312,6 +376,7 @@ test('Detail, drawer, Pulse cancellation, and mocked Account states remain bound
   await expect(page.getByRole('heading', { name: 'Watchlist' })).toBeVisible();
   await page.waitForTimeout(450);
   await expect(page.getByText('ETF Pulse Visuals')).toHaveCount(0);
+  expect(marketHarness.aborted.get('etf-pulse') ?? 0).toBeGreaterThanOrEqual(1);
   marketHarness.delays.delete('etf-pulse');
   await page.goto('/pulse');
   await expect(page.getByText('ETF Pulse Visuals')).toBeVisible();

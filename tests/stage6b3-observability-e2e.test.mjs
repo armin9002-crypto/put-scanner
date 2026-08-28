@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { observeMarketRequest } from '../api/_lib/requestObservability.js';
-import { assertWithinRequestBudget, failedScreenerRetryBudget, REQUEST_BUDGETS, uniqueChainRefreshBudget } from '../src/lib/requestBudgets.ts';
-import { getDevelopmentRequestSummary, getRequestDiagnosticsSnapshot, resetRequestDiagnosticsForTests, setRequestDiagnosticsEnabledForTests, fetchObservedMarketData } from '../src/lib/requestDiagnostics.ts';
+import { assertWithinRequestBudget, failedScreenerRetryBudget, REQUEST_BUDGET_LEDGER, uniqueChainRefreshBudget } from '../src/lib/requestBudgets.ts';
+import { getDevelopmentRequestEvents, getDevelopmentRequestSummary, getRequestDiagnosticsSnapshot, resetRequestDiagnosticsForTests, setRequestDiagnosticsEnabledForTests, fetchObservedMarketData } from '../src/lib/requestDiagnostics.ts';
 import { requestMarketData } from '../src/lib/marketDataRequest.ts';
-import { notifyLocalStorageFailure, subscribeToLocalStorageFailures } from '../src/lib/storageFeedback.ts';
+import { LOCAL_STORAGE_FAILURE_MESSAGE, notifyLocalStorageFailure, subscribeToLocalStorageFailures } from '../src/lib/storageFeedback.ts';
 import { persistShowNominalYield } from '../src/lib/optionTablePreferences.ts';
 
 class MockResponse extends EventEmitter {
@@ -35,10 +35,32 @@ test('server observer echoes a safe correlation id and logs counts without marke
   } finally { console.info = originalInfo; }
   assert.equal(res.getHeader('X-PutScanner-Request-Id'), 'ps-browser-safe-123');
   assert.equal(res.getHeader('X-PutScanner-Failure-Category'), 'none');
+  assert.equal(res.getHeader('X-PutScanner-Provider-Attempts'), '1');
   assert.match(res.getHeader('X-PutScanner-Server-Duration-Ms'), /^\d+$/);
-  assert.deepEqual(logs.map(log => ({ endpoint: log.endpoint, tickerCount: log.tickerCount, providerAttemptCount: log.providerAttemptCount, outcome: log.outcome })), [{ endpoint: 'prices', tickerCount: 3, providerAttemptCount: 1, outcome: 'success' }]);
+  assert.deepEqual(logs.map(log => ({ endpoint: log.endpoint, operation: log.operation, symbolCount: log.symbolCount, providerAttemptCount: log.providerAttemptCount, status: log.status, outcome: log.outcome })), [{ endpoint: 'prices', operation: 'prices', symbolCount: 3, providerAttemptCount: 1, status: 200, outcome: 'success' }]);
   assert.equal(JSON.stringify(logs).includes('TQQQ'), false);
   assert.equal(JSON.stringify(logs).includes('premium'), false);
+});
+
+test('server observer classifies a disconnected function invocation as aborted exactly once', () => {
+  const req = new EventEmitter();
+  req.method = 'GET';
+  req.headers = {};
+  const res = new MockResponse();
+  const logs = [];
+  const originalInfo = console.info;
+  console.info = value => logs.push(JSON.parse(value));
+  try {
+    const observation = observeMarketRequest(req, res, { endpoint: 'chart-history', operation: 'history' });
+    req.emit('aborted');
+    res.emit('close');
+    assert.equal(observation.signal.aborted, true);
+  } finally { console.info = originalInfo; }
+  assert.equal(logs.length, 1);
+  assert.equal(logs[0].operation, 'history');
+  assert.equal(logs[0].status, 499);
+  assert.equal(logs[0].failureCategory, 'aborted');
+  assert.equal(logs[0].outcome, 'aborted');
 });
 
 test('browser observer sends correlation ids and summarizes diagnostic response headers in memory only', async () => {
@@ -46,11 +68,14 @@ test('browser observer sends correlation ids and summarizes diagnostic response 
   resetRequestDiagnosticsForTests();
   const realFetch = globalThis.fetch;
   let sentId = '';
+  let networkCalls = 0;
   globalThis.fetch = async (_input, init) => {
+    networkCalls += 1;
     sentId = new Headers(init.headers).get('X-PutScanner-Request-Id');
     return Response.json({}, { headers: {
       'X-PutScanner-Request-Id': sentId,
-      'X-PutScanner-Upstream-Requests': '2',
+      'X-PutScanner-Provider-Attempts': '2',
+      'X-PutScanner-Upstream-Requests': '9',
       'X-PutScanner-Retry-Count': '1',
       'X-PutScanner-Server-Duration-Ms': '7',
       'X-PutScanner-Cache-Status': 'MISS',
@@ -60,7 +85,30 @@ test('browser observer sends correlation ids and summarizes diagnostic response 
   try { await fetchObservedMarketData('options', '/api/options', undefined, 'unit'); }
   finally { globalThis.fetch = realFetch; }
   assert.match(sentId, /^ps-/);
-  assert.deepEqual(getDevelopmentRequestSummary(), { browserRequests: 1, vercelResponses: 1, providerAttempts: 2, retries: 1, failures: 0, aborted: 0, byEndpoint: { options: { browserRequests: 1, providerAttempts: 2, failures: 0 } } });
+  assert.equal(networkCalls, 1);
+  assert.deepEqual(getDevelopmentRequestEvents().map(event => ({ cacheStatus: event.cacheStatus, providerHttpAttempts: event.providerHttpAttempts, retryCount: event.retryCount })), [{ cacheStatus: 'MISS', providerHttpAttempts: 2, retryCount: 1 }]);
+  assert.deepEqual(getDevelopmentRequestSummary(), { browserRequests: 1, functionInvocations: 1, providerHttpAttempts: 2, cacheHits: 0, fallbacks: 0, retries: 1, failures: 0, aborted: 0, byEndpoint: { options: { browserRequests: 1, functionInvocations: 1, providerHttpAttempts: 2, failures: 0 } } });
+});
+
+test('browser observer classifies abort responses and thrown aborts separately from failures', async () => {
+  setRequestDiagnosticsEnabledForTests(true);
+  resetRequestDiagnosticsForTests();
+  const realFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    if (calls === 1) return Response.json({}, { status: 499, headers: { 'X-PutScanner-Failure-Category': 'aborted' } });
+    throw new DOMException('Superseded', 'AbortError');
+  };
+  try {
+    await fetchObservedMarketData('options', '/api/options', undefined, 'abort-response');
+    await assert.rejects(fetchObservedMarketData('options', '/api/options', undefined, 'abort-throw'), error => error.name === 'AbortError');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.equal(calls, 2);
+  assert.equal(getDevelopmentRequestSummary().aborted, 2);
+  assert.equal(getDevelopmentRequestSummary().failures, 0);
 });
 
 test('consumer abort stops obsolete broker work without a failure or stale fallback', async () => {
@@ -82,12 +130,15 @@ test('consumer abort stops obsolete broker work without a failure or stale fallb
 });
 
 test('request budgets reject material request multiplication and failed Screener retry scales by failed batches only', () => {
-  assert.doesNotThrow(() => assertWithinRequestBudget('ticker-detail', REQUEST_BUDGETS['ticker-detail']));
-  assert.throws(() => assertWithinRequestBudget('ticker-detail', { browserRequests: 2, vercelResponses: 2, providerAttempts: 8 }), /budget exceeded/);
-  assert.deepEqual(failedScreenerRetryBudget(2), { browserRequests: 2, vercelResponses: 2, providerAttempts: 18 });
-  assert.ok(failedScreenerRetryBudget(2).browserRequests < REQUEST_BUDGETS['screener-full-scan'].browserRequests);
-  assert.deepEqual(uniqueChainRefreshBudget(20, 6), { browserRequests: 7, vercelResponses: 7, providerAttempts: 7 });
-  assert.deepEqual(uniqueChainRefreshBudget(21, 6), { browserRequests: 7, vercelResponses: 7, providerAttempts: 8 });
+  assert.doesNotThrow(() => assertWithinRequestBudget('ticker-detail', REQUEST_BUDGET_LEDGER['ticker-detail'].ceiling));
+  assert.throws(() => assertWithinRequestBudget('ticker-detail', { browserRequests: 2, functionInvocations: 2, providerAcquisitions: 8 }), /budget exceeded/);
+  assert.equal(REQUEST_BUDGET_LEDGER['ticker-detail'].expected.browserRequests, 1);
+  assert.equal(REQUEST_BUDGET_LEDGER['expiration-change'].expected.providerAcquisitions, 1);
+  assert.equal(REQUEST_BUDGET_LEDGER['option-drawer'].ceiling.browserRequests, 0);
+  assert.deepEqual(failedScreenerRetryBudget(2), { browserRequests: 2, functionInvocations: 2, providerAcquisitions: 18 });
+  assert.ok(failedScreenerRetryBudget(2).browserRequests < REQUEST_BUDGET_LEDGER['screener-full-scan'].ceiling.browserRequests);
+  assert.deepEqual(uniqueChainRefreshBudget(20, 6), { browserRequests: 7, functionInvocations: 7, providerAcquisitions: 7 });
+  assert.deepEqual(uniqueChainRefreshBudget(21, 6), { browserRequests: 7, functionInvocations: 7, providerAcquisitions: 8 });
 });
 
 test('local storage failure feedback is transient and contains no durable data', () => {
@@ -97,4 +148,6 @@ test('local storage failure feedback is transient and contains no durable data',
   unsubscribe();
   notifyLocalStorageFailure();
   assert.equal(calls, 1);
+  assert.equal(LOCAL_STORAGE_FAILURE_MESSAGE, "Put Scanner couldn't save this change on this browser.");
+  assert.equal(LOCAL_STORAGE_FAILURE_MESSAGE.includes('quota'), false);
 });

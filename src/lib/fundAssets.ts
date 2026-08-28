@@ -28,7 +28,7 @@ export function formatFundAssetsDetail(value: number | null | undefined): string
   return `$${assets.toLocaleString('en-US')} (${(assets / 1_000_000_000).toLocaleString('en-US', { maximumFractionDigits: 2 })} billion)`;
 }
 
-export async function fetchFundAssets(tickers: string[]): Promise<FundAssetsData> {
+export async function fetchFundAssets(tickers: string[], options: { signal?: AbortSignal } = {}): Promise<FundAssetsData> {
   const symbols = [...new Set(tickers.map(ticker => ticker.trim().toUpperCase()).filter(Boolean))].sort();
   const result = await requestMarketData<FundAssetsData>({
     key: makeCacheKey(['fund_assets_v1', ...symbols]),
@@ -38,6 +38,7 @@ export async function fetchFundAssets(tickers: string[]): Promise<FundAssetsData
     hardTtlMs: HARD_TTL_MS,
     schemaVersion: 1,
     allowStaleOnError: true,
+    signal: options.signal,
     validator: data => data != null && typeof data === 'object',
     fetcher: async signal => {
       const response = await fetchObservedMarketData('fund-metadata', `/api/fund-metadata?symbols=${encodeURIComponent(symbols.join(','))}`, { signal }, 'fetchFundAssets');

@@ -1,4 +1,4 @@
-export const LOCAL_STORAGE_FAILURE_MESSAGE = 'Put Scanner could not save this change locally.';
+export const LOCAL_STORAGE_FAILURE_MESSAGE = "Put Scanner couldn't save this change on this browser.";
 
 type Listener = () => void;
 const listeners = new Set<Listener>();

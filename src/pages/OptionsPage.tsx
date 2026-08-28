@@ -576,8 +576,13 @@ export default function OptionsPage() {
     const id = makeWatchlistId(ticker, expiry, put.strike);
 
     if (isInWatchlist(id)) {
-      removeFromWatchlist(id);
-      setWatchlistIds(prev => { const next = new Set(prev); next.delete(id); return next; });
+      const stored = removeFromWatchlist(id);
+      setWatchlistIds(prev => {
+        const next = new Set(prev);
+        if (stored.some(item => item.id === id)) next.add(id);
+        else next.delete(id);
+        return next;
+      });
     } else {
       const item: WatchlistItem = {
         id,
@@ -610,8 +615,13 @@ export default function OptionsPage() {
           moneynessLabel: put.otmItmLabel,
         },
       };
-      addToWatchlist(item);
-      setWatchlistIds(prev => new Set(prev).add(id));
+      const stored = addToWatchlist(item);
+      setWatchlistIds(prev => {
+        const next = new Set(prev);
+        if (stored.some(saved => saved.id === id)) next.add(id);
+        else next.delete(id);
+        return next;
+      });
     }
   }, [ticker, selectedExp, optionsData, currentPrice]);
 

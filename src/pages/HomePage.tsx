@@ -186,6 +186,7 @@ export default function HomePage() {
   const [pricesFreshness, setPricesFreshness] = useState<DataFreshnessStatus>('updating');
   const [fundAssets, setFundAssets] = useState<FundAssetsData>({});
   const priceRequestGenerationRef = useRef(0);
+  const priceAbortRef = useRef<AbortController | null>(null);
 
   // Market sparkline data (manual refresh only)
   const [qqqData, setQqqData] = useState<SparklineData | null>(null);
@@ -196,9 +197,13 @@ export default function HomePage() {
   const [lastMarketUpdate, setLastMarketUpdate] = useState<Date | null>(null);
   const [marketRefreshFailed, setMarketRefreshFailed] = useState(false);
   const [chartModal, setChartModal] = useState<{ ticker: string; displayTicker: string } | null>(null);
+  const marketAbortRef = useRef<AbortController | null>(null);
 
   // Load batch prices with 10-second hard timeout
   const loadPrices = useCallback(async (forceRefresh = false) => {
+    priceAbortRef.current?.abort(new DOMException('Superseded Scanner price request', 'AbortError'));
+    const controller = new AbortController();
+    priceAbortRef.current = controller;
     const requestGeneration = ++priceRequestGenerationRef.current;
     setPricesLoading(true);
     setPricesError(null);
@@ -206,9 +211,12 @@ export default function HomePage() {
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     try {
-      const fetchPromise = fetchBatchPricesResult(SCANNER_PRICE_TICKERS, { mode: forceRefresh ? 'revalidate' : 'cache-first' });
+      const fetchPromise = fetchBatchPricesResult(SCANNER_PRICE_TICKERS, { mode: forceRefresh ? 'revalidate' : 'cache-first', signal: controller.signal });
       const timeoutPromise = new Promise<never>((_, reject) => {
-        timeoutId = setTimeout(() => reject(new Error('Request timed out')), 10000);
+        timeoutId = setTimeout(() => {
+          controller.abort(new DOMException('Scanner price request timed out', 'TimeoutError'));
+          reject(new Error('Request timed out'));
+        }, 10000);
       });
       const response = await Promise.race([fetchPromise, timeoutPromise]);
       if (requestGeneration !== priceRequestGenerationRef.current) return;
@@ -229,25 +237,32 @@ export default function HomePage() {
       }
     } catch (err: unknown) {
       if (requestGeneration !== priceRequestGenerationRef.current) return;
-      setPricesError(err instanceof Error ? err.message : 'Price data unavailable');
+      const abortReason = controller.signal.reason as { name?: unknown } | undefined;
+      if ((err as { name?: unknown })?.name === 'AbortError' && abortReason?.name !== 'TimeoutError') return;
+      setPricesError(abortReason?.name === 'TimeoutError' ? 'Request timed out' : err instanceof Error ? err.message : 'Price data unavailable');
       setPricesFreshness('failed');
     } finally {
       if (timeoutId) clearTimeout(timeoutId);
+      if (priceAbortRef.current === controller) priceAbortRef.current = null;
       if (requestGeneration === priceRequestGenerationRef.current) setPricesLoading(false);
     }
   }, []);
 
   useEffect(() => {
     void loadPrices();
-    return () => { priceRequestGenerationRef.current += 1; };
+    return () => {
+      priceRequestGenerationRef.current += 1;
+      priceAbortRef.current?.abort(new DOMException('Scanner route closed', 'AbortError'));
+      priceAbortRef.current = null;
+    };
   }, [loadPrices]);
 
   useEffect(() => {
-    let cancelled = false;
-    fetchFundAssets(SCANNER_PRICE_TICKERS)
-      .then(data => { if (!cancelled) setFundAssets(current => ({ ...current, ...data })); })
+    const controller = new AbortController();
+    fetchFundAssets(SCANNER_PRICE_TICKERS, { signal: controller.signal })
+      .then(data => { if (!controller.signal.aborted) setFundAssets(current => ({ ...current, ...data })); })
       .catch(() => { /* preserve any cached/previous Assets values */ });
-    return () => { cancelled = true; };
+    return () => controller.abort(new DOMException('Scanner route closed', 'AbortError'));
   }, []);
 
   useEffect(() => {
@@ -276,15 +291,19 @@ export default function HomePage() {
 
   // Load market sparklines (manual refresh only, with cache)
   const loadMarketData = useCallback(async () => {
+    marketAbortRef.current?.abort(new DOMException('Superseded Scanner chart request', 'AbortError'));
+    const controller = new AbortController();
+    marketAbortRef.current = controller;
     setMarketLoading(true);
     setMarketRefreshFailed(false);
     try {
       const [qqq, spy, vix, vxn] = await Promise.allSettled([
-        fetchSparkline('QQQ'),
-        fetchSparkline('SPY'),
-        fetchSparkline('^VIX'),
-        fetchSparkline('^VXN'),
+        fetchSparkline('QQQ', { signal: controller.signal }),
+        fetchSparkline('SPY', { signal: controller.signal }),
+        fetchSparkline('^VIX', { signal: controller.signal }),
+        fetchSparkline('^VXN', { signal: controller.signal }),
       ]);
+      if (controller.signal.aborted) return;
       if (qqq.status === 'fulfilled') setQqqData(qqq.value);
       if (spy.status === 'fulfilled') setSpyData(spy.value);
       if (vix.status === 'fulfilled') setVixData(vix.value);
@@ -293,10 +312,19 @@ export default function HomePage() {
       if (fulfilled > 0) setLastMarketUpdate(new Date());
       setMarketRefreshFailed(fulfilled < 4);
     } catch { /* ignore */ }
-    setMarketLoading(false);
+    if (marketAbortRef.current === controller) {
+      marketAbortRef.current = null;
+      setMarketLoading(false);
+    }
   }, []);
 
-  useEffect(() => { loadMarketData(); }, [loadMarketData]);
+  useEffect(() => {
+    void loadMarketData();
+    return () => {
+      marketAbortRef.current?.abort(new DOMException('Scanner route closed', 'AbortError'));
+      marketAbortRef.current = null;
+    };
+  }, [loadMarketData]);
 
   useEffect(() => {
     if (!snapshotProgress?.complete) return;

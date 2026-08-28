@@ -122,6 +122,11 @@ export function screenerTargetDate(expFilter: string): number | null {
   return Number.isInteger(value) && value > 0 ? value : null;
 }
 
+/** Stable key for the criteria that actually change the upstream Screener dataset. */
+export function screenerDatasetScopeKey(selectedTickerKey: string, expFilter: string): string {
+  return `${selectedTickerKey}::${screenerTargetDate(expFilter) ?? 'standard-expirations'}`;
+}
+
 export function planScreenerBatches(selectedTickers: readonly string[], expFilter: string): ScreenerBatchPlan[] {
   const selected = new Set(selectedTickers.map(ticker => ticker.trim().toUpperCase()));
   const targetDate = screenerTargetDate(expFilter);
@@ -335,7 +340,7 @@ export async function retryFailedScreenerBatches(options: {
   };
 }
 
-export async function fetchScreenerExpirations(): Promise<Array<{ date: number; dte: number }>> {
+export async function fetchScreenerExpirations(options: { signal?: AbortSignal } = {}): Promise<Array<{ date: number; dte: number }>> {
   const key = `screener_expirations_v${SCREENER_DATASET_VERSION}`;
   const result = await requestMarketData<ScreenerExpirationPayload>({
     key,
@@ -345,6 +350,7 @@ export async function fetchScreenerExpirations(): Promise<Array<{ date: number; 
     hardTtlMs: EXPIRATION_HARD_TTL_MS,
     schemaVersion: SCREENER_DATASET_VERSION,
     mode: 'cache-first',
+    signal: options.signal,
     priority: 'background_reuse',
     allowStaleOnError: true,
     timeoutMs: 45_000,

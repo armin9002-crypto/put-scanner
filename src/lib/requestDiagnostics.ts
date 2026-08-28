@@ -37,16 +37,8 @@ const state: RequestDiagnosticsSnapshot = endpoints.reduce((acc, endpoint) => {
   return acc;
 }, {} as RequestDiagnosticsSnapshot);
 
-function storageEnabled(): boolean {
-  try {
-    return typeof localStorage !== 'undefined' && localStorage.getItem('put_scanner_debug_network') === 'true';
-  } catch {
-    return false;
-  }
-}
-
 export function isRequestDiagnosticsEnabled(): boolean {
-  return diagnosticsOverride ?? (Boolean(import.meta.env?.DEV) || storageEnabled());
+  return diagnosticsOverride ?? Boolean(import.meta.env?.DEV);
 }
 
 let diagnosticsOverride: boolean | null = null;
@@ -80,7 +72,7 @@ export interface DevelopmentRequestEvent {
   status: number | null;
   outcome: 'success' | 'failure' | 'aborted';
   cacheStatus: string | null;
-  providerAttempts: number;
+  providerHttpAttempts: number;
   retryCount: number;
   serverDurationMs: number | null;
   browserDurationMs: number;
@@ -90,12 +82,14 @@ export interface DevelopmentRequestEvent {
 
 export interface DevelopmentRequestSummary {
   browserRequests: number;
-  vercelResponses: number;
-  providerAttempts: number;
+  functionInvocations: number;
+  providerHttpAttempts: number;
+  cacheHits: number;
+  fallbacks: number;
   retries: number;
   failures: number;
   aborted: number;
-  byEndpoint: Partial<Record<RequestEndpoint, { browserRequests: number; providerAttempts: number; failures: number }>>;
+  byEndpoint: Partial<Record<RequestEndpoint, { browserRequests: number; functionInvocations: number; providerHttpAttempts: number; failures: number }>>;
 }
 
 const MAX_DEVELOPMENT_REQUEST_EVENTS = 100;
@@ -137,7 +131,9 @@ export function recordResponseDebugHeaders(
   observedResponses.add(response);
   const entry = state[endpoint];
   entry.serverEndpointResponses += 1;
-  const upstream = finiteHeaderNumber(response, 'X-PutScanner-Upstream-Requests') ?? 0;
+  const upstream = finiteHeaderNumber(response, 'X-PutScanner-Provider-Attempts')
+    ?? finiteHeaderNumber(response, 'X-PutScanner-Upstream-Requests')
+    ?? 0;
   entry.yahooUpstreamAttempts += upstream;
   const concurrency = finiteHeaderNumber(response, 'X-PutScanner-Max-Observed-Concurrency');
   if (concurrency != null) entry.maxObservedConcurrency = Math.max(entry.maxObservedConcurrency, concurrency);
@@ -167,9 +163,9 @@ export function recordResponseDebugHeaders(
     endpoint,
     source,
     status: response.status,
-    outcome: response.ok ? 'success' : 'failure',
+    outcome: failureCategory === 'aborted' ? 'aborted' : response.ok ? 'success' : 'failure',
     cacheStatus: response.headers.get('X-Vercel-Cache') ?? response.headers.get('X-PutScanner-Cache-Status') ?? strategy,
-    providerAttempts: upstream,
+    providerHttpAttempts: upstream,
     retryCount: retries,
     serverDurationMs: serverDuration,
     browserDurationMs: Math.max(0, Date.now() - (browserRequest?.startedAt ?? Date.now())),
@@ -201,7 +197,7 @@ export async function fetchObservedMarketData(
       status: null,
       outcome: aborted ? 'aborted' : 'failure',
       cacheStatus: null,
-      providerAttempts: 0,
+      providerHttpAttempts: 0,
       retryCount: 0,
       serverDurationMs: null,
       browserDurationMs: Math.max(0, Date.now() - startedAt),
@@ -217,20 +213,25 @@ export function getDevelopmentRequestEvents(): DevelopmentRequestEvent[] {
 }
 
 export function getDevelopmentRequestSummary(): DevelopmentRequestSummary {
-  return developmentRequestEvents.reduce<DevelopmentRequestSummary>((summary, event) => {
-    summary.browserRequests += 1;
-    if (event.status != null) summary.vercelResponses += 1;
-    summary.providerAttempts += event.providerAttempts;
-    summary.retries += event.retryCount;
-    if (event.outcome === 'failure') summary.failures += 1;
-    if (event.outcome === 'aborted') summary.aborted += 1;
-    const endpoint = summary.byEndpoint[event.endpoint] ?? { browserRequests: 0, providerAttempts: 0, failures: 0 };
+  const summary = developmentRequestEvents.reduce<DevelopmentRequestSummary>((current, event) => {
+    current.browserRequests += 1;
+    if (event.status != null) current.functionInvocations += 1;
+    current.providerHttpAttempts += event.providerHttpAttempts;
+    current.retries += event.retryCount;
+    if (event.outcome === 'failure') current.failures += 1;
+    if (event.outcome === 'aborted') current.aborted += 1;
+    const endpoint = current.byEndpoint[event.endpoint] ?? { browserRequests: 0, functionInvocations: 0, providerHttpAttempts: 0, failures: 0 };
     endpoint.browserRequests += 1;
-    endpoint.providerAttempts += event.providerAttempts;
+    if (event.status != null) endpoint.functionInvocations += 1;
+    endpoint.providerHttpAttempts += event.providerHttpAttempts;
     if (event.outcome === 'failure') endpoint.failures += 1;
-    summary.byEndpoint[event.endpoint] = endpoint;
-    return summary;
-  }, { browserRequests: 0, vercelResponses: 0, providerAttempts: 0, retries: 0, failures: 0, aborted: 0, byEndpoint: {} });
+    current.byEndpoint[event.endpoint] = endpoint;
+    return current;
+  }, { browserRequests: 0, functionInvocations: 0, providerHttpAttempts: 0, cacheHits: 0, fallbacks: 0, retries: 0, failures: 0, aborted: 0, byEndpoint: {} });
+  const endpointState = Object.values(state);
+  summary.cacheHits = endpointState.reduce((total, entry) => total + entry.cacheHits, 0);
+  summary.fallbacks = endpointState.reduce((total, entry) => total + entry.staleFallbacks, 0);
+  return summary;
 }
 
 export function recordChainRequestPlan(requested: number, unique: number, source: string): void {

@@ -26,6 +26,9 @@ function chart(ticker: string) {
 
 function json(route: Route, body: unknown, status = 200, extraHeaders: Record<string, string> = {}) {
   const requestId = route.request().headers()['x-putscanner-request-id'] || 'ps-e2e-server';
+  const providerAttempts = extraHeaders['X-PutScanner-Provider-Attempts']
+    ?? extraHeaders['X-PutScanner-Upstream-Requests']
+    ?? '1';
   return route.fulfill({ status, contentType: 'application/json', headers: {
     'X-PutScanner-Request-Id': requestId,
     'X-PutScanner-Server-Duration-Ms': '4',
@@ -33,6 +36,7 @@ function json(route: Route, body: unknown, status = 200, extraHeaders: Record<st
     'X-PutScanner-Cache-Status': 'E2E',
     'X-PutScanner-Failure-Category': status < 400 ? 'none' : 'provider',
     'X-PutScanner-Upstream-Requests': '1',
+    'X-PutScanner-Provider-Attempts': providerAttempts,
     ...extraHeaders,
   }, body: JSON.stringify(body) });
 }
@@ -43,6 +47,13 @@ export async function installDeterministicMarketApi(page: Page, options: { failS
   const failNext = new Set<string>();
   const failuresRemaining = new Map<string, number>();
   const unavailableRequestedExpiry = new Set<string>();
+  const aborted = new Map<string, number>();
+  page.on('requestfailed', request => {
+    const url = new URL(request.url());
+    if (!url.pathname.startsWith('/api/')) return;
+    const endpoint = url.pathname.slice('/api/'.length);
+    aborted.set(endpoint, (aborted.get(endpoint) ?? 0) + 1);
+  });
   await page.route('**/*', route => {
     const url = new URL(route.request().url());
     if (url.hostname === '127.0.0.1' || url.hostname === 'localhost') return route.fallback();
@@ -94,5 +105,5 @@ export async function installDeterministicMarketApi(page: Page, options: { failS
     }
     return json(route, { error: `Unmocked endpoint: ${endpoint}` }, 501);
   });
-  return { counts, delays, failNext, failuresRemaining, unavailableRequestedExpiry };
+  return { counts, delays, failNext, failuresRemaining, unavailableRequestedExpiry, aborted };
 }

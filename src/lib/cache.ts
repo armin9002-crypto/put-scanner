@@ -35,9 +35,9 @@ export async function threeLayerCache<T>(
   key: string,
   memoryTtlMs: number,
   persistentTtlMs: number,
-  fetcher: () => Promise<T>,
+  fetcher: (signal: AbortSignal) => Promise<T>,
   validator?: (data: T) => boolean,
-  options: { bypassCache?: boolean; diagnosticsEndpoint?: RequestEndpoint; diagnosticsSource?: string } = {}
+  options: { bypassCache?: boolean; diagnosticsEndpoint?: RequestEndpoint; diagnosticsSource?: string; signal?: AbortSignal } = {}
 ): Promise<T> {
   const result = await requestMarketData({
     key,
@@ -48,8 +48,9 @@ export async function threeLayerCache<T>(
     schemaVersion: 1,
     mode: options.bypassCache ? 'revalidate' : 'cache-first',
     allowStaleOnError: true,
+    signal: options.signal,
     validator: validator ?? (() => true),
-    fetcher: () => fetcher(),
+    fetcher: signal => fetcher(signal),
   });
   return result.data;
 }

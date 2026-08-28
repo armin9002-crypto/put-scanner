@@ -44,7 +44,7 @@ export interface BatchPriceRequestResult {
   cacheSource: 'memory' | 'persistent' | 'network' | 'stale-fallback';
 }
 
-export async function fetchBatchPricesResult(tickers: string[], options: { mode?: RefreshMode } = {}): Promise<BatchPriceRequestResult> {
+export async function fetchBatchPricesResult(tickers: string[], options: { mode?: RefreshMode; signal?: AbortSignal } = {}): Promise<BatchPriceRequestResult> {
   const normalizedTickers = [...new Set(tickers.map(ticker => ticker.trim().toUpperCase()).filter(Boolean))];
   const existingBatch = peekMarketData<BatchPriceData>({
     key: BATCH_PRICE_KEY,
@@ -62,6 +62,7 @@ export async function fetchBatchPricesResult(tickers: string[], options: { mode?
     schemaVersion: 6,
     mode: options.mode ?? 'cache-first',
     allowStaleOnError: true,
+    signal: options.signal,
     validator: data => isValidBatchResponse(data, normalizedTickers),
     fetcher: async signal => {
       const res = await fetchObservedMarketData('prices', `${API_BASE}/prices?tickers=${encodeURIComponent(normalizedTickers.join(','))}`, { signal }, 'fetchBatchPrices');
@@ -78,7 +79,7 @@ export async function fetchBatchPricesResult(tickers: string[], options: { mode?
   return { data: result.data, freshness: result.meta.freshness, staleFallbackUsed: result.meta.staleFallbackUsed, fetchedAt: result.meta.fetchedAt, cacheSource: result.meta.source };
 }
 
-export async function fetchBatchPrices(tickers: string[], options: { mode?: RefreshMode } = {}): Promise<BatchPriceData> {
+export async function fetchBatchPrices(tickers: string[], options: { mode?: RefreshMode; signal?: AbortSignal } = {}): Promise<BatchPriceData> {
   return (await fetchBatchPricesResult(tickers, options)).data;
 }
 
@@ -212,14 +213,14 @@ export interface SparklineData {
   cachedAt?: number;
 }
 
-export async function fetchSparkline(ticker: string): Promise<SparklineData> {
+export async function fetchSparkline(ticker: string, options: { signal?: AbortSignal } = {}): Promise<SparklineData> {
   const cacheKey = `sparkline_${ticker}`;
   return threeLayerCache<SparklineData>(
     cacheKey,
     SPARKLINE_MEM_TTL,
     SPARKLINE_LS_TTL,
-    async () => {
-      const res = await fetchObservedMarketData('price', `${API_BASE}/price?ticker=${encodeURIComponent(ticker)}&range=1d&interval=1m`, undefined, 'fetchSparkline');
+    async signal => {
+      const res = await fetchObservedMarketData('price', `${API_BASE}/price?ticker=${encodeURIComponent(ticker)}&range=1d&interval=1m`, { signal }, 'fetchSparkline');
       if (!res.ok) throw new Error(`Failed to fetch sparkline for ${ticker}`);
       const data = await res.json();
       if (data.error) throw new Error(data.error);
@@ -236,6 +237,7 @@ export async function fetchSparkline(ticker: string): Promise<SparklineData> {
     {
       diagnosticsEndpoint: 'price',
       diagnosticsSource: 'fetchSparkline',
+      signal: options.signal,
     }
   );
 }

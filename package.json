@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "responsive:check": "node scripts/responsive-checklist.mjs",
+    "request:ledger": "node scripts/request-ledger.mjs",
     "sync:payload-report": "node scripts/stage5-payload-report.mjs",
     "sync:enrollment-hardening-check": "node --test tests/supabase-stage5c3-enrollment-hardening.test.mjs",
     "sync:production-check": "node --test tests/supabase-stage5c-production-sync.test.mjs",

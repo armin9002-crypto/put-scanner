@@ -215,7 +215,7 @@ function AppContent() {
         </main>
       </ErrorBoundary>
       <MobileBottomNav />
-      <NetworkDiagnosticsPanel />
+      {import.meta.env.DEV && <NetworkDiagnosticsPanel />}
       <LayoutDiagnosticsPanel />
       <StorageFailureNotice />
     </BrowserRouter>
@@ -265,7 +265,7 @@ function NetworkDiagnosticsPanel() {
         Network diagnostics
       </summary>
       <div className="mt-2 grid gap-1 font-mono tabular-nums">
-        {requestSummary && <div className="mb-1 border-b pb-1" style={{ borderColor: 'var(--border)' }}>browser:{requestSummary.browserRequests} vercel:{requestSummary.vercelResponses} provider:{requestSummary.providerAttempts} retry:{requestSummary.retries} fail:{requestSummary.failures} abort:{requestSummary.aborted}</div>}
+        {requestSummary && <div className="mb-1 border-b pb-1" style={{ borderColor: 'var(--border)' }}>browser:{requestSummary.browserRequests} function:{requestSummary.functionInvocations} provider-http:{requestSummary.providerHttpAttempts} cache:{requestSummary.cacheHits} retry:{requestSummary.retries} fallback:{requestSummary.fallbacks} fail:{requestSummary.failures} abort:{requestSummary.aborted}</div>}
         {endpoints.map(([endpoint, entry]) => (
           <div key={endpoint} className="grid grid-cols-[78px_1fr] gap-2">
             <span style={{ color: 'var(--text)' }}>{endpoint}</span>
@@ -280,9 +280,7 @@ function NetworkDiagnosticsPanel() {
           screener etf:{screenerScan.plannedEtfs} b:{screenerScan.browserBatchRequests}/{screenerScan.plannedBatches} v:{screenerScan.vercelBatchResponses} y:{screenerScan.reportedYahooUpstreamAttempts} chains:{screenerScan.uniqueChains}/{screenerScan.plannedOptionChains} cx:{screenerScan.maxClientBatchConcurrency} sx:{screenerScan.maxServerYahooConcurrency} cb:{screenerScan.circuitBreakerRejections} f:{screenerScan.failures} ms:{screenerScan.elapsedMs ?? '…'}
         </div>
       )}
-      <div className="mt-1 max-w-64 text-[10px]">
-        Enable in production with localStorage key put_scanner_debug_network=true.
-      </div>
+      <div className="mt-1 max-w-64 text-[10px]">Development-only, memory-only request inspector.</div>
     </details>
   );
 }

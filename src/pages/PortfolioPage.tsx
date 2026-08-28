@@ -1074,6 +1074,7 @@ export default function PortfolioPage() {
   const highlightTimerRef = useRef<number | null>(null);
   const quoteRefreshInFlightRef = useRef(false);
   const quoteRefreshGenerationRef = useRef(0);
+  const quoteRefreshAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -1090,10 +1091,16 @@ export default function PortfolioPage() {
         : latest;
       const lifecycleApplied = reconciled.some((trade, index) => trade !== latest[index]);
       if (lifecycleApplied) {
-        savePortfolioTrades(reconciled);
-        setDurableActivityNotice('Expired positions were durably moved into lifecycle history. Review Account Sync before enrollment.');
+        const saved = savePortfolioTrades(reconciled);
+        if (saved.status === 'ok') {
+          setDurableActivityNotice('Expired positions were durably moved into lifecycle history. Review Account Sync before enrollment.');
+          setTrades(reconciled);
+        } else {
+          setTrades(latest);
+        }
+      } else {
+        setTrades(latest);
       }
-      setTrades(reconciled);
     })();
     return () => {
       active = false;
@@ -1127,6 +1134,8 @@ export default function PortfolioPage() {
   useEffect(() => () => {
     if (highlightTimerRef.current) window.clearTimeout(highlightTimerRef.current);
     quoteRefreshGenerationRef.current += 1;
+    quoteRefreshAbortRef.current?.abort(new DOMException('Portfolio route closed', 'AbortError'));
+    quoteRefreshAbortRef.current = null;
     quoteRefreshInFlightRef.current = false;
   }, []);
 
@@ -1216,8 +1225,10 @@ export default function PortfolioPage() {
   }, [groupMode, scrollToSchedule, startTransientHighlight]);
 
   const persistTrades = useCallback((next: PortfolioTrade[]) => {
-    savePortfolioTrades(next);
+    const saved = savePortfolioTrades(next);
+    if (saved.status !== 'ok') return false;
     setTrades(next);
+    return true;
   }, []);
 
   const handleShowNominalYieldChange = useCallback((value: boolean) => {
@@ -1226,15 +1237,27 @@ export default function PortfolioPage() {
   }, []);
 
   const handleSaveTrade = useCallback(async (input: PortfolioTradeInput, id?: string) => {
+    const before = loadPortfolioTrades();
     const next = id ? updatePortfolioTrade(id, input as Partial<PortfolioTrade>) : addPortfolioTrade(input);
+    const persistedMutation = id
+      ? JSON.stringify(next.find(trade => trade.id === id)) !== JSON.stringify(before.find(trade => trade.id === id))
+      : next.length > before.length;
+    if (!persistedMutation) {
+      setTrades(before);
+      return;
+    }
     const archived = await archiveExpiredOpenTrades(next);
     const latest = loadPortfolioTrades();
     const reconciled = archived.changed
       ? mergePortfolioLifecycleResults(latest, next, archived.trades)
       : latest;
     const lifecycleApplied = reconciled.some((trade, index) => trade !== latest[index]);
-    if (lifecycleApplied) savePortfolioTrades(reconciled);
-    setTrades(reconciled);
+    if (lifecycleApplied) {
+      const saved = savePortfolioTrades(reconciled);
+      setTrades(saved.status === 'ok' ? reconciled : latest);
+    } else {
+      setTrades(latest);
+    }
     setShowAddModal(false);
     setEditingTrade(null);
   }, []);
@@ -1248,7 +1271,12 @@ export default function PortfolioPage() {
   }, []);
 
   const handleDeleteTrade = useCallback((id: string) => {
+    const before = loadPortfolioTrades();
     const next = deletePortfolioTrade(id);
+    if (next.some(trade => trade.id === id)) {
+      setTrades(before);
+      return;
+    }
     setTrades(next);
     setEditingTrade(null);
   }, []);
@@ -1256,6 +1284,8 @@ export default function PortfolioPage() {
   const handleRefreshOpenTrades = useCallback(async () => {
     if (quoteRefreshInFlightRef.current) return;
     quoteRefreshInFlightRef.current = true;
+    const controller = new AbortController();
+    quoteRefreshAbortRef.current = controller;
     const refreshGeneration = ++quoteRefreshGenerationRef.current;
     setRefreshing(true);
     setRefreshWarning(false);
@@ -1272,7 +1302,10 @@ export default function PortfolioPage() {
 
       const nowIso = new Date().toISOString();
       const tickers = [...new Set(open.map(trade => trade.ticker))];
-      const batchPriceResult = await fetchBatchPricesResult(tickers, { mode: 'revalidate' }).catch(() => null);
+      const batchPriceResult = await fetchBatchPricesResult(tickers, { mode: 'revalidate', signal: controller.signal }).catch(error => {
+        if ((error as { name?: unknown })?.name === 'AbortError') throw error;
+        return null;
+      });
       const batchPrices = batchPriceResult?.data ?? null;
       let partialFailure = batchPriceResult?.staleFallbackUsed === true;
       const requestItems = open.map(trade => {
@@ -1282,7 +1315,7 @@ export default function PortfolioPage() {
       const acquired = await acquireOptionChains<OptionsChainData>(requestItems, {
         source: 'Portfolio:refreshOpenTrades',
         limit: 3,
-        fetchChain: (ticker, timestamp) => fetchOptions(ticker, timestamp, { source: 'Portfolio:refreshOpenTrades', refreshMode: 'revalidate' }),
+        fetchChain: (ticker, timestamp) => fetchOptions(ticker, timestamp, { source: 'Portfolio:refreshOpenTrades', refreshMode: 'revalidate', signal: controller.signal }),
       });
       const optionsByKey = acquired.byKey;
       const failedKeys = new Set(acquired.failedKeys);
@@ -1360,14 +1393,15 @@ export default function PortfolioPage() {
       if (refreshGeneration !== quoteRefreshGenerationRef.current) return;
       const latest = loadPortfolioTrades();
       const reconciled = mergePortfolioMarketRefresh(latest, refreshed);
-      persistTrades(reconciled);
-      setRefreshWarning(partialFailure);
-      setLastRefreshed(new Date());
+      const persisted = persistTrades(reconciled);
+      setRefreshWarning(partialFailure || !persisted);
+      if (persisted) setLastRefreshed(new Date());
     } catch {
-      if (refreshGeneration === quoteRefreshGenerationRef.current) setRefreshWarning(true);
+      if (refreshGeneration === quoteRefreshGenerationRef.current && !controller.signal.aborted) setRefreshWarning(true);
     } finally {
       if (refreshGeneration === quoteRefreshGenerationRef.current) {
         quoteRefreshInFlightRef.current = false;
+        if (quoteRefreshAbortRef.current === controller) quoteRefreshAbortRef.current = null;
         setRefreshing(false);
       }
     }
@@ -1526,7 +1560,7 @@ export default function PortfolioPage() {
         {mobileActionsOpen && <MobileBottomSheet title="Portfolio actions" onClose={() => setMobileActionsOpen(false)}><div className="space-y-2"><button type="button" onClick={() => { setMobileActionsOpen(false); setShowAddModal(true); }} className="mobile-sheet-action primary w-full"><Plus className="h-4 w-4" /> Add Trade</button><button type="button" onClick={() => { setMobileActionsOpen(false); setShowImportModal(true); }} className="mobile-sheet-action secondary w-full"><FileImage className="h-4 w-4" /> Import Screenshot</button><button type="button" onClick={() => { setMobileActionsOpen(false); setShowDataBackup(true); }} className="mobile-sheet-action secondary w-full"><Download className="h-4 w-4" /> Data Backup</button><button type="button" onClick={() => { setMobileActionsOpen(false); void handleRefreshOpenTrades(); }} disabled={refreshing || openTrades.length === 0} className="mobile-sheet-action secondary w-full disabled:opacity-40"><RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} /> Refresh Open Trades</button></div></MobileBottomSheet>}
         {(showAddModal || editingTrade) && <TradeModal trade={editingTrade} onClose={() => { setShowAddModal(false); setEditingTrade(null); }} onSave={handleSaveTrade} onDelete={handleDeleteTrade} />}
         {drawerSelection && <ErrorBoundary title="Option sheet unavailable" message="Close it and try again."><Suspense fallback={null}><OptionDetailDrawer option={drawerSelection.option} ticker={drawerSelection.ticker} expirationLabel={drawerSelection.expirationLabel} dte={drawerSelection.dte} underlyingPrice={drawerSelection.underlyingPrice} onClose={() => setDrawerSelection(null)} /></Suspense></ErrorBoundary>}
-        {showImportModal && <Suspense fallback={null}><PortfolioScreenshotImportModal trades={trades} onClose={() => setShowImportModal(false)} onApply={async nextTrades => { const archived = await archiveExpiredOpenTrades(nextTrades); persistTrades(archived.trades); setShowImportModal(false); }} /></Suspense>}
+        {showImportModal && <Suspense fallback={null}><PortfolioScreenshotImportModal trades={trades} onClose={() => setShowImportModal(false)} onApply={async nextTrades => { const archived = await archiveExpiredOpenTrades(nextTrades); if (persistTrades(archived.trades)) setShowImportModal(false); }} /></Suspense>}
         {showDataBackup && <Suspense fallback={null}><DataBackupModal onClose={() => setShowDataBackup(false)} onImported={handleBackupImported} /></Suspense>}
       </div>
     );
@@ -1998,8 +2032,7 @@ export default function PortfolioPage() {
             onClose={() => setShowImportModal(false)}
             onApply={async nextTrades => {
               const archived = await archiveExpiredOpenTrades(nextTrades);
-              persistTrades(archived.trades);
-              setShowImportModal(false);
+              if (persistTrades(archived.trades)) setShowImportModal(false);
             }}
           />
         </Suspense>

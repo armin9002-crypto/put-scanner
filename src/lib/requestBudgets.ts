@@ -9,45 +9,100 @@ export type RequestBudgetWorkflow =
   | 'option-drawer'
   | 'etf-pulse';
 
-export interface RequestBudget {
+export interface RequestBudgetCounts {
   browserRequests: number;
-  vercelResponses: number;
-  providerAttempts: number;
+  functionInvocations: number;
+  providerAcquisitions: number;
 }
 
-export const REQUEST_BUDGETS: Record<RequestBudgetWorkflow, RequestBudget> = {
-  'scanner-load': { browserRequests: 6, vercelResponses: 6, providerAttempts: 8 },
-  'screener-entry': { browserRequests: 2, vercelResponses: 2, providerAttempts: 8 },
-  'screener-full-scan': { browserRequests: 14, vercelResponses: 14, providerAttempts: 126 },
-  'watchlist-refresh': { browserRequests: 2, vercelResponses: 2, providerAttempts: 8 },
-  'portfolio-refresh': { browserRequests: 3, vercelResponses: 3, providerAttempts: 12 },
-  'ticker-detail': { browserRequests: 1, vercelResponses: 1, providerAttempts: 4 },
-  'expiration-change': { browserRequests: 1, vercelResponses: 1, providerAttempts: 3 },
-  'option-drawer': { browserRequests: 0, vercelResponses: 0, providerAttempts: 0 },
-  'etf-pulse': { browserRequests: 1, vercelResponses: 1, providerAttempts: 44 },
+export interface RequestBudgetLedgerEntry {
+  expected: RequestBudgetCounts;
+  ceiling: RequestBudgetCounts;
+  providerHttpAttemptCeiling: number;
+  fixture: string;
+}
+
+// Provider acquisitions are logical market-data operations. Provider HTTP attempts are
+// reported separately because Yahoo session/crumb acquisition and a 401/403 retry can
+// add transport attempts without multiplying the product workflow.
+export const REQUEST_BUDGET_LEDGER: Record<RequestBudgetWorkflow, RequestBudgetLedgerEntry> = {
+  'scanner-load': {
+    expected: { browserRequests: 6, functionInvocations: 6, providerAcquisitions: 8 },
+    ceiling: { browserRequests: 6, functionInvocations: 6, providerAcquisitions: 8 },
+    providerHttpAttemptCeiling: 8,
+    fixture: '42 Scanner symbols, one price batch, fund metadata, and four market charts',
+  },
+  'screener-entry': {
+    expected: { browserRequests: 2, functionInvocations: 2, providerAcquisitions: 8 },
+    ceiling: { browserRequests: 2, functionInvocations: 2, providerAcquisitions: 8 },
+    providerHttpAttemptCeiling: 13,
+    fixture: 'one expiration dataset plus VIX',
+  },
+  'screener-full-scan': {
+    expected: { browserRequests: 14, functionInvocations: 14, providerAcquisitions: 126 },
+    ceiling: { browserRequests: 14, functionInvocations: 14, providerAcquisitions: 126 },
+    providerHttpAttemptCeiling: 196,
+    fixture: '42 ETFs in fourteen fixed three-symbol batches, nine logical acquisitions each',
+  },
+  'watchlist-refresh': {
+    expected: { browserRequests: 2, functionInvocations: 2, providerAcquisitions: 2 },
+    ceiling: { browserRequests: 2, functionInvocations: 2, providerAcquisitions: 2 },
+    providerHttpAttemptCeiling: 7,
+    fixture: 'one ticker and one unique option chain',
+  },
+  'portfolio-refresh': {
+    expected: { browserRequests: 3, functionInvocations: 3, providerAcquisitions: 3 },
+    ceiling: { browserRequests: 3, functionInvocations: 3, providerAcquisitions: 3 },
+    providerHttpAttemptCeiling: 13,
+    fixture: 'two tickers and two unique open-trade option chains; quote-only',
+  },
+  'ticker-detail': {
+    expected: { browserRequests: 1, functionInvocations: 1, providerAcquisitions: 4 },
+    ceiling: { browserRequests: 1, functionInvocations: 1, providerAcquisitions: 4 },
+    providerHttpAttemptCeiling: 9,
+    fixture: 'one consolidated detail request: options, daily price, intraday price, and volatility history',
+  },
+  'expiration-change': {
+    expected: { browserRequests: 1, functionInvocations: 1, providerAcquisitions: 1 },
+    ceiling: { browserRequests: 1, functionInvocations: 1, providerAcquisitions: 1 },
+    providerHttpAttemptCeiling: 6,
+    fixture: 'one explicit option-chain expiration',
+  },
+  'option-drawer': {
+    expected: { browserRequests: 0, functionInvocations: 0, providerAcquisitions: 0 },
+    ceiling: { browserRequests: 0, functionInvocations: 0, providerAcquisitions: 0 },
+    providerHttpAttemptCeiling: 0,
+    fixture: 'calculator and quote-basis interactions use the selected row',
+  },
+  'etf-pulse': {
+    expected: { browserRequests: 1, functionInvocations: 1, providerAcquisitions: 44 },
+    ceiling: { browserRequests: 1, functionInvocations: 1, providerAcquisitions: 44 },
+    providerHttpAttemptCeiling: 44,
+    fixture: 'one aggregate dataset with 44 cold history acquisitions',
+  },
 };
 
-export function assertWithinRequestBudget(workflow: RequestBudgetWorkflow, observed: RequestBudget): void {
-  const budget = REQUEST_BUDGETS[workflow];
-  (Object.keys(budget) as Array<keyof RequestBudget>).forEach(metric => {
+export function assertWithinRequestBudget(workflow: RequestBudgetWorkflow, observed: RequestBudgetCounts): void {
+  const budget = REQUEST_BUDGET_LEDGER[workflow].ceiling;
+  (Object.keys(budget) as Array<keyof RequestBudgetCounts>).forEach(metric => {
     if (!Number.isFinite(observed[metric]) || observed[metric] < 0 || observed[metric] > budget[metric]) {
       throw new Error(`${workflow} ${metric} request budget exceeded: ${observed[metric]} > ${budget[metric]}`);
     }
   });
 }
 
-export function failedScreenerRetryBudget(failedBatchCount: number): RequestBudget {
+export function failedScreenerRetryBudget(failedBatchCount: number): RequestBudgetCounts {
   const batches = Math.max(0, Math.min(14, Math.floor(failedBatchCount)));
-  return { browserRequests: batches, vercelResponses: batches, providerAttempts: batches * 9 };
+  return { browserRequests: batches, functionInvocations: batches, providerAcquisitions: batches * 9 };
 }
 
-export function uniqueChainRefreshBudget(tickerCount: number, uniqueChainCount: number): RequestBudget {
+export function uniqueChainRefreshBudget(tickerCount: number, uniqueChainCount: number): RequestBudgetCounts {
   const tickers = Math.max(0, Math.floor(tickerCount));
   const chains = Math.max(0, Math.floor(uniqueChainCount));
   const priceBatches = tickers === 0 ? 0 : Math.ceil(tickers / 20);
   return {
-    browserRequests: (tickers === 0 && chains === 0 ? 0 : 1) + chains,
-    vercelResponses: (tickers === 0 && chains === 0 ? 0 : 1) + chains,
-    providerAttempts: priceBatches + chains,
+    browserRequests: (tickers === 0 ? 0 : 1) + chains,
+    functionInvocations: (tickers === 0 ? 0 : 1) + chains,
+    providerAcquisitions: priceBatches + chains,
   };
 }

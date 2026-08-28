@@ -260,6 +260,7 @@ export default function WatchlistPage() {
   const initialLoadDone = useRef(false);
   const refreshInFlightRef = useRef(false);
   const refreshGenerationRef = useRef(0);
+  const refreshAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const stored = getWatchlist();
@@ -279,6 +280,8 @@ export default function WatchlistPage() {
     }
 
     refreshInFlightRef.current = true;
+    const controller = new AbortController();
+    refreshAbortRef.current = controller;
     const refreshGeneration = ++refreshGenerationRef.current;
     setItems(currentItems);
     setLoading(true);
@@ -286,7 +289,10 @@ export default function WatchlistPage() {
     try {
       const uniqueTickers = [...new Set(currentItems.map(item => item.ticker))];
       const refreshMode = explicit ? 'revalidate' : 'cache-first';
-      const batchResult = await fetchBatchPrices(uniqueTickers, { mode: refreshMode }).catch(() => null);
+      const batchResult = await fetchBatchPrices(uniqueTickers, { mode: refreshMode, signal: controller.signal }).catch(error => {
+        if ((error as { name?: unknown })?.name === 'AbortError') throw error;
+        return null;
+      });
 
       const requestItems = currentItems
         .filter(item => {
@@ -300,6 +306,7 @@ export default function WatchlistPage() {
         fetchChain: (ticker, timestamp) => fetchOptions(ticker, timestamp, {
           source: explicit ? 'Watchlist:refreshAll' : 'Watchlist:autoRefresh',
           refreshMode,
+          signal: controller.signal,
         }),
       });
       const optionsByKey = acquired.byKey;
@@ -320,12 +327,13 @@ export default function WatchlistPage() {
       setLastRefreshed(new Date());
       if (partialFailure) setRefreshError('Watchlist refresh could not be completed. Saved contracts were preserved.');
     } catch {
-      if (refreshGeneration === refreshGenerationRef.current) {
+      if (refreshGeneration === refreshGenerationRef.current && !controller.signal.aborted) {
         setRefreshError('Watchlist refresh could not be completed. Saved contracts were preserved.');
       }
     } finally {
       if (refreshGeneration === refreshGenerationRef.current) {
         refreshInFlightRef.current = false;
+        if (refreshAbortRef.current === controller) refreshAbortRef.current = null;
         setLoading(false);
       }
     }
@@ -333,6 +341,8 @@ export default function WatchlistPage() {
 
   useEffect(() => () => {
     refreshGenerationRef.current += 1;
+    refreshAbortRef.current?.abort(new DOMException('Watchlist route closed', 'AbortError'));
+    refreshAbortRef.current = null;
     refreshInFlightRef.current = false;
   }, []);
 

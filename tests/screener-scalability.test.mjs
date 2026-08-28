@@ -16,6 +16,7 @@ import {
   planScreenerBatches,
   retryFailedScreenerBatches,
   runScreenerBatchScan,
+  screenerDatasetScopeKey,
 } from '../src/lib/screenerAcquisition.ts';
 import { canonicalOptionChainKey } from '../src/lib/optionChainRequests.ts';
 import { calculateYieldPercent } from '../src/lib/optionMetrics.ts';
@@ -107,6 +108,9 @@ test('batch planning is deterministic and only structural expiration changes alt
   assert.deepEqual(all.map(plan => plan.chunkId), [0, 9, 13]);
   assert.deepEqual(all.map(plan => plan.cacheKey), thirtyDte.map(plan => plan.cacheKey));
   assert.notDeepEqual(all.map(plan => plan.cacheKey), exact.map(plan => plan.cacheKey));
+  assert.equal(screenerDatasetScopeKey('__ALL__', 'all'), screenerDatasetScopeKey('__ALL__', 'lte_30dte'));
+  assert.notEqual(screenerDatasetScopeKey('__ALL__', 'all'), screenerDatasetScopeKey('__ALL__', `date_${EXPIRATION_TWO}`));
+  assert.notEqual(screenerDatasetScopeKey('__ALL__', 'all'), screenerDatasetScopeKey('TQQQ', 'all'));
   assert.deepEqual(all[1].chunkTickers, ['TECL', 'TNA', 'TQQQ']);
   assert.deepEqual(all[1].selectedTickers, ['TQQQ']);
 });
@@ -285,6 +289,86 @@ test('one failed batch preserves successful batches and retry reconstruction has
   assert.equal(retryCalls, 1);
   assert.deepEqual(retried.failedBatchIds, []);
   assert.equal(new Set(rebuilt.rows.map(row => `${row.ticker}|${row.expDate}|${row.strike}`)).size, rebuilt.rows.length);
+});
+
+test('an all-failed Screener scan exposes no partial data and a normal full retry reacquires every failed batch', async () => {
+  const selected = SCREENER_TICKERS.slice(0, 6);
+  const failed = await runScreenerBatchScan({
+    scanId: 'all-failed-fixture',
+    selectedTickers: selected,
+    expFilter: 'all',
+    fetchBatch: async plan => { throw new Error(`fixture batch ${plan.chunkId} unavailable`); },
+  });
+  assert.equal(failed.initialResults.size, 0);
+  assert.equal(failed.completedBatches, 0);
+  assert.deepEqual(failed.failedBatchIds, [0, 1]);
+  assert.equal(failed.errors.length, 2);
+
+  let retryCalls = 0;
+  const recovered = await retryFailedScreenerBatches({
+    scanId: 'all-failed-retry-fixture',
+    selectedTickers: selected,
+    expFilter: 'all',
+    failedBatchIds: failed.failedBatchIds,
+    previous: failed,
+    fetchBatch: async plan => {
+      retryCalls += 1;
+      return { payload: batchPayload(plan), meta: networkMeta };
+    },
+  });
+  assert.equal(retryCalls, 2);
+  assert.equal(recovered.initialResults.size, 6);
+  assert.deepEqual(recovered.failedBatchIds, []);
+});
+
+test('a stale failed-batch retry is aborted and cannot publish into a newer generation', async () => {
+  const selected = SCREENER_TICKERS.slice(0, 6);
+  const previous = await runScreenerBatchScan({
+    scanId: 'stale-retry-previous',
+    selectedTickers: selected,
+    expFilter: 'all',
+    fetchBatch: async plan => {
+      if (plan.chunkId === 1) throw new Error('fixture retry scope');
+      return { payload: batchPayload(plan), meta: networkMeta };
+    },
+  });
+  const gate = createLatestScreenerScanGate();
+  const publications = [];
+  const older = gate.begin();
+  let oldRetryStarted;
+  const started = new Promise(resolve => { oldRetryStarted = resolve; });
+  const olderPromise = retryFailedScreenerBatches({
+    scanId: older.id,
+    selectedTickers: selected,
+    expFilter: 'all',
+    failedBatchIds: previous.failedBatchIds,
+    previous,
+    signal: older.signal,
+    fetchBatch: async plan => new Promise((resolve, reject) => {
+      oldRetryStarted();
+      const onAbort = () => reject(older.signal.reason ?? new DOMException('Aborted', 'AbortError'));
+      older.signal.addEventListener('abort', onAbort, { once: true });
+      setTimeout(() => {
+        older.signal.removeEventListener('abort', onAbort);
+        resolve({ payload: batchPayload(plan), meta: networkMeta });
+      }, 100);
+    }),
+  });
+  await started;
+  const newer = gate.begin();
+  const newerResult = await runScreenerBatchScan({
+    scanId: newer.id,
+    selectedTickers: selected.slice(0, 3),
+    expFilter: 'all',
+    signal: newer.signal,
+    fetchBatch: async plan => ({ payload: batchPayload(plan), meta: networkMeta }),
+  });
+  const olderResult = await olderPromise;
+  if (older.isCurrent()) publications.push({ generation: 'A', result: olderResult });
+  if (newer.isCurrent()) publications.push({ generation: 'B', result: newerResult });
+  assert.equal(older.signal.aborted, true);
+  assert.deepEqual(publications.map(publication => publication.generation), ['B']);
+  assert.equal(publications[0].result.initialResults.size, 3);
 });
 
 test('latest-scan gate aborts and invalidates an older scan before state publication', () => {
