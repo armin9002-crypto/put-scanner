@@ -995,7 +995,7 @@ export default function OptionsPage() {
     <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>
       <div className="option-page-shell page-frame" style={{ '--page-max': '1480px' } as React.CSSProperties}>
         {/* Header */}
-        <div className="option-page-title-row flex items-center gap-2 sm:gap-4 mb-4 sm:mb-6 min-w-0">
+        <div className="option-page-title-row detail-identity-header flex items-center gap-2 sm:gap-4 mb-4 sm:mb-6 min-w-0">
           <button
             type="button"
             onClick={handleBackToScanner}
@@ -1011,14 +1011,14 @@ export default function OptionsPage() {
               <span className="text-xs sm:text-sm truncate" style={{ color: 'var(--text-muted)' }}>{instrument.name}</span>
               <span className="rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>{instrument.leveraged ? `${instrument.leverageMultiple ?? ''}x leveraged ETF` : instrument.assetType === 'etf' ? 'ETF' : instrument.assetType === 'stock' ? 'Stock' : 'Ticker'}</span>
             </div>
-            {instrument.showLeveragedProductWarning && <p className="mt-1 text-[11px]" style={{ color: 'var(--yellow)' }}>Daily reset and compounding make longer-period returns path dependent.</p>}
+            {instrument.showLeveragedProductWarning && <p className="detail-identity-header__notice mt-1 text-[11px]" style={{ color: 'var(--yellow)' }}>Daily reset and compounding make longer-period returns path dependent.</p>}
           </div>
         </div>
 
         {/* Price bar */}
         <div
           data-layout="price-header"
-          className="option-price-header surface-card sticky-stack mobile-static-sticky z-30 p-3 sm:p-4 mb-3 sm:mb-5"
+          className="option-price-header detail-metric-rail surface-card sticky-stack mobile-static-sticky z-30 p-3 sm:p-4 mb-3 sm:mb-5"
           style={{
             top: PRICE_HEADER_TOP,
             zIndex: 30,
@@ -1198,7 +1198,7 @@ export default function OptionsPage() {
         {optionsData && optionsData.expirations.length > 0 && (
           <div
             data-layout="expiry-row"
-            className="option-expiry-row mobile-scroll-row sticky-stack mobile-static-sticky touch-scroll z-20 flex gap-2 mb-3 sm:mb-6 overflow-x-auto pt-2 pb-2 -mx-3 px-3 sm:mx-0 sm:px-0 sm:flex-wrap"
+            className="option-expiry-row detail-expiry-bar mobile-scroll-row sticky-stack mobile-static-sticky touch-scroll z-20 flex gap-2 mb-3 sm:mb-5 overflow-x-auto pt-2 pb-2 -mx-3 px-3 sm:mx-0 sm:px-0 sm:flex-wrap"
             style={{
               top: EXPIRY_ROW_TOP,
               zIndex: 20,
@@ -1401,7 +1401,14 @@ export default function OptionsPage() {
             )}
           </div>
 
-          <div className="option-desktop-chain rounded-xl max-w-full overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+          <div className="option-desktop-chain option-chain-surface rounded-xl max-w-full overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+            <div className="option-chain-header">
+              <div>
+                <div className="option-chain-header__title">Put chain</div>
+                <div className="option-chain-header__meta">{sortedPuts.length} contracts · {selectedExpiration?.label ?? 'Selected expiry'} · click a row to inspect</div>
+              </div>
+              {freshnessLabel && <span className="status-badge" data-status={staleCachedChain ? 'failed' : 'fresh'}>{freshnessLabel}</span>}
+            </div>
             <div className="max-h-[calc(100dvh-230px)] min-h-[260px] max-w-full overflow-auto overscroll-contain sm:max-h-[calc(100dvh-250px)]">
               <table className="financial-table min-w-[520px] md:min-w-[980px] lg:min-w-[1180px] xl:min-w-0 w-full table-fixed text-xs">
                 <thead

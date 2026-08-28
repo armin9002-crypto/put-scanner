@@ -156,7 +156,7 @@ function getLastTradeDetail(value: number | null | undefined): { trade: string; 
 
 function MetricCard({ label, value, color = 'var(--text)' }: { label: string; value: string; color?: string }) {
   return (
-    <div className="rounded-lg p-2.5 sm:p-3 min-w-0" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
+    <div className="drawer-key-figure surface-inset rounded-lg p-2.5 sm:p-3 min-w-0" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
       <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-dim)' }}>{label}</div>
       <div className="text-sm sm:text-base font-mono font-semibold tabular-nums break-words" style={{ color }}>{value}</div>
     </div>
@@ -174,7 +174,7 @@ function DetailRow({ label, value, color, compact = false }: { label: string; va
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+    <section className="drawer-section surface-card rounded-lg p-3 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
       <h3 className="text-[11px] uppercase tracking-wider font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>{title}</h3>
       {children}
     </section>
@@ -255,9 +255,9 @@ export default function OptionDetailDrawer({
       onAddToPortfolio({ option, soldPrice: activeSoldPrice, contracts: validContracts, underlyingPrice });
     };
     return (
-      <div className="fixed inset-0 z-[90]" role="dialog" aria-modal="true" aria-label={`${ticker} ${formatCurrency(option.strike)} put details`}>
+      <div className="fixed inset-0 z-[90] option-drawer-mobile" role="dialog" aria-modal="true" aria-label={`${ticker} ${formatCurrency(option.strike)} put details`}>
         <div className="mobile-trade-sheet absolute inset-0 overflow-y-auto" style={{ backgroundColor: 'var(--bg)' }}>
-          <header className="mobile-trade-sheet__header sticky top-0 z-20 border-b px-3 pb-2 pt-1" style={{ borderColor: 'var(--border)', backgroundColor: 'color-mix(in srgb, var(--bg) 96%, transparent)' }}>
+          <header className="mobile-trade-sheet__header drawer-header sticky top-0 z-20 border-b px-3 pb-2 pt-1" style={{ borderColor: 'var(--border)', backgroundColor: 'color-mix(in srgb, var(--bg) 96%, transparent)' }}>
             <div className="mx-auto mb-1.5 h-1 w-10 rounded-full" aria-hidden="true" style={{ backgroundColor: 'var(--border-strong)' }} />
             <div className="flex min-h-11 items-center justify-between gap-3">
               <div className="min-w-0">
@@ -270,7 +270,7 @@ export default function OptionDetailDrawer({
 
           <div className="space-y-5 px-4 py-4">
             <section>
-              <div className="mobile-segmented" role="group" aria-label="Select sold price quote">
+              <div className="mobile-segmented drawer-quote-selector" role="group" aria-label="Select sold price quote">
                 {quoteOptions.map(({ field, label, value }) => {
                   const selected = isFiniteNumber(value) && activeSoldPrice === value;
                   return <button type="button" key={field} disabled={!isFiniteNumber(value)} onClick={() => setSoldPriceFromQuote(value)} className="pressable mobile-segmented__item disabled:opacity-35" data-selected={selected ? 'true' : 'false'} aria-pressed={selected}>{label}</button>;
@@ -327,7 +327,7 @@ export default function OptionDetailDrawer({
   }
 
   return (
-    <div className="fixed inset-0 z-[70]">
+    <div className="fixed inset-0 z-[70] option-drawer-desktop">
       <button
         type="button"
         aria-label="Close option detail drawer"
@@ -335,7 +335,7 @@ export default function OptionDetailDrawer({
         className="absolute inset-0 bg-black/50"
       />
       <aside
-        className="option-detail-drawer overlay-panel absolute inset-x-0 bottom-0 max-h-[94dvh] w-full overflow-y-auto rounded-t-2xl p-3 sm:inset-y-0 sm:left-auto sm:right-0 sm:h-full sm:max-h-none sm:w-[480px] md:w-[520px] lg:w-[560px] sm:rounded-l-[14px] sm:rounded-r-none sm:p-5"
+        className="option-detail-drawer drawer-shell overlay-panel absolute inset-x-0 bottom-0 max-h-[94dvh] w-full overflow-y-auto rounded-t-2xl p-3 sm:inset-y-0 sm:left-auto sm:right-0 sm:h-full sm:max-h-none sm:w-[480px] md:w-[520px] lg:w-[560px] sm:rounded-l-[14px] sm:rounded-r-none sm:p-5"
         style={{ backgroundColor: 'var(--bg)', borderLeft: '1px solid var(--border)' }}
       >
         <div className="mx-auto mb-2 h-1 w-10 rounded-full sm:hidden" aria-hidden="true" style={{ backgroundColor: 'var(--border-strong)' }} />
@@ -361,7 +361,7 @@ export default function OptionDetailDrawer({
           </button>
         </div>
 
-        <div className="grid grid-cols-1 min-[390px]:grid-cols-2 gap-2 mb-3 min-w-0">
+        <div className="drawer-key-figures grid grid-cols-1 min-[390px]:grid-cols-2 gap-2 mb-3 min-w-0">
           <MetricCard label="Option Price" value={formatCurrency(activeSoldPrice)} color="var(--accent-light)" />
           <MetricCard label="Breakeven" value={formatCurrency(topBreakeven)} />
           <MetricCard label="Downside Cushion" value={formatPercent(positionMetrics.downsideCushion)} color={isFiniteNumber(positionMetrics.downsideCushion) && positionMetrics.downsideCushion >= 0 ? 'var(--green)' : 'var(--red)'} />
@@ -408,7 +408,7 @@ export default function OptionDetailDrawer({
                 />
               </label>
             </div>
-            <div className="grid grid-cols-4 gap-1 mb-3 rounded-xl p-1" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }} role="group" aria-label="Use market quote as sold price">
+            <div className="grid grid-cols-4 gap-1 mb-3 rounded-xl p-1 drawer-quote-selector" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }} role="group" aria-label="Use market quote as sold price">
               {orderedOptionQuoteEntries({ last: usableLast, bid, mid, ask }).map(({ field, label, value }) => (
                 <button
                   key={field}

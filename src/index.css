@@ -1130,3 +1130,379 @@ td {
   position: -webkit-sticky;
   position: sticky;
 }
+
+/* UI-2 workflow surfaces: a quiet control plane keeps decisions above the data grid. */
+.scanner-page .page-header {
+  margin-bottom: 1rem;
+}
+
+.scanner-quick-analyze {
+  display: flex;
+  min-width: min(360px, 100%);
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.35rem 0.4rem 0.35rem 0.75rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--bg-secondary) 88%, var(--bg-inset));
+}
+
+.scanner-quick-analyze__label {
+  flex: none;
+  color: var(--text-tertiary);
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.scanner-quick-analyze .analyze-ticker-form {
+  min-width: 0;
+  flex: 1;
+}
+
+.scanner-market-rail {
+  margin-bottom: 0.75rem;
+  padding: 0.55rem;
+}
+
+.scanner-market-rail .section-header {
+  min-height: 28px;
+  padding-inline: 0.25rem;
+}
+
+.scanner-market-rail__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.scanner-market-card {
+  min-height: 104px;
+  border-color: var(--border-subtle) !important;
+  background: color-mix(in srgb, var(--bg-inset) 74%, var(--bg-secondary)) !important;
+}
+
+.scanner-market-card:hover {
+  border-color: var(--border-emphasis) !important;
+}
+
+.scanner-control-plane {
+  margin-bottom: 1rem;
+  padding: 0.8rem;
+}
+
+.scanner-control-plane__header,
+.scanner-control-plane__row,
+.scanner-status-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.scanner-control-plane__header {
+  margin-bottom: 0.65rem;
+}
+
+.scanner-control-plane__eyebrow {
+  color: var(--accent-light);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.scanner-control-plane__title {
+  margin-top: 0.1rem;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-weight: 650;
+}
+
+.scanner-control-plane__summary,
+.scanner-results-count {
+  color: var(--text-tertiary);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.scanner-control-plane__search {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.65rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding-inline: 0.75rem;
+  background: var(--input-bg);
+}
+
+.scanner-control-plane__search:focus-within {
+  border-color: var(--border-emphasis);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.scanner-control-plane__search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 0.82rem;
+}
+
+.scanner-control-plane__row {
+  align-items: flex-end;
+}
+
+.scanner-control-plane__row > :first-child {
+  min-width: 0;
+  flex: 1;
+}
+
+.scanner-status-line {
+  min-height: 28px;
+  margin-bottom: 0.45rem;
+}
+
+.scanner-status-line__error {
+  color: var(--negative);
+  font-size: 0.68rem;
+}
+
+.scanner-results-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.scanner-empty-state {
+  margin-top: 0.5rem;
+  padding: 2.25rem 1rem;
+  text-align: center;
+}
+
+.instrument-card {
+  min-height: 122px;
+  overflow: visible;
+  transition: border-color var(--transition-ui), background-color var(--transition-ui), box-shadow var(--transition-ui);
+}
+
+.instrument-card:hover {
+  border-color: var(--border-emphasis) !important;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--bg-inset) 28%, transparent);
+}
+
+.instrument-card__primary {
+  border-right: 1px solid var(--border-subtle);
+  padding-right: 0.65rem;
+}
+
+.instrument-card__metrics {
+  padding-top: 0.1rem;
+}
+
+.instrument-card__leverage {
+  letter-spacing: 0.01em;
+}
+
+.detail-identity-header {
+  min-height: 48px;
+  align-items: flex-start;
+}
+
+.detail-identity-header .icon-button {
+  margin-top: 0.1rem;
+}
+
+.detail-identity-header__notice {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--warning) !important;
+}
+
+.detail-metric-rail {
+  border-color: var(--border-default) !important;
+  background: color-mix(in srgb, var(--bg-secondary) 94%, var(--bg-inset)) !important;
+}
+
+.detail-metric-rail [data-mobile-controls] {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 0.55rem;
+}
+
+.detail-expiry-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-top: 0.45rem !important;
+  padding-bottom: 0.45rem !important;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.detail-expiry-bar::before {
+  content: 'Expiry';
+  flex: none;
+  color: var(--text-tertiary);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.detail-expiry-bar button[aria-pressed="true"] {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 36%, transparent) !important;
+}
+
+.option-chain-surface {
+  border-color: var(--border-default) !important;
+}
+
+.option-chain-header {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--bg-elevated) 72%, var(--bg-secondary));
+}
+
+.option-chain-header__title {
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  font-weight: 680;
+}
+
+.option-chain-header__meta {
+  margin-top: 0.12rem;
+  color: var(--text-tertiary);
+  font-size: 0.66rem;
+}
+
+.option-chain-surface .financial-table tbody tr {
+  min-height: 52px;
+}
+
+.option-chain-surface .financial-table tbody td {
+  padding-top: 0.65rem;
+  padding-bottom: 0.65rem;
+}
+
+.drawer-shell {
+  border-color: var(--border-default) !important;
+  background: color-mix(in srgb, var(--bg-elevated) 96%, var(--bg-primary)) !important;
+}
+
+.drawer-header {
+  border-color: var(--border-subtle) !important;
+}
+
+.drawer-header h2 {
+  letter-spacing: -0.02em;
+}
+
+.drawer-key-figures {
+  gap: 0.45rem;
+}
+
+.drawer-key-figure {
+  min-height: 68px;
+  border-color: var(--border-subtle) !important;
+  background: color-mix(in srgb, var(--bg-inset) 72%, var(--bg-elevated)) !important;
+}
+
+.drawer-key-figure:first-child {
+  border-color: var(--accent-border) !important;
+  background: color-mix(in srgb, var(--accent-bg) 64%, var(--bg-elevated)) !important;
+}
+
+.drawer-section {
+  border-color: var(--border-subtle) !important;
+  background: color-mix(in srgb, var(--bg-secondary) 70%, var(--bg-inset)) !important;
+}
+
+.drawer-section > h3 {
+  color: var(--text-tertiary) !important;
+  font-size: 0.62rem;
+  letter-spacing: 0.09em;
+}
+
+.drawer-quote-selector {
+  border-color: var(--border-default) !important;
+  background: var(--bg-inset) !important;
+}
+
+.drawer-shell .button-primary {
+  min-height: 44px;
+}
+
+.drawer-shell .drawer-section:first-child {
+  border-color: var(--border-default) !important;
+}
+
+@media (max-width: 767px) {
+  .option-drawer-mobile .mobile-trade-sheet {
+    background: color-mix(in srgb, var(--bg-primary) 96%, var(--bg-inset));
+  }
+
+  .option-drawer-mobile .drawer-header {
+    box-shadow: 0 6px 18px color-mix(in srgb, var(--bg-primary) 18%, transparent);
+  }
+}
+
+@media (max-width: 767px) {
+  .detail-expiry-bar::before {
+    display: none;
+  }
+
+  .option-chain-header {
+    min-height: 44px;
+    padding-inline: 0.75rem;
+  }
+}
+
+@media (max-width: 1180px) {
+  .scanner-results-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .scanner-market-rail__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 767px) {
+  .scanner-quick-analyze {
+    width: 100%;
+  }
+
+  .scanner-market-rail {
+    border-radius: 0;
+    border-inline: 0;
+  }
+
+  .scanner-market-rail__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .scanner-control-plane__row {
+    display: block;
+  }
+
+  .scanner-results-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .scanner-market-rail__grid,
+  .scanner-results-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

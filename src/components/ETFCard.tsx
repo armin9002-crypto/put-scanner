@@ -246,7 +246,7 @@ function PerformanceMetrics({
   fiftyTwoWeekHighPct: number | null;
 }) {
   return (
-    <div className="h-full flex-1 grid grid-cols-2 gap-x-2 gap-y-1 content-center">
+    <div className="instrument-card__metrics h-full flex-1 grid grid-cols-2 gap-x-2 gap-y-1 content-center">
       <MetricCell label="5D" value={fiveDay} />
       <MetricCell label="1M" value={oneMonth} />
       <MetricCell label="3M" value={threeMonth} />
@@ -290,7 +290,7 @@ export default function ETFCard({
   return (
     <div
       title={`${etf.ticker} - ${etf.name}\nNet Assets ${formatFundAssetsDetail(netAssets)}`}
-      className="group surface-card p-3 text-left w-full relative min-w-0"
+      className="group surface-card instrument-card p-3 text-left w-full relative min-w-0"
       style={{
         backgroundColor: rangeStyle ? rangeStyle.bgTint : 'var(--surface)',
         border: `1px solid ${rangeStyle ? rangeStyle.borderColor : 'var(--border)'}`,
@@ -306,12 +306,12 @@ export default function ETFCard({
         className="absolute inset-0 z-0 rounded-xl focus:outline-none"
       />
 
-      <span className="pointer-events-none absolute top-2 right-2 z-10 text-xs font-semibold px-1.5 py-0.5 rounded-md leading-none" style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)', border: '1px solid var(--accent-border)' }}>
+      <span className="instrument-card__leverage pointer-events-none absolute top-2 right-2 z-10 text-xs font-semibold px-1.5 py-0.5 rounded-md leading-none" style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)', border: '1px solid var(--accent-border)' }}>
         {etf.leverage}
       </span>
 
-      <div className="pointer-events-none relative z-10 flex flex-row gap-3 pr-8 min-w-0">
-        <div className="flex flex-col justify-between flex-shrink-0 w-[52%] sm:w-1/2 min-w-0">
+      <div className="instrument-card__body pointer-events-none relative z-10 flex flex-row gap-3 pr-8 min-w-0">
+        <div className="instrument-card__primary flex flex-col justify-between flex-shrink-0 w-[52%] sm:w-1/2 min-w-0">
           <div>
             <div className="flex items-baseline gap-1.5 min-w-0">
               <span className="text-lg font-bold font-mono tracking-tight leading-none flex-shrink-0" style={{ color: 'var(--text)' }}>{etf.ticker}</span>

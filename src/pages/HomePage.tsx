@@ -47,6 +47,7 @@ import MobileBottomSheet from '../components/mobile/MobileBottomSheet';
 import MobileMarketStrip from '../components/mobile/MobileMarketStrip';
 import MobileEtfRow from '../components/mobile/MobileEtfRow';
 import AnalyzeTickerForm from '../components/AnalyzeTickerForm';
+import { PageHeader, SectionHeader } from '../components/ui/PageHeader';
 
 const SCANNER_PRICE_TICKERS = ETF_LIST.map(etf => etf.ticker);
 
@@ -98,7 +99,7 @@ function MarketChartCard({
           onOpenChart(chartTicker, ticker);
         }
       }}
-      className="rounded-lg p-2 min-w-0 cursor-pointer transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-indigo-500/60"
+      className="scanner-market-card surface-inset min-w-0 cursor-pointer p-2 transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-indigo-500/60"
       style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
       aria-label={`Open ${ticker} interactive price chart`}
     >
@@ -514,25 +515,37 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>
-      <div className="page-frame page-frame--standard">
-        <div className="mb-3">
-          <AnalyzeTickerForm />
-        </div>
-        <div className="relative mb-3">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
-          <input
-            type="text"
-            placeholder="Filter by ticker or underlying index..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="control-field w-full pl-11 pr-4 py-3 rounded-xl text-base sm:text-sm outline-none"
-            style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}
-          />
-        </div>
+      <div className="page-frame page-frame--standard scanner-page">
+        <PageHeader
+          title="Scanner"
+          description="Find high-quality put opportunities across leveraged ETFs."
+          meta={<span className="status-badge" data-status={pricesFreshness === 'failed' ? 'failed' : pricesFreshness === 'updating' ? 'updating' : 'fresh'}>{filtered.length} {filtered.length === 1 ? 'opportunity' : 'opportunities'} · {expDropdownOptions.find(option => option.value === expFilter)?.label ?? 'All dates'}</span>}
+          actions={<div className="scanner-quick-analyze"><span className="scanner-quick-analyze__label">Analyze Ticker</span><AnalyzeTickerForm compact /></div>}
+        />
 
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(360px,500px)_minmax(0,1fr)] xl:grid-cols-[minmax(420px,520px)_minmax(0,1fr)] lg:items-start gap-3 mb-4">
-          {/* Filters */}
-          <div className="scanner-filter-card scanner-desktop-controls surface-card w-full p-2" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+        <section className="scanner-market-rail surface-inset" aria-label="Market context">
+          <SectionHeader title="Market context" description="Underlying and volatility benchmarks" actions={<DataFreshness updatedAt={lastMarketUpdate} status={marketLoading ? 'updating' : marketRefreshFailed ? 'failed' : lastMarketUpdate ? 'fresh' : 'cached'} label="Market" />} />
+          <div className="scanner-market-rail__grid">
+            <MarketChartCard ticker="SPY" chartTicker="SPY" data={spyData} loading={marketLoading} onRefresh={loadMarketData} onOpenChart={(chartTicker, displayTicker) => setChartModal({ ticker: chartTicker, displayTicker })} />
+            <MarketChartCard ticker="VIX" chartTicker="^VIX" data={vixData} loading={marketLoading} onRefresh={loadMarketData} onOpenChart={(chartTicker, displayTicker) => setChartModal({ ticker: chartTicker, displayTicker })} />
+            <MarketChartCard ticker="QQQ" chartTicker="QQQ" data={qqqData} loading={marketLoading} onRefresh={loadMarketData} onOpenChart={(chartTicker, displayTicker) => setChartModal({ ticker: chartTicker, displayTicker })} />
+            <MarketChartCard ticker="VXN" chartTicker="^VXN" data={vxnData} loading={marketLoading} onRefresh={loadMarketData} onOpenChart={(chartTicker, displayTicker) => setChartModal({ ticker: chartTicker, displayTicker })} />
+          </div>
+        </section>
+
+        <section className="scanner-control-plane surface-card scanner-desktop-controls" aria-label="Scanner filters">
+          <div className="scanner-control-plane__header">
+            <div>
+              <div className="scanner-control-plane__eyebrow">Opportunity set</div>
+              <div className="scanner-control-plane__title">Set expiry and criteria</div>
+            </div>
+            <div className="scanner-control-plane__summary">{mobileActiveFilterCount + (expFilter !== 'all' ? 1 : 0) + (search.trim() ? 1 : 0)} active controls</div>
+          </div>
+          <div className="scanner-control-plane__search">
+            <Search className="h-4 w-4" style={{ color: 'var(--text-muted)' }} />
+            <input type="text" placeholder="Filter by ticker or underlying index..." value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Filter by ticker or underlying index" />
+          </div>
+          <div className="scanner-control-plane__row">
             <div className="grid grid-cols-[86px_minmax(96px,1fr)_70px_62px] items-end gap-1">
               <div className="min-w-0">
                 <span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Leverage</span>
@@ -549,26 +562,16 @@ export default function HomePage() {
               <button type="button" onClick={() => void updateVisibleOptionSnapshots()} disabled={snapshotUpdateRunningRef.current} className="inline-flex h-8 flex-none items-center gap-1 rounded-md px-2 text-[10px] font-medium whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-60" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)', color: 'var(--text-muted)' }} title="Update missing or stale IV60 and liquidity snapshots for visible ETFs">{snapshotProgress && !snapshotProgress.complete && <Loader2 className="h-3 w-3 animate-spin" />}{snapshotProgressLabel(snapshotProgress)}</button>
             </div>
           </div>
+        </section>
 
-          <div className="scanner-market-strip mobile-scroll-row grid grid-cols-1 min-[390px]:grid-cols-2 xl:grid-cols-4 gap-2 min-w-0">
-            <MarketChartCard ticker="SPY" chartTicker="SPY" data={spyData} loading={marketLoading} onRefresh={loadMarketData} onOpenChart={(chartTicker, displayTicker) => setChartModal({ ticker: chartTicker, displayTicker })} />
-            <MarketChartCard ticker="VIX" chartTicker="^VIX" data={vixData} loading={marketLoading} onRefresh={loadMarketData} onOpenChart={(chartTicker, displayTicker) => setChartModal({ ticker: chartTicker, displayTicker })} />
-            <MarketChartCard ticker="QQQ" chartTicker="QQQ" data={qqqData} loading={marketLoading} onRefresh={loadMarketData} onOpenChart={(chartTicker, displayTicker) => setChartModal({ ticker: chartTicker, displayTicker })} />
-            <MarketChartCard ticker="VXN" chartTicker="^VXN" data={vxnData} loading={marketLoading} onRefresh={loadMarketData} onOpenChart={(chartTicker, displayTicker) => setChartModal({ ticker: chartTicker, displayTicker })} />
-          </div>
-        </div>
-
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <div className="scanner-status-line">
           <DataFreshness updatedAt={pricesUpdatedAt} status={pricesFreshness} label="Scanner prices" />
-          <DataFreshness updatedAt={lastMarketUpdate} status={marketLoading ? 'updating' : marketRefreshFailed ? 'failed' : lastMarketUpdate ? 'fresh' : 'cached'} label="Market charts" />
+          {pricesError && <span className="scanner-status-line__error">{pricesError}</span>}
         </div>
 
-        <div className="mb-2 flex items-baseline justify-between gap-3">
-          <h1 className="text-base font-bold tracking-tight" style={{ color: 'var(--text)' }}>ETFs</h1>
-          <span className="text-xs font-medium tabular-nums" style={{ color: 'var(--text-dim)' }}>{filtered.length} results</span>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
+        <section aria-label="ETF opportunities">
+          <SectionHeader title="ETF opportunities" description="Compare price action, option context, and liquidity before opening the chain." actions={<span className="scanner-results-count">{filtered.length} results</span>} />
+          <div className="scanner-results-grid">
           {filtered.map(etf => (
             <ETFCard
               key={etf.ticker}
@@ -583,15 +586,18 @@ export default function HomePage() {
               onRetry={() => loadPrices(true)}
             />
           ))}
-        </div>
+          </div>
 
         {filtered.length === 0 && (
-          <div className="text-center py-16">
-            <p style={{ color: 'var(--text-muted)' }}>No ETFs match your filters.</p>
+          <div className="scanner-empty-state surface-inset">
+            <p className="font-semibold" style={{ color: 'var(--text)' }}>No ETFs match your filters.</p>
+            <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Try clearing search or widening the opportunity set.</p>
+            <button type="button" className="button-secondary mt-3 rounded-md px-3 py-1.5 text-xs" onClick={() => { setSearch(''); setLeverageFilter('All'); setTypeFilter('All'); setLiquidityFilter('all'); setScannerSort('default'); }}>Reset filters</button>
           </div>
         )}
+        </section>
 
-        <footer className="mt-12 pb-6 text-center">
+        <footer className="mt-8 pb-6 text-center">
           <p className="text-xs" style={{ color: 'var(--text-dim)' }}>Data delayed up to 15 minutes. Not financial advice.</p>
         </footer>
       </div>

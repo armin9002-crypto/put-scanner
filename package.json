@@ -22,6 +22,7 @@
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "visual:ui1": "node scripts/ui-overhaul-screenshots.mjs",
+    "visual:ui2": "node scripts/ui-overhaul-ui2-screenshots.mjs",
     "verify": "npm run typecheck && npm test && npm run selfcheck && npm run responsive:check && npm run build && npm run lint",
     "typecheck": "tsc --noEmit -p tsconfig.app.json"
   },
