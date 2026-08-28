@@ -474,6 +474,53 @@ function SummaryCard({ label, value, color }: { label: string; value: string; co
   );
 }
 
+function PortfolioPriorityStrip({
+  trades,
+  markBasis,
+  onOpenTrade,
+}: {
+  trades: PortfolioTrade[];
+  markBasis: MarkBasis;
+  onOpenTrade: (trade: PortfolioTrade) => void;
+}) {
+  const attention = buildNeedsAttention(trades).slice(0, 3);
+  const closeCandidates = buildCloseCandidates(trades, markBasis).slice(0, 3);
+  if (attention.length === 0 && closeCandidates.length === 0) return null;
+  return (
+    <section className="portfolio-priority-rail" aria-label="Portfolio priorities">
+      <div className="portfolio-priority-card portfolio-priority-card--attention surface-card">
+        <div className="portfolio-priority-card__header">
+          <div><h2>Attention queue</h2><p>Highest-risk positions to review first</p></div>
+          <span className="status-badge" data-status="failed">Top {attention.length}</span>
+        </div>
+        <div className="portfolio-priority-list">
+          {attention.map(trade => {
+            const health = getPositionHealth(trade);
+            return <button type="button" key={trade.id} className="portfolio-priority-item" onClick={() => onOpenTrade(trade)}>
+              <span className="portfolio-priority-item__identity"><b>{trade.ticker} {formatCurrency(trade.strike)} Put</b><small>{expiryLabel(trade.expiration)} · {formatDteValue(calculateRemainingDte(trade))}</small></span>
+              <span className="portfolio-priority-item__value" style={{ color: health.color }}>{health.label}</span>
+            </button>;
+          })}
+        </div>
+      </div>
+      <div className="portfolio-priority-card portfolio-priority-card--close surface-card">
+        <div className="portfolio-priority-card__header">
+          <div><h2>Close candidates</h2><p>Policy-qualified redeploy opportunities</p></div>
+          <span className="status-badge" data-status="fresh">Top {closeCandidates.length}</span>
+        </div>
+        <div className="portfolio-priority-list">
+          {closeCandidates.length === 0 ? <p className="portfolio-priority-empty">No policy-qualified closes yet.</p> : closeCandidates.map(candidate => (
+            <button type="button" key={candidate.trade.id} className="portfolio-priority-item" onClick={() => onOpenTrade(candidate.trade)}>
+              <span className="portfolio-priority-item__identity"><b>{candidate.trade.ticker} {formatCurrency(candidate.trade.strike)} Put</b><small>{candidate.reasons[0] ?? 'Review position'}</small></span>
+              <span className="portfolio-priority-item__value" style={{ color: 'var(--positive)' }}>{formatPctValue(candidate.percentCaptured)}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function MarkBasisToggle({ markBasis, onChange }: { markBasis: MarkBasis; onChange: (basis: MarkBasis) => void }) {
   return (
     <div className="mark-basis-toggle flex items-center gap-1.5 min-w-0 whitespace-nowrap">
@@ -1428,7 +1475,7 @@ export default function PortfolioPage() {
 
   if (isPhone) {
     return (
-      <div className="mobile-route-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
+      <div className="mobile-route-page portfolio-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
         {trades.length === 0 ? <div className="px-6 py-16 text-center"><Briefcase className="mx-auto mb-3 h-7 w-7" style={{ color: 'var(--text-dim)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No open positions</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Add a trade or import a brokerage screenshot.</p><div className="mx-auto mt-4 grid max-w-xs grid-cols-2 gap-2"><button type="button" onClick={() => setShowAddModal(true)} className="mobile-sheet-action primary"><Plus className="h-4 w-4" /> Add Trade</button><button type="button" onClick={() => setShowImportModal(true)} className="mobile-sheet-action secondary"><FileImage className="h-4 w-4" /> Import</button></div><button type="button" onClick={() => setShowDataBackup(true)} className="pressable mt-3 inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-xs font-semibold" style={{ color: 'var(--text-muted)' }}><Download className="h-4 w-4" /> Data Backup</button></div> : (
           <>
             <section className="mobile-portfolio-hero px-4 pb-3 pt-3" style={{ backgroundColor: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
@@ -1446,8 +1493,11 @@ export default function PortfolioPage() {
               </div>
               <div className="mt-3 flex items-center gap-3"><span className="flex-none text-[12px] font-semibold" style={{ color: 'var(--text-muted)' }}>Mark at</span><div className="min-w-0 flex-1"><MobileSegmentedControl value={markBasis} onChange={setMarkBasis} label="Portfolio mark basis" options={MARK_BASIS_OPTIONS.map(value => ({ value, label: value.charAt(0).toUpperCase() + value.slice(1) }))} /></div></div>
               <DataFreshness updatedAt={lastRefreshed} status={refreshing ? 'updating' : refreshWarning ? 'failed' : lastRefreshed ? 'cached' : 'stale'} label="Portfolio marks" />
+              {markSummary.totalGainLoss == null && <p className="portfolio-partial-mark" role="status">Partial marks · one or more open quotes are unavailable; aggregate P&amp;L stays — until refreshed.</p>}
               {durableActivityNotice && <p role="status" className="mt-2 text-[11px] leading-4" style={{ color: 'var(--yellow)' }}>{durableActivityNotice}</p>}
             </section>
+
+            {!analyticsExpanded && <PortfolioPriorityStrip trades={openTrades} markBasis={markBasis} onOpenTrade={openDrawer} />}
 
             <div ref={scheduleRef} className="border-b px-3.5 py-2" style={{ borderColor: 'var(--border)' }}>
               <div className="mb-2 flex items-center justify-between"><h2 className="text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Open Positions</h2><span className="font-mono text-[11px]" style={{ color: 'var(--text-muted)' }}>{openTrades.length} trades</span></div>
@@ -1467,7 +1517,7 @@ export default function PortfolioPage() {
               return <MobileExpirationGroup key={key} label={scheduleGroupLabel(group)} dte={groupMode === 'underlying' && 'expirationCount' in group ? `${group.expirationCount} ${group.expirationCount === 1 ? 'expiry' : 'expiries'}` : scheduleGroupDte(group)} positions={group.tradeCount} contracts={group.contractCount} risk={formatCurrency(group.grossRisk, 0)} pnl={formatCurrency(group.totalGainLoss, 0)} captured={formatPctValue(captured)} expanded={expanded} onToggle={() => toggleScheduleGroup(key)}>{group.trades.map(renderMobileScheduleTrade)}</MobileExpirationGroup>;
             })}</div>}
 
-            {openTrades.length > 0 && <section className="border-t px-3.5 py-2" style={{ borderColor: 'var(--border)' }}><button type="button" onClick={() => setAnalyticsExpanded(expanded => !expanded)} aria-expanded={analyticsExpanded} aria-controls="portfolio-analytics-content" className="pressable flex min-h-11 w-full items-center justify-between text-left"><h2 className="text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Portfolio Analytics</h2><ChevronDown className={`h-4 w-4 transition-transform ${analyticsExpanded ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} aria-hidden="true" /></button><div id="portfolio-analytics-content">{analyticsExpanded && <div className="pb-2"><MobileSegmentedControl value={mobileAnalytics} onChange={setMobileAnalytics} label="Portfolio analytics" options={[{ value: 'maturity', label: 'Maturity' }, { value: 'ticker', label: 'Exposure' }, { value: 'attention', label: 'Attention' }, { value: 'close', label: 'Close' }]} /><div className="mt-2">{mobileAnalytics === 'maturity' && <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openTrades, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." onGroupClick={drillToExpiration} />}{mobileAnalytics === 'ticker' && <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openTrades, markBasis)} totalGrossRisk={sumValues(openTrades.map(calculateEquityAtRisk))} maxItems={8} onGroupClick={drillToTicker} />}{mobileAnalytics === 'attention' && <NeedsAttentionList items={buildNeedsAttention(openTrades).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} />}{mobileAnalytics === 'close' && <CloseCandidatesCard candidates={buildCloseCandidates(openTrades, markBasis).slice(0, 5)} onNavigate={drillToTrade} />}</div></div>}</div></section>}
+            {openTrades.length > 0 && <section className="portfolio-analytics-section border-t px-3.5 py-2" style={{ borderColor: 'var(--border)' }}><button type="button" onClick={() => setAnalyticsExpanded(expanded => !expanded)} aria-expanded={analyticsExpanded} aria-controls="portfolio-analytics-content" className="portfolio-analytics-disclosure pressable flex min-h-11 w-full items-center justify-between text-left"><span><h2 className="text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Portfolio Analytics</h2><span className="portfolio-analytics-disclosure__hint">Concentration, timing, and policy signals</span></span><ChevronDown className={`h-4 w-4 transition-transform ${analyticsExpanded ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} aria-hidden="true" /></button><div id="portfolio-analytics-content">{analyticsExpanded && <div className="portfolio-analytics-content pb-2"><MobileSegmentedControl value={mobileAnalytics} onChange={setMobileAnalytics} label="Portfolio analytics" options={[{ value: 'maturity', label: 'Maturity' }, { value: 'ticker', label: 'Exposure' }, { value: 'attention', label: 'Attention' }, { value: 'close', label: 'Close' }]} /><div className="mt-2">{mobileAnalytics === 'maturity' && <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openTrades, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." onGroupClick={drillToExpiration} />}{mobileAnalytics === 'ticker' && <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openTrades, markBasis)} totalGrossRisk={sumValues(openTrades.map(calculateEquityAtRisk))} maxItems={8} onGroupClick={drillToTicker} />}{mobileAnalytics === 'attention' && <NeedsAttentionList items={buildNeedsAttention(openTrades).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} />}{mobileAnalytics === 'close' && <CloseCandidatesCard candidates={buildCloseCandidates(openTrades, markBasis).slice(0, 5)} onNavigate={drillToTrade} />}</div></div>}</div></section>}
 
             {archivedTrades.length > 0 && <section className="border-t px-3.5 py-3" style={{ borderColor: 'var(--border)' }}><button type="button" onClick={() => setMobileHistoryOpen(current => !current)} className="pressable flex min-h-11 w-full items-center justify-between text-left" aria-expanded={mobileHistoryOpen}><span><b className="block text-[15px]" style={{ color: 'var(--text)' }}>History</b><span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{archivedTrades.length} resolved · {formatCurrency(archiveSummary.realizedPnl, 0)} realized</span></span><ChevronDown className={`h-4 w-4 transition-transform ${mobileHistoryOpen ? 'rotate-180' : ''}`} /></button>{mobileHistoryOpen && <ArchiveHistorySection trades={archivedTrades} summary={archiveSummary} resolvingIds={resolvingArchiveIds} onRetryResolve={handleRetryResolve} onManualExpirationClose={handleManualExpirationClose} onEdit={setEditingTrade} onDelete={handleDeleteTrade} />}</section>}
           </>
@@ -1483,8 +1533,8 @@ export default function PortfolioPage() {
   }
 
   return (
-    <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>
-      <div className="page-frame page-frame--wide">
+    <div className="portfolio-page min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>
+      <div className="page-frame page-frame--wide portfolio-page__frame">
         <PageHeader
           title="Portfolio"
           description="Sold-put positions, capital exposure, and lifecycle analytics."
@@ -1533,7 +1583,7 @@ export default function PortfolioPage() {
           </div>
         ) : (
           <>
-            <div className="mb-3 md:hidden">
+            <div className="portfolio-summary-mobile mb-3 md:hidden">
               <div className="grid grid-cols-2 gap-1.5">
                 <div className="col-span-2 rounded-xl p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
                   <div className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Total gain / loss</div>
@@ -1556,7 +1606,7 @@ export default function PortfolioPage() {
               </details>
             </div>
 
-            <div className="hidden grid-cols-2 md:grid md:grid-cols-5 xl:grid-cols-10 gap-1.5 mb-3">
+            <div className="portfolio-summary-grid hidden grid-cols-2 md:grid md:grid-cols-5 xl:grid-cols-10 gap-1.5 mb-3">
               <SummaryCard label="Open Trades" value={String(summary.totalOpenTrades)} />
               <SummaryCard label="Premium Collected" value={formatCurrency(summary.totalPremiumCollected, 0)} color="var(--green)" />
               <SummaryCard label="Gross Secured Cash" value={formatCurrency(summary.totalEquityAtRisk, 0)} />
@@ -1568,14 +1618,17 @@ export default function PortfolioPage() {
               <SummaryCard label="Weighted Avg Delta" value={formatDelta(markSummary.weightedAverageDelta)} color={pnlColor(markSummary.weightedAverageDelta)} />
               <SummaryCard label="Weighted Avg DTE" value={isFiniteNumber(summary.weightedAverageRemainingDte) ? `${Math.round(summary.weightedAverageRemainingDte)} DTE` : DASH} />
             </div>
+            {markSummary.totalGainLoss == null && <p className="portfolio-partial-mark mb-3" role="status">Partial marks · one or more open quotes are unavailable; aggregate P&amp;L stays — until refreshed.</p>}
+
+            {!analyticsExpanded && <PortfolioPriorityStrip trades={openTrades} markBasis={markBasis} onOpenTrade={openDrawer} />}
 
             {openTrades.length === 0 && (
               <div className="rounded-lg px-3 py-2 mb-4 text-sm" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>No open trades.</div>
             )}
 
-            <section className="mt-4 mb-4 w-full max-w-full">
-              <div className="flex items-center justify-between mb-2">
-                <h2 className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--text-muted)' }}>Portfolio Analytics</h2>
+            <section className="portfolio-analytics-section mt-4 mb-4 w-full max-w-full">
+              <div className="portfolio-analytics-header flex items-center justify-between mb-2">
+                <div><h2 className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--text-muted)' }}>Portfolio Analytics</h2><p className="portfolio-analytics-header__hint">Concentration, timing, and policy signals</p></div>
                 <button type="button" onClick={() => setAnalyticsExpanded(expanded => !expanded)} aria-expanded={analyticsExpanded} aria-controls="portfolio-analytics-content" aria-label={`${analyticsExpanded ? 'Collapse' : 'Expand'} Portfolio Analytics`} className="pressable flex min-h-11 min-w-11 items-center justify-center rounded-lg sm:min-h-8 sm:min-w-8" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}><ChevronDown className={`h-4 w-4 transition-transform ${analyticsExpanded ? 'rotate-180' : ''}`} aria-hidden="true" /></button>
               </div>
               <div id="portfolio-analytics-content">{analyticsExpanded && (openTrades.length === 0 ? (
@@ -1595,17 +1648,17 @@ export default function PortfolioPage() {
                     {mobileAnalytics === 'close' && <CloseCandidatesCard candidates={buildCloseCandidates(openTrades, markBasis).slice(0, 5)} onNavigate={drillToTrade} />}
                   </div>
                 </div>
-                <div className="hidden grid-cols-1 md:grid md:grid-cols-2 xl:grid-cols-12 auto-rows-auto items-stretch gap-2">
-                  <div className="md:col-span-1 xl:col-span-8">
+                <div className="portfolio-analytics-grid hidden grid-cols-1 md:grid md:grid-cols-2 xl:grid-cols-12 auto-rows-auto items-stretch gap-2">
+                  <div className="md:col-span-1 xl:col-span-6">
                     <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openTrades, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." onGroupClick={drillToExpiration} />
                   </div>
-                  <div className="md:col-span-1 xl:col-span-4">
-                    <NeedsAttentionList items={buildNeedsAttention(openTrades).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} />
-                  </div>
-                  <div className="md:col-span-1 xl:col-span-8">
+                  <div className="md:col-span-1 xl:col-span-6">
                     <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openTrades, markBasis)} totalGrossRisk={sumValues(openTrades.map(calculateEquityAtRisk))} maxItems={8} onGroupClick={drillToTicker} />
                   </div>
-                  <div className="md:col-span-1 xl:col-span-4">
+                  <div className="md:col-span-1 xl:col-span-6">
+                    <NeedsAttentionList items={buildNeedsAttention(openTrades).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} />
+                  </div>
+                  <div className="md:col-span-1 xl:col-span-6">
                     <CloseCandidatesCard candidates={buildCloseCandidates(openTrades, markBasis).slice(0, 5)} onNavigate={drillToTrade} />
                   </div>
                 </div>
@@ -1613,7 +1666,7 @@ export default function PortfolioPage() {
               ))}</div>
             </section>
 
-            <div ref={scheduleRef} className="flex scroll-mt-20 flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
+            <div ref={scheduleRef} className="portfolio-schedule-header flex scroll-mt-20 flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--text-muted)' }}>Schedule of Positions</h2>
                 {activeScheduleTicker && <span className="inline-flex items-center gap-1 rounded px-2 py-1 text-[10px]" style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)', border: '1px solid var(--accent-border)' }}>Showing: {activeScheduleTicker}<button type="button" onClick={() => setActiveScheduleTicker(null)} className="font-bold" aria-label="Clear ticker highlight">× Clear</button></span>}
@@ -1707,7 +1760,7 @@ export default function PortfolioPage() {
               })}
             </div>
 
-            <div className="hidden md:block rounded-lg overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+            <div className="portfolio-schedule-surface hidden md:block rounded-lg overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
               <div className="overflow-x-auto max-w-full overscroll-contain">
                 <table className="financial-table min-w-max w-full text-[12px] leading-none">
                   <thead className="sticky top-0 z-10">
@@ -2018,7 +2071,7 @@ function ArchiveHistorySection({
   if (trades.length === 0) return null;
 
   return (
-    <section className="mt-5">
+    <section className="portfolio-history-section mt-5">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
         <h2 className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--text-muted)' }}>Expired / Closed History</h2>
         <div className="flex max-w-full gap-1 overflow-x-auto pb-0.5">

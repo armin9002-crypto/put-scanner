@@ -423,7 +423,7 @@ export default function WatchlistPage() {
 
   if (isPhone) {
     return (
-      <div className="mobile-route-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
+      <div className="mobile-route-page watchlist-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
         <div className="flex min-h-[52px] items-center gap-2 border-b px-3.5" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
           <div className="mr-auto"><div className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{items.length} saved {items.length === 1 ? 'contract' : 'contracts'}</div><div className="text-[10px]" style={{ color: 'var(--text-dim)' }}>{lastRefreshed ? `Updated ${lastRefreshed.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Saved snapshots'}</div></div>
           <select value={sortField} onChange={event => setSortField(event.target.value as SortField)} className="min-h-11 min-w-0 max-w-[112px] rounded-lg px-2 text-[12px] outline-none" aria-label="Sort watchlist" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}><option value="dte">DTE</option><option value="ticker">Ticker</option><option value="annYieldBid">Ann. SCY Bid</option><option value="strike">Strike</option><option value="delta">Delta</option><option value="iv">IV</option><option value="added">Added</option></select>
@@ -433,9 +433,9 @@ export default function WatchlistPage() {
         {refreshError && <div role="alert" className="flex items-start gap-2 border-b px-3.5 py-2 text-[11px]" style={{ borderColor: 'var(--border)', color: 'var(--red)', backgroundColor: 'rgba(239,68,68,0.08)' }}><AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-none" /><span>{refreshError} Tap refresh to retry.</span></div>}
         {items.length === 0 ? <div className="px-6 py-16 text-center"><Star className="mx-auto mb-3 h-7 w-7" style={{ color: 'var(--text-dim)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No saved puts</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Star a contract from an option chain to save it here.</p></div> : (
           <div className="mobile-financial-list">{sortedRows.map(row => (
-            <div key={row.id} className="mobile-watchlist-entry" style={{ opacity: row.expired || row.status === 'unavailable' ? 0.65 : 1 }}>
+              <div key={row.id} className="mobile-watchlist-entry watchlist-mobile-row" style={{ opacity: row.expired || row.status === 'unavailable' ? 0.65 : 1 }}>
               <MobileOptionRow ticker={row.ticker} tickerTo={`/options/${row.ticker}?expiry=${row.expiryTimestamp}`} strike={row.strike} expirationLabel={row.expiryFormatted} dte={row.dte} bid={row.bid} ask={row.ask} last={row.last} annualYield={row.annYieldBid} delta={row.delta} impliedVolatility={row.iv} openInterest={row.openInterest} moneynessLabel={row.moneynessLabel} moneynessColor={row.moneynessColor} statusText={row.statusLabel} watched onToggleWatchlist={() => handleRemove(row.id)} onSelect={() => setSelectedOption({ option: optionDetailFromWatchlistRow(row), ticker: row.ticker, expirationLabel: row.expiryFormatted, dte: row.dte, underlyingPrice: row.currentPrice })} />
-              <div className="border-b px-3 pb-1" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>{editingNote === row.id ? <input type="text" value={noteText} onChange={event => setNoteText(event.target.value.slice(0, 60))} onBlur={() => handleNoteSave(row.id)} onKeyDown={event => { if (event.key === 'Enter') handleNoteSave(row.id); if (event.key === 'Escape') { setEditingNote(null); setNoteText(''); } }} autoFocus className="mobile-control-field w-full" maxLength={60} aria-label={`Note for ${row.ticker}`} /> : <button type="button" onClick={() => { setEditingNote(row.id); setNoteText(row.note); }} className="flex min-h-11 w-full items-center text-left text-[11px]" style={{ color: row.note ? 'var(--text-secondary)' : 'var(--text-dim)' }}>{row.note || 'Add a note'}</button>}</div>
+              <div className="watchlist-mobile-note border-b px-3 pb-1" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>{editingNote === row.id ? <input type="text" value={noteText} onChange={event => setNoteText(event.target.value.slice(0, 60))} onBlur={() => handleNoteSave(row.id)} onKeyDown={event => { if (event.key === 'Enter') handleNoteSave(row.id); if (event.key === 'Escape') { setEditingNote(null); setNoteText(''); } }} autoFocus className="mobile-control-field w-full" maxLength={60} aria-label={`Note for ${row.ticker}`} /> : <button type="button" onClick={() => { setEditingNote(row.id); setNoteText(row.note); }} className="flex min-h-11 w-full items-center text-left text-[11px]" style={{ color: row.note ? 'var(--text-secondary)' : 'var(--text-dim)' }}>{row.note || 'Add a note'}</button>}</div>
             </div>
           ))}</div>
         )}
@@ -445,8 +445,8 @@ export default function WatchlistPage() {
   }
 
   return (
-    <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>
-      <div className="page-frame page-frame--wide">
+    <div className="watchlist-page min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>
+      <div className="page-frame page-frame--wide watchlist-page__frame">
         <PageHeader
           title="Watchlist"
           description="Saved puts with durable notes and quote snapshots."
@@ -466,7 +466,7 @@ export default function WatchlistPage() {
         {refreshError && <div role="alert" className="mb-3 flex items-center gap-2 rounded-lg px-3 py-2 text-xs" style={{ backgroundColor: 'rgba(239,68,68,0.08)', color: 'var(--red)', border: '1px solid rgba(239,68,68,0.24)' }}><AlertTriangle className="h-4 w-4 flex-none" /> <span>{refreshError} Click Refresh All to retry.</span></div>}
 
         {items.length > 0 && (
-          <div className="mb-3 grid grid-cols-[1fr_auto] gap-2 md:hidden">
+          <div className="watchlist-sort-mobile mb-3 grid grid-cols-[1fr_auto] gap-2 md:hidden">
             <select value={sortField} onChange={event => setSortField(event.target.value as SortField)} className="min-h-[44px] min-w-0 rounded-lg px-3 text-base outline-none" aria-label="Sort watchlist" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
               <option value="dte">Days to expiry</option><option value="ticker">Ticker</option><option value="annYieldBid">Ann. SCY Bid</option><option value="strike">Strike</option><option value="delta">Delta</option><option value="iv">IV</option><option value="added">Recently added</option>
             </select>
@@ -488,7 +488,7 @@ export default function WatchlistPage() {
                 return (
                   <div
                     key={row.id}
-                    className="rounded-xl p-3"
+                    className="watchlist-mobile-card rounded-xl p-3"
                     style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', ...mutedStyle }}
                   >
                     <div className="flex items-start justify-between gap-3">
@@ -503,7 +503,8 @@ export default function WatchlistPage() {
                       </Link>
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <span
-                          className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded"
+                          className="watchlist-status inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded"
+                          data-status={row.status}
                           style={{ color: statusColor(row.status, row.expired), backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}
                         >
                           {(row.status === 'refresh_failed' || row.status === 'unavailable') && <AlertTriangle className="w-3 h-3" />}
@@ -515,7 +516,7 @@ export default function WatchlistPage() {
                             handleRemove(row.id);
                           }}
                           aria-label={`Remove ${row.ticker} ${row.expiryFormatted} ${formatMoney(row.strike)} put from watchlist`}
-                          className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-opacity hover:opacity-75 active:scale-95"
+                          className="watchlist-remove min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-opacity hover:opacity-75 active:scale-95"
                           title="Remove from watchlist"
                           style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}
                         >
@@ -568,7 +569,7 @@ export default function WatchlistPage() {
                       </div>
                     </div>
 
-                    <div className="mt-3 pt-2" style={{ borderTop: '1px solid var(--border)' }}>
+                    <div className="watchlist-note-cell mt-3 pt-2" style={{ borderTop: '1px solid var(--border)' }}>
                       {editingNote === row.id ? (
                         <input
                           type="text"
@@ -605,7 +606,8 @@ export default function WatchlistPage() {
               })}
             </div>
 
-          <div className="hidden md:block rounded-xl overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+          <div className="watchlist-table-surface hidden md:block rounded-xl overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+            <div className="watchlist-table-toolbar"><div><h2>Saved contracts</h2><p>Quotes, yield context, and the next review note.</p></div><span>{sortedRows.length} saved</span></div>
             <div className="overflow-x-auto max-w-full overscroll-contain">
               <table className="financial-table min-w-max w-full text-[11px]">
                 <thead className="sticky top-0 z-10">
@@ -624,7 +626,8 @@ export default function WatchlistPage() {
                         </span>
                       </th>
                     ))}
-                    <th className="px-1.5 py-1 text-[9px] uppercase tracking-wider font-medium text-left min-w-[130px]" style={{ color: 'var(--text-muted)' }}>Note</th>
+                    <th className="px-1.5 py-1 text-[9px] uppercase tracking-wider font-medium text-left whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>State</th>
+                    <th className="px-1.5 py-1 text-[9px] uppercase tracking-wider font-medium text-left min-w-[180px]" style={{ color: 'var(--text-muted)' }}>Note</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -641,7 +644,7 @@ export default function WatchlistPage() {
                               handleRemove(row.id);
                             }}
                             aria-label={`Remove ${row.ticker} ${row.expiryFormatted} ${formatMoney(row.strike)} put from watchlist`}
-                            className="transition-all hover:opacity-75 active:scale-95 min-h-[34px] min-w-[32px] flex items-center justify-center rounded"
+                            className="watchlist-remove transition-all hover:opacity-75 active:scale-95 min-h-[34px] min-w-[32px] flex items-center justify-center rounded"
                             title="Remove from watchlist"
                           >
                             <Star className="w-3.5 h-3.5 fill-current" style={{ color: 'var(--accent-light)' }} />
@@ -686,7 +689,10 @@ export default function WatchlistPage() {
                           return <td key={field} className={`px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap ${nominal ? '' : 'font-medium'}`} style={nominal ? mutedStyle : { ...mutedStyle, color: annYieldColor(value) }}>{formatPercentValue(value)}</td>;
                         })}
                         <td className="px-1.5 py-0.5 text-right text-[10px] whitespace-nowrap" style={{ ...mutedStyle, color: 'var(--text-dim)' }}>{formatDate(row.addedAt)}</td>
-                        <td className="px-1.5 py-0.5 text-left min-w-[130px]" style={mutedStyle}>
+                        <td className="px-1.5 py-0.5 text-left whitespace-nowrap" style={mutedStyle}>
+                          <span className="watchlist-status inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-semibold" data-status={row.status}>{row.statusLabel}</span>
+                        </td>
+                        <td className="watchlist-note-cell px-1.5 py-0.5 text-left min-w-[180px] max-w-[260px]" style={mutedStyle}>
                           {editingNote === row.id ? (
                             <input
                               type="text"
@@ -711,7 +717,7 @@ export default function WatchlistPage() {
                                 setEditingNote(row.id);
                                 setNoteText(row.note);
                               }}
-                              className="cursor-pointer text-xs hover:opacity-80 transition-opacity"
+                              className="watchlist-note cursor-pointer text-xs hover:opacity-80 transition-opacity"
                               style={{ color: row.note ? 'var(--text-secondary)' : 'var(--text-dim)' }}
                             >
                               {row.note || 'Add note...'}
