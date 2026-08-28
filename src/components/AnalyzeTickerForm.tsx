@@ -10,7 +10,7 @@ export default function AnalyzeTickerForm({ compact = false }: { compact?: boole
 
   return (
     <form
-      className={compact ? 'min-w-0' : 'rounded-xl p-3 sm:p-4'}
+      className={compact ? 'min-w-0' : 'analyze-ticker-form surface-card p-3'}
       style={compact ? undefined : { backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
       onSubmit={event => {
         event.preventDefault();
@@ -43,13 +43,13 @@ export default function AnalyzeTickerForm({ compact = false }: { compact?: boole
             spellCheck={false}
             inputMode="text"
             placeholder="NVDA"
-            className="min-h-11 w-full rounded-lg pl-9 pr-3 text-base font-mono uppercase outline-none"
+            className="control-field min-h-11 sm:min-h-10 w-full rounded-lg pl-9 pr-3 text-base font-mono uppercase outline-none"
             style={{ backgroundColor: 'var(--input-bg)', border: `1px solid ${error ? 'var(--red)' : 'var(--border)'}`, color: 'var(--text)' }}
             aria-invalid={error ? 'true' : 'false'}
             aria-describedby={error ? 'analyze-ticker-error' : undefined}
           />
         </label>
-        <button type="submit" className="pressable inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg px-3 text-sm font-semibold text-white" style={{ backgroundColor: 'var(--accent)' }}>
+        <button type="submit" className="pressable button-primary inline-flex min-h-11 sm:min-h-10 items-center justify-center gap-1.5 rounded-lg px-3 text-sm text-white" style={{ backgroundColor: 'var(--accent)' }}>
           Analyze <ArrowRight className="h-4 w-4" />
         </button>
       </div>

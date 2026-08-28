@@ -114,7 +114,7 @@ function formatTradeDate(timestamp: number): string {
 
 function getLastTradeInfo(value: number | null | undefined): { trade: string; age: string; color?: string } {
   const timestamp = normalizeTimestampMs(value);
-  if (timestamp == null) return { trade: 'â€”', age: 'â€”' };
+  if (timestamp == null) return { trade: '—', age: '—' };
 
   const dayDiff = calendarDayDiff(timestamp);
   if (dayDiff === 0) {
@@ -335,7 +335,7 @@ export default function OptionDetailDrawer({
         className="absolute inset-0 bg-black/50"
       />
       <aside
-        className="option-detail-drawer absolute inset-x-0 bottom-0 max-h-[94dvh] w-full overflow-y-auto rounded-t-2xl p-3 shadow-2xl sm:inset-y-0 sm:left-auto sm:right-0 sm:h-full sm:max-h-none sm:w-[480px] md:w-[520px] lg:w-[560px] sm:rounded-none sm:p-5"
+        className="option-detail-drawer overlay-panel absolute inset-x-0 bottom-0 max-h-[94dvh] w-full overflow-y-auto rounded-t-2xl p-3 sm:inset-y-0 sm:left-auto sm:right-0 sm:h-full sm:max-h-none sm:w-[480px] md:w-[520px] lg:w-[560px] sm:rounded-l-[14px] sm:rounded-r-none sm:p-5"
         style={{ backgroundColor: 'var(--bg)', borderLeft: '1px solid var(--border)' }}
       >
         <div className="mx-auto mb-2 h-1 w-10 rounded-full sm:hidden" aria-hidden="true" style={{ backgroundColor: 'var(--border-strong)' }} />
@@ -354,7 +354,7 @@ export default function OptionDetailDrawer({
           <button
             onClick={onClose}
             aria-label="Close option detail drawer"
-            className="p-2 rounded-lg transition-all min-h-[44px] min-w-[44px] flex items-center justify-center"
+            className="icon-button p-2 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center"
             style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
           >
             <X className="w-4 h-4" />
@@ -437,7 +437,7 @@ export default function OptionDetailDrawer({
                   });
                 }}
                 disabled={activeSoldPrice == null || validContracts == null}
-                className="w-full mb-3 px-3 py-2 rounded-lg text-xs font-medium text-white disabled:opacity-50 disabled:cursor-not-allowed min-h-[42px]"
+                className="button-primary w-full mb-3 px-3 py-2 rounded-lg text-xs text-white disabled:opacity-50 disabled:cursor-not-allowed min-h-[42px]"
                 style={{ backgroundColor: 'var(--accent)' }}
               >
                 Add to Portfolio

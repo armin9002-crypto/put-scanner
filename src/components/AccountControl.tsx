@@ -219,7 +219,7 @@ function DesktopAccountDialog({ onClose }: { onClose: () => void }) {
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="relative z-10 max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto rounded-xl border p-5 shadow-2xl outline-none"
+        className="overlay-panel relative z-10 max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto p-5 outline-none"
         style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
       >
         <div className="mb-4 flex items-center justify-between gap-3 border-b pb-3" style={{ borderColor: 'var(--border)' }}>
@@ -253,7 +253,7 @@ export default function AccountControl() {
         ref={triggerRef}
         type="button"
         onClick={() => setOpen(true)}
-        className="pressable relative flex h-11 w-11 min-h-11 min-w-11 items-center justify-center rounded-lg"
+        className="pressable icon-button relative flex h-11 w-11 min-h-11 min-w-11 items-center justify-center rounded-lg"
         style={{ color: user ? 'var(--accent-light)' : 'var(--text-muted)' }}
         aria-label="Account"
         aria-haspopup="dialog"

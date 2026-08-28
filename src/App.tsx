@@ -19,7 +19,8 @@ const EtfPulsePage = lazy(() => import('./pages/EtfPulsePage'));
 const ProductionCloudSyncProvider = import.meta.env.VITE_CLOUD_SYNC_ENABLED === 'true'
   ? lazy(() => import('./components/CloudSyncProvider'))
   : null;
-const DevAccountUiTestFixture = import.meta.env.DEV
+const visualFixturesEnabled = import.meta.env.DEV || import.meta.env.VITE_UI_VISUAL_FIXTURES === 'true';
+const DevAccountUiTestFixture = visualFixturesEnabled
   ? lazy(() => import('./components/AccountUiTestFixture'))
   : null;
 
@@ -40,7 +41,7 @@ function ThemeToggle() {
   return (
     <button
       onClick={cycleTheme}
-      className="flex items-center justify-center gap-1.5 px-2 py-2 md:py-1.5 rounded-lg text-xs font-medium transition-all min-h-[40px] min-w-[40px]"
+      className="app-utility-button button-ghost flex items-center justify-center gap-1.5 px-2 py-2 md:py-1.5 rounded-lg text-xs font-medium min-h-[40px] min-w-[40px]"
       style={{ color: 'var(--text-muted)' }}
       title={`Switch theme (current: ${label})`}
     >
@@ -74,10 +75,10 @@ function NavBar() {
   }
 
   return (
-    <nav className="sticky top-0 z-50" style={{ backgroundColor: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
-      <div className="app-nav-scroll max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 flex items-center gap-1 md:gap-2 min-h-11 max-w-full overflow-x-auto touch-scroll" style={{ paddingLeft: 'max(0.5rem, env(safe-area-inset-left))', paddingRight: 'max(0.5rem, env(safe-area-inset-right))' }}>
-        <div className="flex items-center gap-2 mr-1 md:mr-4 flex-shrink-0">
-          <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'var(--accent-bg)' }}>
+    <nav className="app-desktop-nav sticky top-0 z-50" style={{ backgroundColor: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
+      <div className="app-desktop-nav__inner app-nav-scroll mx-auto px-2 sm:px-4 lg:px-7 flex items-center gap-1 md:gap-2 max-w-full overflow-x-auto touch-scroll" style={{ paddingLeft: 'max(0.5rem, env(safe-area-inset-left))', paddingRight: 'max(0.5rem, env(safe-area-inset-right))' }}>
+        <div className="app-brand flex items-center gap-2 mr-1 md:mr-5 flex-shrink-0">
+          <div className="app-brand__mark w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'var(--accent-bg)' }}>
             <ShieldCheck className="w-4 h-4" style={{ color: 'var(--accent)' }} />
           </div>
           <span className="hidden md:flex flex-col leading-tight" style={{ color: 'var(--text)' }}>
@@ -90,7 +91,7 @@ function NavBar() {
             to="/"
             end
             className={() =>
-              `flex items-center justify-center gap-1 md:gap-1.5 px-2 md:px-3 py-2 md:py-1.5 rounded-lg text-[11px] md:text-xs font-medium transition-all min-h-[40px] md:min-h-0 flex-none whitespace-nowrap`
+              `app-nav-item flex items-center justify-center gap-1 md:gap-1.5 px-2 md:px-3 py-2 rounded-lg text-[11px] md:text-xs font-medium min-h-[40px] flex-none whitespace-nowrap`
             }
             style={({ isActive }) => ({
               backgroundColor: isActive ? 'var(--accent-bg)' : 'transparent',
@@ -103,7 +104,7 @@ function NavBar() {
           <NavLink
             to="/screener"
             className={() =>
-              `flex items-center justify-center gap-1 md:gap-1.5 px-2 md:px-3 py-2 md:py-1.5 rounded-lg text-[11px] md:text-xs font-medium transition-all min-h-[40px] md:min-h-0 flex-none whitespace-nowrap`
+              `app-nav-item flex items-center justify-center gap-1 md:gap-1.5 px-2 md:px-3 py-2 rounded-lg text-[11px] md:text-xs font-medium min-h-[40px] flex-none whitespace-nowrap`
             }
             style={({ isActive }) => ({
               backgroundColor: isActive ? 'var(--accent-bg)' : 'transparent',
@@ -116,7 +117,7 @@ function NavBar() {
           <NavLink
             to="/watchlist"
             className={() =>
-              `flex items-center justify-center gap-1 md:gap-1.5 px-2 md:px-3 py-2 md:py-1.5 rounded-lg text-[11px] md:text-xs font-medium transition-all min-h-[40px] md:min-h-0 flex-none whitespace-nowrap`
+              `app-nav-item flex items-center justify-center gap-1 md:gap-1.5 px-2 md:px-3 py-2 rounded-lg text-[11px] md:text-xs font-medium min-h-[40px] flex-none whitespace-nowrap`
             }
             style={({ isActive }) => ({
               backgroundColor: isActive ? 'var(--accent-bg)' : 'transparent',
@@ -129,7 +130,7 @@ function NavBar() {
           <NavLink
             to="/portfolio"
             className={() =>
-              `flex items-center justify-center gap-1 md:gap-1.5 px-2 md:px-3 py-2 md:py-1.5 rounded-lg text-[11px] md:text-xs font-medium transition-all min-h-[40px] md:min-h-0 flex-none whitespace-nowrap`
+              `app-nav-item flex items-center justify-center gap-1 md:gap-1.5 px-2 md:px-3 py-2 rounded-lg text-[11px] md:text-xs font-medium min-h-[40px] flex-none whitespace-nowrap`
             }
             style={({ isActive }) => ({
               backgroundColor: isActive ? 'var(--accent-bg)' : 'transparent',
@@ -142,7 +143,7 @@ function NavBar() {
           <NavLink
             to="/pulse"
             className={() =>
-              `flex items-center justify-center gap-1 md:gap-1.5 px-2 md:px-3 py-2 md:py-1.5 rounded-lg text-[11px] md:text-xs font-medium transition-all min-h-[40px] md:min-h-0 flex-none whitespace-nowrap`
+              `app-nav-item flex items-center justify-center gap-1 md:gap-1.5 px-2 md:px-3 py-2 rounded-lg text-[11px] md:text-xs font-medium min-h-[40px] flex-none whitespace-nowrap`
             }
             style={({ isActive }) => ({
               backgroundColor: isActive ? 'var(--accent-bg)' : 'transparent',
@@ -153,7 +154,7 @@ function NavBar() {
             <span className="sm:inline">{pulseLabel}</span>
           </NavLink>
         </div>
-        <div className="ml-1 flex flex-shrink-0 items-center">
+        <div className="app-nav-utilities ml-auto flex flex-shrink-0 items-center">
           <ThemeToggle />
           <AccountControl />
         </div>
@@ -348,7 +349,7 @@ function AppBody() {
 }
 
 export default function App() {
-  const accountUiFixture = import.meta.env.DEV
+  const accountUiFixture = visualFixturesEnabled
     ? new URLSearchParams(window.location.search).get('account-ui-fixture')
     : null;
   if (DevAccountUiTestFixture && accountUiFixture) {

@@ -17,6 +17,7 @@ import MobileBottomSheet from '../components/mobile/MobileBottomSheet';
 import MobileOptionRow from '../components/mobile/MobileOptionRow';
 import { OPTION_QUOTE_TABLE_DISPLAY_ORDER, OPTION_YIELD_DISPLAY_LABELS, OPTION_YIELD_DISPLAY_ORDER, isNominalYieldField, type OptionQuoteTableDisplayField, type OptionYieldDisplayField } from '../lib/optionQuoteDisplay';
 import { compareNullableValue } from '../lib/metricValue';
+import { PageHeader } from '../components/ui/PageHeader';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 
@@ -653,9 +654,10 @@ export default function ScreenerPage() {
 
   return (
     <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>
-      <div className="max-w-[1600px] mx-auto px-3 sm:px-5 lg:px-8 py-4">
+      <div className="page-frame">
+        <PageHeader title="Screener" description="Scan the ETF universe, then refine the loaded contracts locally." />
         {/* Filter Bar */}
-        <div className="rounded-xl p-3 sm:p-4 mb-3 sm:mb-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+        <div className="surface-card p-3 mb-3 sm:mb-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
           <button
             type="button"
             className="pressable flex min-h-11 w-full items-center justify-between gap-3 sm:hidden"
@@ -673,7 +675,7 @@ export default function ScreenerPage() {
             <ChevronDown className={`h-4 w-4 transition-transform ${mobileFiltersOpen ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} />
           </button>
 
-          <div id="screener-filter-controls" className={`screener-filter-controls grid grid-cols-1 min-[430px]:grid-cols-2 sm:flex sm:flex-row sm:flex-wrap sm:items-end gap-3 ${mobileFiltersOpen ? 'is-open' : ''}`}>
+          <div id="screener-filter-controls" className={`screener-filter-controls grid grid-cols-1 min-[430px]:grid-cols-2 sm:flex sm:flex-row sm:flex-wrap xl:flex-nowrap sm:items-end gap-2 ${mobileFiltersOpen ? 'is-open' : ''}`}>
             {/* ETF Selector */}
             <div className="w-full sm:min-w-[180px] sm:w-auto min-w-0 min-[430px]:col-span-2 sm:col-span-1">
               <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>ETFs</label>
@@ -800,7 +802,7 @@ export default function ScreenerPage() {
               <button
                 onClick={handleLoad}
                 disabled={loading}
-                className="flex-1 sm:flex-none justify-center px-4 py-2 sm:py-1.5 text-white text-xs font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-1.5 min-h-[44px] sm:min-h-0"
+                className="button-primary flex-1 sm:flex-none justify-center px-4 py-2 sm:py-1.5 text-white text-xs rounded-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 min-h-[44px] sm:min-h-0"
                 style={{ backgroundColor: 'var(--accent)' }}
               >
                 {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
@@ -808,7 +810,7 @@ export default function ScreenerPage() {
               </button>
               <button
                 onClick={clearFilters}
-                className="px-3 py-2 sm:py-1.5 text-xs font-medium rounded-lg transition-all min-h-[44px] sm:min-h-0"
+                className="button-secondary px-3 py-2 sm:py-1.5 text-xs rounded-lg min-h-[44px] sm:min-h-0"
                 style={{ backgroundColor: 'var(--border)', color: 'var(--text-secondary)' }}
               >
                 Clear
@@ -825,12 +827,12 @@ export default function ScreenerPage() {
                   </button>
                 </div>
                 {vixLoading && !vixData ? (
-                  <div className="flex items-center justify-center" style={{ width: 160, height: 60 }}>
+                  <div className="flex items-center justify-center" style={{ width: 120, height: 36 }}>
                     <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--text-muted)' }} />
                   </div>
                 ) : vixData ? (
                   <>
-                    <SparklineChart data={vixData.sparkline} color={vixLineColor} width={160} height={60} />
+                    <SparklineChart data={vixData.sparkline} color={vixLineColor} width={120} height={36} />
                     <div className="flex items-center justify-between mt-1">
                       <span className="text-xs font-mono font-semibold" style={{ color: 'var(--text)' }}>
                         {vixData.price.toFixed(2)}
@@ -846,7 +848,7 @@ export default function ScreenerPage() {
                     )}
                   </>
                 ) : (
-                  <div className="flex items-center justify-center text-xs" style={{ width: 160, height: 60, color: 'var(--text-muted)' }}>N/A</div>
+                  <div className="flex items-center justify-center text-xs" style={{ width: 120, height: 36, color: 'var(--text-muted)' }}>N/A</div>
                 )}
               </div>
             </div>
@@ -1017,7 +1019,7 @@ export default function ScreenerPage() {
         {/* Table */}
         <div className="hidden rounded-xl overflow-hidden max-w-full md:block" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
           <div className="overflow-x-auto max-w-full overscroll-contain">
-            <table className="min-w-[560px] md:min-w-[1120px] xl:min-w-0 w-full text-xs">
+            <table className="financial-table min-w-[560px] md:min-w-[1120px] xl:min-w-0 w-full text-xs">
               <thead className="sticky top-0 z-10">
                 <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
                   {columns.map(col => (

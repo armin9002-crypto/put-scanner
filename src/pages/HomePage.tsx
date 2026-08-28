@@ -514,7 +514,7 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-5">
+      <div className="page-frame page-frame--standard">
         <div className="mb-3">
           <AnalyzeTickerForm />
         </div>
@@ -525,14 +525,14 @@ export default function HomePage() {
             placeholder="Filter by ticker or underlying index..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-11 pr-4 py-3.5 sm:py-3 rounded-xl text-base sm:text-sm outline-none transition-all"
+            className="control-field w-full pl-11 pr-4 py-3 rounded-xl text-base sm:text-sm outline-none"
             style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}
           />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(360px,500px)_minmax(0,1fr)] xl:grid-cols-[minmax(420px,520px)_minmax(0,1fr)] lg:items-start gap-3 mb-4">
           {/* Filters */}
-          <div className="scanner-filter-card scanner-desktop-controls w-full rounded-xl p-2" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+          <div className="scanner-filter-card scanner-desktop-controls surface-card w-full p-2" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
             <div className="grid grid-cols-[86px_minmax(96px,1fr)_70px_62px] items-end gap-1">
               <div className="min-w-0">
                 <span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Leverage</span>

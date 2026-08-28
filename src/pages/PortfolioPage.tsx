@@ -60,6 +60,7 @@ import {
 import type { OptionDetail } from '../components/OptionDetailDrawer';
 import ErrorBoundary from '../components/ErrorBoundary';
 import DataFreshness from '../components/DataFreshness';
+import { PageHeader } from '../components/ui/PageHeader';
 import { persistCollapsedExpirationGroups, persistCollapsedUnderlyingGroups, persistPortfolioGroupMode, readCollapsedExpirationGroups, readCollapsedUnderlyingGroups, readPortfolioGroupMode, setAllExpirationGroupsCollapsed, toggleCollapsedExpirationGroup, type PortfolioGroupMode } from '../lib/portfolioSchedulePreferences';
 import { buildHistoryAnalytics, buildMonthlyRealizedPnl, filterHistoryTrades, historyDaysHeld, historyRealizedIrr, type HistoryOutcome } from '../lib/portfolioHistoryAnalytics';
 import { applyTransientPortfolioMarketData, mergePortfolioLifecycleResults, mergePortfolioMarketRefresh } from '../lib/portfolioMarketRefresh';
@@ -1483,29 +1484,28 @@ export default function PortfolioPage() {
 
   return (
     <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>
-      <div className="max-w-[1800px] mx-auto px-2 sm:px-4 lg:px-6 py-4 sm:py-6">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2 mb-3">
-          <div className="min-w-0 lg:flex-shrink">
-            <h1 className="text-xl sm:text-2xl font-bold tracking-tight" style={{ color: 'var(--text)' }}>Portfolio</h1>
-            <DataFreshness updatedAt={lastRefreshed} status={refreshing ? 'updating' : refreshWarning ? 'failed' : lastRefreshed ? 'cached' : 'stale'} label="Portfolio market marks" />
-          </div>
-          <div className="portfolio-actions flex flex-wrap lg:flex-nowrap items-center justify-start lg:justify-end gap-2 lg:shrink-0">
+      <div className="page-frame page-frame--wide">
+        <PageHeader
+          title="Portfolio"
+          description="Sold-put positions, capital exposure, and lifecycle analytics."
+          meta={<DataFreshness updatedAt={lastRefreshed} status={refreshing ? 'updating' : refreshWarning ? 'failed' : lastRefreshed ? 'cached' : 'stale'} label="Portfolio market marks" />}
+          actions={<div className="portfolio-actions flex flex-wrap lg:flex-nowrap items-center justify-start lg:justify-end gap-2 lg:shrink-0">
             {trades.length > 0 && <MarkBasisToggle markBasis={markBasis} onChange={setMarkBasis} />}
-            <button onClick={() => setShowAddModal(true)} className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-white min-h-[44px] sm:min-h-0 whitespace-nowrap" style={{ backgroundColor: 'var(--accent)' }}>
+            <button onClick={() => setShowAddModal(true)} className="button-primary inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs whitespace-nowrap" style={{ backgroundColor: 'var(--accent)' }}>
               <Plus className="w-3.5 h-3.5" /> Add Trade
             </button>
-            <button onClick={() => setShowImportModal(true)} className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium min-h-[44px] sm:min-h-0 whitespace-nowrap" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
+            <button onClick={() => setShowImportModal(true)} className="button-secondary inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs whitespace-nowrap" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
               <FileImage className="w-3.5 h-3.5" /> Import Screenshot
             </button>
-            <button onClick={() => setShowDataBackup(true)} className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium min-h-[44px] sm:min-h-0 whitespace-nowrap" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
+            <button onClick={() => setShowDataBackup(true)} className="button-secondary inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs whitespace-nowrap" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
               <Download className="w-3.5 h-3.5" /> Data Backup
             </button>
-            <button onClick={handleRefreshOpenTrades} disabled={refreshing || openTrades.length === 0} className="portfolio-refresh-action inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px] sm:min-h-0 whitespace-nowrap" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
+            <button onClick={handleRefreshOpenTrades} disabled={refreshing || openTrades.length === 0} className="button-secondary portfolio-refresh-action inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-50 whitespace-nowrap" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
               {refreshing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
               Refresh Open Trades
             </button>
-          </div>
-        </div>
+          </div>}
+        />
         {durableActivityNotice && (
           <div role="status" className="flex items-center gap-2 rounded-lg px-3 py-2 mb-3 text-xs" style={{ backgroundColor: 'rgba(250,204,21,0.10)', color: 'var(--yellow)', border: '1px solid rgba(250,204,21,0.22)' }}>
             <AlertTriangle className="w-3.5 h-3.5" /> {durableActivityNotice}
@@ -1709,7 +1709,7 @@ export default function PortfolioPage() {
 
             <div className="hidden md:block rounded-lg overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
               <div className="overflow-x-auto max-w-full overscroll-contain">
-                <table className="min-w-max w-full text-[12px] leading-none">
+                <table className="financial-table min-w-max w-full text-[12px] leading-none">
                   <thead className="sticky top-0 z-10">
                     <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
                       {sortButton('ticker', 'Ticker', 'text-left')}
@@ -2075,7 +2075,7 @@ function ArchiveHistorySection({
       </div>
       <div className="hidden rounded-lg overflow-hidden md:block" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
         <div className="overflow-x-auto max-w-full overscroll-contain">
-          <table className="min-w-max w-full text-[12px] leading-none">
+          <table className="financial-table min-w-max w-full text-[12px] leading-none">
             <thead>
               <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
                 {['Ticker', 'Expiration', 'Strike', 'Contracts', 'Written Date', 'Days Held', 'Sold Price', 'Expiration Close', 'Final Value', 'Premium Collected', 'Realized P&L', 'Realized IRR', '% Captured', 'Outcome', 'Actions'].map((label, index) => (

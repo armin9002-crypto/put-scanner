@@ -115,7 +115,7 @@ test('viewport workflow smoke is local, deterministic, and usable', async ({ pag
     await expect(page.getByText('Watchlist').first()).toBeVisible();
   } else {
     await page.goto('/screener');
-    await expect(page.getByText('Run Screener').first()).toBeVisible();
+    await expect(page.getByRole('button', { name: /Load|Run Screener/i }).first()).toBeVisible();
     await page.goto('/portfolio');
     await expect(page.getByText('Portfolio').first()).toBeVisible();
     await page.goto('/pulse');

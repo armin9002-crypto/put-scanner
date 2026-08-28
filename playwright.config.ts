@@ -3,6 +3,10 @@ import { defineConfig } from '@playwright/test';
 const systemChrome = process.platform === 'win32'
   ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
   : undefined;
+const visualCapture = process.env.UI_OVERHAUL_CAPTURE === 'before' || process.env.UI_OVERHAUL_CAPTURE === 'after';
+const visualBuildCommand = process.platform === 'win32'
+  ? 'set VITE_UI_VISUAL_FIXTURES=true&& npm run build && npm run preview -- --host 127.0.0.1 --port 4317'
+  : 'VITE_UI_VISUAL_FIXTURES=true npm run build && npm run preview -- --host 127.0.0.1 --port 4317';
 
 export default defineConfig({
   testDir: './e2e',
@@ -10,7 +14,7 @@ export default defineConfig({
   workers: 1,
   timeout: 45_000,
   expect: { timeout: 8_000 },
-  outputDir: 'e2e-artifacts',
+  outputDir: 'e2e-artifacts/test-results',
   reporter: [['line']],
   use: {
     baseURL: 'http://127.0.0.1:4317',
@@ -22,6 +26,7 @@ export default defineConfig({
   },
   projects: [
     { name: 'desktop-1440x900', use: { viewport: { width: 1440, height: 900 } } },
+    { name: 'desktop-1280x800', use: { viewport: { width: 1280, height: 800 } } },
     { name: 'tablet-1024x768', use: { viewport: { width: 1024, height: 768 } } },
     { name: 'portrait-375x667', use: { viewport: { width: 375, height: 667 } } },
     { name: 'portrait-390x844', use: { viewport: { width: 390, height: 844 } } },
@@ -30,7 +35,9 @@ export default defineConfig({
     { name: 'landscape-844x390', use: { viewport: { width: 844, height: 390 } } },
   ],
   webServer: {
-    command: 'npm run dev -- --host 127.0.0.1 --port 4317',
+    command: visualCapture
+      ? visualBuildCommand
+      : 'npm run dev -- --host 127.0.0.1 --port 4317',
     url: 'http://127.0.0.1:4317',
     reuseExistingServer: false,
     timeout: 120_000,

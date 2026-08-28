@@ -30,11 +30,11 @@ export default function DataFreshness({
   const muted = status === 'stale' || status === 'cached';
 
   return (
-    <span className={`group/freshness relative inline-flex items-center gap-1 text-[10px] ${className}`} style={{ color: muted ? 'var(--text-dim)' : status === 'failed' ? 'var(--text-muted)' : 'var(--text-muted)' }}>
+    <span className={`status-badge group/freshness relative ${className}`} data-status={status} style={{ color: muted ? 'var(--text-dim)' : status === 'failed' ? 'var(--red)' : 'var(--text-muted)' }}>
       {status === 'updating' && <Loader2 className="h-3 w-3 animate-spin" />}
       {(status === 'stale' || status === 'failed') && <AlertTriangle className="h-3 w-3" style={{ color: status === 'failed' ? 'var(--red)' : 'var(--text-dim)' }} />}
-      <button type="button" className="cursor-help border-b border-dotted border-current leading-4" aria-describedby={`freshness-${label.replace(/\W+/g, '-').toLowerCase()}`}>{text}</button>
-      <span id={`freshness-${label.replace(/\W+/g, '-').toLowerCase()}`} role="tooltip" className="pointer-events-none absolute right-0 top-full z-50 mt-1 w-56 rounded-lg px-3 py-2 text-left text-[11px] leading-5 opacity-0 shadow-xl transition-opacity group-hover/freshness:opacity-100 group-focus-within/freshness:opacity-100 motion-reduce:transition-none" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}>
+      <button type="button" className="cursor-help leading-4" aria-describedby={`freshness-${label.replace(/\W+/g, '-').toLowerCase()}`}>{text}</button>
+      <span id={`freshness-${label.replace(/\W+/g, '-').toLowerCase()}`} role="tooltip" className="overlay-panel pointer-events-none absolute right-0 top-full z-50 mt-1 w-56 rounded-lg px-3 py-2 text-left text-[11px] leading-5 opacity-0 transition-opacity group-hover/freshness:opacity-100 group-focus-within/freshness:opacity-100 motion-reduce:transition-none" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}>
         <strong className="block">{label}</strong>
         <span className="block" style={{ color: 'var(--text-muted)' }}>Source: {source}</span>
         <span className="block" style={{ color: 'var(--text-muted)' }}>Last successful update: {time ?? 'Unavailable'}</span>

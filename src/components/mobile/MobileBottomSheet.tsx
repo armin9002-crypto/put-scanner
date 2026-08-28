@@ -66,7 +66,7 @@ export default function MobileBottomSheet({
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
         tabIndex={-1}
-        className={`mobile-sheet-panel relative z-10 flex w-full max-w-xl flex-col overflow-hidden rounded-t-[22px] outline-none ${className}`}
+        className={`mobile-sheet-panel overlay-panel relative z-10 flex w-full max-w-xl flex-col overflow-hidden rounded-t-[18px] rounded-b-none outline-none ${className}`}
         style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}
       >
         <div className="flex-none px-4 pt-2">

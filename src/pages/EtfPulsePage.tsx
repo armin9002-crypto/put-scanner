@@ -781,7 +781,7 @@ export default function EtfPulsePage() {
 
   return (
     <div className="etf-pulse-page min-h-[calc(100dvh-2.75rem)]" style={{ backgroundColor: 'var(--bg)' }}>
-      <div className="max-w-[1800px] mx-auto px-2 sm:px-4 lg:px-6 py-1.5 sm:py-2">
+      <div className="page-frame page-frame--wide py-3">
         <div className="etf-pulse-controls flex-shrink-0 -mx-2 sm:-mx-4 lg:-mx-6 px-2 sm:px-4 lg:px-6 pb-1.5 mb-2" style={{ backgroundColor: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
           <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-1.5 mb-1.5">
             <div className="min-w-0 flex-shrink-0">
@@ -798,7 +798,7 @@ export default function EtfPulsePage() {
                 type="button"
                 onClick={() => void loadRows(true)}
                 disabled={loading}
-                className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium min-h-[38px] disabled:opacity-50 disabled:cursor-not-allowed"
+                className="button-secondary inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs min-h-[38px] disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
@@ -876,7 +876,7 @@ export default function EtfPulsePage() {
 
           <div className="etf-pulse-table-card hidden rounded-lg overflow-hidden h-[min(56dvh,620px)] min-h-[320px] md:block" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
             <div className="h-full max-w-full overflow-auto overscroll-contain">
-              <table className="w-full table-fixed text-[11px]" style={{ minWidth: tableMinWidth }}>
+              <table className="financial-table w-full table-fixed text-[11px]" style={{ minWidth: tableMinWidth }}>
                 <colgroup>
                   {columns.map(column => <col key={column.key} style={{ width: column.width }} />)}
                 </colgroup>

@@ -23,6 +23,7 @@ import { OPTION_QUOTE_DISPLAY_LABELS, OPTION_QUOTE_TABLE_DISPLAY_ORDER, OPTION_Y
 import { acquireOptionChains, canonicalOptionChainKey } from '../lib/optionChainRequests';
 import { resolvePutDelta } from '../lib/putDelta';
 import { compareNullableValue } from '../lib/metricValue';
+import { PageHeader } from '../components/ui/PageHeader';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 
@@ -445,28 +446,23 @@ export default function WatchlistPage() {
 
   return (
     <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>
-      <div className="max-w-[1800px] mx-auto px-2 sm:px-4 lg:px-6 py-4 sm:py-6">
-        <div className="flex items-center justify-between gap-3 mb-3">
-          <div className="min-w-0">
-            <h1 className="text-xl sm:text-2xl font-bold tracking-tight" style={{ color: 'var(--text)' }}>Watchlist</h1>
-            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Saved puts — click refresh to update prices.</p>
-          </div>
+      <div className="page-frame page-frame--wide">
+        <PageHeader
+          title="Watchlist"
+          description="Saved puts with durable notes and quote snapshots."
+          meta={<span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>{lastRefreshed ? `Last refreshed ${lastRefreshed.toLocaleString()}` : 'Showing saved snapshots'}</span>}
+          actions={(
           <button
             onClick={() => void handleRefresh(true)}
             disabled={loading || items.length === 0}
-            className="pressable flex flex-none items-center justify-center gap-1.5 px-3 py-2 sm:py-1.5 text-white text-xs font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all min-h-[44px] sm:min-h-0"
+            className="pressable button-primary flex flex-none items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-50 min-h-9"
             style={{ backgroundColor: 'var(--accent)' }}
           >
             {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
             Refresh All
           </button>
-        </div>
-
-        <div className="text-[10px] mb-3" style={{ color: 'var(--text-dim)' }}>
-          {lastRefreshed
-            ? `Last refreshed: ${lastRefreshed.toLocaleString()}`
-            : 'Last refreshed: not yet in this session. Saved snapshots are shown until prices are refreshed.'}
-        </div>
+          )}
+        />
         {refreshError && <div role="alert" className="mb-3 flex items-center gap-2 rounded-lg px-3 py-2 text-xs" style={{ backgroundColor: 'rgba(239,68,68,0.08)', color: 'var(--red)', border: '1px solid rgba(239,68,68,0.24)' }}><AlertTriangle className="h-4 w-4 flex-none" /> <span>{refreshError} Click Refresh All to retry.</span></div>}
 
         {items.length > 0 && (
@@ -611,7 +607,7 @@ export default function WatchlistPage() {
 
           <div className="hidden md:block rounded-xl overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
             <div className="overflow-x-auto max-w-full overscroll-contain">
-              <table className="min-w-max w-full text-[11px]">
+              <table className="financial-table min-w-max w-full text-[11px]">
                 <thead className="sticky top-0 z-10">
                   <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
                     <th className="px-1.5 py-1 text-[9px] uppercase tracking-wider font-medium w-7" style={{ color: 'var(--text-muted)' }}></th>

@@ -319,7 +319,7 @@ export default function InteractivePriceChartModal({
       />
 
       <div
-        className={`chart-modal-panel ${isPhone ? 'is-phone-chart' : ''} ${isPhoneLandscape ? 'is-phone-landscape-chart' : ''} relative z-[91] flex max-h-[96dvh] sm:max-h-[90dvh] w-full sm:w-[min(96vw,900px)] lg:w-[min(94vw,1100px)] flex-col overflow-hidden rounded-t-2xl sm:rounded-2xl shadow-2xl`}
+        className={`chart-modal-panel overlay-panel ${isPhone ? 'is-phone-chart' : ''} ${isPhoneLandscape ? 'is-phone-landscape-chart' : ''} relative z-[91] flex max-h-[96dvh] sm:max-h-[90dvh] w-full sm:w-[min(96vw,900px)] lg:w-[min(94vw,1100px)] flex-col overflow-hidden rounded-t-2xl sm:rounded-[14px]`}
         style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
       >
         <div className="chart-modal-header flex flex-col gap-2 border-b p-3 sm:flex-row sm:items-start sm:justify-between sm:p-5" style={{ borderColor: 'var(--border)' }}>

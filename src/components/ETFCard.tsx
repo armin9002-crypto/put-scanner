@@ -49,9 +49,9 @@ function fiftyTwoWeekPosition(price: number, high: number, low: number): number 
 function rangePositionStyle(price: number, high: number | null, low: number | null): { borderColor: string; bgTint: string } | null {
   if (high == null || low == null || high <= low) return null;
   const pos = fiftyTwoWeekPosition(price, high, low);
-  if (pos < 30) return { borderColor: '#22c55e', bgTint: 'rgba(34,197,94,0.04)' };
-  if (pos <= 60) return { borderColor: '#f59e0b', bgTint: 'rgba(245,158,11,0.03)' };
-  return { borderColor: '#475569', bgTint: 'transparent' };
+  if (pos < 30) return { borderColor: 'color-mix(in srgb, var(--positive) 62%, var(--border-default))', bgTint: 'color-mix(in srgb, var(--positive) 3%, var(--bg-secondary))' };
+  if (pos <= 60) return { borderColor: 'color-mix(in srgb, var(--warning) 48%, var(--border-default))', bgTint: 'color-mix(in srgb, var(--warning) 2%, var(--bg-secondary))' };
+  return { borderColor: 'var(--border-emphasis)', bgTint: 'var(--bg-secondary)' };
 }
 
 function formatSignedPct(value: number | null): string {
@@ -290,11 +290,11 @@ export default function ETFCard({
   return (
     <div
       title={`${etf.ticker} - ${etf.name}\nNet Assets ${formatFundAssetsDetail(netAssets)}`}
-      className="group rounded-xl p-3 text-left transition-all duration-200 w-full relative min-w-0 focus-within:ring-2 focus-within:ring-indigo-500/60"
+      className="group surface-card p-3 text-left w-full relative min-w-0"
       style={{
         backgroundColor: rangeStyle ? rangeStyle.bgTint : 'var(--surface)',
         border: `1px solid ${rangeStyle ? rangeStyle.borderColor : 'var(--border)'}`,
-        borderLeftWidth: rangeStyle ? '3px' : '1px',
+        borderLeftWidth: rangeStyle ? '2px' : '1px',
         boxShadow: 'var(--shadow)',
       }}
     >

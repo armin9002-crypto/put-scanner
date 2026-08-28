@@ -420,7 +420,7 @@ function ParsedRowsTable({ rows, setRows, plan }: { rows: ImportEditableRow[]; s
         <p className="p-4 text-sm" style={{ color: 'var(--text-dim)' }}>Upload or paste a screenshot to review parsed rows.</p>
       ) : (
         <div className="overflow-auto lg:max-h-none lg:flex-1">
-          <table className="min-w-[1180px] w-full text-[10px] table-fixed">
+          <table className="financial-table min-w-[1180px] w-full text-[10px] table-fixed">
             <thead className="sticky top-0 z-10">
               <tr style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text-muted)' }}>
                 <th className="px-1 py-1.5 text-left w-[34px]">Use</th>
@@ -576,7 +576,7 @@ function MissingTradesTable({ plan, setMissingActions, expanded, onToggle }: { p
         <p className="px-3 py-2 text-[11px]" style={{ color: 'var(--text-dim)' }}>
           These existing open trades were not found in the imported screenshot. They will remain in your portfolio unless you manually close or mark them.
         </p>
-        <table className="min-w-[680px] w-full text-[11px]">
+        <table className="financial-table min-w-[680px] w-full text-[11px]">
           <thead>
             <tr style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text-muted)' }}>
               <th className="px-2 py-2 text-left">Position</th>

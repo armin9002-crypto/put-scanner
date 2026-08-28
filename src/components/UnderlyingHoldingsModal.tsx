@@ -164,7 +164,7 @@ export default function UnderlyingHoldingsModal({ proxy, onClose }: UnderlyingHo
                     ))}
                   </div>
                   <div className="hidden overflow-x-auto rounded-xl sm:block" style={{ border: '1px solid var(--border)' }}>
-                  <table className="w-full min-w-[360px] border-collapse text-xs sm:min-w-[520px] sm:text-sm">
+                  <table className="financial-table w-full min-w-[360px] border-collapse text-xs sm:min-w-[520px] sm:text-sm">
                     <thead className="sticky top-0 z-10" style={{ backgroundColor: 'var(--surface)' }}>
                       <tr style={{ borderBottom: '1px solid var(--border)' }}>
                         <th className="w-8 px-2 py-1.5 text-left text-[9px] uppercase tracking-wider sm:w-10 sm:px-3 sm:py-2 sm:text-[10px]" style={{ color: 'var(--text-dim)' }}>#</th>

@@ -993,14 +993,14 @@ export default function OptionsPage() {
 
   return (
     <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>
-      <div className="option-page-shell max-w-[1400px] mx-auto px-3 sm:px-5 lg:px-8 py-4 sm:py-6">
+      <div className="option-page-shell page-frame" style={{ '--page-max': '1480px' } as React.CSSProperties}>
         {/* Header */}
         <div className="option-page-title-row flex items-center gap-2 sm:gap-4 mb-4 sm:mb-6 min-w-0">
           <button
             type="button"
             onClick={handleBackToScanner}
             aria-label="Back to Scanner"
-            className="p-2 rounded-lg transition-all min-h-[44px] min-w-[44px] flex items-center justify-center"
+            className="icon-button p-2 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center"
             style={{ color: 'var(--text-muted)' }}
           >
             <ArrowLeft className="w-5 h-5" />
@@ -1018,7 +1018,7 @@ export default function OptionsPage() {
         {/* Price bar */}
         <div
           data-layout="price-header"
-          className="option-price-header sticky-stack mobile-static-sticky z-30 rounded-xl p-3 sm:p-5 mb-3 sm:mb-6 bg-[#12121a] border-b border-[#1e1e2e]"
+          className="option-price-header surface-card sticky-stack mobile-static-sticky z-30 p-3 sm:p-4 mb-3 sm:mb-5"
           style={{
             top: PRICE_HEADER_TOP,
             zIndex: 30,
@@ -1198,7 +1198,7 @@ export default function OptionsPage() {
         {optionsData && optionsData.expirations.length > 0 && (
           <div
             data-layout="expiry-row"
-            className="option-expiry-row mobile-scroll-row sticky-stack mobile-static-sticky touch-scroll z-20 flex gap-2 mb-3 sm:mb-6 overflow-x-auto pt-2 pb-2 -mx-3 px-3 sm:mx-0 sm:px-0 sm:flex-wrap bg-[#0a0a0f]"
+            className="option-expiry-row mobile-scroll-row sticky-stack mobile-static-sticky touch-scroll z-20 flex gap-2 mb-3 sm:mb-6 overflow-x-auto pt-2 pb-2 -mx-3 px-3 sm:mx-0 sm:px-0 sm:flex-wrap"
             style={{
               top: EXPIRY_ROW_TOP,
               zIndex: 20,
@@ -1403,16 +1403,15 @@ export default function OptionsPage() {
 
           <div className="option-desktop-chain rounded-xl max-w-full overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
             <div className="max-h-[calc(100dvh-230px)] min-h-[260px] max-w-full overflow-auto overscroll-contain sm:max-h-[calc(100dvh-250px)]">
-              <table className="min-w-[520px] md:min-w-[980px] lg:min-w-[1180px] xl:min-w-0 w-full table-fixed text-xs">
+              <table className="financial-table min-w-[520px] md:min-w-[980px] lg:min-w-[1180px] xl:min-w-0 w-full table-fixed text-xs">
                 <thead
-                  className="bg-[#12121a]"
                   style={{
                     backgroundColor: 'var(--surface)',
                   }}
                 >
                   <tr style={{ backgroundColor: 'var(--surface)' }}>
                     <th
-                      className="sticky-stack top-0 z-30 px-1.5 sm:px-2 py-1.5 w-6 text-[10px] sm:text-[11px] bg-[#12121a]"
+                      className="sticky-stack top-0 z-30 px-1.5 sm:px-2 py-1.5 w-6 text-[10px] sm:text-[11px]"
                       style={{
                         color: 'var(--text-muted)',
                         backgroundColor: 'var(--surface)',
@@ -1425,7 +1424,7 @@ export default function OptionsPage() {
                         key={col.field}
                         onClick={() => handleSort(col.field)}
                         title={col.fullLabel}
-                        className={`sticky-stack top-0 px-1.5 sm:px-2 py-1.5 text-[10px] sm:text-[11px] uppercase tracking-wider font-medium cursor-pointer transition-colors select-none whitespace-nowrap bg-[#12121a] ${col.align} ${col.widthClass} ${
+                        className={`sticky-stack top-0 px-1.5 sm:px-2 py-1.5 text-[10px] sm:text-[11px] uppercase tracking-wider font-medium cursor-pointer transition-colors select-none whitespace-nowrap ${col.align} ${col.widthClass} ${
                           col.field === 'strike' ? 'left-0 z-40 border-r' : 'z-30'
                         } ${col.hideOnMobile ? 'hidden md:table-cell' : ''} ${col.hideOnTablet ? 'hidden lg:table-cell' : ''}`}
                         style={{
