@@ -383,7 +383,10 @@ test('entry VIX remains durable but passive Portfolio mount does not resolve or 
   assert.equal(resolved.trades[0].updatedAt, now.toISOString());
 
   const source = await readFile(path.join(root, 'src/pages/PortfolioPage.tsx'), 'utf8');
-  const mount = source.slice(source.indexOf('useEffect(() => {\n    let active = true;'), source.indexOf('  const summary = useMemo'));
+  const mountStart = source.indexOf('useEffect(() => {\n    let active = true;') >= 0
+    ? source.indexOf('useEffect(() => {\n    let active = true;')
+    : source.indexOf('useEffect(() => {\r\n    let active = true;');
+  const mount = source.slice(mountStart, source.indexOf('  const summary = useMemo'));
   assert.doesNotMatch(mount, /resolvePortfolioEntryVix/);
   assert.match(mount, /mergePortfolioLifecycleResults\(latest, stored, archived\.trades\)/);
   assert.match(mount, /if \(lifecycleApplied\)[\s\S]*?savePortfolioTrades\(reconciled\)/);

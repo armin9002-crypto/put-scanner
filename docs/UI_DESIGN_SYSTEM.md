@@ -143,6 +143,7 @@ Theme-specific CSS may change token values, not component hierarchy, geometry, o
 - Interactive targets remain at least 44px on phones.
 - Full-screen option detail, chart, and Account workflows retain body locking, focus restoration, and safe-area treatment.
 - Dense rows remain list surfaces with dividers; do not turn every row into a floating card.
+- Route roots clip accidental horizontal overflow; any intentional wide data surface keeps scrolling inside its own bounded wrapper.
 
 ## Accessibility and motion
 

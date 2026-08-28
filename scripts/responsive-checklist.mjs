@@ -27,7 +27,7 @@ const routes = [
 ];
 
 const root = process.cwd();
-const read = file => fs.readFileSync(path.join(root, file), 'utf8');
+const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
 const sources = {
   app: read('src/App.tsx'),
   account: read('src/components/AccountControl.tsx'),

@@ -1891,3 +1891,328 @@ td {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* UI-4: Screener and ETF Pulse share a quieter control plane and explicit data context. */
+.screener-header-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  color: var(--text-tertiary);
+  font-size: 0.66rem;
+}
+
+.screener-filter-surface {
+  overflow: visible;
+  background: var(--bg-secondary) !important;
+}
+
+.screener-filter-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0 0 0.85rem;
+  padding: 0.15rem 0.15rem 0.75rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.screener-eyebrow,
+.screener-filter-group-tag,
+.screener-results-kicker,
+.pulse-control-label {
+  color: var(--text-tertiary);
+  font-size: 0.62rem;
+  font-weight: 650;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+}
+
+.screener-filter-heading h2 {
+  margin-top: 0.16rem;
+  color: var(--text-primary);
+  font-size: 0.98rem;
+  font-weight: 680;
+  letter-spacing: -0.015em;
+}
+
+.screener-filter-heading p {
+  margin-top: 0.18rem;
+  color: var(--text-tertiary);
+  font-size: 0.69rem;
+}
+
+.screener-scope-badge {
+  display: grid;
+  flex: none;
+  min-width: 132px;
+  gap: 0.1rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.45rem 0.6rem;
+  background: var(--bg-inset);
+}
+
+.screener-scope-badge span,
+.screener-scope-badge small {
+  color: var(--text-tertiary);
+  font-size: 0.6rem;
+}
+
+.screener-scope-badge strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-family: var(--font-data);
+  font-size: 0.72rem;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.screener-filter-controls {
+  align-items: flex-start !important;
+}
+
+.screener-filter-field {
+  position: relative;
+  min-width: 0;
+}
+
+.screener-filter-group-tag {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  min-height: 1.05rem;
+  margin-bottom: 0.12rem;
+  letter-spacing: 0.045em;
+}
+
+.screener-filter-group-tag strong {
+  color: var(--accent-light);
+  font-size: 0.62rem;
+  font-weight: 680;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+
+.screener-filter-group-tag span {
+  color: var(--text-dim);
+  font-size: 0.58rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.screener-filter-field--structural {
+  border-radius: var(--radius-md);
+}
+
+.screener-filter-field--local {
+  border-radius: var(--radius-md);
+}
+
+.screener-filter-field--structural:not(:has(.screener-filter-group-tag)),
+.screener-filter-field--local:not(:has(.screener-filter-group-tag)) {
+  padding-top: 1.05rem;
+}
+
+.screener-loaded-context {
+  background: color-mix(in srgb, var(--bg-inset) 62%, transparent);
+}
+
+.screener-scope-context {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.screener-results-toolbar {
+  min-height: 42px;
+  margin-top: 0.3rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.screener-results-kicker {
+  letter-spacing: 0.055em;
+}
+
+.screener-volume-toggle {
+  color: var(--text-tertiary) !important;
+}
+
+.screener-identity-cell {
+  min-width: 106px;
+}
+
+.pulse-title-context {
+  margin-top: 0.25rem;
+  color: var(--text-tertiary);
+  font-size: 0.68rem;
+}
+
+.pulse-filter-surface {
+  background: var(--bg-secondary) !important;
+}
+
+.pulse-filter-controls {
+  align-items: center;
+}
+
+.pulse-control-rail {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0.65rem 0 0.75rem;
+  padding: 0.45rem 0.15rem 0.1rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.pulse-period-control,
+.pulse-result-context {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.pulse-period-control .mobile-scroll-row {
+  flex: none;
+}
+
+.pulse-result-context {
+  justify-content: flex-end;
+  color: var(--text-tertiary);
+  font-size: 0.68rem;
+}
+
+.pulse-result-context strong {
+  color: var(--text-primary);
+  font-family: var(--font-data);
+  font-size: 0.77rem;
+}
+
+.pulse-sort-context {
+  padding-left: 0.45rem;
+  border-left: 1px solid var(--border-subtle);
+}
+
+.pulse-sort-context b {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.pulse-progress {
+  margin: -0.2rem 0 0.7rem;
+}
+
+.pulse-loading-state {
+  height: 220px;
+  vertical-align: middle;
+}
+
+.etf-pulse-table-card {
+  border-color: var(--border-subtle) !important;
+  background: var(--bg-secondary) !important;
+}
+
+.etf-pulse-table-card .financial-table tbody td {
+  height: 39px;
+}
+
+.etf-pulse-table-card .financial-table tbody tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--bg-inset) 46%, transparent);
+}
+
+.etf-pulse-table-card .financial-table tbody tr:hover td {
+  background: color-mix(in srgb, var(--accent) 4%, transparent) !important;
+}
+
+.pulse-mobile-performance b {
+  font-weight: 680;
+}
+
+.pulse-mobile-support {
+  color: var(--text-tertiary) !important;
+}
+
+.pulse-mobile-skeleton {
+  min-height: 86px;
+}
+
+.mobile-route-page {
+  min-width: 0;
+  overflow-x: clip;
+}
+
+@media (max-width: 767px) {
+  .screener-mobile-context {
+    background: var(--bg-secondary) !important;
+  }
+
+  .screener-results-header {
+    background: var(--bg-primary);
+  }
+
+  .pulse-mobile-read {
+    padding-top: 0.6rem !important;
+    padding-bottom: 0.65rem !important;
+  }
+
+  .pulse-mobile-read > div:first-child {
+    margin-bottom: 0.35rem;
+  }
+
+  .pulse-mobile-read p {
+    margin-top: 0.35rem;
+    line-height: 1.35rem;
+  }
+
+  .pulse-mobile-controls {
+    position: sticky;
+    top: calc(56px + env(safe-area-inset-top));
+    z-index: 35;
+    background: color-mix(in srgb, var(--bg-primary) 94%, transparent);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+
+  .pulse-mobile-page .mobile-financial-list {
+    padding-bottom: 0.5rem;
+  }
+
+  .pulse-mobile-page .mobile-pulse-row {
+    padding: 0.8rem 0.875rem;
+    border-color: var(--border-subtle) !important;
+  }
+
+  .pulse-mobile-page .pulse-mobile-performance {
+    padding-block: 0.45rem;
+  }
+
+  .pulse-mobile-page .pulse-mobile-support {
+    margin-top: 0.4rem;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 520px) and (max-width: 950px) {
+  .pulse-mobile-controls {
+    top: 40px;
+  }
+
+  .pulse-mobile-read {
+    padding-block: 0.45rem !important;
+  }
+
+  .pulse-mobile-read p {
+    display: none;
+  }
+
+  .pulse-mobile-read button {
+    min-height: 32px !important;
+  }
+
+  .mobile-route-page {
+    padding-bottom: 0.5rem;
+  }
+}

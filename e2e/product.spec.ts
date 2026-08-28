@@ -307,7 +307,7 @@ test('Detail, drawer, Pulse cancellation, and mocked Account states remain bound
 
   marketHarness.delays.set('etf-pulse', 350);
   await page.goto('/pulse');
-  await expect(page.getByText(/Loading \d+ \/ \d+ ETFs|Reading market \d+\/\d+/).last()).toBeVisible();
+  await expect(page.getByRole('status', { name: 'ETF Pulse loading' })).toBeVisible();
   await page.goto('/watchlist');
   await expect(page.getByRole('heading', { name: 'Watchlist' })).toBeVisible();
   await page.waitForTimeout(450);

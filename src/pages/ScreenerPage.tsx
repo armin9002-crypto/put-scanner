@@ -602,6 +602,10 @@ export default function ScreenerPage() {
     volFilter !== 'all',
     ivVsRealizedRangeFilter !== 'all',
   ].filter(Boolean).length;
+  const localFilterCount = [deltaFilter !== 'all', moneynessFilter !== 'all', yieldFilter !== 'all', oiFilter !== 'all', volFilter !== 'all', ivVsRealizedRangeFilter !== 'all'].filter(Boolean).length;
+  const scopeLabel = selectedETFs.length === 0 ? 'All ETFs' : selectedETFs.map(etf => etf.ticker).join(', ');
+  const loadedScopeLabel = lastLoadedCriteria ? (lastLoadedCriteria.selectedETFs.length === 0 ? 'All ETFs' : lastLoadedCriteria.selectedETFs.map(etf => etf.ticker).join(', ')) : scopeLabel;
+  const loadedExpirationLabel = lastLoadedCriteria ? optionLabel(expDropdownOptions, lastLoadedCriteria.expFilter) : optionLabel(expDropdownOptions, expFilter);
 
   if (isPhone) {
     const activeCriteria = [
@@ -614,19 +618,21 @@ export default function ScreenerPage() {
 
     return (
       <div className="mobile-route-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
-        <div className="border-b px-3.5 pb-3 pt-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+        <div className="screener-mobile-context border-b px-3.5 pb-3 pt-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
           <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0"><div className="text-[12px] font-medium" style={{ color: 'var(--text-muted)' }}>Screening criteria</div><p className="truncate text-[13px]" style={{ color: 'var(--text)' }}>{activeCriteria}</p></div>
+            <div className="min-w-0"><div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.07em]" style={{ color: 'var(--text-dim)' }}><span>Screening criteria</span>{loaded && <span className="status-badge" data-status={loadError ? 'failed' : 'fresh'}>{loadError ? 'Needs retry' : `${rawRowsRef.current.length} loaded`}</span>}</div><p className="truncate text-[13px]" style={{ color: 'var(--text)' }}>{activeCriteria}</p></div>
             <button type="button" onClick={() => setMobileFiltersOpen(true)} className="pressable mobile-control-button" aria-haspopup="dialog"><SlidersHorizontal className="h-4 w-4" /> Filters {activeFilterCount}</button>
           </div>
           <button type="button" onClick={() => void handleLoad()} disabled={loading} className="mobile-sheet-action primary mt-3 w-full disabled:opacity-50">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}{loading ? `Scanning ${progress.current}/${progress.total}` : 'Run Screener'}</button>
-          {loading && progress.total > 0 && <div className="mt-2 h-1 overflow-hidden rounded-full" style={{ backgroundColor: 'var(--border)' }}><div className="h-full rounded-full" style={{ width: `${progressPct}%`, backgroundColor: 'var(--accent)' }} /></div>}
+          {loading && progress.total > 0 && <div className="screener-progress mt-2"><div className="flex items-center justify-between text-[10px]" style={{ color: 'var(--text-muted)' }}><span>Loading bounded dataset</span><span className="font-mono">{progress.current}/{progress.total}</span></div><div className="mt-1 h-1 overflow-hidden rounded-full" style={{ backgroundColor: 'var(--border)' }}><div className="h-full rounded-full" style={{ width: `${progressPct}%`, backgroundColor: 'var(--accent)' }} /></div></div>}
           {slowWarning && <p className="mt-2 flex items-center gap-1 text-[11px]" style={{ color: 'var(--yellow)' }}><AlertTriangle className="h-3.5 w-3.5" /> Narrow filters for a faster scan.</p>}
           {scanFailureCount > 0 && <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]" style={{ color: 'var(--yellow)' }}><span className="flex items-center gap-1"><AlertTriangle className="h-3.5 w-3.5" /> Some results could not be loaded.</span>{retryState && !hasStructuralCriteriaChanged && !loading && <button type="button" onClick={() => void handleRetryFailedResults()} className="mobile-sheet-action secondary min-h-9 px-3 py-1"><RefreshCw className="h-3.5 w-3.5" /> Retry failed results</button>}</div>}
           {loadError && !loading && <p role="alert" className="mt-2 flex items-start gap-1 text-[11px]" style={{ color: 'var(--red)' }}><AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-none" /> <span>{loadError} Run Screener to retry.</span></p>}
         </div>
 
-        <div className="flex min-h-[46px] items-center gap-2 border-b px-3.5" style={{ borderColor: 'var(--border)' }}>
+        {loaded && <div className="screener-loaded-context flex flex-wrap items-center gap-x-3 gap-y-1 border-b px-3.5 py-2 text-[11px]" style={{ borderColor: 'var(--border)' }}><span className="font-semibold" style={{ color: 'var(--text)' }}>{rawRowsRef.current.length} contracts loaded</span><span style={{ color: 'var(--text-muted)' }}>Showing {sortedRows.length} after local filters</span><span className="screener-scope-context" style={{ color: 'var(--text-muted)' }}>Loaded scope: {loadedScopeLabel} · {loadedExpirationLabel}</span>{hasStructuralCriteriaChanged && <span className="status-badge" data-status="updating">Pending scope change</span>}{scanFailureCount > 0 && <span className="status-badge" data-status="failed">{scanFailureCount} batch{scanFailureCount === 1 ? '' : 'es'} incomplete</span>}</div>}
+
+        <div className="screener-results-header flex min-h-[46px] items-center gap-2 border-b px-3.5" style={{ borderColor: 'var(--border)' }}>
           <h2 className="mr-auto text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Results <span className="font-mono font-normal" style={{ color: 'var(--text-muted)' }}>{loaded ? sortedRows.length : '—'}</span></h2>
           <select value={sortField} onChange={event => setSortField(event.target.value as ScreenerSortField)} className="min-h-11 min-w-0 rounded-lg px-2 text-[12px] outline-none" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} aria-label="Sort screener results"><option value="annYieldBid">Ann. secured-cash yield</option><option value="ticker">Ticker</option><option value="expDate">Expiration</option><option value="strike">Strike</option><option value="delta">Delta</option><option value="last">Last</option><option value="bid">Bid</option><option value="ask">Ask</option><option value="iv">IV</option><option value="openInterest">Open interest</option></select>
           <button type="button" onClick={() => setSortDir(current => current === 'asc' ? 'desc' : 'asc')} className="pressable flex h-11 w-11 items-center justify-center rounded-lg text-sm font-semibold" aria-label={`Sort ${sortDir === 'asc' ? 'descending' : 'ascending'}`} style={{ color: 'var(--accent-light)' }}>{sortDir === 'asc' ? '↑' : '↓'}</button>
@@ -655,9 +661,10 @@ export default function ScreenerPage() {
   return (
     <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>
       <div className="page-frame">
-        <PageHeader title="Screener" description="Scan the ETF universe, then refine the loaded contracts locally." />
+        <PageHeader title="Screener" description="Define a bounded universe, load it once, then refine the contracts locally." meta={<div className="screener-header-meta"><span className="status-badge" data-status={loaded ? (loadError ? 'failed' : 'fresh') : 'stale'}>{loaded ? `${rawRowsRef.current.length} contracts loaded` : 'Ready to load'}</span><span>{activeFilterCount} active criteria</span><span>{localFilterCount} local</span></div>} />
         {/* Filter Bar */}
-        <div className="surface-card p-3 mb-3 sm:mb-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+        <div className="screener-filter-surface surface-card p-3 mb-3 sm:mb-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+          <div className="screener-filter-heading"><div><div className="screener-eyebrow">Define the scan</div><h2>Universe and criteria</h2><p>Choose what to fetch, then refine the loaded rows without another request.</p></div><div className="screener-scope-badge"><span>Scope</span><strong>{scopeLabel}</strong><small>{optionLabel(expDropdownOptions, expFilter)}</small></div></div>
           <button
             type="button"
             className="pressable flex min-h-11 w-full items-center justify-between gap-3 sm:hidden"
@@ -677,7 +684,8 @@ export default function ScreenerPage() {
 
           <div id="screener-filter-controls" className={`screener-filter-controls grid grid-cols-1 min-[430px]:grid-cols-2 sm:flex sm:flex-row sm:flex-wrap xl:flex-nowrap sm:items-end gap-2 ${mobileFiltersOpen ? 'is-open' : ''}`}>
             {/* ETF Selector */}
-            <div className="w-full sm:min-w-[180px] sm:w-auto min-w-0 min-[430px]:col-span-2 sm:col-span-1">
+            <div className="screener-filter-field screener-filter-field--structural w-full sm:min-w-[180px] sm:w-auto min-w-0 min-[430px]:col-span-2 sm:col-span-1">
+              <div className="screener-filter-group-tag"><strong>Fetch scope</strong><span>Changes require Load</span></div>
               <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>ETFs</label>
               <div className="relative">
                 <div className="flex flex-wrap gap-1 p-1.5 rounded-lg min-h-[44px] sm:min-h-[32px]" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)' }}>
@@ -718,7 +726,7 @@ export default function ScreenerPage() {
             </div>
 
             {/* Expiration - single-select dropdown; nearest modes acquire at most two expiries. */}
-            <div className="w-full sm:w-auto min-w-0">
+            <div className="screener-filter-field screener-filter-field--structural w-full sm:w-auto min-w-0">
               <ExpirationFilter
                 value={expFilter}
                 onChange={setExpFilter}
@@ -738,7 +746,8 @@ export default function ScreenerPage() {
             </div>
 
             {/* Delta (abs) */}
-            <div className="w-full sm:w-auto min-w-0">
+            <div className="screener-filter-field screener-filter-field--local w-full sm:w-auto min-w-0">
+              <div className="screener-filter-group-tag"><strong>Refine loaded data</strong><span>Updates instantly</span></div>
               <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Delta (abs)</label>
               <select value={deltaFilter} onChange={e => setDeltaFilter(e.target.value)}
                 className="w-full sm:w-auto rounded-lg px-3 py-2 sm:py-1.5 text-base sm:text-xs outline-none cursor-pointer min-h-[44px] sm:min-h-0"
@@ -748,7 +757,7 @@ export default function ScreenerPage() {
             </div>
 
             {/* Moneyness */}
-            <div className="w-full sm:w-auto min-w-0">
+            <div className="screener-filter-field screener-filter-field--local w-full sm:w-auto min-w-0">
               <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Moneyness</label>
               <select value={moneynessFilter} onChange={e => setMoneynessFilter(e.target.value)}
                 className="w-full sm:w-auto rounded-lg px-3 py-2 sm:py-1.5 text-base sm:text-xs outline-none cursor-pointer min-h-[44px] sm:min-h-0"
@@ -758,7 +767,7 @@ export default function ScreenerPage() {
             </div>
 
             {/* Ann Yield */}
-            <div className="w-full sm:w-auto min-w-0">
+            <div className="screener-filter-field screener-filter-field--local w-full sm:w-auto min-w-0">
               <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Ann. Secured-Cash Yield Bid</label>
               <select value={yieldFilter} onChange={e => setYieldFilter(e.target.value)}
                 className="w-full sm:w-auto rounded-lg px-3 py-2 sm:py-1.5 text-base sm:text-xs outline-none cursor-pointer min-h-[44px] sm:min-h-0"
@@ -768,7 +777,7 @@ export default function ScreenerPage() {
             </div>
 
             {/* Min OI */}
-            <div className="w-full sm:w-auto min-w-0">
+            <div className="screener-filter-field screener-filter-field--local w-full sm:w-auto min-w-0">
               <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Min OI</label>
               <select value={oiFilter} onChange={e => setOiFilter(e.target.value)}
                 className="w-full sm:w-auto rounded-lg px-3 py-2 sm:py-1.5 text-base sm:text-xs outline-none cursor-pointer min-h-[44px] sm:min-h-0"
@@ -778,7 +787,7 @@ export default function ScreenerPage() {
             </div>
 
             {/* Min Volume */}
-            <div className="w-full sm:w-auto min-w-0">
+            <div className="screener-filter-field screener-filter-field--local w-full sm:w-auto min-w-0">
               <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Min Vol</label>
               <select value={volFilter} onChange={e => setVolFilter(e.target.value)}
                 className="w-full sm:w-auto rounded-lg px-3 py-2 sm:py-1.5 text-base sm:text-xs outline-none cursor-pointer min-h-[44px] sm:min-h-0"
@@ -788,7 +797,7 @@ export default function ScreenerPage() {
             </div>
 
             {/* Current ATM implied volatility versus trailing realized-volatility range. */}
-            <div className="w-full sm:w-auto min-w-0">
+            <div className="screener-filter-field screener-filter-field--local w-full sm:w-auto min-w-0">
               <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }} title="Current ATM put IV positioned in the trailing 1-year range of 4-week realized volatility. Not traditional historical IV Rank.">IV vs 1Y Realized Range</label>
               <select value={ivVsRealizedRangeFilter} onChange={e => setIvVsRealizedRangeFilter(e.target.value)}
                 className="w-full sm:w-auto rounded-lg px-3 py-2 sm:py-1.5 text-base sm:text-xs outline-none cursor-pointer min-h-[44px] sm:min-h-0"
@@ -918,18 +927,16 @@ export default function ScreenerPage() {
         )}
 
         {/* Results header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2 px-1">
+        <div className="screener-results-toolbar flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2 px-1">
           <div className="min-w-0">
-            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-              {loaded ? `Showing ${sortedRows.length} results` : ''}
-            </span>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1"><span className="screener-results-kicker">Loaded contracts</span><span className="font-mono text-sm font-semibold" style={{ color: 'var(--text)' }}>{loaded ? sortedRows.length : '—'}</span>{loaded && <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>visible after local filters</span>}</div>
             {hasStructuralCriteriaChanged && (
               <div className="text-[10px] mt-0.5" style={{ color: 'var(--yellow)' }}>
                 Inputs changed - click Load to refresh results.
               </div>
             )}
           </div>
-          <label className="flex items-center gap-1.5 text-xs cursor-pointer min-h-[40px]" style={{ color: 'var(--text-muted)' }}>
+          <label className="screener-volume-toggle flex items-center gap-1.5 text-xs cursor-pointer min-h-[40px]" style={{ color: 'var(--text-muted)' }}>
             <input
               type="checkbox"
               checked={showVolOI}
@@ -1079,14 +1086,17 @@ export default function ScreenerPage() {
 
                   return (
                     <tr key={`${row.ticker}-${row.expDate}-${row.strike}`} className="transition-colors" style={{ borderBottom: '1px solid var(--border)', ...bgStyle }}>
-                      <td className="px-2 py-1 text-left whitespace-nowrap sticky left-0 z-[2] border-r" style={{ borderColor: 'var(--border)', backgroundColor: bgStyle.backgroundColor || 'var(--surface)' }}>
-                        <Link
-                          to={`/options/${row.ticker}`}
-                          className="inline-flex items-center font-mono font-bold hover:opacity-80 transition-opacity min-h-[44px]"
-                          style={{ color: 'var(--accent-light)' }}
-                        >
-                          {row.ticker}
-                        </Link>
+                      <td className="screener-identity-cell px-2 py-1 text-left whitespace-nowrap sticky left-0 z-[2] border-r" style={{ borderColor: 'var(--border)', backgroundColor: bgStyle.backgroundColor || 'var(--surface)' }}>
+                        <div className="flex min-h-[44px] flex-col justify-center">
+                          <Link
+                            to={`/options/${row.ticker}`}
+                            className="inline-flex items-center font-mono font-bold hover:opacity-80 transition-opacity"
+                            style={{ color: 'var(--accent-light)' }}
+                          >
+                            {row.ticker}
+                          </Link>
+                          <span className="text-[9px]" style={{ color: 'var(--text-dim)' }}>{row.expLabel} · ${formatPrice(row.strike)} put</span>
+                        </div>
                       </td>
                       <td className="px-2 py-1 text-right font-mono hidden md:table-cell" style={{ color: 'var(--text)' }}>{formatPrice(row.currentPrice)}</td>
                       <td className="px-2 py-1 text-right font-mono whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{row.expLabel}</td>

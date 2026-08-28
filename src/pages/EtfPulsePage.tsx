@@ -566,6 +566,9 @@ export default function EtfPulsePage() {
       return (aValue - bValue) * direction;
     });
   }, [leverageFilter, rows, search, sort, trendFilter, typeFilter]);
+  const pulseProgressPct = progress.total > 0 ? Math.round((progress.loaded / progress.total) * 100) : 0;
+  const pulseFilterCount = [search.trim() !== '', leverageFilter !== 'All', typeFilter !== 'All', trendFilter !== 'All'].filter(Boolean).length;
+  const sortLabel = sort.field === 'ticker' ? 'Ticker' : sort.field === 'oneDay' ? '1D return' : sort.field === 'thirtyDay' ? '30D return' : sort.field === 'threeMonth' ? '3M return' : sort.field === 'rsi14' ? 'RSI' : sort.field === 'realizedVolatility20' ? '20D volatility' : sort.field === 'drawdown52Week' ? '52W drawdown' : 'Trend';
 
   const columns = useMemo<PulseColumn[]>(() => [
     {
@@ -755,22 +758,22 @@ export default function EtfPulsePage() {
 
   if (isPhone) {
     return (
-      <div className="mobile-route-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
-        <section className="border-b px-3.5 py-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+      <div className="mobile-route-page pulse-mobile-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
+        <section className="pulse-mobile-read border-b px-3.5 py-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
           <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: 'var(--text-dim)' }}>Market Read</div>
           {regime && posture ? <><div className="flex flex-wrap items-center gap-1.5"><MarketBadge label={regime.label} /><MarketBadge label={posture.label} tone="posture" /><MarketBadge label={`${regime.confidence} confidence`} tone="confidence" /></div><p className="mt-2 line-clamp-2 text-[12px] leading-5" style={{ color: 'var(--text-secondary)' }}>{regime.marketRead}</p><button type="button" onClick={() => setShowMarketRead(true)} className="pressable mt-1 inline-flex min-h-11 items-center text-[12px] font-semibold" style={{ color: 'var(--accent-light)' }}>Details</button></> : <div className="flex min-h-[64px] items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>{loading ? <><Loader2 className="h-4 w-4 animate-spin" /> Reading market {progress.loaded}/{progress.total}</> : 'Market Read unavailable'}</div>}
         </section>
 
-        <div className="border-b px-3.5 py-2.5" style={{ borderColor: 'var(--border)' }}>
+        <div className="pulse-mobile-controls border-b px-3.5 py-2.5" style={{ borderColor: 'var(--border)' }}>
           <div className="grid grid-cols-[1fr_auto] gap-2"><MobileSegmentedControl value={mobileVisual} onChange={setMobileVisual} label="ETF Pulse view" options={[{ value: 'list', label: 'List' }, { value: 'heatmap', label: 'Heatmap' }, { value: 'momentum', label: 'Momentum' }]} /><button type="button" onClick={() => setMobileFiltersOpen(true)} className="pressable mobile-control-button" aria-haspopup="dialog"><SlidersHorizontal className="h-4 w-4" /> Filters</button></div>
           <div className="mt-2 flex items-center justify-between gap-2"><VisualPeriodSelector value={selectedVisualPeriod} onChange={setSelectedVisualPeriod} />{mobileVisual === 'list' && <button type="button" onClick={() => setSort(current => ({ ...current, direction: current.direction === 'asc' ? 'desc' : 'asc' }))} className="pressable flex h-11 w-11 flex-none items-center justify-center rounded-lg text-sm" aria-label={`Sort ${sort.direction === 'asc' ? 'descending' : 'ascending'}`} style={{ color: 'var(--accent-light)' }}>{sort.direction === 'asc' ? '↑' : '↓'}</button>}</div>
         </div>
 
         {error && <div className="mx-3.5 mt-3 flex items-center gap-2 rounded-lg px-3 py-2 text-xs" style={{ backgroundColor: 'rgba(239,68,68,0.1)', color: 'var(--red)', border: '1px solid rgba(239,68,68,0.24)' }}><AlertTriangle className="h-4 w-4" /> ETF Pulse could not update. Existing data remains visible.</div>}
 
-        {mobileVisual === 'list' ? <div className="mobile-financial-list">{loading && rows.length === 0 ? Array.from({ length: 6 }).map((_, index) => <div key={index} className="mobile-pulse-row animate-pulse"><div className="h-4 w-24 rounded" style={{ backgroundColor: 'var(--border)' }} /><div className="mt-5 h-3 w-full rounded" style={{ backgroundColor: 'var(--border)' }} /></div>) : filteredRows.length === 0 ? <div className="px-6 py-14 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No ETFs match these filters.</div> : filteredRows.map(row => {
+        {mobileVisual === 'list' ? <div className="mobile-financial-list">{loading && rows.length === 0 ? <div role="status" aria-label="ETF Pulse loading" className="pulse-mobile-loading">{Array.from({ length: 6 }).map((_, index) => <div key={index} className="mobile-pulse-row pulse-mobile-skeleton animate-pulse"><div className="h-4 w-24 rounded" style={{ backgroundColor: 'var(--border)' }} /><div className="mt-5 h-3 w-full rounded" style={{ backgroundColor: 'var(--border)' }} /></div>)}</div> : filteredRows.length === 0 ? <div className="px-6 py-14 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No ETFs match these filters.</div> : filteredRows.map(row => {
           const trend = trendStyle(row);
-          return <Link key={row.ticker} to={`/options/${row.ticker}`} className="pressable mobile-pulse-row"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="font-mono text-[16px] font-bold" style={{ color: 'var(--accent-light)' }}>{row.ticker}</div><div className="truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>{row.name}</div></div><div className="text-right"><div className="font-mono text-[15px] font-semibold" style={{ color: 'var(--text)' }}>{formatPrice(row.price)}</div><div className="text-[10px] font-semibold" style={{ color: trend.color }}>{trend.label}</div></div></div><div className="mt-2 grid grid-cols-3 gap-2 border-y py-1.5" style={{ borderColor: 'var(--border)' }}>{([['1M', row.returns.thirtyDay], ['3M', row.returns.threeMonth], ['YTD', row.returns.yearToDate]] as const).map(([label, value]) => <span key={label} className="text-[11px]"><span style={{ color: 'var(--text-dim)' }}>{label} </span><b className="font-mono" style={{ color: valueColor(value) }}>{formatPct(value)}</b></span>)}</div><div className="mt-1.5 grid grid-cols-3 gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}><span>RSI <b className="font-mono" style={{ color: rsiColor(row.rsi14) }}>{isFiniteNumber(row.rsi14) ? row.rsi14.toFixed(0) : DASH}</b></span><span>vs 50D <b className="font-mono" style={{ color: valueColor(row.distance50) }}>{formatPct(row.distance50)}</b></span><span className="text-right">DD <b className="font-mono" style={{ color: drawdownColor(row.drawdown52Week) }}>{formatPct(row.drawdown52Week)}</b></span></div></Link>;
+          return <Link key={row.ticker} to={`/options/${row.ticker}`} className="pressable mobile-pulse-row"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="font-mono text-[16px] font-bold" style={{ color: 'var(--accent-light)' }}>{row.ticker}</div><div className="truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>{row.name}</div></div><div className="text-right"><div className="font-mono text-[15px] font-semibold" style={{ color: 'var(--text)' }}>{formatPrice(row.price)}</div><div className="text-[10px] font-semibold" style={{ color: trend.color }}>{trend.label}</div></div></div><div className="pulse-mobile-performance mt-2 grid grid-cols-3 gap-2 border-y py-1.5" style={{ borderColor: 'var(--border)' }}>{([['1M', row.returns.thirtyDay], ['3M', row.returns.threeMonth], ['YTD', row.returns.yearToDate]] as const).map(([label, value]) => <span key={label} className="text-[11px]"><span style={{ color: 'var(--text-dim)' }}>{label} </span><b className="font-mono" style={{ color: valueColor(value) }}>{formatPct(value)}</b></span>)}</div><div className="pulse-mobile-support mt-1.5 grid grid-cols-3 gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}><span>RSI <b className="font-mono" style={{ color: rsiColor(row.rsi14) }}>{isFiniteNumber(row.rsi14) ? row.rsi14.toFixed(0) : DASH}</b></span><span>vs 50D <b className="font-mono" style={{ color: valueColor(row.distance50) }}>{formatPct(row.distance50)}</b></span><span className="text-right">DD <b className="font-mono" style={{ color: drawdownColor(row.drawdown52Week) }}>{formatPct(row.drawdown52Week)}</b></span></div></Link>;
         })}</div> : <section className="px-3.5 py-3">{mobileVisual === 'heatmap' ? <UniverseHeatmap rows={filteredRows} period={selectedVisualPeriod} /> : <MomentumQuadrant rows={filteredRows} period={selectedVisualPeriod} />}</section>}
 
         {mobileFiltersOpen && <MobileBottomSheet title="ETF Pulse filters" description="Filter and sort loaded market intelligence" onClose={() => setMobileFiltersOpen(false)} footer={<div className="grid grid-cols-2 gap-2"><button type="button" onClick={() => { setSearch(''); setLeverageFilter('All'); setTypeFilter('All'); setTrendFilter('All'); }} className="mobile-sheet-action secondary">Reset</button><button type="button" onClick={() => setMobileFiltersOpen(false)} className="mobile-sheet-action primary">Done</button></div>}><div className="space-y-4"><label><span className="mobile-sheet-label">Search</span><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Ticker, name, or theme" className="mobile-control-field w-full" /></label><Select label="Leverage" value={leverageFilter} options={leverageOptions} onChange={setLeverageFilter} /><Select label="Type" value={typeFilter} options={typeOptions} onChange={setTypeFilter} /><Select label="Trend" value={trendFilter} options={trendOptions} onChange={value => setTrendFilter(value as TrendFilter)} /><label className="block"><span className="mobile-sheet-label">Sort list</span><select value={sort.field} onChange={event => setSort(current => ({ ...current, field: event.target.value as PulseSortField }))} className="mobile-control-field w-full"><option value="ticker">Ticker</option><option value="oneDay">1D return</option><option value="thirtyDay">30D return</option><option value="threeMonth">3M return</option><option value="rsi14">RSI</option><option value="realizedVolatility20">20D volatility</option><option value="drawdown52Week">52W drawdown</option><option value="trend">Trend</option></select></label><button type="button" onClick={() => void loadRows(true)} disabled={loading} className="mobile-sheet-action secondary w-full"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh data</button></div></MobileBottomSheet>}
@@ -784,10 +787,11 @@ export default function EtfPulsePage() {
       <div className="page-frame page-frame--wide py-3">
         <div className="etf-pulse-controls flex-shrink-0 -mx-2 sm:-mx-4 lg:-mx-6 px-2 sm:px-4 lg:px-6 pb-1.5 mb-2" style={{ backgroundColor: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
           <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-1.5 mb-1.5">
-            <div className="min-w-0 flex-shrink-0">
+            <div className="pulse-title-block min-w-0 flex-shrink-0">
               <h1 className="text-xl sm:text-2xl font-bold tracking-tight leading-none flex items-center gap-2" style={{ color: 'var(--text)' }}>
                 <Activity className="w-5 h-5" style={{ color: 'var(--accent-light)' }} /> ETF Pulse
               </h1>
+              <p className="pulse-title-context">Market regime overview across the leveraged-ETF universe.</p>
             </div>
             <div className="min-w-0 xl:flex-1">
               <MarketReadStrip regime={regime} posture={posture} unavailable={rows.length === 0} onOpen={() => setShowMarketRead(true)} />
@@ -816,7 +820,7 @@ export default function EtfPulsePage() {
               <AlertTriangle className="w-3.5 h-3.5" /> Loaded {result.loaded} of {result.total} ETFs. {result.failed} failed.
             </div>
           )}
-          <div className="rounded-lg p-1.5" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+          <div className="pulse-filter-surface rounded-lg p-1.5" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
             <button type="button" onClick={() => setMobileFiltersOpen(current => !current)} className="pressable flex min-h-[44px] w-full items-center justify-between gap-3 px-1 sm:hidden" aria-expanded={mobileFiltersOpen} aria-controls="pulse-filter-controls">
               <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: 'var(--text)' }}><SlidersHorizontal className="h-4 w-4" style={{ color: 'var(--accent-light)' }} /> Search & filters</span>
               <span className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>{[leverageFilter !== 'All', typeFilter !== 'All', trendFilter !== 'All', search.trim() !== ''].filter(Boolean).length} active <ChevronDown className={`h-4 w-4 transition-transform ${mobileFiltersOpen ? 'rotate-180' : ''}`} /></span>
@@ -835,6 +839,12 @@ export default function EtfPulsePage() {
             </div>
           </div>
         </div>
+
+        <div className="pulse-control-rail">
+          <div className="pulse-period-control"><span className="pulse-control-label">Performance window</span><VisualPeriodSelector value={selectedVisualPeriod} onChange={setSelectedVisualPeriod} /></div>
+          <div className="pulse-result-context"><span className="pulse-control-label">Universe</span><strong>{loading ? `${progress.loaded}/${progress.total}` : `${filteredRows.length} ETFs`}</strong><span className="pulse-sort-context">Sort: <b>{sortLabel}</b> · {sort.direction === 'asc' ? 'ascending' : 'descending'}</span>{pulseFilterCount > 0 && <span className="status-badge" data-status="updating">{pulseFilterCount} filter{pulseFilterCount === 1 ? '' : 's'} active</span>}</div>
+        </div>
+        {loading && <div className="pulse-progress"><div className="flex items-center justify-between text-[10px]" style={{ color: 'var(--text-muted)' }}><span>Refreshing daily histories</span><span className="font-mono">{pulseProgressPct}%</span></div><div className="mt-1 h-1 overflow-hidden rounded-full" style={{ backgroundColor: 'var(--border)' }}><div className="h-full rounded-full transition-[width] duration-300" style={{ width: `${pulseProgressPct}%`, backgroundColor: 'var(--accent)' }} /></div></div>}
 
         <div className="etf-pulse-content min-w-0">
           <div className="mb-2 grid grid-cols-[1fr_auto] gap-2 md:hidden">
@@ -887,7 +897,7 @@ export default function EtfPulsePage() {
                 </thead>
                 <tbody>
                   {loading && rows.length === 0 ? (
-                    <tr><td colSpan={columns.length} className="px-3 py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>Loading {progress.loaded} / {progress.total} ETFs...</td></tr>
+                    <tr><td colSpan={columns.length} role="status" aria-label="ETF Pulse loading" className="pulse-loading-state px-3 py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}><Loader2 className="mx-auto mb-2 h-4 w-4 animate-spin" style={{ color: 'var(--accent-light)' }} />Loading {progress.loaded} / {progress.total} ETF histories…</td></tr>
                   ) : filteredRows.length === 0 ? (
                     <tr><td colSpan={columns.length} className="px-3 py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No ETFs match these filters.</td></tr>
                   ) : filteredRows.map((row, index) => (
@@ -906,7 +916,6 @@ export default function EtfPulsePage() {
                 <h2 className="text-base font-semibold" style={{ color: 'var(--text)' }}>ETF Pulse Visuals</h2>
                 <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Heatmap and momentum quadrant use the currently filtered ETF Pulse rows.</p>
               </div>
-              <VisualPeriodSelector value={selectedVisualPeriod} onChange={setSelectedVisualPeriod} />
             </div>
             <div className="mb-2 grid grid-cols-2 gap-1 rounded-xl p-1 md:hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }} role="tablist" aria-label="ETF Pulse visual">
               <button type="button" role="tab" aria-selected={mobileVisual === 'heatmap'} onClick={() => setMobileVisual('heatmap')} className="pressable min-h-[40px] rounded-lg text-xs font-semibold" style={{ backgroundColor: mobileVisual === 'heatmap' ? 'var(--accent)' : 'transparent', color: mobileVisual === 'heatmap' ? 'white' : 'var(--text-muted)' }}>Heatmap</button>
