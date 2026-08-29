@@ -29,6 +29,16 @@ export function normalizeTimestampSeconds(value) {
   return Math.round(numeric > 10_000_000_000 ? numeric / 1000 : numeric);
 }
 
+// Provider event timestamps are advisory: reject malformed, pre-2000, or implausibly future values.
+export function normalizeProviderTimestampSeconds(value, nowMs = Date.now()) {
+  const numeric = normalizeFiniteNumber(value);
+  if (numeric == null || numeric <= 0) return null;
+  const seconds = numeric > 10_000_000_000 ? numeric / 1000 : numeric;
+  const timestampMs = Math.round(seconds * 1000);
+  if (!Number.isFinite(timestampMs) || timestampMs < Date.UTC(2000, 0, 1) || timestampMs > nowMs + 5 * 60 * 1000) return null;
+  return Math.round(timestampMs / 1000);
+}
+
 function healthFor(endpoint) {
   const health = healthByEndpoint.get(endpoint) ?? { consecutiveFailures: 0, lastFailureAt: null, circuitOpenUntil: null };
   healthByEndpoint.set(endpoint, health);

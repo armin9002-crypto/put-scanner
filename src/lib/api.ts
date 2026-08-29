@@ -100,6 +100,10 @@ function withCacheSource(data: OptionsChainData, cacheKey: string, stale = false
       returnedExpiration: data.chainMeta?.returnedExpiration ?? data.chainMeta?.expirationDate ?? null,
       expirationDate: data.chainMeta?.expirationDate ?? null,
       fetchedAt,
+      providerMarketTime: data.chainMeta?.providerMarketTime ?? null,
+      // Cache reads preserve the original storage/observation time; read time must not refresh the quote.
+      cachedAt: data.chainMeta?.cachedAt ?? fetchedAt,
+      timestampSource: data.chainMeta?.timestampSource,
       source: stale ? 'stale' : 'cache',
       freshness: stale ? 'stale' : 'fresh',
       staleFallbackUsed,
@@ -211,6 +215,7 @@ export interface SparklineData {
   previousClose: number | null;
   sparkline: number[];
   cachedAt?: number;
+  providerMarketTime?: number | null;
 }
 
 export async function fetchSparkline(ticker: string, options: { signal?: AbortSignal } = {}): Promise<SparklineData> {
@@ -231,6 +236,7 @@ export async function fetchSparkline(ticker: string, options: { signal?: AbortSi
         changePercent: data.changePct,
         previousClose: data.previousClose ?? null,
         sparkline: data.sparkline || [],
+        providerMarketTime: data.providerMarketTime ?? null,
       };
     },
     undefined,
@@ -252,6 +258,7 @@ export interface ExtendedPriceData {
   fiftyTwoWeekHighPct: number | null;
   previousClose: number | null;
   sparkline: number[];
+  providerMarketTime?: number | null;
 }
 
 export async function fetchExtendedPrice(ticker: string, options: { includeSparkline?: boolean } = {}): Promise<ExtendedPriceData> {
@@ -275,6 +282,7 @@ export async function fetchExtendedPrice(ticker: string, options: { includeSpark
         threeMonth: data.threeMonth ?? null,
         fiftyTwoWeekHighPct: data.fiftyTwoWeekHighPct ?? null,
         previousClose: data.previousClose ?? null,
+        providerMarketTime: data.providerMarketTime ?? null,
         sparkline: data.sparkline || [],
       };
     },

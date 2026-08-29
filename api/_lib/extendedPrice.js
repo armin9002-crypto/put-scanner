@@ -1,4 +1,4 @@
-import { normalizeFiniteNumber, normalizePositiveNumber, readYahooJson, yahooFetch } from './yahoo.js';
+import { normalizeFiniteNumber, normalizePositiveNumber, normalizeProviderTimestampSeconds, readYahooJson, yahooFetch } from './yahoo.js';
 
 export async function fetchYahooExtendedPrice(ticker, options = {}) {
   const dailyUrl = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1y`;
@@ -53,6 +53,7 @@ export async function fetchYahooExtendedPrice(ticker, options = {}) {
     threeMonth: performance(66),
     fiftyTwoWeekHighPct: price != null && fiftyTwoWeekHigh != null ? (price - fiftyTwoWeekHigh) / fiftyTwoWeekHigh * 100 : null,
     previousClose,
+    providerMarketTime: normalizeProviderTimestampSeconds(meta.regularMarketTime),
     sparkline,
   };
 }

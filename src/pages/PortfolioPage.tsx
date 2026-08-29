@@ -321,6 +321,7 @@ function HoverTooltip({ children, content, ariaLabel }: { children: ReactNode; c
 
 function CurrentMarkTooltipContent({ trade, markBasis }: { trade: PortfolioTrade; markBasis: MarkBasis }) {
   const stale = getLastTradeStaleness(trade.latestMarketData?.lastTradeDate);
+  const quoteFreshness = getPortfolioQuoteFreshness(trade);
   return (
     <div>
       <div className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text)' }}>Current Mark Details</div>
@@ -337,6 +338,7 @@ function CurrentMarkTooltipContent({ trade, markBasis }: { trade: PortfolioTrade
           value: `${formatFullDate(trade.latestMarketData?.lastTradeDate)}${stale.label ? ` · ${stale.label}` : ''}`,
           color: stale.label ? stale.color : undefined,
         },
+        { label: 'Quote Freshness', value: `${quoteFreshness.label} · ${quoteFreshness.freshnessTimestampSource === 'provider_market_time' ? 'provider market time' : quoteFreshness.freshnessTimestampSource === 'provider_quote' ? 'provider quote time' : 'observation time'}` },
       ]} />
     </div>
   );
@@ -1481,6 +1483,18 @@ export default function PortfolioPage() {
         const optData = optionsByKey.get(key) ?? null;
         const failed = failedKeys.has(key);
         const underlying = batchPrices?.[trade.ticker]?.price ?? optData?.currentPrice ?? trade.latestMarketData?.underlyingPrice ?? trade.entrySnapshot?.underlyingPrice ?? null;
+        const providerMarketSeconds = [
+          batchPrices?.[trade.ticker]?.providerMarketTime,
+          optData?.chainMeta?.providerMarketTime,
+        ].filter((value): value is number => typeof value === 'number' && Number.isFinite(value) && value > 0);
+        const providerMarketTime = providerMarketSeconds.length > 0
+          ? new Date(Math.max(...providerMarketSeconds) * 1000).toISOString()
+          : undefined;
+        const cacheTime = optData?.chainMeta?.cachedAt != null
+          ? new Date(optData.chainMeta.cachedAt).toISOString()
+          : batchPriceResult && batchPriceResult.cacheSource !== 'network'
+            ? new Date(batchPriceResult.fetchedAt).toISOString()
+            : undefined;
 
         if (failed || !optData) {
           partialFailure = true;
@@ -1488,6 +1502,9 @@ export default function PortfolioPage() {
             underlyingPrice: underlying,
             dte: remainingDte,
             refreshedAt: nowIso,
+            providerMarketAt: providerMarketTime,
+            cachedAt: cacheTime,
+            timestampSource: providerMarketTime ? 'provider_market_time' : 'observed_at',
             availabilityStatus: 'refresh_failed',
           });
         }
@@ -1499,6 +1516,9 @@ export default function PortfolioPage() {
             underlyingPrice: underlying,
             dte: remainingDte,
             refreshedAt: nowIso,
+            providerMarketAt: providerMarketTime,
+            cachedAt: cacheTime,
+            timestampSource: providerMarketTime ? 'provider_market_time' : 'observed_at',
             availabilityStatus: 'unavailable',
           });
         }
@@ -1528,6 +1548,9 @@ export default function PortfolioPage() {
           openInterest: put.openInterest ?? null,
           dte: remainingDte,
           refreshedAt: nowIso,
+          providerMarketAt: providerMarketTime,
+          cachedAt: cacheTime,
+          timestampSource: providerMarketTime ? 'provider_market_time' : 'observed_at',
           availabilityStatus: 'live',
         }, 'replace');
       });

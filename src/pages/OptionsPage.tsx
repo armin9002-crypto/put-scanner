@@ -1262,7 +1262,7 @@ export default function OptionsPage() {
               </summary>
               <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span>Source: {chainMeta.source}</span>
-                <span>Fetched: {new Date(chainMeta.fetchedAt).toLocaleTimeString()}</span>
+                <span>Observed: {new Date(chainMeta.fetchedAt).toLocaleTimeString()}</span>
                 <span>Puts: {chainMeta.putCount}</span>
                 <span>Calls: {chainMeta.callCount ?? '—'}</span>
                 <span>Req exp: {chainMeta.requestedExpiration ?? 'initial'}</span>

@@ -1,4 +1,6 @@
 import { isFiniteNumber } from './optionMetrics.ts';
+import { elapsedUsEquityTradingSessions } from './usMarketCalendar.ts';
+import { canonicalizeMarketTime, type MarketTimestampSource } from './marketTimestamp.ts';
 import type { PortfolioTrade } from './portfolioStorage.ts';
 
 export type PortfolioQuoteFreshnessState = 'fresh' | 'aging' | 'stale' | 'unavailable';
@@ -8,6 +10,12 @@ export interface PortfolioQuoteFreshness {
   label: 'Fresh' | 'Aging' | 'Stale' | 'Unavailable';
   observedAt: number | null;
   observedSessionAge: number | null;
+  freshnessAt: number | null;
+  freshnessSessionAge: number | null;
+  freshnessTimestampSource: MarketTimestampSource;
+  providerMarketAt: number | null;
+  providerQuoteAt: number | null;
+  cachedAt: number | null;
   lastTradeAt: number | null;
   lastTradeSessionAge: number | null;
   reason: string;
@@ -15,6 +23,7 @@ export interface PortfolioQuoteFreshness {
 
 function marketDateKey(value: Date | number): string {
   const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short',
   }).formatToParts(date);
@@ -22,32 +31,8 @@ function marketDateKey(value: Date | number): string {
   return `${get('year')}-${get('month')}-${get('day')}`;
 }
 
-function parseDateKey(value: string): number {
-  return Date.parse(`${value}T12:00:00Z`);
-}
-
 export function elapsedMarketSessions(from: Date | number, to: Date | number = new Date()): number {
-  const startKey = marketDateKey(from);
-  const endKey = marketDateKey(to);
-  if (startKey >= endKey) return 0;
-  let cursor = parseDateKey(startKey) + 86_400_000;
-  const end = parseDateKey(endKey);
-  let sessions = 0;
-  while (cursor <= end) {
-    const day = new Date(cursor).getUTCDay();
-    if (day !== 0 && day !== 6) sessions += 1;
-    cursor += 86_400_000;
-  }
-  return sessions;
-}
-
-function timestamp(value: string | number | null | undefined): number | null {
-  if (typeof value === 'number') {
-    const normalized = value < 10_000_000_000 ? value * 1000 : value;
-    return Number.isFinite(normalized) ? normalized : null;
-  }
-  const parsed = typeof value === 'string' ? Date.parse(value) : NaN;
-  return Number.isFinite(parsed) ? parsed : null;
+  return elapsedUsEquityTradingSessions(marketDateKey(from), marketDateKey(to));
 }
 
 function labelFor(state: PortfolioQuoteFreshnessState): PortfolioQuoteFreshness['label'] {
@@ -55,10 +40,24 @@ function labelFor(state: PortfolioQuoteFreshnessState): PortfolioQuoteFreshness[
 }
 
 export function getPortfolioQuoteFreshness(trade: PortfolioTrade, now = new Date()): PortfolioQuoteFreshness {
+  const nowMs = now.getTime();
   const market = trade.latestMarketData;
-  const observedAt = timestamp(market?.refreshedAt);
-  const lastTradeAt = timestamp(market?.lastTradeDate);
+  const canonical = canonicalizeMarketTime({
+    observedAt: market?.refreshedAt,
+    providerQuoteAt: market?.providerQuoteAt,
+    providerMarketAt: market?.providerMarketAt,
+    lastTradeAt: market?.lastTradeDate,
+    cachedAt: market?.cachedAt,
+    nowMs,
+  });
+  const observedAt = canonical.observedAt;
+  const freshnessAt = canonical.providerQuoteAt ?? canonical.providerMarketAt ?? canonical.observedAt;
+  const freshnessTimestampSource: MarketTimestampSource = canonical.providerQuoteAt != null
+    ? 'provider_quote'
+    : canonical.providerMarketAt != null ? 'provider_market_time' : canonical.observedAt != null ? 'observed_at' : 'unavailable';
   const observedSessionAge = observedAt == null ? null : elapsedMarketSessions(observedAt, now);
+  const freshnessSessionAge = freshnessAt == null ? null : elapsedMarketSessions(freshnessAt, now);
+  const lastTradeAt = canonical.lastTradeAt;
   const lastTradeSessionAge = lastTradeAt == null ? null : elapsedMarketSessions(lastTradeAt, now);
   const hasCurrentInputs = isFiniteNumber(market?.underlyingPrice)
     || isFiniteNumber(market?.optionBid)
@@ -68,7 +67,7 @@ export function getPortfolioQuoteFreshness(trade: PortfolioTrade, now = new Date
 
   let state: PortfolioQuoteFreshnessState;
   let reason: string;
-  if (!market || market.availabilityStatus === 'unavailable' || market.availabilityStatus === 'imported_snapshot' || !hasCurrentInputs || observedAt == null) {
+  if (!market || market.availabilityStatus === 'unavailable' || market.availabilityStatus === 'imported_snapshot' || !hasCurrentInputs || freshnessAt == null) {
     state = 'unavailable';
     reason = 'No current market observation is available.';
   } else if (market.availabilityStatus === 'refresh_failed' || market.availabilityStatus === 'stale') {
@@ -77,18 +76,25 @@ export function getPortfolioQuoteFreshness(trade: PortfolioTrade, now = new Date
   } else if (market.availabilityStatus === 'expired') {
     state = 'unavailable';
     reason = 'The contract is past expiration and needs lifecycle review.';
-  } else if ((observedSessionAge ?? Number.POSITIVE_INFINITY) === 0) {
+  } else if ((freshnessSessionAge ?? Number.POSITIVE_INFINITY) === 0) {
     state = 'fresh';
-    reason = 'Market data was observed in the current or most recent non-trading session.';
-  } else if (observedSessionAge === 1) {
+    reason = freshnessTimestampSource === 'observed_at'
+      ? 'Freshness uses when Put Scanner observed the market data.'
+      : 'Freshness uses the provider market event time; option last-trade time is tracked separately.';
+  } else if (freshnessSessionAge === 1) {
     state = 'aging';
     reason = 'Market data is one trading session old.';
   } else {
     state = 'stale';
-    reason = `Market data is ${observedSessionAge ?? 'more than one'} trading sessions old.`;
+    reason = `Market data is ${freshnessSessionAge ?? 'more than one'} trading sessions old.`;
   }
 
-  return { state, label: labelFor(state), observedAt, observedSessionAge, lastTradeAt, lastTradeSessionAge, reason };
+  return {
+    state, label: labelFor(state), observedAt, observedSessionAge,
+    freshnessAt, freshnessSessionAge, freshnessTimestampSource,
+    providerMarketAt: canonical.providerMarketAt, providerQuoteAt: canonical.providerQuoteAt,
+    cachedAt: canonical.cachedAt, lastTradeAt, lastTradeSessionAge, reason,
+  };
 }
 
 export function isPortfolioQuoteDecisionEligible(trade: PortfolioTrade, now = new Date()): boolean {

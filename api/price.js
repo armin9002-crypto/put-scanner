@@ -1,4 +1,4 @@
-import { normalizeFiniteNumber, normalizePositiveNumber, readYahooJson, yahooFetch } from './_lib/yahoo.js';
+import { normalizeFiniteNumber, normalizePositiveNumber, normalizeProviderTimestampSeconds, readYahooJson, yahooFetch } from './_lib/yahoo.js';
 import { observeMarketRequest } from './_lib/requestObservability.js';
 
 export default async function handler(req, res) {
@@ -51,7 +51,7 @@ export default async function handler(req, res) {
     const change = price != null && prev != null ? price - prev : null;
     const changePct = change != null && prev != null ? (change / prev) * 100 : null;
 
-    const response = { price, change, changePct, previousClose: prev };
+    const response = { price, change, changePct, previousClose: prev, providerMarketTime: normalizeProviderTimestampSeconds(meta.regularMarketTime) };
 
     // If intraday data requested, include sparkline
     if (interval === '1m' && range === '1d') {

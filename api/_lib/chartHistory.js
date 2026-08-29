@@ -1,4 +1,4 @@
-import { normalizeFiniteNumber, normalizeTimestampSeconds, readYahooJson, yahooFetch } from './yahoo.js';
+import { normalizeFiniteNumber, normalizeProviderTimestampSeconds, normalizeTimestampSeconds, readYahooJson, yahooFetch } from './yahoo.js';
 
 function downsample(points, maxPoints) {
   if (points.length <= maxPoints) return points;
@@ -48,6 +48,7 @@ export async function fetchYahooChartHistory({ ticker, timeframe, config, endpoi
     points,
     previousClose: normalizeFiniteNumber(meta.chartPreviousClose) ?? normalizeFiniteNumber(meta.previousClose) ?? null,
     latestPrice: normalizeFiniteNumber(meta.regularMarketPrice) ?? points.at(-1)?.price ?? null,
+    providerMarketTime: normalizeProviderTimestampSeconds(meta.regularMarketTime),
     fetchedAt: Date.now(),
     metadata: {
       range: hasDateRange ? config.rangeLabel : config.range,

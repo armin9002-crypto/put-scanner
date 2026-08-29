@@ -17,6 +17,7 @@ export interface ChartHistoryResponse {
   points: ChartPoint[];
   previousClose?: number | null;
   latestPrice?: number | null;
+  providerMarketTime?: number | null;
   fetchedAt: number;
   freshness?: DataFreshness;
   staleFallbackUsed?: boolean;

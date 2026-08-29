@@ -1,3 +1,6 @@
+import { normalizeMarketTimestamp } from './marketTimestamp.ts';
+import type { MarketTimestampSource } from './marketTimestamp.ts';
+
 export type PortfolioTradeStatus = 'open' | 'closed' | 'expired' | 'assigned' | 'expired_price_pending';
 export type PortfolioResolutionType = 'expired_worthless' | 'expired_itm' | 'expired_price_pending';
 export type PortfolioResolutionSource = 'expiration_close' | 'manual_expiration_close';
@@ -28,6 +31,12 @@ export interface PortfolioMarketData {
   openInterest?: number | null;
   dte?: number | null;
   refreshedAt?: string;
+  /** Optional provider market event time; transient and never persisted to cloud. */
+  providerMarketAt?: string;
+  /** Reserved for a trustworthy quote timestamp; Yahoo option chains do not currently provide one. */
+  providerQuoteAt?: string;
+  cachedAt?: string;
+  timestampSource?: MarketTimestampSource;
   availabilityStatus?: PortfolioAvailabilityStatus;
 }
 
@@ -178,6 +187,11 @@ function normalizeIsoTimestamp(value: unknown): string | undefined {
   return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
 }
 
+function normalizeMarketTimestampIso(value: unknown): string | undefined {
+  const timestamp = normalizeMarketTimestamp(value);
+  return timestamp == null ? undefined : new Date(timestamp).toISOString();
+}
+
 function normalizeSnapshot(value: unknown): PortfolioTradeSnapshot | undefined {
   if (!isRecord(value)) return undefined;
   const snapshot: PortfolioTradeSnapshot = {};
@@ -213,6 +227,13 @@ function normalizeMarketData(value: unknown): PortfolioMarketData | undefined {
   if (typeof value.refreshedAt === 'string') {
     const parsed = new Date(value.refreshedAt);
     if (!Number.isNaN(parsed.getTime())) marketData.refreshedAt = parsed.toISOString();
+  }
+  (['providerMarketAt', 'providerQuoteAt', 'cachedAt'] as const).forEach(field => {
+    const normalized = normalizeMarketTimestampIso(value[field]);
+    if (normalized) marketData[field] = normalized;
+  });
+  if (typeof value.timestampSource === 'string' && ['provider_quote', 'provider_market_time', 'provider_last_trade', 'observed_at', 'cache_time', 'unavailable'].includes(value.timestampSource)) {
+    marketData.timestampSource = value.timestampSource as MarketTimestampSource;
   }
   if (typeof value.availabilityStatus === 'string' && VALID_AVAILABILITY.includes(value.availabilityStatus as PortfolioAvailabilityStatus)) {
     marketData.availabilityStatus = value.availabilityStatus as PortfolioAvailabilityStatus;

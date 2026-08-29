@@ -67,6 +67,7 @@ export interface BatchPriceData {
     threeMonth: number | null;
     fiftyTwoWeekHighPct: number | null;
     posIn52wRange: number | null;
+    providerMarketTime?: number | null;
   };
 }
 

@@ -1,3 +1,5 @@
+import type { MarketTimestampSource } from './marketTimestamp';
+
 export type ETFType = 'Broad Index' | 'Sector' | 'Commodity' | 'Country';
 
 export interface ETFInfo {
@@ -12,6 +14,7 @@ export interface PriceData {
   price: number;
   change: number;
   changePercent: number;
+  providerMarketTime?: number | null;
 }
 
 export interface OptionContract {
@@ -51,6 +54,10 @@ export interface OptionChainMeta {
   returnedExpiration: number | null;
   expirationDate: number | null;
   fetchedAt: number;
+  /** Provider market event time for the underlying, never a per-contract bid/ask timestamp. */
+  providerMarketTime?: number | null;
+  cachedAt?: number | null;
+  timestampSource?: MarketTimestampSource;
   source: OptionChainSource;
   freshness?: 'fresh' | 'stale' | 'expired';
   staleFallbackUsed?: boolean;

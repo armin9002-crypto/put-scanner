@@ -1,7 +1,13 @@
 import { normalizeFiniteNumber, normalizeNonNegativeNumber, normalizePositiveNumber, normalizeTimestampSeconds, normalizeYahooIvPercent } from './marketDataNormalize.ts';
 import type { ExpirationDate, OptionChainSource, OptionContract, OptionsChainData } from './types';
+import { normalizeMarketTimestamp } from './marketTimestamp.ts';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function normalizeProviderMarketTime(value: unknown): number | null {
+  const normalized = normalizeMarketTimestamp(value);
+  return normalized == null ? null : Math.floor(normalized / 1000);
+}
 
 export interface YahooOptionContract {
   contractSymbol?: string | null;
@@ -128,7 +134,7 @@ function validateYahooPutContract(contract: YahooOptionContract, requestedExpira
 
 export function normalizeOptionChainData(data: unknown, ticker: string, date: number | undefined, cacheKey: string, source: OptionChainSource, previousCachedPutCount: number | null): OptionsChainData {
   const result = (data as { optionChain?: { result?: unknown[] } })?.optionChain?.result?.[0] as {
-    quote?: { regularMarketPrice?: number | null; longName?: string | null; shortName?: string | null; quoteType?: string | null };
+    quote?: { regularMarketPrice?: number | null; regularMarketTime?: number | null; longName?: string | null; shortName?: string | null; quoteType?: string | null };
     expirationDates?: number[];
     options?: Array<{ puts?: YahooOptionContract[]; calls?: YahooOptionContract[]; expirationDate?: number }>;
   } | undefined;
@@ -136,7 +142,7 @@ export function normalizeOptionChainData(data: unknown, ticker: string, date: nu
   if (!result) return {
     expirations: [], puts: [], currentPrice: 0,
     instrument: { name: null, quoteType: null },
-    chainMeta: { ticker, requestedExpiration: date ?? null, returnedExpiration: null, expirationDate: null, fetchedAt, source, fresh: source === 'fresh', cacheKey, putCount: 0, callCount: 0, putStrikeMin: null, putStrikeMax: null, callStrikeMin: null, callStrikeMax: null, yahooExpirationDatesCount: 0, previousCachedPutCount },
+    chainMeta: { ticker, requestedExpiration: date ?? null, returnedExpiration: null, expirationDate: null, fetchedAt, providerMarketTime: null, timestampSource: 'observed_at', source, fresh: source === 'fresh', cacheKey, putCount: 0, callCount: 0, putStrikeMin: null, putStrikeMax: null, callStrikeMin: null, callStrikeMax: null, yahooExpirationDatesCount: 0, previousCachedPutCount },
   };
 
   const currentPrice = normalizePositiveNumber(result.quote?.regularMarketPrice) ?? 0;
@@ -168,6 +174,6 @@ export function normalizeOptionChainData(data: unknown, ticker: string, date: nu
       name: result.quote?.longName?.trim() || result.quote?.shortName?.trim() || null,
       quoteType: result.quote?.quoteType?.trim().toUpperCase() || null,
     },
-    chainMeta: { ticker, requestedExpiration, returnedExpiration: chainExpiration, expirationDate: chainExpiration, fetchedAt, source, fresh: source === 'fresh', cacheKey, putCount: puts.length, callCount: callsRaw.length, putStrikeMin: putRange.min, putStrikeMax: putRange.max, callStrikeMin: callRange.min, callStrikeMax: callRange.max, yahooExpirationDatesCount: expirationDates.length, previousCachedPutCount, validationWarnings },
+    chainMeta: { ticker, requestedExpiration, returnedExpiration: chainExpiration, expirationDate: chainExpiration, fetchedAt, providerMarketTime: normalizeProviderMarketTime(result.quote?.regularMarketTime), timestampSource: normalizeProviderMarketTime(result.quote?.regularMarketTime) != null ? 'provider_market_time' : 'observed_at', source, fresh: source === 'fresh', cacheKey, putCount: puts.length, callCount: callsRaw.length, putStrikeMin: putRange.min, putStrikeMax: putRange.max, callStrikeMin: callRange.min, callStrikeMax: callRange.max, yahooExpirationDatesCount: expirationDates.length, previousCachedPutCount, validationWarnings },
   };
 }

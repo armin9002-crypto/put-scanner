@@ -1,4 +1,4 @@
-import { normalizeFiniteNumber, normalizePositiveNumber, readYahooJson, yahooFetch } from './_lib/yahoo.js';
+import { normalizeFiniteNumber, normalizePositiveNumber, normalizeProviderTimestampSeconds, readYahooJson, yahooFetch } from './_lib/yahoo.js';
 import { mapWithConcurrency } from '../shared/concurrency.js';
 import { observeMarketRequest } from './_lib/requestObservability.js';
 
@@ -65,6 +65,7 @@ export default async function handler(req, res) {
       posIn52wRange: price != null && high52w != null && low52w != null && high52w > low52w
         ? (price - low52w) / (high52w - low52w) * 100
         : null,
+      providerMarketTime: normalizeProviderTimestampSeconds(meta.regularMarketTime),
     };
   }
 

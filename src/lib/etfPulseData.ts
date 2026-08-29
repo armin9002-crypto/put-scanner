@@ -32,6 +32,7 @@ interface EtfPulseHistory {
   timeframe: '2Y';
   points: ChartPoint[];
   latestPrice: number | null;
+  providerMarketTime?: number | null;
 }
 
 interface EtfPulseDataset {
@@ -115,6 +116,7 @@ function isEtfPulseDataset(value: unknown): value is EtfPulseDataset {
     && history.ticker === ticker
     && history.timeframe === '2Y'
     && (history.latestPrice == null || typeof history.latestPrice === 'number')
+    && (history.providerMarketTime == null || typeof history.providerMarketTime === 'number')
     && Array.isArray(history.points)
     && history.points.every(point => isRecord(point) && typeof point.timestamp === 'number' && typeof point.date === 'string' && typeof point.price === 'number'));
 }
