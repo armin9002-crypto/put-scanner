@@ -1,5 +1,5 @@
 import type { User } from '@supabase/supabase-js';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Cloud, Database, ScanLine, Star, Briefcase, Activity } from 'lucide-react';
 import { AuthContext, type AuthContextValue } from '../lib/authContext';
 import {
@@ -11,6 +11,7 @@ import type { NamespaceSyncStatus } from '../lib/cloudState/syncEngineMetadata';
 import { useResponsiveMode } from '../lib/responsive';
 import { AccountPanel, DesktopAccountDialog } from './AccountControl';
 import { CloudRestore } from './AccountDataSection';
+import CloudSyncSection from './CloudSyncSection';
 import MobileAccountSheet from './MobileAccountSheet';
 
 const ACCOUNT_UI_TEST_FIXTURE_MARKER = 'ACCOUNT UI TEST FIXTURE';
@@ -179,8 +180,14 @@ export default function AccountUiTestFixture({ requestedState }: { requestedStat
     ? requestedState as AccountUiFixtureState
     : 'signed-out';
   const [backupCompleted, setBackupCompleted] = useState(state === 'conflict-backed-up');
-  const [accountOpen, setAccountOpen] = useState(true);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const user = state === 'signed-out' ? null : fixtureUser;
+
+  useEffect(() => {
+    triggerRef.current?.focus();
+    setAccountOpen(true);
+  }, []);
 
   return (
     <div className="min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)', color: 'var(--text)' }} data-testid="account-ui-fixture">
@@ -189,7 +196,10 @@ export default function AccountUiTestFixture({ requestedState }: { requestedStat
           <h1 className="text-lg font-bold">Account QA</h1>
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{ACCOUNT_UI_TEST_FIXTURE_MARKER}</p>
         </div>
-        <Database className="h-5 w-5" aria-hidden="true" />
+        <div className="flex items-center gap-2">
+          <Database className="h-5 w-5" aria-hidden="true" />
+          <button ref={triggerRef} type="button" className="sr-only" aria-label="Fixture account trigger">Open Account</button>
+        </div>
       </header>
       <main className="px-4 py-8 text-sm" style={{ color: 'var(--text-muted)' }}>
         Local-only mocked presentation: {state}
@@ -215,9 +225,10 @@ export default function AccountUiTestFixture({ requestedState }: { requestedStat
                   presentation="mobile"
                   onSignedOut={() => setAccountOpen(false)}
                   accountDataContent={state === 'restore' ? <AccountDataRestoreFixture /> : undefined}
+                  accountSyncContent={<CloudSyncSection />}
                 />
               </MobileAccountSheet>
-            ) : <DesktopAccountDialog onClose={() => setAccountOpen(false)} />)}
+            ) : <DesktopAccountDialog onClose={() => setAccountOpen(false)} accountSyncContent={<CloudSyncSection />} />)}
         </ProductionSyncContext.Provider>
       </AuthContext.Provider>
     </div>

@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { CircleUserRound, Loader2, LogOut, Mail, X } from 'lucide-react';
 import { useAuth } from '../lib/authContext';
 import { useResponsiveMode } from '../lib/responsive';
@@ -29,10 +30,12 @@ export function AccountPanel({
   onSignedOut,
   presentation,
   accountDataContent,
+  accountSyncContent,
 }: {
   onSignedOut: () => void;
   presentation: 'mobile' | 'desktop';
   accountDataContent?: ReactNode;
+  accountSyncContent?: ReactNode;
 }) {
   const { user, isAuthLoading, authError, signInWithEmail, signOut } = useAuth();
   const productionSync = useProductionSync();
@@ -76,11 +79,11 @@ export function AccountPanel({
         <AccountDataSection userId={user.id} ongoingSyncState={productionSync.featureEnabled ? productionSync.enrollment : 'none'} />
       </Suspense>
     );
-    const accountSync = ProductionCloudSyncSection ? (
+    const accountSync = accountSyncContent ?? (ProductionCloudSyncSection ? (
       <Suspense fallback={null}>
         <ProductionCloudSyncSection />
       </Suspense>
-    ) : null;
+    ) : null);
     return (
       <div className="space-y-4">
         {presentation === 'desktop' && (
@@ -174,7 +177,7 @@ function AccountError({ children }: { children: ReactNode }) {
   );
 }
 
-export function DesktopAccountDialog({ onClose }: { onClose: () => void }) {
+export function DesktopAccountDialog({ onClose, accountSyncContent }: { onClose: () => void; accountSyncContent?: ReactNode }) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement | null>(null);
 
@@ -210,8 +213,10 @@ export function DesktopAccountDialog({ onClose }: { onClose: () => void }) {
     };
   }, [onClose]);
 
-  return (
-    <div className="fixed inset-0 z-[95] flex items-center justify-center p-4">
+  if (typeof document === 'undefined') return null;
+
+  const dialog = (
+    <div className="fixed inset-0 z-[95] flex items-center justify-center p-4" data-account-overlay="desktop">
       <button type="button" className="absolute inset-0 bg-black/60" aria-label="Close account" onClick={onClose} />
       <div
         ref={panelRef}
@@ -219,10 +224,10 @@ export function DesktopAccountDialog({ onClose }: { onClose: () => void }) {
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="overlay-panel relative z-10 max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto p-5 outline-none"
+        className="overlay-panel relative z-10 flex max-h-[calc(100dvh-2rem)] w-full max-w-sm flex-col overflow-hidden outline-none"
         style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
       >
-        <div className="mb-4 flex items-center justify-between gap-3 border-b pb-3" style={{ borderColor: 'var(--border)' }}>
+        <div className="mb-4 flex flex-none items-center justify-between gap-3 border-b px-5 pb-3 pt-5" style={{ borderColor: 'var(--border)' }}>
           <div>
             <h2 id={titleId} className="text-base font-semibold" style={{ color: 'var(--text)' }}>Put Scanner Account</h2>
             <p className="mt-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>Optional account access</p>
@@ -231,10 +236,14 @@ export function DesktopAccountDialog({ onClose }: { onClose: () => void }) {
             <X className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
-        <AccountPanel onSignedOut={onClose} presentation="desktop" />
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-5">
+          <AccountPanel onSignedOut={onClose} presentation="desktop" accountSyncContent={accountSyncContent} />
+        </div>
       </div>
     </div>
   );
+
+  return createPortal(dialog, document.body);
 }
 
 export default function AccountControl() {
