@@ -12,6 +12,13 @@ function positiveFinite(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0;
 }
 
+export type PutDeltaSource = 'provider' | 'calculated';
+
+export interface ResolvedPutDelta {
+  delta: number;
+  source: PutDeltaSource;
+}
+
 export function calculatePutDelta(S: number, K: number, T: number, r: number, sigma: number): number | null {
   if (!positiveFinite(S) || !positiveFinite(K) || !positiveFinite(T) || !positiveFinite(sigma) || !Number.isFinite(r)) return null;
   const d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * Math.sqrt(T));
@@ -34,10 +41,36 @@ export function resolvePutDelta({
   impliedVolatilityPercent: number | null | undefined;
   riskFreeRate?: number;
 }): number | null {
+  return resolvePutDeltaWithSource({
+    providerDelta,
+    underlyingPrice,
+    strike,
+    dte,
+    impliedVolatilityPercent,
+    riskFreeRate,
+  })?.delta ?? null;
+}
+
+export function resolvePutDeltaWithSource({
+  providerDelta,
+  underlyingPrice,
+  strike,
+  dte,
+  impliedVolatilityPercent,
+  riskFreeRate = 0.045,
+}: {
+  providerDelta: number | null | undefined;
+  underlyingPrice: number | null | undefined;
+  strike: number | null | undefined;
+  dte: number | null | undefined;
+  impliedVolatilityPercent: number | null | undefined;
+  riskFreeRate?: number;
+}): ResolvedPutDelta | null {
   if (typeof dte === 'number' && Number.isFinite(dte) && dte < 0) return null;
   if (typeof providerDelta === 'number' && Number.isFinite(providerDelta) && Math.abs(providerDelta) <= 1) {
-    return providerDelta > 0 ? -providerDelta : providerDelta;
+    return { delta: providerDelta > 0 ? -providerDelta : providerDelta, source: 'provider' };
   }
   if (!positiveFinite(underlyingPrice) || !positiveFinite(strike) || !positiveFinite(dte) || !positiveFinite(impliedVolatilityPercent)) return null;
-  return calculatePutDelta(underlyingPrice, strike, dte / 365, riskFreeRate, impliedVolatilityPercent / 100);
+  const delta = calculatePutDelta(underlyingPrice, strike, dte / 365, riskFreeRate, impliedVolatilityPercent / 100);
+  return delta == null ? null : { delta, source: 'calculated' };
 }

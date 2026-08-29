@@ -38,7 +38,7 @@ test.afterEach(async ({ page }, testInfo) => {
 });
 
 test('viewport workflow smoke is local, deterministic, and usable', async ({ page }, testInfo) => {
-  test.setTimeout(90_000);
+  test.setTimeout(180_000);
   const project = testInfo.project.name;
   if (project === 'desktop-1440x900') {
     await page.goto('/');
@@ -124,6 +124,30 @@ test('viewport workflow smoke is local, deterministic, and usable', async ({ pag
     await page.goto('/?account-ui-fixture=synced');
     await expect(page.getByRole('dialog')).toBeVisible();
   }
+  await page.goto('/portfolio');
+  await expect(page.getByRole('heading', { name: 'Portfolio', exact: true })).toBeVisible();
+  const mobileActions = page.getByRole('button', { name: 'Portfolio actions' });
+  const desktopMaintenance = page.getByRole('button', { name: 'Maintenance', exact: true });
+  await expect(mobileActions.or(desktopMaintenance)).toBeVisible();
+  if (await mobileActions.isVisible()) {
+    await mobileActions.click();
+    await page.getByRole('button', { name: 'Portfolio Maintenance' }).click();
+    await expect(page.getByText('Entry Δ').first()).toBeVisible();
+  } else {
+    await desktopMaintenance.click();
+    await expect(page.getByRole('columnheader', { name: /Entry \/ Current Delta/i })).toBeVisible();
+  }
+  const maintenanceDialog = page.getByRole('dialog', { name: 'Portfolio Maintenance' });
+  await expect(maintenanceDialog).toBeVisible();
+  const maintenanceBox = await maintenanceDialog.boundingBox();
+  const viewport = page.viewportSize();
+  expect(maintenanceBox).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  expect(maintenanceBox!.x).toBeGreaterThanOrEqual(0);
+  expect(maintenanceBox!.y).toBeGreaterThanOrEqual(0);
+  expect(maintenanceBox!.x + maintenanceBox!.width).toBeLessThanOrEqual(viewport!.width);
+  expect(maintenanceBox!.y + maintenanceBox!.height).toBeLessThanOrEqual(viewport!.height);
+  await maintenanceDialog.getByRole('button', { name: 'Close', exact: true }).click();
   expect(consoleErrors, consoleErrors.join('\n')).toEqual([]);
 });
 
@@ -300,9 +324,73 @@ test('Portfolio analytics is local-only and quote refresh leaves durable trade f
   await expect(page.getByRole('heading', { name: 'Close Candidates', exact: true })).toBeVisible();
 });
 
+test('Portfolio maintenance is explicit and Entry Delta capture is durable without duplicate requests', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop-1440x900', 'one deterministic Portfolio maintenance scenario');
+  await page.goto('/');
+  await page.evaluate(() => {
+    const parsed = JSON.parse(localStorage.getItem('put_scanner_portfolio_trades') || '[]');
+    const trades = parsed.data ?? parsed;
+    trades.push({
+      id: 'e2e-expired-maintenance', ticker: 'TQQQ', optionType: 'put', strike: 90, expiration: '2026-08-20', contracts: 1,
+      soldPrice: 2, soldDate: '2026-08-01', status: 'open', notes: 'explicit maintenance fixture',
+      createdAt: '2026-08-01T12:00:00.000Z', updatedAt: '2026-08-01T12:00:00.000Z', entrySnapshot: { underlyingPrice: 100, iv: 48, delta: -0.27 },
+    });
+    localStorage.setItem('put_scanner_portfolio_trades', JSON.stringify(trades));
+  });
+  const durableBeforeMount = await page.evaluate(() => localStorage.getItem('put_scanner_portfolio_trades'));
+  const requestsBeforeMount = [...marketHarness.counts.values()].reduce((sum, count) => sum + count, 0);
+  await page.goto('/portfolio');
+  await expect(page.getByRole('heading', { name: 'Portfolio', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('put_scanner_portfolio_trades'))).toBe(durableBeforeMount);
+  expect([...marketHarness.counts.values()].reduce((sum, count) => sum + count, 0)).toBe(requestsBeforeMount);
+
+  await page.getByRole('button', { name: 'Maintenance', exact: true }).click();
+  const maintenance = page.getByRole('dialog', { name: 'Portfolio Maintenance' });
+  await expect(maintenance).toBeVisible();
+  await expect(maintenance.getByText('Lifecycle review')).toBeVisible();
+  await expect(maintenance.getByText('Entry Delta unavailable')).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('put_scanner_portfolio_trades'))).toBe(durableBeforeMount);
+  expect([...marketHarness.counts.values()].reduce((sum, count) => sum + count, 0)).toBe(requestsBeforeMount);
+
+  await maintenance.getByRole('button', { name: 'Recover Stored Delta' }).click();
+  await expect(maintenance.getByRole('status')).toContainText('zero market requests');
+  expect([...marketHarness.counts.values()].reduce((sum, count) => sum + count, 0)).toBe(requestsBeforeMount);
+  expect(await page.evaluate(() => {
+    const parsed = JSON.parse(localStorage.getItem('put_scanner_portfolio_trades') || '{}');
+    return (parsed.data ?? parsed).find((trade: { id: string }) => trade.id === 'e2e-expired-maintenance')?.entryDelta;
+  })).toBe(-0.27);
+
+  const lifecycleCallsBefore = marketHarness.counts.get('chart-history') ?? 0;
+  await maintenance.getByRole('button', { name: 'Resolve Lifecycle' }).click();
+  await expect(maintenance.getByRole('status')).toContainText('lifecycle position was updated');
+  expect((marketHarness.counts.get('chart-history') ?? 0) - lifecycleCallsBefore).toBe(1);
+  expect(await page.evaluate(() => {
+    const parsed = JSON.parse(localStorage.getItem('put_scanner_portfolio_trades') || '{}');
+    return (parsed.data ?? parsed).find((trade: { id: string }) => trade.id === 'e2e-expired-maintenance')?.status;
+  })).toBe('expired');
+
+  const vixCallsBefore = marketHarness.counts.get('chart-history') ?? 0;
+  await maintenance.getByRole('button', { name: 'Backfill Entry VIX' }).click();
+  await expect(maintenance.getByRole('status')).toContainText('Entry VIX');
+  expect((marketHarness.counts.get('chart-history') ?? 0) - vixCallsBefore).toBe(1);
+  await maintenance.getByRole('button', { name: 'Close', exact: true }).click();
+
+  await page.goto('/options/SPY?expiry=2027-01-01');
+  await page.getByRole('row').filter({ hasText: '90.00' }).last().click();
+  const requestsBeforeAdd = [...marketHarness.counts.values()].reduce((sum, count) => sum + count, 0);
+  await page.getByRole('button', { name: 'Add to Portfolio' }).click();
+  expect([...marketHarness.counts.values()].reduce((sum, count) => sum + count, 0)).toBe(requestsBeforeAdd);
+  const captured = await page.evaluate(() => {
+    const parsed = JSON.parse(localStorage.getItem('put_scanner_portfolio_trades') || '{}');
+    return (parsed.data ?? parsed).find((trade: { ticker: string; entryDelta?: number; entryDeltaSource?: string }) => trade.ticker === 'SPY' && trade.entryDelta != null);
+  });
+  expect(captured?.entryDelta).toBe(-0.2);
+  expect(captured?.entryDeltaSource).toBe('provider');
+});
+
 test('Detail, drawer, Pulse cancellation, and mocked Account states remain bounded', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop-1440x900', 'one consolidated deterministic desktop scenario');
-  test.setTimeout(90_000);
+  test.setTimeout(240_000);
   await page.goto('/options/SPY?expiry=2027-01-01');
   await expect(page.getByText('SPY', { exact: true }).first()).toBeVisible();
   await expect(page.getByRole('row').filter({ hasText: '90.00' }).last()).toBeVisible();

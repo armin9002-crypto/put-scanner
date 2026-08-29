@@ -13,6 +13,7 @@ import {
   type MarkBasis,
 } from './portfolioMetrics.ts';
 import type { PortfolioTrade } from './portfolioStorage.ts';
+import { getPortfolioQuoteFreshness, isPortfolioQuoteDecisionEligible, type PortfolioQuoteFreshnessState } from './portfolioQuoteFreshness.ts';
 
 export const PORTFOLIO_CLOSE_POLICY = Object.freeze({
   highCapture: 0.75,
@@ -44,6 +45,14 @@ export interface CloseCandidate {
   dte: number | null;
   score: number;
   reasons: string[];
+  freshness: PortfolioQuoteFreshnessState;
+}
+
+export interface PortfolioAttentionAssessment {
+  trade: PortfolioTrade;
+  score: number;
+  freshness: PortfolioQuoteFreshnessState;
+  needsFreshQuote: boolean;
 }
 
 /** Ranking only: every supplied open trade remains eligible for the Top-N list. */
@@ -51,7 +60,9 @@ export function buildNeedsAttention(trades: PortfolioTrade[]): PortfolioTrade[] 
   return [...trades].sort((a, b) => getPortfolioAttentionScore(b) - getPortfolioAttentionScore(a));
 }
 
-export function getPortfolioAttentionScore(trade: PortfolioTrade): number {
+export function assessPortfolioAttention(trade: PortfolioTrade, now = new Date()): PortfolioAttentionAssessment {
+  const freshness = getPortfolioQuoteFreshness(trade, now);
+  const quoteEligible = isPortfolioQuoteDecisionEligible(trade, now);
   const distanceToBreakeven = getTradeDistanceToBreakeven(trade);
   const distanceToStrike = getTradeDistanceToStrike(trade);
   const dte = calculateRemainingDte(trade);
@@ -59,33 +70,45 @@ export function getPortfolioAttentionScore(trade: PortfolioTrade): number {
   const delta = trade.latestMarketData?.delta;
   let score = 0;
 
-  if (!isFiniteNumber(distanceToBreakeven)) score += PORTFOLIO_ATTENTION_POLICY.missingBreakevenScore;
-  else if (distanceToBreakeven < 0) {
-    score += PORTFOLIO_ATTENTION_POLICY.belowBreakevenBaseScore
-      + Math.min(PORTFOLIO_ATTENTION_POLICY.belowBreakevenMaxExtraScore, Math.abs(distanceToBreakeven) * 300);
-  } else {
-    score += Math.max(0, PORTFOLIO_ATTENTION_POLICY.distanceToBreakevenBaseScore - distanceToBreakeven * 800);
-  }
+  if (quoteEligible) {
+    if (!isFiniteNumber(distanceToBreakeven)) score += PORTFOLIO_ATTENTION_POLICY.missingBreakevenScore;
+    else if (distanceToBreakeven < 0) {
+      score += PORTFOLIO_ATTENTION_POLICY.belowBreakevenBaseScore
+        + Math.min(PORTFOLIO_ATTENTION_POLICY.belowBreakevenMaxExtraScore, Math.abs(distanceToBreakeven) * 300);
+    } else {
+      score += Math.max(0, PORTFOLIO_ATTENTION_POLICY.distanceToBreakevenBaseScore - distanceToBreakeven * 800);
+    }
 
-  if (isFiniteNumber(distanceToStrike)) {
-    score += distanceToStrike < 0
-      ? PORTFOLIO_ATTENTION_POLICY.belowStrikeScore
-      : Math.max(0, PORTFOLIO_ATTENTION_POLICY.distanceToStrikeBaseScore - distanceToStrike * 450);
+    if (isFiniteNumber(distanceToStrike)) {
+      score += distanceToStrike < 0
+        ? PORTFOLIO_ATTENTION_POLICY.belowStrikeScore
+        : Math.max(0, PORTFOLIO_ATTENTION_POLICY.distanceToStrikeBaseScore - distanceToStrike * 450);
+    }
+    if (isFiniteNumber(delta)) score += Math.min(PORTFOLIO_ATTENTION_POLICY.maxDeltaScore, Math.abs(delta) * 70);
+  } else {
+    // Quote-dependent components are gated. The trade remains visible as a distinct
+    // request for fresh market data instead of receiving a high-confidence risk score.
+    score += PORTFOLIO_ATTENTION_POLICY.missingBreakevenScore;
   }
   if (isFiniteNumber(dte)) {
     score += dte <= 0
       ? PORTFOLIO_ATTENTION_POLICY.expiredScore
       : Math.max(0, PORTFOLIO_ATTENTION_POLICY.dteBaseScore - dte);
   }
-  if (isFiniteNumber(delta)) score += Math.min(PORTFOLIO_ATTENTION_POLICY.maxDeltaScore, Math.abs(delta) * 70);
   score += Math.min(PORTFOLIO_ATTENTION_POLICY.maxGrossRiskScore, grossRisk / 10_000);
 
-  return score;
+  return { trade, score, freshness: freshness.state, needsFreshQuote: !quoteEligible };
 }
 
-export function buildCloseCandidates(trades: PortfolioTrade[], basis: MarkBasis): CloseCandidate[] {
+export function getPortfolioAttentionScore(trade: PortfolioTrade, now = new Date()): number {
+  return assessPortfolioAttention(trade, now).score;
+}
+
+export function buildCloseCandidates(trades: PortfolioTrade[], basis: MarkBasis, now = new Date()): CloseCandidate[] {
   return trades
     .map(trade => {
+      const freshness = getPortfolioQuoteFreshness(trade, now);
+      const quoteEligible = isPortfolioQuoteDecisionEligible(trade, now);
       const percentCaptured = calculatePercentCaptured(trade, basis);
       const currentAnnualizedYield = calculateCurrentAnnualizedYield(trade, basis);
       const remainingPremium = calculateCurrentMarkValueAbsolute(trade, basis);
@@ -94,6 +117,7 @@ export function buildCloseCandidates(trades: PortfolioTrade[], basis: MarkBasis)
       const breakevenCushion = getTradeDistanceToBreakeven(trade);
       const reasons: string[] = [];
 
+      if (!quoteEligible) return { trade, percentCaptured, currentAnnualizedYield, remainingPremium, dte, score: 0, reasons, freshness: freshness.state };
       if (isFiniteNumber(percentCaptured) && percentCaptured >= PORTFOLIO_CLOSE_POLICY.highCapture) reasons.push('75%+ captured');
       else if (isFiniteNumber(percentCaptured) && percentCaptured >= PORTFOLIO_CLOSE_POLICY.standardCapture) reasons.push('50%+ captured');
       if (isFiniteNumber(percentCaptured)
@@ -117,13 +141,14 @@ export function buildCloseCandidates(trades: PortfolioTrade[], basis: MarkBasis)
       if (isFiniteNumber(dte)) score += Math.max(0, 20 - dte);
       if (isFiniteNumber(breakevenCushion)) score += Math.min(20, breakevenCushion * 50);
 
-      return { trade, percentCaptured, currentAnnualizedYield, remainingPremium, dte, score, reasons };
+      return { trade, percentCaptured, currentAnnualizedYield, remainingPremium, dte, score, reasons, freshness: freshness.state };
     })
     .filter(candidate => candidate.reasons.length > 0)
     .sort((a, b) => b.score - a.score);
 }
 
 export function getRedeployBadges(trade: PortfolioTrade, basis: MarkBasis): string[] {
+  if (!isPortfolioQuoteDecisionEligible(trade)) return [];
   const percentCaptured = calculatePercentCaptured(trade, basis);
   const currentAnnualizedYield = calculateCurrentAnnualizedYield(trade, basis);
   const dte = calculateRemainingDte(trade);

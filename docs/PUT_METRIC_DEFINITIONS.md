@@ -62,6 +62,16 @@ Shared nullable comparators rank valid numeric values normally and put unavailab
 
 Delta remains a model sensitivity, not a guaranteed probability of assignment.
 
+### Entry Delta historical snapshot (Stage 6B.4)
+
+Portfolio **Entry Delta** is distinct from **Current Delta**. Entry Delta is the finite signed put Delta in `[-1, 0]` observed or validly calculated for the exact contract at/near entry. Current Delta is transient market state and is never substituted for an older missing Entry Delta.
+
+Eligible automatic capture requires the trade's sold date to match the current U.S. market date, a contemporaneous non-stale exact chain, and either a valid provider Delta or every input required by the canonical calculation. Manual broker Entry Delta is optional and explicitly durable. Legacy recovery is limited to an actual `entrySnapshot.delta`; current Delta, IV, and underlying are prohibited historical inputs. See `PRODUCT_STAGE6B4_PORTFOLIO_MAINTENANCE.md` for provenance and compatibility.
+
+### Portfolio quote freshness (Stage 6B.4)
+
+Portfolio distinguishes the time Put Scanner observed a market response from the provider's last option trade. Fresh/Aging/Stale/Unavailable uses observed time and weekday market-session age; an old Last trade does not by itself claim the current Bid/Ask is old. Stale/unavailable quote inputs are gated from Close Candidates and from quote-derived attention components. Existing risk and close thresholds are unchanged.
+
 ## Cross-surface regression contract
 
 Deterministic fixtures cover a liquid contract, wide spread, missing Bid/Ask/Last/Delta, invalid underlying, expired contract, 0-DTE contract, and non-finite provider values. For the same contract and price basis, tests reconcile premium, gross secured cash, net maximum-loss capital, SCY, Ann. SCY, entry net-risk return, breakeven, OTM %, DTE, and spread across applicable Scanner, Screener, ticker-detail, drawer, Watchlist, and Portfolio code. Intentional differences are asserted by denominator rather than allowed as unexplained drift.

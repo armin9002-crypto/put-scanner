@@ -87,7 +87,10 @@ export async function installDeterministicMarketApi(page: Page, options: { failS
     if (endpoint === 'fund-metadata') return json(route, Object.fromEntries((url.searchParams.get('symbols') || '').split(',').filter(Boolean).map(symbol => [symbol, 10_000_000_000])));
     if (endpoint === 'volatility-context' || endpoint === 'ivrank') return json(route, { currentIV: 48, rangePosition: 52, observationPercent: 55, realizedVolLow: 20, realizedVolHigh: 60, observationCount: 252 });
     if (endpoint === 'holdings') return json(route, { ticker: 'TQQQ', name: 'ProShares UltraPro QQQ', holdings: [{ symbol: 'NVDA', name: 'NVIDIA', weight: 8 }], topHoldingsCount: 1, topHoldingsWeight: 8, source: 'E2E', fetchedAt: 1_798_000_000_000 });
-    if (endpoint === 'chart-history') return json(route, chart((url.searchParams.get('ticker') || 'TQQQ').toUpperCase()));
+    if (endpoint === 'chart-history') {
+      const payload = chart((url.searchParams.get('ticker') || 'TQQQ').toUpperCase());
+      return json(route, url.searchParams.has('start') || url.searchParams.has('end') ? { ...payload, timeframe: 'custom' } : payload);
+    }
     if (endpoint === 'screener-expirations') return json(route, { datasetVersion: 2, fetchedAt: 1_798_000_000_000, complete: true, expirationsByTicker: Object.fromEntries(SCREENER_CHUNKS.flatMap(chunk => chunk.tickers).map(ticker => [ticker, [NEAR_EXPIRATION, EXPIRATION, SECOND_EXPIRATION]])), errors: [], diagnostics: { upstreamRequests: 7, maxObservedConcurrency: 3, circuitBreakerRejections: 0 } }, 200, { 'X-PutScanner-Upstream-Requests': '7' });
     if (endpoint === 'screener-batch') {
       const chunkId = Number(url.searchParams.get('chunk'));

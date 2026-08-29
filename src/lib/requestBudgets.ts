@@ -4,6 +4,9 @@ export type RequestBudgetWorkflow =
   | 'screener-full-scan'
   | 'watchlist-refresh'
   | 'portfolio-refresh'
+  | 'portfolio-entry-delta-capture'
+  | 'portfolio-entry-vix-maintenance'
+  | 'portfolio-lifecycle-maintenance'
   | 'ticker-detail'
   | 'expiration-change'
   | 'option-drawer'
@@ -55,6 +58,24 @@ export const REQUEST_BUDGET_LEDGER: Record<RequestBudgetWorkflow, RequestBudgetL
     ceiling: { browserRequests: 3, functionInvocations: 3, providerAcquisitions: 3 },
     providerHttpAttemptCeiling: 13,
     fixture: 'two tickers and two unique open-trade option chains; quote-only',
+  },
+  'portfolio-entry-delta-capture': {
+    expected: { browserRequests: 0, functionInvocations: 0, providerAcquisitions: 0 },
+    ceiling: { browserRequests: 1, functionInvocations: 1, providerAcquisitions: 1 },
+    providerHttpAttemptCeiling: 6,
+    fixture: 'one same-market-date exact contract; cached chain costs zero, cold manual/OCR capture costs one bounded chain acquisition',
+  },
+  'portfolio-entry-vix-maintenance': {
+    expected: { browserRequests: 1, functionInvocations: 1, providerAcquisitions: 1 },
+    ceiling: { browserRequests: 1, functionInvocations: 1, providerAcquisitions: 1 },
+    providerHttpAttemptCeiling: 6,
+    fixture: 'one explicit historical VIX date-range maintenance request; local history cache can reduce this to zero',
+  },
+  'portfolio-lifecycle-maintenance': {
+    expected: { browserRequests: 1, functionInvocations: 1, providerAcquisitions: 1 },
+    ceiling: { browserRequests: 1, functionInvocations: 1, providerAcquisitions: 1 },
+    providerHttpAttemptCeiling: 6,
+    fixture: 'one explicit expired-position history acquisition; richer local history cache can reduce this to zero',
   },
   'ticker-detail': {
     expected: { browserRequests: 1, functionInvocations: 1, providerAcquisitions: 4 },

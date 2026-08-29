@@ -119,6 +119,9 @@ Expected and regression ceiling are equal for the browser, function, and logical
 | Screener full 42-ETF scan | 14/14 | 14/14 | 126/126 | 196 |
 | Watchlist, one ticker + one chain | 2/2 | 2/2 | 2/2 | 7 |
 | Portfolio, two tickers + two chains | 3/3 | 3/3 | 3/3 | 13 |
+| Portfolio Entry Delta capture, loaded/cached chain | 0/1 | 0/1 | 0/1 | 6 cold maximum |
+| Explicit Portfolio Entry VIX maintenance | 1/1 | 1/1 | 1/1 | 6 |
+| Explicit Portfolio lifecycle maintenance, one history requirement | 1/1 | 1/1 | 1/1 | 6 |
 | Consolidated Ticker Detail | 1/1 | 1/1 | 4/4 | 9 |
 | Explicit expiry change | 1/1 | 1/1 | 1/1 | 6 |
 | Option Drawer | 0/0 | 0/0 | 0/0 | 0 |

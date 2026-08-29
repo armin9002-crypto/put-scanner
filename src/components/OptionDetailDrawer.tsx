@@ -13,6 +13,7 @@ import {
 import { formatCurrency, formatNumber, formatPercent, normalizeTimestampMs } from '../lib/format';
 import { useResponsiveMode } from '../lib/responsive';
 import { orderedOptionQuoteEntries } from '../lib/optionQuoteDisplay';
+import type { PutDeltaSource } from '../lib/putDelta';
 
 export interface OptionDetail {
   strike: number;
@@ -21,6 +22,7 @@ export interface OptionDetail {
   bid: number | null;
   ask: number | null;
   delta: number | null;
+  deltaSource?: PutDeltaSource | null;
   gamma?: number | null;
   theta?: number | null;
   vega?: number | null;

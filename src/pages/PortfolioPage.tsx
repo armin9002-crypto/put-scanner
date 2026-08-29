@@ -1,5 +1,5 @@
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { AlertTriangle, Briefcase, ChevronDown, ChevronRight, Download, Edit2, FileImage, Loader2, MoreHorizontal, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { AlertTriangle, Briefcase, ChevronDown, ChevronRight, Download, Edit2, FileImage, Loader2, MoreHorizontal, Plus, RefreshCw, Trash2, Wrench } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { fetchBatchPricesResult, fetchOptions } from '../lib/api';
 import { resolvePutDelta } from '../lib/putDelta';
@@ -81,10 +81,15 @@ import { OPTION_QUOTE_TABLE_DISPLAY_ORDER, orderedOptionQuoteEntries } from '../
 import { persistPortfolioMarkBasis, readPortfolioMarkBasis } from '../lib/portfolioMarkPreference';
 import { persistShowNominalYield, readShowNominalYield } from '../lib/optionTablePreferences';
 import { buildCloseCandidates, buildNeedsAttention, getRedeployBadges, type CloseCandidate } from '../lib/portfolioPolicies';
+import { backfillStoredEntryDeltas, entryDeltaFromExactChain, isContemporaneousPortfolioEntry, isValidEntryDelta, usMarketDateIso } from '../lib/portfolioEntryDelta';
+import { assessPortfolioMaintenance } from '../lib/portfolioMaintenance';
+import { getPortfolioQuoteFreshness, isPortfolioQuoteDecisionEligible, summarizePortfolioQuoteFreshness } from '../lib/portfolioQuoteFreshness';
+import { resolvePortfolioEntryVix } from '../lib/portfolioEntryVix';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 const PortfolioScreenshotImportModal = lazy(() => import('../components/PortfolioScreenshotImportModal'));
 const DataBackupModal = lazy(() => import('../components/DataBackupModal'));
+const PortfolioMaintenanceModal = lazy(() => import('../components/PortfolioMaintenanceModal'));
 const DASH = '\u2014';
 const MARK_BASIS_OPTIONS: MarkBasis[] = [...OPTION_QUOTE_TABLE_DISPLAY_ORDER];
 
@@ -132,7 +137,7 @@ const PORTFOLIO_SCHEDULE_SORT_OPTIONS: Array<{ value: PortfolioScheduleSortField
 ];
 
 function todayIso(): string {
-  return new Date().toISOString().split('T')[0];
+  return usMarketDateIso();
 }
 
 function isoToUnixSeconds(iso: string): number | null {
@@ -181,6 +186,20 @@ function VixEntryTooltipContent({ trade }: { trade: PortfolioTrade }) {
       ]} />
     </div>
   );
+}
+
+function EntryDeltaTooltipContent({ trade }: { trade: PortfolioTrade }) {
+  const source = trade.entryDeltaSource === 'provider' ? 'Provider exact-contract Delta'
+    : trade.entryDeltaSource === 'calculated' ? 'Canonical contemporaneous calculation'
+      : trade.entryDeltaSource === 'stored_snapshot' ? 'Recovered stored entry snapshot'
+        : trade.entryDeltaSource === 'manual' ? 'User-provided broker value'
+          : trade.entryDeltaSource === 'imported' ? 'Imported backup value'
+            : DASH;
+  return <div><div className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text)' }}>Entry Delta</div><TooltipRows rows={[
+    { label: 'Value', value: formatDelta(trade.entryDelta) },
+    { label: 'Source', value: source },
+    { label: 'Captured', value: formatFullDate(trade.entryDeltaCapturedAt) },
+  ]} /></div>;
 }
 
 function parseDateOnly(value: string | null | undefined): Date | null {
@@ -363,7 +382,7 @@ function percentColor(value: number | null | undefined): string {
 }
 
 interface PositionHealth {
-  label: 'Healthy' | 'Monitor' | 'Elevated' | 'Risky' | 'Threatened' | 'Unknown';
+  label: 'Healthy' | 'Monitor' | 'Elevated' | 'Risky' | 'Threatened' | 'Needs quote' | 'Unknown';
   color: string;
   bg: string;
   border: string;
@@ -371,6 +390,16 @@ interface PositionHealth {
 }
 
 function getPositionHealth(trade: PortfolioTrade): PositionHealth {
+  const freshness = getPortfolioQuoteFreshness(trade);
+  if (!isPortfolioQuoteDecisionEligible(trade)) {
+    return {
+      label: 'Needs quote',
+      color: 'var(--yellow)',
+      bg: 'rgba(250,204,21,0.10)',
+      border: 'rgba(250,204,21,0.25)',
+      title: `${freshness.label}: ${freshness.reason}`,
+    };
+  }
   const underlying = trade.latestMarketData?.underlyingPrice ?? trade.entrySnapshot?.underlyingPrice ?? null;
   const breakeven = calculateBreakeven(trade);
   const distanceToStrike = calculateDistanceToStrike(trade);
@@ -490,7 +519,7 @@ function PortfolioPriorityStrip({
     <section className="portfolio-priority-rail" aria-label="Portfolio priorities">
       <div className="portfolio-priority-card portfolio-priority-card--attention surface-card">
         <div className="portfolio-priority-card__header">
-          <div><h2>Attention queue</h2><p>Highest-risk positions to review first</p></div>
+          <div><h2>Attention queue</h2><p>Risk and quote-freshness review</p></div>
           <span className="status-badge" data-status="failed">Top {attention.length}</span>
         </div>
         <div className="portfolio-priority-list">
@@ -654,6 +683,8 @@ function NeedsAttentionList({
           {items.map(trade => {
             const beDistance = getTradeDistanceToBreakeven(trade);
             const strikeDistance = getTradeDistanceToStrike(trade);
+            const freshness = getPortfolioQuoteFreshness(trade);
+            const quoteEligible = isPortfolioQuoteDecisionEligible(trade);
             return (
               <div key={trade.id} className="grid grid-cols-[minmax(88px,1fr)_auto] gap-2 rounded px-2 py-1.5" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
                 <div className="min-w-0">
@@ -664,11 +695,11 @@ function NeedsAttentionList({
                   </div>
                   <div className="text-[11px] leading-none truncate mt-1" style={{ color: 'var(--text-dim)' }}>{expiryLabel(trade.expiration)} · {formatDteValue(calculateRemainingDte(trade))}</div>
                 </div>
-                <div className="text-right font-mono text-[11px] leading-none tabular-nums space-y-0.5">
+                {quoteEligible ? <div className="text-right font-mono text-[11px] leading-none tabular-nums space-y-0.5">
                   <div style={{ color: percentColor(beDistance) }}>BE {formatPctValue(beDistance)}</div>
                   <div style={{ color: percentColor(strikeDistance) }}>Strike {formatPctValue(strikeDistance)}</div>
                   <div style={{ color: 'var(--text-muted)' }}>{formatCompactCurrency(getTradeGrossRisk(trade))}</div>
-                </div>
+                </div> : <div className="text-right text-[11px] leading-tight" title={freshness.reason} style={{ color: 'var(--yellow)' }}>Needs fresh<br />quote</div>}
               </div>
             );
           })}
@@ -858,6 +889,7 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
   const [notes, setNotes] = useState(trade?.notes ?? '');
   const [closePrice, setClosePrice] = useState(trade?.closePrice != null ? String(trade.closePrice) : '');
   const [closeDate, setCloseDate] = useState(trade?.closeDate ?? todayIso());
+  const [entryDelta, setEntryDelta] = useState(trade?.entryDelta != null ? String(trade.entryDelta) : '');
   const [submitted, setSubmitted] = useState(false);
 
   useEffect(() => {
@@ -878,6 +910,7 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
     contracts: parseNumber(contracts),
     soldPrice: parseNumber(soldPrice),
     closePrice: parseNumber(closePrice),
+    entryDelta: parseNumber(entryDelta),
   };
 
   const validation = {
@@ -889,6 +922,7 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
     soldDate: /^\d{4}-\d{2}-\d{2}$/.test(soldDate),
     closePrice: status !== 'closed' || (parsed.closePrice != null && parsed.closePrice >= 0),
     closeDate: status !== 'closed' || /^\d{4}-\d{2}-\d{2}$/.test(closeDate),
+    entryDelta: entryDelta.trim() === '' || isValidEntryDelta(parsed.entryDelta),
   };
   const isValid = Object.values(validation).every(Boolean);
 
@@ -909,6 +943,17 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
       entryVixClose: trade?.soldDate === soldDate ? trade.entryVixClose : undefined,
       entryVixDate: trade?.soldDate === soldDate ? trade.entryVixDate : undefined,
       entryVixSource: trade?.soldDate === soldDate ? trade.entryVixSource : undefined,
+      entryDelta: parsed.entryDelta ?? undefined,
+      entryDeltaSource: parsed.entryDelta == null
+        ? undefined
+        : trade?.soldDate === soldDate && trade.entryDelta === parsed.entryDelta
+          ? trade.entryDeltaSource
+          : 'manual',
+      entryDeltaCapturedAt: parsed.entryDelta == null
+        ? undefined
+        : trade?.soldDate === soldDate && trade.entryDelta === parsed.entryDelta
+          ? trade.entryDeltaCapturedAt
+          : new Date().toISOString(),
       createdAt: trade?.createdAt ?? new Date().toISOString(),
       updatedAt: trade?.updatedAt ?? new Date().toISOString(),
       entrySnapshot: trade?.entrySnapshot,
@@ -919,6 +964,7 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
   const submit = () => {
     setSubmitted(true);
     if (!isValid) return;
+    const unchangedEntryDelta = trade?.soldDate === soldDate && trade.entryDelta === parsed.entryDelta;
     onSave({
       ticker: ticker.trim().toUpperCase(),
       optionType: 'put',
@@ -934,6 +980,9 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
       entryVixClose: trade?.soldDate === soldDate ? trade.entryVixClose : undefined,
       entryVixDate: trade?.soldDate === soldDate ? trade.entryVixDate : undefined,
       entryVixSource: trade?.soldDate === soldDate ? trade.entryVixSource : undefined,
+      entryDelta: parsed.entryDelta ?? undefined,
+      entryDeltaSource: parsed.entryDelta == null ? undefined : unchangedEntryDelta ? trade?.entryDeltaSource : 'manual',
+      entryDeltaCapturedAt: parsed.entryDelta == null ? undefined : unchangedEntryDelta ? trade?.entryDeltaCapturedAt : new Date().toISOString(),
       entrySnapshot: trade?.entrySnapshot,
       latestMarketData: trade?.latestMarketData,
     }, trade?.id);
@@ -985,6 +1034,12 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
             <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Sold Date</span>
             <input type="date" value={soldDate} onChange={event => setSoldDate(event.target.value)} className={inputClass} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
             {errorText(validation.soldDate, 'Sold date is required.')}
+          </label>
+          <label>
+            <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Entry Delta (optional)</span>
+            <input value={entryDelta} inputMode="decimal" placeholder="e.g. -0.20" onChange={event => setEntryDelta(event.target.value)} className={`${inputClass} font-mono`} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+            <p className="mt-1 text-[11px]" style={{ color: 'var(--text-dim)' }}>Use the broker's put Delta at entry. Leave blank if unknown.</p>
+            {errorText(validation.entryDelta, 'Entry Delta must be between -1 and 0.')}
           </label>
           <label>
             <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Status</span>
@@ -1048,6 +1103,9 @@ export default function PortfolioPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showDataBackup, setShowDataBackup] = useState(false);
+  const [showMaintenance, setShowMaintenance] = useState(false);
+  const [maintenanceBusy, setMaintenanceBusy] = useState<'lifecycle' | 'entry-vix' | 'entry-delta' | null>(null);
+  const [maintenanceMessage, setMaintenanceMessage] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [refreshWarning, setRefreshWarning] = useState(false);
   const [durableActivityNotice, setDurableActivityNotice] = useState('');
@@ -1077,34 +1135,10 @@ export default function PortfolioPage() {
   const quoteRefreshAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    let active = true;
     const stored = loadPortfolioTrades();
     setTrades(stored);
     const latest = Math.max(...stored.map(trade => trade.latestMarketData?.refreshedAt ? new Date(trade.latestMarketData.refreshedAt).getTime() : 0));
     if (latest > 0) setLastRefreshed(new Date(latest));
-    void (async () => {
-      const archived = await archiveExpiredOpenTrades(stored);
-      if (!active) return;
-      const latest = loadPortfolioTrades();
-      const reconciled = archived.changed
-        ? mergePortfolioLifecycleResults(latest, stored, archived.trades)
-        : latest;
-      const lifecycleApplied = reconciled.some((trade, index) => trade !== latest[index]);
-      if (lifecycleApplied) {
-        const saved = savePortfolioTrades(reconciled);
-        if (saved.status === 'ok') {
-          setDurableActivityNotice('Expired positions were durably moved into lifecycle history. Review Account Sync before enrollment.');
-          setTrades(reconciled);
-        } else {
-          setTrades(latest);
-        }
-      } else {
-        setTrades(latest);
-      }
-    })();
-    return () => {
-      active = false;
-    };
   }, []);
 
   const summary = useMemo(() => calculatePortfolioSummary(trades), [trades]);
@@ -1112,6 +1146,9 @@ export default function PortfolioPage() {
   const archivedTrades = useMemo(() => trades.filter(isArchivedTrade).sort((a, b) => b.expiration.localeCompare(a.expiration)), [trades]);
   const archiveSummary = useMemo(() => buildArchiveSummary(archivedTrades), [archivedTrades]);
   const markSummary = useMemo(() => calculatePortfolioMarkSummary(openTrades, markBasis), [openTrades, markBasis]);
+  const maintenanceAssessment = useMemo(() => assessPortfolioMaintenance(trades), [trades]);
+  const quoteFreshnessSummary = useMemo(() => summarizePortfolioQuoteFreshness(openTrades), [openTrades]);
+  const positionsNeedingFreshData = quoteFreshnessSummary.stale + quoteFreshnessSummary.unavailable;
 
   const scheduleTotals = useMemo(() => buildScheduleTotals(openTrades, markBasis), [openTrades, markBasis]);
 
@@ -1236,6 +1273,35 @@ export default function PortfolioPage() {
     persistShowNominalYield(value);
   }, []);
 
+  const captureEntryDeltaForTrade = useCallback(async (inspected: PortfolioTrade) => {
+    if (isValidEntryDelta(inspected.entryDelta) || !isContemporaneousPortfolioEntry(inspected)) return;
+    const expirationTimestamp = isoToUnixSeconds(inspected.expiration);
+    if (expirationTimestamp == null) return;
+    try {
+      const chain = await fetchOptions(inspected.ticker, expirationTimestamp, {
+        source: 'Portfolio:entryDeltaCapture',
+        refreshMode: 'cache-first',
+      });
+      const result = entryDeltaFromExactChain(inspected, chain);
+      if (result.status !== 'captured' || !result.capture) return;
+      const latest = loadPortfolioTrades();
+      let applied = false;
+      const next = latest.map(current => {
+        if (current.id !== inspected.id
+          || current.updatedAt !== inspected.updatedAt
+          || current.ticker !== inspected.ticker
+          || current.expiration !== inspected.expiration
+          || current.strike !== inspected.strike
+          || isValidEntryDelta(current.entryDelta)) return current;
+        applied = true;
+        return { ...current, ...result.capture, updatedAt: new Date().toISOString() };
+      });
+      if (applied && persistTrades(next)) setDurableActivityNotice('Entry Delta captured from contemporaneous exact-contract data.');
+    } catch {
+      // Trade creation remains successful when the optional market enrichment fails.
+    }
+  }, [persistTrades]);
+
   const handleSaveTrade = useCallback(async (input: PortfolioTradeInput, id?: string) => {
     const before = loadPortfolioTrades();
     const next = id ? updatePortfolioTrade(id, input as Partial<PortfolioTrade>) : addPortfolioTrade(input);
@@ -1246,21 +1312,15 @@ export default function PortfolioPage() {
       setTrades(before);
       return;
     }
-    const archived = await archiveExpiredOpenTrades(next);
-    const latest = loadPortfolioTrades();
-    const reconciled = archived.changed
-      ? mergePortfolioLifecycleResults(latest, next, archived.trades)
-      : latest;
-    const lifecycleApplied = reconciled.some((trade, index) => trade !== latest[index]);
-    if (lifecycleApplied) {
-      const saved = savePortfolioTrades(reconciled);
-      setTrades(saved.status === 'ok' ? reconciled : latest);
-    } else {
-      setTrades(latest);
-    }
+    setTrades(next);
     setShowAddModal(false);
     setEditingTrade(null);
-  }, []);
+    if (!id) {
+      const beforeIds = new Set(before.map(trade => trade.id));
+      const added = next.find(trade => !beforeIds.has(trade.id));
+      if (added) void captureEntryDeltaForTrade(added);
+    }
+  }, [captureEntryDeltaForTrade]);
 
   const handleBackupImported = useCallback(() => {
     setTrades(loadPortfolioTrades());
@@ -1269,6 +1329,88 @@ export default function PortfolioPage() {
     setCollapsedExpiryGroups(readCollapsedExpirationGroups());
     setCollapsedUnderlyingGroups(readCollapsedUnderlyingGroups());
   }, []);
+
+  const handleResolveLifecycleMaintenance = useCallback(async () => {
+    setMaintenanceBusy('lifecycle');
+    setMaintenanceMessage('');
+    try {
+      const inspected = loadPortfolioTrades();
+      const resolved = await archiveExpiredOpenTrades(inspected);
+      const latest = loadPortfolioTrades();
+      const reconciled = resolved.changed
+        ? mergePortfolioLifecycleResults(latest, inspected, resolved.trades)
+        : latest;
+      const applied = reconciled.some((trade, index) => trade !== latest[index]);
+      if (!applied) {
+        setTrades(latest);
+        setMaintenanceMessage('No unchanged expired positions required a lifecycle write.');
+        return;
+      }
+      if (persistTrades(reconciled)) {
+        setDurableActivityNotice('Explicit Portfolio maintenance updated expiration lifecycle history.');
+        setMaintenanceMessage(`${reconciled.filter((trade, index) => trade !== latest[index]).length} lifecycle ${reconciled.filter((trade, index) => trade !== latest[index]).length === 1 ? 'position was' : 'positions were'} updated.`);
+      } else {
+        setMaintenanceMessage('Could not save lifecycle maintenance on this browser.');
+      }
+    } catch {
+      setMaintenanceMessage('Could not complete lifecycle maintenance. Existing positions were preserved.');
+    } finally {
+      setMaintenanceBusy(null);
+    }
+  }, [persistTrades]);
+
+  const handleResolveEntryVixMaintenance = useCallback(async () => {
+    setMaintenanceBusy('entry-vix');
+    setMaintenanceMessage('');
+    try {
+      const inspected = loadPortfolioTrades();
+      const resolved = await resolvePortfolioEntryVix(inspected);
+      const latest = loadPortfolioTrades();
+      const reconciled = resolved.changed
+        ? mergePortfolioLifecycleResults(latest, inspected, resolved.trades)
+        : latest;
+      const applied = reconciled.some((trade, index) => trade !== latest[index]);
+      if (applied && !persistTrades(reconciled)) {
+        setMaintenanceMessage('Could not save Entry VIX maintenance on this browser.');
+        return;
+      }
+      setTrades(applied ? reconciled : latest);
+      setMaintenanceMessage(`${resolved.resolved} Entry VIX ${resolved.resolved === 1 ? 'snapshot was' : 'snapshots were'} recovered${resolved.networkRequests === 0 ? ' from local cache' : ` with ${resolved.networkRequests} bounded market request`}${resolved.networkRequests === 1 ? '' : resolved.networkRequests > 1 ? 's' : ''}.`);
+    } catch {
+      setMaintenanceMessage('Could not complete Entry VIX maintenance. Existing snapshots were preserved.');
+    } finally {
+      setMaintenanceBusy(null);
+    }
+  }, [persistTrades]);
+
+  const handleRecoverStoredEntryDeltas = useCallback(() => {
+    setMaintenanceBusy('entry-delta');
+    setMaintenanceMessage('');
+    try {
+      const latest = loadPortfolioTrades();
+      const recovered = backfillStoredEntryDeltas(latest);
+      if (!recovered.changed) {
+        setTrades(latest);
+        setMaintenanceMessage('No stored historical Entry Delta snapshots were available to recover.');
+        return;
+      }
+      if (persistTrades(recovered.trades)) {
+        setMaintenanceMessage(`${recovered.resolved} stored Entry Delta ${recovered.resolved === 1 ? 'snapshot was' : 'snapshots were'} recovered with zero market requests.`);
+      } else {
+        setMaintenanceMessage('Could not save recovered Entry Delta snapshots on this browser.');
+      }
+    } finally {
+      setMaintenanceBusy(null);
+    }
+  }, [persistTrades]);
+
+  const handleScreenshotImported = useCallback((nextTrades: PortfolioTrade[]) => {
+    const previousIds = new Set(loadPortfolioTrades().map(trade => trade.id));
+    if (!persistTrades(nextTrades)) return;
+    setShowImportModal(false);
+    const newlyImported = nextTrades.filter(trade => !previousIds.has(trade.id) && isContemporaneousPortfolioEntry(trade));
+    if (newlyImported.length > 0) void Promise.allSettled(newlyImported.map(captureEntryDeltaForTrade));
+  }, [captureEntryDeltaForTrade, persistTrades]);
 
   const handleDeleteTrade = useCallback((id: string) => {
     const before = loadPortfolioTrades();
@@ -1505,7 +1647,7 @@ export default function PortfolioPage() {
     );
   };
 
-  const renderMobileScheduleTrade = (trade: PortfolioTrade) => <MobilePositionRow key={trade.id} ticker={trade.ticker} strike={formatCurrency(trade.strike)} contracts={trade.contracts} expiration={formatDteValue(calculateRemainingDte(trade))} pnl={formatCurrency(calculateTotalGainLoss(trade, markBasis), 0)} captured={formatPctValue(calculatePercentCaptured(trade, markBasis))} mark={formatOptionPrice(calculateCurrentOptionMark(trade, markBasis))} delta={formatDelta(trade.latestMarketData?.delta)} distance={formatPctValue(calculateDistanceToStrike(trade))} entryVix={isFiniteNumber(trade.entryVixClose) ? trade.entryVixClose.toFixed(2) : DASH} health={getPositionHealth(trade)} onOpen={() => openDrawer(trade)} onEdit={() => setEditingTrade(trade)} />;
+  const renderMobileScheduleTrade = (trade: PortfolioTrade) => <MobilePositionRow key={trade.id} ticker={trade.ticker} strike={formatCurrency(trade.strike)} contracts={trade.contracts} expiration={formatDteValue(calculateRemainingDte(trade))} pnl={formatCurrency(calculateTotalGainLoss(trade, markBasis), 0)} captured={formatPctValue(calculatePercentCaptured(trade, markBasis))} mark={formatOptionPrice(calculateCurrentOptionMark(trade, markBasis))} entryDelta={formatDelta(trade.entryDelta)} currentDelta={formatDelta(trade.latestMarketData?.delta)} freshness={getPortfolioQuoteFreshness(trade).label} distance={formatPctValue(calculateDistanceToStrike(trade))} entryVix={isFiniteNumber(trade.entryVixClose) ? trade.entryVixClose.toFixed(2) : DASH} health={getPositionHealth(trade)} onOpen={() => openDrawer(trade)} onEdit={() => setEditingTrade(trade)} />;
 
   if (isPhone) {
     return (
@@ -1527,6 +1669,7 @@ export default function PortfolioPage() {
               </div>
               <div className="portfolio-mobile-mark-control mt-3 flex items-center gap-3"><span className="flex-none text-[12px] font-semibold" style={{ color: 'var(--text-muted)' }}>Mark at</span><div className="min-w-0 flex-1"><MobileSegmentedControl value={markBasis} onChange={setMarkBasis} label="Portfolio mark basis" options={MARK_BASIS_OPTIONS.map(value => ({ value, label: value.charAt(0).toUpperCase() + value.slice(1) }))} /></div></div>
               <DataFreshness className="portfolio-mobile-freshness" updatedAt={lastRefreshed} status={refreshing ? 'updating' : refreshWarning ? 'failed' : lastRefreshed ? 'cached' : 'stale'} label="Portfolio marks" />
+              {positionsNeedingFreshData > 0 && <p className="mt-1 text-[11px]" style={{ color: 'var(--yellow)' }}>{positionsNeedingFreshData} {positionsNeedingFreshData === 1 ? 'position needs' : 'positions need'} fresh market data.</p>}
               {markSummary.totalGainLoss == null && <p className="portfolio-partial-mark" role="status">Partial marks · one or more open quotes are unavailable; aggregate P&amp;L stays — until refreshed.</p>}
               {durableActivityNotice && <p role="status" className="mt-2 text-[11px] leading-4" style={{ color: 'var(--yellow)' }}>{durableActivityNotice}</p>}
             </section>
@@ -1557,11 +1700,12 @@ export default function PortfolioPage() {
           </>
         )}
 
-        {mobileActionsOpen && <MobileBottomSheet title="Portfolio actions" onClose={() => setMobileActionsOpen(false)}><div className="space-y-2"><button type="button" onClick={() => { setMobileActionsOpen(false); setShowAddModal(true); }} className="mobile-sheet-action primary w-full"><Plus className="h-4 w-4" /> Add Trade</button><button type="button" onClick={() => { setMobileActionsOpen(false); setShowImportModal(true); }} className="mobile-sheet-action secondary w-full"><FileImage className="h-4 w-4" /> Import Screenshot</button><button type="button" onClick={() => { setMobileActionsOpen(false); setShowDataBackup(true); }} className="mobile-sheet-action secondary w-full"><Download className="h-4 w-4" /> Data Backup</button><button type="button" onClick={() => { setMobileActionsOpen(false); void handleRefreshOpenTrades(); }} disabled={refreshing || openTrades.length === 0} className="mobile-sheet-action secondary w-full disabled:opacity-40"><RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} /> Refresh Open Trades</button></div></MobileBottomSheet>}
+        {mobileActionsOpen && <MobileBottomSheet title="Portfolio actions" onClose={() => setMobileActionsOpen(false)}><div className="space-y-2"><button type="button" onClick={() => { setMobileActionsOpen(false); setShowAddModal(true); }} className="mobile-sheet-action primary w-full"><Plus className="h-4 w-4" /> Add Trade</button><button type="button" onClick={() => { setMobileActionsOpen(false); setShowImportModal(true); }} className="mobile-sheet-action secondary w-full"><FileImage className="h-4 w-4" /> Import Screenshot</button><button type="button" onClick={() => { setMobileActionsOpen(false); setShowMaintenance(true); setMaintenanceMessage(''); }} className="mobile-sheet-action secondary w-full"><Wrench className="h-4 w-4" /> Portfolio Maintenance</button><button type="button" onClick={() => { setMobileActionsOpen(false); setShowDataBackup(true); }} className="mobile-sheet-action secondary w-full"><Download className="h-4 w-4" /> Data Backup</button><button type="button" onClick={() => { setMobileActionsOpen(false); void handleRefreshOpenTrades(); }} disabled={refreshing || openTrades.length === 0} className="mobile-sheet-action secondary w-full disabled:opacity-40"><RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} /> Refresh Open Trades</button></div></MobileBottomSheet>}
         {(showAddModal || editingTrade) && <TradeModal trade={editingTrade} onClose={() => { setShowAddModal(false); setEditingTrade(null); }} onSave={handleSaveTrade} onDelete={handleDeleteTrade} />}
         {drawerSelection && <ErrorBoundary title="Option sheet unavailable" message="Close it and try again."><Suspense fallback={null}><OptionDetailDrawer option={drawerSelection.option} ticker={drawerSelection.ticker} expirationLabel={drawerSelection.expirationLabel} dte={drawerSelection.dte} underlyingPrice={drawerSelection.underlyingPrice} onClose={() => setDrawerSelection(null)} /></Suspense></ErrorBoundary>}
-        {showImportModal && <Suspense fallback={null}><PortfolioScreenshotImportModal trades={trades} onClose={() => setShowImportModal(false)} onApply={async nextTrades => { const archived = await archiveExpiredOpenTrades(nextTrades); if (persistTrades(archived.trades)) setShowImportModal(false); }} /></Suspense>}
+        {showImportModal && <Suspense fallback={null}><PortfolioScreenshotImportModal trades={trades} onClose={() => setShowImportModal(false)} onApply={handleScreenshotImported} /></Suspense>}
         {showDataBackup && <Suspense fallback={null}><DataBackupModal onClose={() => setShowDataBackup(false)} onImported={handleBackupImported} /></Suspense>}
+        {showMaintenance && <Suspense fallback={null}><PortfolioMaintenanceModal assessment={maintenanceAssessment} busy={maintenanceBusy} message={maintenanceMessage} onResolveLifecycle={() => { void handleResolveLifecycleMaintenance(); }} onResolveEntryVix={() => { void handleResolveEntryVixMaintenance(); }} onRecoverEntryDelta={handleRecoverStoredEntryDeltas} onClose={() => setShowMaintenance(false)} /></Suspense>}
       </div>
     );
   }
@@ -1584,6 +1728,9 @@ export default function PortfolioPage() {
             <button onClick={() => setShowDataBackup(true)} className="button-secondary inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs whitespace-nowrap" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
               <Download className="w-3.5 h-3.5" /> Data Backup
             </button>
+            <button onClick={() => { setShowMaintenance(true); setMaintenanceMessage(''); }} className="button-secondary inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs whitespace-nowrap" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
+              <Wrench className="w-3.5 h-3.5" /> Maintenance
+            </button>
             <button onClick={handleRefreshOpenTrades} disabled={refreshing || openTrades.length === 0} className="button-secondary portfolio-refresh-action inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-50 whitespace-nowrap" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
               {refreshing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
               Refresh Open Trades
@@ -1599,6 +1746,9 @@ export default function PortfolioPage() {
           <div className="flex items-center gap-2 rounded-lg px-3 py-2 mb-3 text-xs" style={{ backgroundColor: 'rgba(250,204,21,0.10)', color: 'var(--yellow)', border: '1px solid rgba(250,204,21,0.22)' }}>
             <AlertTriangle className="w-3.5 h-3.5" /> Some trades could not be refreshed. Saved trade data was preserved.
           </div>
+        )}
+        {positionsNeedingFreshData > 0 && (
+          <p className="mb-3 text-xs" role="status" style={{ color: 'var(--text-muted)' }}>{positionsNeedingFreshData} open {positionsNeedingFreshData === 1 ? 'position needs' : 'positions need'} fresh market data. Stale inputs are excluded from high-confidence attention and close-candidate signals.</p>
         )}
 
         {trades.length === 0 ? (
@@ -1768,7 +1918,8 @@ export default function PortfolioPage() {
                     <Metric label="Current Mark" value={formatOptionPrice(calculateCurrentOptionMark(trade, markBasis))} />
                     <Metric label="Total Gain/Loss" value={formatCurrency(calculateTotalGainLoss(trade, markBasis), 0)} color={pnlColor(calculateTotalGainLoss(trade, markBasis))} />
                     <Metric label="% Captured" value={formatPctValue(calculatePercentCaptured(trade, markBasis))} color={pnlColor(calculatePercentCaptured(trade, markBasis))} />
-                    <Metric label="Delta" value={formatDelta(trade.latestMarketData?.delta)} color={pnlColor(trade.latestMarketData?.delta)} />
+                    <Metric label="Entry Delta" value={formatDelta(trade.entryDelta)} />
+                    <Metric label="Current Delta" value={formatDelta(trade.latestMarketData?.delta)} color={pnlColor(trade.latestMarketData?.delta)} />
                     <Metric label="Ann. Entry Net-Risk Return" value={formatPctValue(calculateOriginalAnnualizedYield(trade))} />
                     <Metric label="Ann. Remaining Liability / Entry Net Risk" value={formatPctValue(calculateCurrentAnnualizedYield(trade, markBasis))} />
                   </div>
@@ -1812,7 +1963,7 @@ export default function PortfolioPage() {
                       {sortButton('currentValue', 'Current Value')}
                       {sortButton('pnl', 'Total Gain/Loss')}
                       {sortButton('percentCaptured', '% Captured')}
-                      {sortButton('delta', 'Delta')}
+                      {sortButton('delta', 'Entry / Current Delta', 'text-right', 'Displays both values; sorting uses Current Delta.')}
                       {sortButton('breakeven', 'Breakeven')}
                       {sortButton('underlying', 'Underlying')}
                       {sortButton('distanceToStrike', 'Distance to Strike')}
@@ -1904,7 +2055,7 @@ export default function PortfolioPage() {
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(currentValue, 0)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(totalGainLoss) }}>{formatCurrency(totalGainLoss, 0)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(calculatePercentCaptured(trade, markBasis)) }}>{formatPctValue(calculatePercentCaptured(trade, markBasis))}</td>
-                          <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(delta) }}>{formatDelta(delta)}</td>
+                          <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap" title={getPortfolioQuoteFreshness(trade).reason}><span style={{ color: 'var(--text-muted)' }}>Entry {isValidEntryDelta(trade.entryDelta) ? <HoverTooltip content={<EntryDeltaTooltipContent trade={trade} />} ariaLabel={`${trade.ticker} Entry Delta details`}>{formatDelta(trade.entryDelta)}</HoverTooltip> : DASH}</span><br /><span style={{ color: pnlColor(delta) }}>Current {formatDelta(delta)}</span><br /><span className="text-[9px]" style={{ color: getPortfolioQuoteFreshness(trade).state === 'stale' || getPortfolioQuoteFreshness(trade).state === 'unavailable' ? 'var(--yellow)' : 'var(--text-dim)' }}>{getPortfolioQuoteFreshness(trade).label}</span></td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(calculateBreakeven(trade))}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(trade.latestMarketData?.underlyingPrice ?? trade.entrySnapshot?.underlyingPrice)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: percentColor(calculateDistanceToStrike(trade)) }}>{formatPctValue(calculateDistanceToStrike(trade))}</td>
@@ -2030,16 +2181,18 @@ export default function PortfolioPage() {
           <PortfolioScreenshotImportModal
             trades={trades}
             onClose={() => setShowImportModal(false)}
-            onApply={async nextTrades => {
-              const archived = await archiveExpiredOpenTrades(nextTrades);
-              if (persistTrades(archived.trades)) setShowImportModal(false);
-            }}
+            onApply={handleScreenshotImported}
           />
         </Suspense>
       )}
       {showDataBackup && (
         <Suspense fallback={<div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.72)' }}><div className="rounded-lg border px-4 py-3 text-sm" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', color: 'var(--text)' }}>Loading backup tools...</div></div>}>
           <DataBackupModal onClose={() => setShowDataBackup(false)} onImported={handleBackupImported} />
+        </Suspense>
+      )}
+      {showMaintenance && (
+        <Suspense fallback={null}>
+          <PortfolioMaintenanceModal assessment={maintenanceAssessment} busy={maintenanceBusy} message={maintenanceMessage} onResolveLifecycle={() => { void handleResolveLifecycleMaintenance(); }} onResolveEntryVix={() => { void handleResolveEntryVixMaintenance(); }} onRecoverEntryDelta={handleRecoverStoredEntryDeltas} onClose={() => setShowMaintenance(false)} />
         </Suspense>
       )}
     </div>
@@ -2147,6 +2300,7 @@ function ArchiveHistorySection({
                 <Metric label="Captured" value={formatPctValue(percentCaptured)} color={pnlColor(percentCaptured)} />
                 <Metric label="Realized IRR" value={formatPctValue(realizedIrr)} color={pnlColor(realizedIrr)} />
                 <Metric label="Final value" value={formatCurrency(getArchivedFinalValue(trade))} />
+                <Metric label="Entry Delta" value={formatDelta(trade.entryDelta)} />
               </div>
               {trade.resolutionWarning && <p className="mt-2 text-[11px]" style={{ color: 'var(--yellow)' }}>{trade.resolutionWarning}</p>}
               <div className="mt-3 flex flex-wrap gap-2 border-t pt-2" style={{ borderColor: 'var(--border)' }}>
@@ -2164,7 +2318,7 @@ function ArchiveHistorySection({
           <table className="financial-table min-w-max w-full text-[12px] leading-none">
             <thead>
               <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
-                {['Ticker', 'Expiration', 'Strike', 'Contracts', 'Written Date', 'Days Held', 'Sold Price', 'Expiration Close', 'Final Value', 'Premium Collected', 'Realized P&L', 'Realized IRR', '% Captured', 'Outcome', 'Actions'].map((label, index) => (
+                {['Ticker', 'Expiration', 'Strike', 'Contracts', 'Written Date', 'Days Held', 'Sold Price', 'Expiration Close', 'Final Value', 'Premium Collected', 'Realized P&L', 'Realized IRR', '% Captured', 'Entry Delta', 'Outcome', 'Actions'].map((label, index) => (
                   <th key={label} title={label === 'Realized IRR' ? 'Compounded annualized return on original net capital at risk over actual calendar days held.' : undefined} className={`px-2 py-2 text-[11px] font-medium whitespace-nowrap ${index === 0 || label === 'Outcome' || label === 'Actions' ? 'text-left' : 'text-right'}`} style={{ color: 'var(--text-muted)' }}>{label}</th>
                 ))}
               </tr>
@@ -2192,6 +2346,7 @@ function ArchiveHistorySection({
                     <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(realizedPnl) }}>{formatCurrency(realizedPnl)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(realizedIrr) }}>{formatPctValue(realizedIrr)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(percentCaptured) }}>{formatPctValue(percentCaptured)}</td>
+                    <td className="px-2 py-1 text-right font-mono tabular-nums">{formatDelta(trade.entryDelta)}</td>
                     <td className="px-2 py-1 text-left whitespace-nowrap">
                       <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold leading-none" title={trade.resolutionWarning ?? getArchiveOutcomeLabel(trade)} style={{ color: getArchiveOutcomeColor(trade), backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
                         {getArchiveOutcomeLabel(trade)}

@@ -3,6 +3,7 @@ export type PortfolioResolutionType = 'expired_worthless' | 'expired_itm' | 'exp
 export type PortfolioResolutionSource = 'expiration_close' | 'manual_expiration_close';
 export type PortfolioAvailabilityStatus = 'live' | 'expired' | 'unavailable' | 'refresh_failed' | 'stale' | 'imported_snapshot';
 export type PortfolioEntryVixSource = 'historical_close' | 'nearest_prior_close';
+export type PortfolioEntryDeltaSource = 'provider' | 'calculated' | 'manual' | 'imported' | 'stored_snapshot';
 
 export interface PortfolioTradeSnapshot {
   underlyingPrice?: number | null;
@@ -69,6 +70,10 @@ export interface PortfolioTrade {
   entryVixClose?: number;
   entryVixDate?: string;
   entryVixSource?: PortfolioEntryVixSource;
+  /** Put Delta observed or validly calculated at/near entry; never a later current quote. */
+  entryDelta?: number;
+  entryDeltaSource?: PortfolioEntryDeltaSource;
+  entryDeltaCapturedAt?: string;
   resolutionSource?: PortfolioResolutionSource;
   resolutionWarning?: string;
   createdAt: string;
@@ -110,6 +115,7 @@ const VALID_STATUSES: PortfolioTradeStatus[] = ['open', 'closed', 'expired', 'as
 const VALID_RESOLUTION_TYPES: PortfolioResolutionType[] = ['expired_worthless', 'expired_itm', 'expired_price_pending'];
 const VALID_RESOLUTION_SOURCES: PortfolioResolutionSource[] = ['expiration_close', 'manual_expiration_close'];
 const VALID_AVAILABILITY: PortfolioAvailabilityStatus[] = ['live', 'expired', 'unavailable', 'refresh_failed', 'stale', 'imported_snapshot'];
+const VALID_ENTRY_DELTA_SOURCES: PortfolioEntryDeltaSource[] = ['provider', 'calculated', 'manual', 'imported', 'stored_snapshot'];
 
 function getStorage(): StorageLike | null {
   try {
@@ -159,6 +165,17 @@ function normalizeOptionalNumber(value: unknown): number | null | undefined {
   if (value == null || value === '') return undefined;
   const numeric = finiteNumber(value);
   return numeric == null ? undefined : numeric;
+}
+
+function normalizeEntryDelta(value: unknown): number | undefined {
+  const numeric = normalizeOptionalNumber(value);
+  return numeric != null && numeric >= -1 && numeric <= 0 ? numeric : undefined;
+}
+
+function normalizeIsoTimestamp(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
 }
 
 function normalizeSnapshot(value: unknown): PortfolioTradeSnapshot | undefined {
@@ -281,6 +298,13 @@ export function normalizePortfolioTrade(
   const entryVixSource = raw.entryVixSource === 'historical_close' || raw.entryVixSource === 'nearest_prior_close'
     ? raw.entryVixSource as PortfolioEntryVixSource
     : undefined;
+  const entryDelta = normalizeEntryDelta(raw.entryDelta);
+  const entryDeltaSource = entryDelta !== undefined
+    ? typeof raw.entryDeltaSource === 'string' && VALID_ENTRY_DELTA_SOURCES.includes(raw.entryDeltaSource as PortfolioEntryDeltaSource)
+      ? raw.entryDeltaSource as PortfolioEntryDeltaSource
+      : 'imported'
+    : undefined;
+  const entryDeltaCapturedAt = entryDelta !== undefined ? normalizeIsoTimestamp(raw.entryDeltaCapturedAt) : undefined;
   const resolutionType = typeof raw.resolutionType === 'string' && VALID_RESOLUTION_TYPES.includes(raw.resolutionType as PortfolioResolutionType)
     ? raw.resolutionType as PortfolioResolutionType
     : undefined;
@@ -313,6 +337,11 @@ export function normalizePortfolioTrade(
     entryVixClose: entryVixClose ?? undefined,
     entryVixDate: entryVixDate ?? undefined,
     entryVixSource,
+    ...(entryDelta !== undefined ? {
+      entryDelta,
+      entryDeltaSource,
+      ...(entryDeltaCapturedAt ? { entryDeltaCapturedAt } : {}),
+    } : {}),
     resolutionSource,
     resolutionWarning: typeof raw.resolutionWarning === 'string' ? raw.resolutionWarning : undefined,
     createdAt,
@@ -354,7 +383,12 @@ function invalidPortfolioEnumFields(entry: Record<string, unknown>): boolean {
     || (entry.resolutionSource !== undefined
       && (typeof entry.resolutionSource !== 'string' || !VALID_RESOLUTION_SOURCES.includes(entry.resolutionSource as PortfolioResolutionSource)))
     || (entry.entryVixSource !== undefined
-      && entry.entryVixSource !== 'historical_close' && entry.entryVixSource !== 'nearest_prior_close');
+      && entry.entryVixSource !== 'historical_close' && entry.entryVixSource !== 'nearest_prior_close')
+    || (entry.entryDelta !== undefined && normalizeEntryDelta(entry.entryDelta) === undefined)
+    || (entry.entryDeltaSource !== undefined
+      && (typeof entry.entryDeltaSource !== 'string' || !VALID_ENTRY_DELTA_SOURCES.includes(entry.entryDeltaSource as PortfolioEntryDeltaSource)))
+    || (entry.entryDelta === undefined && (entry.entryDeltaSource !== undefined || entry.entryDeltaCapturedAt !== undefined))
+    || (entry.entryDeltaCapturedAt !== undefined && normalizeIsoTimestamp(entry.entryDeltaCapturedAt) === undefined);
 }
 
 export type PortfolioStateMigrationOutcome =

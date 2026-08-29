@@ -69,7 +69,7 @@ export function selectEntryVixClose(points: ChartPoint[], entryDate: string): En
 
 export function unresolvedEntryVixDates(trades: PortfolioTrade[]): string[] {
   return [...new Set(trades
-    .filter(trade => trade.status === 'open' && !isFiniteNumber(trade.entryVixClose) && isIsoDate(trade.soldDate))
+    .filter(trade => !isFiniteNumber(trade.entryVixClose) && isIsoDate(trade.soldDate))
     .map(trade => trade.soldDate))]
     .sort();
 }
@@ -77,7 +77,7 @@ export function unresolvedEntryVixDates(trades: PortfolioTrade[]): string[] {
 export function resolveEntryVixFromPoints(trades: PortfolioTrade[], points: ChartPoint[], nowIso = new Date().toISOString()): PortfolioEntryVixResult {
   let resolved = 0;
   const next = trades.map(trade => {
-    if (trade.status !== 'open' || isFiniteNumber(trade.entryVixClose) || !isIsoDate(trade.soldDate)) return trade;
+    if (isFiniteNumber(trade.entryVixClose) || !isIsoDate(trade.soldDate)) return trade;
     const value = selectEntryVixClose(points, trade.soldDate);
     if (!value) return trade;
     resolved += 1;

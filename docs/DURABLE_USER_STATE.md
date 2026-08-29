@@ -113,3 +113,9 @@ Stage 1 backup schema version 1 remains accepted. Import explicitly validates it
 ## Future cloud boundary
 
 Future synchronization may consume only each namespace envelope's `data`, `schemaVersion`, `updatedAt`, and `revision`. It must not upload local transient maps, market caches, debug/session/navigation state, or raw corrupt values. A corrupt, unsupported, or missing-id state requires explicit recovery/migration handling before synchronization; it must never be treated as an empty remote truth.
+
+## Stage 6B.4 Portfolio entry snapshot extension
+
+Portfolio schema version 1 now accepts optional `entryDelta`, `entryDeltaSource`, and `entryDeltaCapturedAt` fields. They are canonical durable trade data and therefore participate in backup, restore, cloud fingerprints, reconciliation, and conflict recovery. Absence remains absence: legacy trades are not rewritten with `null` or `undefined`, so merely loading the new application does not advance the namespace revision or cause enrollment/sync churn.
+
+`latestMarketData.delta` remains transient device-local Current Delta. It is never promoted to historical Entry Delta for a legacy trade. Only contemporaneous new-trade capture, explicit manual/imported Entry Delta, or explicit recovery from an already-durable `entrySnapshot.delta` can create the new durable field.

@@ -41,7 +41,7 @@ function portfolioTrade(overrides = {}) {
     soldPrice: 2, soldDate: isoDaysFromNow(-10), status: 'open', notes: '',
     createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-01T00:00:00.000Z',
     entrySnapshot: { underlyingPrice: 65 },
-    latestMarketData: { underlyingPrice: 65, optionBid: 1, optionAsk: 1.2, optionLast: 1.1, delta: -0.2, refreshedAt: '2026-08-26T12:00:00.000Z' },
+    latestMarketData: { underlyingPrice: 65, optionBid: 1, optionAsk: 1.2, optionLast: 1.1, delta: -0.2, refreshedAt: new Date().toISOString(), availabilityStatus: 'live' },
     ...overrides,
   };
 }
@@ -99,8 +99,8 @@ test('Portfolio quote reconciliation preserves edits/deletions and writes zero d
   const removedBaseline = portfolioTrade({ id: 'removed' });
   const retainedBaseline = portfolioTrade({ id: 'retained' });
   const refreshed = [
-    { ...removedBaseline, latestMarketData: { ...removedBaseline.latestMarketData, optionBid: 0.7, refreshedAt: '2026-08-27T12:00:00.000Z' } },
-    { ...retainedBaseline, latestMarketData: { ...retainedBaseline.latestMarketData, optionBid: 0.8, refreshedAt: '2026-08-27T12:00:00.000Z' } },
+    { ...removedBaseline, latestMarketData: { ...removedBaseline.latestMarketData, optionBid: 0.7, refreshedAt: new Date(Date.now() + 60_000).toISOString() } },
+    { ...retainedBaseline, latestMarketData: { ...retainedBaseline.latestMarketData, optionBid: 0.8, refreshedAt: new Date(Date.now() + 60_000).toISOString() } },
   ];
   const editedCurrent = { ...retainedBaseline, notes: 'edited while refreshing', updatedAt: '2026-08-27T11:00:00.000Z' };
   const addedCurrent = portfolioTrade({ id: 'added', ticker: 'SOXL' });
@@ -142,12 +142,12 @@ test('centralized Portfolio policies preserve exact Close Candidate thresholds a
   });
   const candidate = portfolioTrade({
     expiration: isoDaysFromNow(10),
-    latestMarketData: { underlyingPrice: 65, optionBid: 0.5, optionAsk: 0.6, optionLast: 0.55, delta: -0.15 },
+    latestMarketData: { underlyingPrice: 65, optionBid: 0.5, optionAsk: 0.6, optionLast: 0.55, delta: -0.15, refreshedAt: new Date().toISOString(), availabilityStatus: 'live' },
   });
   assert.deepEqual(buildCloseCandidates([candidate], 'bid')[0].reasons, ['75%+ captured', 'near expiry with cushion']);
 
-  const threatened = portfolioTrade({ latestMarketData: { underlyingPrice: 45, optionBid: 2, optionAsk: 2.2, optionLast: 2.1, delta: -0.7 } });
-  const healthy = portfolioTrade({ latestMarketData: { underlyingPrice: 90, optionBid: 1, optionAsk: 1.2, optionLast: 1.1, delta: -0.05 } });
+  const threatened = portfolioTrade({ latestMarketData: { underlyingPrice: 45, optionBid: 2, optionAsk: 2.2, optionLast: 2.1, delta: -0.7, refreshedAt: new Date().toISOString(), availabilityStatus: 'live' } });
+  const healthy = portfolioTrade({ latestMarketData: { underlyingPrice: 90, optionBid: 1, optionAsk: 1.2, optionLast: 1.1, delta: -0.05, refreshedAt: new Date().toISOString(), availabilityStatus: 'live' } });
   const unavailable = portfolioTrade({ entrySnapshot: undefined, latestMarketData: undefined });
   assert.ok(getPortfolioAttentionScore(threatened) > getPortfolioAttentionScore(unavailable));
   assert.ok(getPortfolioAttentionScore(unavailable) > getPortfolioAttentionScore(healthy));

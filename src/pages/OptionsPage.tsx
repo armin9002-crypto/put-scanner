@@ -7,7 +7,8 @@ import { addToWatchlist, removeFromWatchlist, isInWatchlist, makeWatchlistId } f
 import type { WatchlistItem } from '../lib/watchlist';
 import { addPortfolioTrade } from '../lib/portfolioStorage';
 import { calculateBidAskSpreadPercent, calculateMoneyness, calculateYieldPercent } from '../lib/optionMetrics';
-import { resolvePutDelta } from '../lib/putDelta';
+import { resolvePutDeltaWithSource, type PutDeltaSource } from '../lib/putDelta';
+import { entryDeltaFromExactChain, usMarketDateIso } from '../lib/portfolioEntryDelta';
 import { compareNullableValue } from '../lib/metricValue';
 import { normalizeAnalyzeTicker, resolveTickerDetailInstrument } from '../lib/tickerDetail';
 import { formatOptionLastTradeDate, normalizeTimestampMs } from '../lib/format';
@@ -48,6 +49,7 @@ interface EnrichedPut {
   bid: number | null;
   ask: number | null;
   delta: number | null;
+  deltaSource: PutDeltaSource | null;
   gamma: number | null;
   theta: number | null;
   vega: number | null;
@@ -632,7 +634,7 @@ export default function OptionsPage() {
     const dte = exp?.dte ?? 1;
 
     return optionsData.puts.map(p => {
-      const delta = resolvePutDelta({
+      const resolvedDelta = resolvePutDeltaWithSource({
         providerDelta: p.delta,
         underlyingPrice: currentPrice,
         strike: p.strike,
@@ -650,7 +652,8 @@ export default function OptionsPage() {
       const moneyness = calculateMoneyness(currentPrice, p.strike);
 
       return {
-        strike: p.strike, last: p.last, lastTradeDate: p.lastTradeDate, bid: p.bid, ask: p.ask, delta,
+        strike: p.strike, last: p.last, lastTradeDate: p.lastTradeDate, bid: p.bid, ask: p.ask,
+        delta: resolvedDelta?.delta ?? null, deltaSource: resolvedDelta?.source ?? null,
         gamma: p.gamma ?? null, theta: p.theta ?? null, vega: p.vega ?? null,
         impliedVolatility: p.impliedVolatility, volume: p.volume, openInterest: p.openInterest, volOI,
         contractSymbol: p.contractSymbol,
@@ -923,7 +926,10 @@ export default function OptionsPage() {
   if (isPhone) {
     const addSelectedToPortfolio = (draft: AddToPortfolioDraft) => {
       if (!ticker || !selectedExpiration) return;
+      const now = new Date();
       const expiration = new Date(selectedExpiration.date * 1000).toISOString().split('T')[0];
+      const soldDate = usMarketDateIso(now);
+      const entryDeltaCapture = optionsData ? entryDeltaFromExactChain({ ticker, strike: draft.option.strike, expiration, soldDate, status: 'open' }, optionsData, now).capture : undefined;
       addPortfolioTrade({
         ticker,
         optionType: 'put',
@@ -931,7 +937,7 @@ export default function OptionsPage() {
         expiration,
         contracts: draft.contracts,
         soldPrice: draft.soldPrice,
-        soldDate: new Date().toISOString().split('T')[0],
+        soldDate,
         status: 'open',
         notes: '',
         entrySnapshot: {
@@ -942,6 +948,7 @@ export default function OptionsPage() {
           iv: draft.option.impliedVolatility,
           delta: draft.option.delta,
         },
+        ...entryDeltaCapture,
       });
       setSelectedOption(null);
     };
@@ -1602,7 +1609,10 @@ export default function OptionsPage() {
               underlyingPrice={currentPrice > 0 ? currentPrice : null}
               onAddToPortfolio={draft => {
                 if (!ticker || !selectedExpiration) return;
+                const now = new Date();
                 const expiration = new Date(selectedExpiration.date * 1000).toISOString().split('T')[0];
+                const soldDate = usMarketDateIso(now);
+                const entryDeltaCapture = optionsData ? entryDeltaFromExactChain({ ticker, strike: draft.option.strike, expiration, soldDate, status: 'open' }, optionsData, now).capture : undefined;
                 addPortfolioTrade({
                   ticker,
                   optionType: 'put',
@@ -1610,7 +1620,7 @@ export default function OptionsPage() {
                   expiration,
                   contracts: draft.contracts,
                   soldPrice: draft.soldPrice,
-                  soldDate: new Date().toISOString().split('T')[0],
+                  soldDate,
                   status: 'open',
                   notes: '',
                   entrySnapshot: {
@@ -1621,6 +1631,7 @@ export default function OptionsPage() {
                     iv: draft.option.impliedVolatility,
                     delta: draft.option.delta,
                   },
+                  ...entryDeltaCapture,
                 });
                 setSelectedOption(null);
               }}

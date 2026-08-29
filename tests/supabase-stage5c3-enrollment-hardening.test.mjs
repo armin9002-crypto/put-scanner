@@ -383,13 +383,17 @@ test('entry VIX remains durable but passive Portfolio mount does not resolve or 
   assert.equal(resolved.trades[0].updatedAt, now.toISOString());
 
   const source = await readFile(path.join(root, 'src/pages/PortfolioPage.tsx'), 'utf8');
-  const mountStart = source.indexOf('useEffect(() => {\n    let active = true;') >= 0
-    ? source.indexOf('useEffect(() => {\n    let active = true;')
-    : source.indexOf('useEffect(() => {\r\n    let active = true;');
+  const mountStart = source.indexOf('useEffect(() => {\n    const stored = loadPortfolioTrades();') >= 0
+    ? source.indexOf('useEffect(() => {\n    const stored = loadPortfolioTrades();')
+    : source.indexOf('useEffect(() => {\r\n    const stored = loadPortfolioTrades();');
   const mount = source.slice(mountStart, source.indexOf('  const summary = useMemo'));
-  assert.doesNotMatch(mount, /resolvePortfolioEntryVix/);
-  assert.match(mount, /mergePortfolioLifecycleResults\(latest, stored, archived\.trades\)/);
-  assert.match(mount, /if \(lifecycleApplied\)[\s\S]*?savePortfolioTrades\(reconciled\)/);
+  assert.doesNotMatch(mount, /resolvePortfolioEntryVix|archiveExpiredOpenTrades|savePortfolioTrades|persistTrades/);
+  const maintenanceStart = source.indexOf('const handleResolveLifecycleMaintenance');
+  const maintenance = source.slice(maintenanceStart, source.indexOf('const handleScreenshotImported', maintenanceStart));
+  assert.match(maintenance, /archiveExpiredOpenTrades\(inspected\)/);
+  assert.match(maintenance, /mergePortfolioLifecycleResults\(latest, inspected, resolved\.trades\)/);
+  assert.match(maintenance, /resolvePortfolioEntryVix\(inspected\)/);
+  assert.match(maintenance, /persistTrades\(reconciled\)/);
 });
 
 test('a restored non-expired trade with missing entry VIX remains enrollable after passive Portfolio lifecycle inspection', async () => {
@@ -429,7 +433,7 @@ test('expiration resolution remains a real durable lifecycle mutation', async ()
   assert.equal(readPortfolioTrades(storage).revision, 2);
 });
 
-test('an automatic expired-trade lifecycle transition intentionally blocks exact-baseline enrollment', async () => {
+test('an explicit expired-trade lifecycle transition intentionally blocks exact-baseline enrollment', async () => {
   const cloud = cloudState();
   cloud.portfolio.payload.data[0].expiration = '2026-08-21';
   const { storage, client } = await restoredDevice(cloud);
