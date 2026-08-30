@@ -7,6 +7,12 @@ import {
   calculatePremiumCollected,
 } from './portfolioMetrics.ts';
 import { isValidEntryDelta } from './portfolioEntryDelta.ts';
+import {
+  canonicalHistoricalDaysHeld,
+  canonicalHistoricalFinalOptionValue,
+  canonicalHistoricalPremium,
+  canonicalHistoricalRealizedPnl,
+} from './portfolioRealizedEconomics.ts';
 import type { PortfolioTrade } from './portfolioStorage';
 
 export type HistoryOutcome = 'all' | 'expired_worthless' | 'closed' | 'expired_itm' | 'assigned';
@@ -37,17 +43,20 @@ export function historyOutcome(trade: PortfolioTrade): Exclude<HistoryOutcome, '
 }
 
 export function historyRealizedPnl(trade: PortfolioTrade): number | null {
-  if (Number.isFinite(trade.realizedPnl)) return trade.realizedPnl!;
-  if (trade.status === 'closed' && Number.isFinite(trade.closePrice)) return (trade.soldPrice - trade.closePrice!) * trade.contracts * 100;
-  if (trade.resolutionType === 'expired_worthless') return calculatePremiumCollected(trade);
+  const canonical = canonicalHistoricalRealizedPnl(trade);
+  if (canonical != null) return canonical;
+  if ((trade.status === 'expired' || trade.status === 'assigned') && Number.isFinite(trade.realizedPnl)) return trade.realizedPnl!;
   return null;
 }
 
 export function historyPremium(trade: PortfolioTrade): number | null {
-  return Number.isFinite(trade.premiumCollected) ? trade.premiumCollected! : calculatePremiumCollected(trade);
+  return canonicalHistoricalPremium(trade)
+    ?? (Number.isFinite(trade.premiumCollected) ? trade.premiumCollected! : calculatePremiumCollected(trade));
 }
 
 export function historyDaysHeld(trade: PortfolioTrade): number | null {
+  const canonical = canonicalHistoricalDaysHeld(trade);
+  if (canonical != null) return canonical;
   if (Number.isFinite(trade.daysHeld)) return trade.daysHeld!;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(trade.soldDate)) return null;
   const end = trade.closeDate ?? trade.resolvedDate ?? trade.expiration;
@@ -202,6 +211,8 @@ export function historyPriceAtExpiration(trade: PortfolioTrade): number | null {
 }
 
 export function historyFinalValue(trade: PortfolioTrade): number | null {
+  const canonical = canonicalHistoricalFinalOptionValue(trade);
+  if (canonical != null) return canonical;
   if (isFiniteNumber(trade.finalOptionValue)) return trade.finalOptionValue;
   return trade.status === 'closed' && isFiniteNumber(trade.closePrice) ? trade.closePrice * trade.contracts * 100 : null;
 }

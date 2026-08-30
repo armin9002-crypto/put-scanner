@@ -465,9 +465,9 @@ await requestMarketData({
   endpoint: 'chart-history',
   softTtlMs: 6 * 60 * 60 * 1000,
   hardTtlMs: 72 * 60 * 60 * 1000,
-  schemaVersion: 2,
+  schemaVersion: 3,
   validator: data => data?.timeframe === '1Y',
-  fetcher: async () => ({ ticker: 'TST', displayTicker: 'TST', timeframe: '1Y', points: chartPoints, fetchedAt: Date.now(), metadata: { interval: '1d' } }),
+  fetcher: async () => ({ ticker: 'TST', displayTicker: 'TST', timeframe: '1Y', points: chartPoints, corporateActions: [], fetchedAt: Date.now(), metadata: { interval: '1d' } }),
 });
 const derivedSixMonth = await getChartHistory('TST', '6M');
 assert('richer daily chart cache satisfies shorter timeframe without a request', derivedSixMonth.metadata?.derivedFrom === '1Y' && derivedSixMonth.points.length === 2);

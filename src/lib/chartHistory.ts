@@ -10,11 +10,22 @@ export interface ChartPoint {
   price: number;
 }
 
+export interface ChartCorporateAction {
+  type: 'split' | 'dividend' | 'capital_gain';
+  timestamp: number;
+  date: string;
+  splitRatio?: string | null;
+  numerator?: number | null;
+  denominator?: number | null;
+  amount?: number | null;
+}
+
 export interface ChartHistoryResponse {
   ticker: string;
   displayTicker: string;
   timeframe: ChartTimeframe;
   points: ChartPoint[];
+  corporateActions: ChartCorporateAction[];
   previousClose?: number | null;
   latestPrice?: number | null;
   providerMarketTime?: number | null;
@@ -81,6 +92,13 @@ function isValidChartHistory(value: unknown, timeframe: ChartTimeframe): value i
     typeof data.displayTicker === 'string' &&
     typeof data.fetchedAt === 'number' &&
     Array.isArray(data.points) &&
+    Array.isArray(data.corporateActions) &&
+    data.corporateActions.every(action =>
+      action &&
+      (action.type === 'split' || action.type === 'dividend' || action.type === 'capital_gain') &&
+      Number.isFinite(action.timestamp) &&
+      typeof action.date === 'string'
+    ) &&
     data.points.every(point =>
       point &&
       Number.isFinite(point.timestamp) &&
@@ -114,7 +132,7 @@ function findReusableHistory(ticker: string, timeframe: ChartTimeframe): ChartHi
       key: cacheKey(ticker, candidate),
       softTtlMs: CHART_TTLS[candidate],
       hardTtlMs: CHART_HARD_TTLS[candidate],
-      schemaVersion: 2,
+      schemaVersion: 3,
       validator: data => isValidChartHistory(data, candidate) && data.metadata?.interval === interval,
     });
     if (!cached || cached.meta.freshness === 'expired') continue;
@@ -142,7 +160,7 @@ export function findCachedDailyHistoryForDates(ticker: string, dates: string[]):
       key: cacheKey(normalizedTicker, timeframe),
       softTtlMs: CHART_TTLS[timeframe],
       hardTtlMs: CHART_HARD_TTLS[timeframe],
-      schemaVersion: 2,
+      schemaVersion: 3,
       validator: data => isValidChartHistory(data, timeframe) && data.metadata?.interval === '1d',
     });
     if (!cached || cached.meta.freshness === 'expired') continue;
@@ -173,7 +191,7 @@ export async function getChartHistory(
       key,
       softTtlMs: CHART_TTLS[timeframe],
       hardTtlMs: CHART_HARD_TTLS[timeframe],
-      schemaVersion: 2,
+      schemaVersion: 3,
       validator: data => isValidChartHistory(data, timeframe),
     });
     if (exact && exact.meta.freshness !== 'expired') {
@@ -189,7 +207,7 @@ export async function getChartHistory(
     endpoint: 'chart-history',
     softTtlMs: CHART_TTLS[timeframe],
     hardTtlMs: CHART_HARD_TTLS[timeframe],
-    schemaVersion: 2,
+    schemaVersion: 3,
     mode: options.forceRefresh ? 'revalidate' : 'cache-first',
     allowStaleOnError: true,
     validator: data => isValidChartHistory(data, timeframe),

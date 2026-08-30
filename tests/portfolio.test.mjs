@@ -2,10 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildExpirationScheduleGroups, buildFlatScheduleTrades, buildUnderlyingScheduleGroups } from '../src/lib/portfolioAnalytics.ts';
 import { calculateCurrentOptionMark, calculatePortfolioMarkSummary, calculatePortfolioSummary } from '../src/lib/portfolioMetrics.ts';
-import { isExpiredUnresolvedOpenTrade, markExpirationPricePending, resolveExpiredTradeWithClose, selectExpirationClose } from '../src/lib/portfolioExpirationArchive.ts';
+import { assessExpirationCorporateActionBasis, isExpiredUnresolvedOpenTrade, markExpirationPricePending, resolveExpiredTradeWithClose, selectExpirationClose } from '../src/lib/portfolioExpirationArchive.ts';
 import { resolveEntryVixFromPoints, resolvePortfolioEntryVix, selectEntryVixClose, unresolvedEntryVixDates } from '../src/lib/portfolioEntryVix.ts';
 import { persistPortfolioGroupMode, readCollapsedExpirationGroups, readCollapsedUnderlyingGroups, readPortfolioGroupMode, setAllExpirationGroupsCollapsed, toggleCollapsedExpirationGroup } from '../src/lib/portfolioSchedulePreferences.ts';
-import { normalizePortfolioTrade } from '../src/lib/portfolioStorage.ts';
+import { normalizePortfolioTrade, readPortfolioTrades, writePortfolioTrades } from '../src/lib/portfolioStorage.ts';
+import { normalizeManualHistoricalEntryDelta } from '../src/lib/portfolioEntryDelta.ts';
+import { prepareManualTradeForSave, resolvePreparedManualTrade } from '../src/lib/portfolioHistoricalTrade.ts';
+import { buildHistoryAnalytics, buildHistoryGroups, historyPremium, historyRealizedIrr, historyRealizedPnl } from '../src/lib/portfolioHistoryAnalytics.ts';
 import {
   getPortfolioPositionHealthLevel,
   getPortfolioScheduleSortValue,
@@ -249,4 +252,161 @@ test('expired positions resolve worthless or ITM and retain pending fallback sta
   assert.equal(itm.finalOptionValue, 1_000);
   assert.equal(itm.realizedPnl, -600);
   assert.equal(markExpirationPricePending(expired).status, 'expired_price_pending');
+});
+
+const historicalInput = (overrides = {}) => ({
+  ticker: 'TQQQ', optionType: 'put', strike: 50, expiration: '2025-06-20', contracts: 2,
+  soldPrice: 1.2345, soldDate: '2025-05-01', status: 'open', notes: '', ...overrides,
+});
+
+test('historical held-to-expiration saves derive worthless and ITM economics through the canonical resolver', async () => {
+  let acquisitions = 0;
+  const worthlessPrepared = prepareManualTradeForSave(historicalInput(), null, { mode: 'historical', historicalOutcome: 'held_to_expiration' }, '2026-08-30T12:00:00Z');
+  assert.equal(worthlessPrepared.needsExpirationLookup, true);
+  const worthless = await resolvePreparedManualTrade(worthlessPrepared, {
+    nowIso: '2026-08-30T12:00:00Z',
+    lookup: async () => { acquisitions += 1; return { closePrice: 55, closeDate: '2025-06-20', basisStatus: 'provider_no_actions', basisCheckedFrom: '2025-05-01' }; },
+  });
+  assert.equal(acquisitions, 1, 'one cold explicit save performs one bounded acquisition');
+  assert.equal(worthless.resolutionType, 'expired_worthless');
+  assert.deepEqual([worthless.expirationBasisStatus, worthless.expirationBasisCheckedFrom], ['provider_no_actions', '2025-05-01']);
+  assert.equal(worthless.finalOptionValue, 0);
+  assert.ok(Math.abs(historyPremium(worthless) - 246.9) < 1e-10);
+  assert.ok(Math.abs(historyRealizedPnl(worthless) - 246.9) < 1e-10);
+
+  const itm = await resolvePreparedManualTrade(prepareManualTradeForSave(
+    historicalInput(), null, { mode: 'historical', historicalOutcome: 'held_to_expiration' }, '2026-08-30T12:00:00Z',
+  ), { lookup: async () => ({ closePrice: 45, closeDate: '2025-06-20' }) });
+  assert.equal(itm.resolutionType, 'expired_itm');
+  assert.equal(itm.status, 'expired');
+  assert.equal(itm.finalOptionValue, 1_000);
+  assert.ok(Math.abs(historyRealizedPnl(itm) - -753.1) < 1e-10);
+  assert.notEqual(historyRealizedIrr(itm), null);
+});
+
+test('historical bought-back trades use close economics, including a buyback on expiration day, with no expiration lookup', async () => {
+  const closedInput = historicalInput({ closePrice: 0.5, closeDate: '2025-06-10' });
+  const prepared = prepareManualTradeForSave(closedInput, null, { mode: 'historical', historicalOutcome: 'closed' }, '2026-08-30T12:00:00Z');
+  assert.equal(prepared.needsExpirationLookup, false);
+  let acquisitions = 0;
+  const closed = await resolvePreparedManualTrade(prepared, { lookup: async () => { acquisitions += 1; return null; } });
+  assert.equal(acquisitions, 0);
+  assert.equal(closed.status, 'closed');
+  assert.equal(closed.closeDate, '2025-06-10');
+  assert.ok(Math.abs(historyRealizedPnl(closed) - 146.9) < 1e-10);
+
+  const sameDay = prepareManualTradeForSave(
+    historicalInput({ closePrice: 0.25, closeDate: '2025-06-20' }),
+    null,
+    { mode: 'historical', historicalOutcome: 'closed' },
+  ).trade;
+  assert.equal(sameDay.status, 'closed');
+  assert.equal(sameDay.closeDate, sameDay.expiration);
+  assert.ok(Math.abs(historyRealizedPnl(sameDay) - 196.9) < 1e-10);
+});
+
+test('historical manual Entry Delta accepts either sign, preserves zero, and stores canonical manual provenance', () => {
+  assert.equal(normalizeManualHistoricalEntryDelta(0.2271), -0.2271);
+  assert.equal(normalizeManualHistoricalEntryDelta(-0.2271), -0.2271);
+  assert.equal(normalizeManualHistoricalEntryDelta(0), 0);
+  assert.throws(() => normalizeManualHistoricalEntryDelta(1.01), RangeError);
+  const prepared = prepareManualTradeForSave(historicalInput({
+    entryDelta: normalizeManualHistoricalEntryDelta(0.1235),
+    entryDeltaSource: 'manual',
+    entryDeltaCapturedAt: '2026-08-30T12:00:00Z',
+  }), null, { mode: 'historical', historicalOutcome: 'closed' }).trade;
+  assert.deepEqual([prepared.entryDelta, prepared.entryDeltaSource], [-0.1235, 'manual']);
+});
+
+test('historical expiration failure saves pending and corporate actions fail closed', async () => {
+  const prepared = prepareManualTradeForSave(historicalInput({ ticker: 'SOXL' }), null, { mode: 'historical', historicalOutcome: 'held_to_expiration' });
+  const unavailable = await resolvePreparedManualTrade(prepared, { lookup: async () => null });
+  assert.equal(unavailable.status, 'expired_price_pending');
+  assert.equal(historyRealizedPnl(unavailable), null);
+
+  const actions = [{ type: 'split', timestamp: Date.parse('2025-06-01T00:00:00Z') / 1000, date: '2025-06-01T00:00:00Z', splitRatio: '1:10' }];
+  const basis = assessExpirationCorporateActionBasis(actions, '2025-05-01', '2025-06-20');
+  assert.equal(basis.safe, false);
+  assert.match(basis.warning, /corporate action/);
+  assert.equal(assessExpirationCorporateActionBasis([], '2025-05-01', '2025-06-20').safe, true);
+  const blocked = await resolvePreparedManualTrade(prepared, { lookup: async () => { throw new Error(basis.warning); } });
+  assert.equal(blocked.status, 'expired_price_pending');
+  assert.match(blocked.resolutionWarning, /adjusted option deliverables/);
+});
+
+test('realized edits reconcile every dependent value and survive serialization without stale snapshots', () => {
+  const existing = normalizePortfolioTrade({
+    ...historicalInput({ status: 'closed', closePrice: 0.5, closeDate: '2025-06-10' }),
+    id: 'realized-edit', createdAt: '2025-05-01T12:00:00Z', updatedAt: '2025-06-10T12:00:00Z',
+    premiumCollected: 100, realizedPnl: 0, percentCaptured: 0, daysHeld: 1,
+    entryDelta: -0.2, entryDeltaSource: 'provider', entryDeltaCapturedAt: '2025-05-01T15:00:00Z',
+  });
+  assert.ok(existing);
+  const edited = prepareManualTradeForSave({
+    ...historicalInput({ soldPrice: 2.3456, closePrice: 0.5, closeDate: '2025-06-10' }),
+    entryDelta: -0.31, entryDeltaSource: 'manual', entryDeltaCapturedAt: '2026-08-30T12:00:00Z',
+  }, existing, { mode: 'historical', historicalOutcome: 'closed' }, '2026-08-30T12:00:00Z').trade;
+  assert.equal(edited.soldPrice, 2.3456, 'four-decimal Sold Price remains canonical');
+  assert.equal(edited.premiumCollected, 469.12);
+  assert.equal(edited.realizedPnl, 369.12);
+  assert.equal(historyPremium(edited), 469.12);
+  assert.equal(historyRealizedPnl(edited), 369.12);
+  assert.deepEqual([edited.entryDelta, edited.entryDeltaSource], [-0.31, 'manual']);
+  const analytics = buildHistoryAnalytics([edited]);
+  const group = buildHistoryGroups([edited], 'expiration')[0];
+  assert.equal(analytics.premiumCollected, 469.12);
+  assert.equal(analytics.realizedPnl, 369.12);
+  assert.equal(group.premium, 469.12);
+  assert.equal(group.realizedPnl, 369.12);
+  assert.notEqual(historyRealizedIrr(edited), null);
+
+  class MemoryStorage {
+    constructor() { this.values = new Map(); }
+    getItem(key) { return this.values.get(key) ?? null; }
+    setItem(key, value) { this.values.set(key, String(value)); }
+    removeItem(key) { this.values.delete(key); }
+  }
+  const storage = new MemoryStorage();
+  assert.equal(writePortfolioTrades(storage, [edited]).status, 'ok');
+  const reloaded = readPortfolioTrades(storage).data[0];
+  assert.deepEqual(
+    [reloaded.soldPrice, reloaded.premiumCollected, reloaded.realizedPnl, reloaded.entryDelta, reloaded.entryDeltaSource],
+    [2.3456, 469.12, 369.12, -0.31, 'manual'],
+  );
+});
+
+test('historical identity edits invalidate dependent snapshots while unrelated edits remain request-free', () => {
+  const existing = resolveExpiredTradeWithClose(trade({
+    id: 'held-edit', ticker: 'TQQQ', expiration: '2025-06-20', soldDate: '2025-05-01', status: 'open',
+    entryDelta: -0.25, entryDeltaSource: 'provider', entryDeltaCapturedAt: '2025-05-01T15:00:00Z',
+    entryVixClose: 20, entryVixDate: '2025-05-01', entryVixSource: 'historical_close',
+    entrySnapshot: { underlyingPrice: 70, delta: -0.25 },
+  }), 55, '2025-06-20', 'expiration_close');
+  const noteAndManualDelta = prepareManualTradeForSave({
+    ...existing, notes: 'corrected', entryDelta: -0.3, entryDeltaSource: 'manual', entryDeltaCapturedAt: '2026-08-30T12:00:00Z',
+  }, existing, { mode: 'historical', historicalOutcome: 'held_to_expiration' });
+  assert.equal(noteAndManualDelta.needsExpirationLookup, false);
+  assert.equal(noteAndManualDelta.trade.entryDelta, -0.3);
+  const legacyEconomicEdit = prepareManualTradeForSave({ ...existing, soldPrice: 2.5 }, existing, { mode: 'historical', historicalOutcome: 'held_to_expiration' });
+  assert.equal(legacyEconomicEdit.needsExpirationLookup, true, 'an old expiration close is not reused for changed economics without basis provenance');
+
+  const identityEdit = prepareManualTradeForSave({ ...existing, ticker: 'SOXL' }, existing, { mode: 'historical', historicalOutcome: 'held_to_expiration' });
+  assert.equal(identityEdit.needsExpirationLookup, true);
+  assert.equal(identityEdit.trade.entrySnapshot, undefined);
+  assert.equal(identityEdit.trade.latestMarketData, undefined);
+  assert.equal(identityEdit.trade.entryDelta, undefined, 'automatic contract Delta is invalidated with contract identity');
+  assert.equal(identityEdit.trade.expirationClosePrice, undefined);
+  assert.equal(identityEdit.trade.realizedPnl, undefined);
+});
+
+test('confirmed assignment preserves established economics and resolution date without inventing stock accounting', () => {
+  const existing = trade({
+    id: 'assigned-edit', status: 'assigned', resolvedDate: '2026-06-21', realizedPnl: -500,
+    premiumCollected: 400, percentCaptured: -1.25, daysHeld: 157,
+  });
+  const edited = prepareManualTradeForSave({ ...existing, notes: 'broker-confirmed assignment' }, existing, { mode: 'historical', historicalOutcome: 'assigned' }).trade;
+  assert.equal(edited.status, 'assigned');
+  assert.equal(edited.resolvedDate, '2026-06-21');
+  assert.equal(edited.realizedPnl, -500);
+  assert.equal(edited.closePrice, undefined);
 });

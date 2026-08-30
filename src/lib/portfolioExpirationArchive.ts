@@ -2,7 +2,7 @@ import { cachedRequest, makeCacheKey } from './dataCache.ts';
 import { isFiniteNumber } from './optionMetrics.ts';
 import { calculatePremiumCollected } from './portfolioMetrics.ts';
 import type { PortfolioResolutionSource, PortfolioTrade } from './portfolioStorage';
-import { findCachedDailyHistoryForDates, type ChartPoint } from './chartHistory.ts';
+import { findCachedDailyHistoryForDates, type ChartCorporateAction, type ChartHistoryResponse } from './chartHistory.ts';
 import { mapWithConcurrency } from '../../shared/concurrency.js';
 import { fetchObservedMarketData } from './requestDiagnostics.ts';
 
@@ -16,12 +16,20 @@ interface HistoricalCloseResponse {
   ticker: string;
   timeframe: 'custom';
   points: HistoricalClosePoint[];
+  corporateActions: ChartCorporateAction[];
   fetchedAt: number;
 }
 
 export interface ExpirationCloseResult {
   closePrice: number;
   closeDate: string;
+  warning?: string;
+  basisStatus?: 'provider_no_actions';
+  basisCheckedFrom?: string;
+}
+
+export interface ExpirationCorporateActionAssessment {
+  safe: boolean;
   warning?: string;
 }
 
@@ -44,6 +52,27 @@ export function selectExpirationClose(
 
 const EXPIRATION_CLOSE_TTL = 3650 * 24 * 60 * 60 * 1000;
 const PRIOR_CLOSE_WARNING = 'Used nearest prior trading-day close because exact expiration close was unavailable';
+const UNVERIFIED_BASIS_WARNING = 'Expiration economics remain pending because the option strike and historical underlying close could not be verified on the same corporate-action basis.';
+
+export function assessExpirationCorporateActionBasis(
+  actions: ChartCorporateAction[] | null | undefined,
+  contractStartDate: string,
+  expirationDate: string,
+): ExpirationCorporateActionAssessment {
+  if (!Array.isArray(actions) || parseIsoDateUtc(contractStartDate) == null || parseIsoDateUtc(expirationDate) == null) {
+    return { safe: false, warning: UNVERIFIED_BASIS_WARNING };
+  }
+  const inContractActions = actions.filter(action => {
+    const date = toIsoDate(action.date) ?? toIsoDate(action.timestamp);
+    return date != null && date > contractStartDate && date <= expirationDate;
+  });
+  if (inContractActions.length === 0) return { safe: true };
+  const labels = [...new Set(inContractActions.map(action => action.type.replace('_', ' ')))].join(', ');
+  return {
+    safe: false,
+    warning: `Expiration economics remain pending because Yahoo reported an in-contract corporate action (${labels}); adjusted option deliverables are not stored.`,
+  };
+}
 
 function parseIsoDateUtc(value: string | null | undefined): number | null {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
@@ -71,6 +100,13 @@ function isValidHistory(value: unknown): value is HistoricalCloseResponse {
     data.timeframe === 'custom' &&
     typeof data.ticker === 'string' &&
     typeof data.fetchedAt === 'number' &&
+    Array.isArray(data.corporateActions) &&
+    data.corporateActions.every(action =>
+      action &&
+      (action.type === 'split' || action.type === 'dividend' || action.type === 'capital_gain') &&
+      Number.isFinite(action.timestamp) &&
+      typeof action.date === 'string'
+    ) &&
     Array.isArray(data.points) &&
     data.points.every(point =>
       point &&
@@ -105,11 +141,13 @@ export function isArchivedTrade(trade: PortfolioTrade): boolean {
   return trade.status !== 'open';
 }
 
-export async function getExpirationClosePrice(ticker: string, expirationDate: string, options: { forceRefresh?: boolean } = {}): Promise<ExpirationCloseResult | null> {
+export async function getExpirationClosePrice(ticker: string, expirationDate: string, options: { forceRefresh?: boolean; contractStartDate?: string } = {}): Promise<ExpirationCloseResult | null> {
   const normalizedTicker = ticker.trim().toUpperCase();
-  const start = addDaysIso(expirationDate, -5);
+  const contractStartDate = options.contractStartDate;
+  if (!contractStartDate || parseIsoDateUtc(contractStartDate) == null) throw new Error(UNVERIFIED_BASIS_WARNING);
+  const start = addDaysIso(contractStartDate, -1);
   const end = addDaysIso(expirationDate, 2);
-  const key = makeCacheKey(['portfolio_expiration_close', normalizedTicker, expirationDate]);
+  const key = makeCacheKey(['portfolio_expiration_close', normalizedTicker, contractStartDate, expirationDate, 'basis_v2']);
 
   const history = await cachedRequest(
     key,
@@ -130,7 +168,14 @@ export async function getExpirationClosePrice(ticker: string, expirationDate: st
     }
   );
 
-  return selectExpirationClose(history.points, expirationDate);
+  const basis = assessExpirationCorporateActionBasis(history.corporateActions, contractStartDate, expirationDate);
+  if (!basis.safe) throw new Error(basis.warning ?? UNVERIFIED_BASIS_WARNING);
+  const selected = selectExpirationClose(history.points, expirationDate);
+  return selected ? {
+    ...selected,
+    basisStatus: 'provider_no_actions',
+    basisCheckedFrom: contractStartDate,
+  } : null;
 }
 
 export function resolveExpiredTradeWithClose(
@@ -139,7 +184,8 @@ export function resolveExpiredTradeWithClose(
   closeDate: string,
   source: PortfolioResolutionSource,
   warning?: string,
-  nowIso = new Date().toISOString()
+  nowIso = new Date().toISOString(),
+  basis?: Pick<ExpirationCloseResult, 'basisStatus' | 'basisCheckedFrom'>,
 ): PortfolioTrade {
   const premiumCollected = calculatePremiumCollected(trade);
   const finalOptionValue = Math.max(trade.strike - closePrice, 0) * trade.contracts * 100;
@@ -154,6 +200,8 @@ export function resolveExpiredTradeWithClose(
     resolutionType,
     expirationClosePrice: closePrice,
     expirationCloseDate: closeDate,
+    expirationBasisStatus: basis?.basisStatus,
+    expirationBasisCheckedFrom: basis?.basisCheckedFrom,
     finalOptionValue,
     realizedPnl: realizedPnl ?? undefined,
     percentCaptured: percentCaptured ?? undefined,
@@ -181,6 +229,8 @@ export function markExpirationPricePending(trade: PortfolioTrade, warning = 'Exp
     resolvedDate: nowIso.split('T')[0],
     resolutionType: 'expired_price_pending',
     resolutionWarning: warning,
+    expirationBasisStatus: undefined,
+    expirationBasisCheckedFrom: undefined,
     premiumCollected: calculatePremiumCollected(trade) ?? undefined,
     daysHeld: calendarDaysBetween(trade.soldDate, trade.expiration) ?? undefined,
     updatedAt: nowIso,
@@ -196,8 +246,8 @@ export function markExpirationPricePending(trade: PortfolioTrade, warning = 'Exp
 export async function archiveExpiredOpenTrades(trades: PortfolioTrade[], options: {
   now?: Date;
   concurrency?: number;
-  findRichHistory?: (ticker: string, dates: string[]) => { points: ChartPoint[] } | null;
-  fetchClose?: (ticker: string, expiration: string) => Promise<ExpirationCloseResult | null>;
+  findRichHistory?: (ticker: string, dates: string[]) => ChartHistoryResponse | null;
+  fetchClose?: (ticker: string, expiration: string, options: { contractStartDate: string }) => Promise<ExpirationCloseResult | null>;
 } = {}): Promise<{ trades: PortfolioTrade[]; changed: boolean }> {
   const now = options.now ?? new Date();
   const nowIso = now.toISOString();
@@ -205,29 +255,53 @@ export async function archiveExpiredOpenTrades(trades: PortfolioTrade[], options
   if (expired.length === 0) return { trades, changed: false };
 
   const closeByKey = new Map<string, ExpirationCloseResult | null>();
+  const warningByKey = new Map<string, string>();
   const datesByTicker = new Map<string, Set<string>>();
+  const startByKey = new Map<string, string>();
   expired.forEach(trade => {
     const ticker = trade.ticker.trim().toUpperCase();
     const dates = datesByTicker.get(ticker) ?? new Set<string>();
     dates.add(trade.expiration);
+    dates.add(trade.soldDate);
     datesByTicker.set(ticker, dates);
+    const key = `${ticker}|${trade.expiration}`;
+    const previous = startByKey.get(key);
+    if (!previous || trade.soldDate < previous) startByKey.set(key, trade.soldDate);
   });
   const findRichHistory = options.findRichHistory ?? findCachedDailyHistoryForDates;
   datesByTicker.forEach((dates, ticker) => {
     const history = findRichHistory(ticker, [...dates]);
     if (!history) return;
-    dates.forEach(expiration => closeByKey.set(`${ticker}|${expiration}`, selectExpirationClose(history.points, expiration)));
+    [...startByKey.entries()]
+      .filter(([key]) => key.startsWith(`${ticker}|`))
+      .forEach(([key, contractStartDate]) => {
+        const expiration = key.split('|')[1];
+        const basis = assessExpirationCorporateActionBasis(history.corporateActions, contractStartDate, expiration);
+        if (basis.safe) {
+          const selected = selectExpirationClose(history.points, expiration);
+          closeByKey.set(key, selected ? { ...selected, basisStatus: 'provider_no_actions', basisCheckedFrom: contractStartDate } : null);
+        }
+        else if (basis.warning) warningByKey.set(key, basis.warning);
+      });
   });
 
-  const requirements = [...datesByTicker.entries()].flatMap(([ticker, dates]) => [...dates]
-    .map(expiration => ({ ticker, expiration, key: `${ticker}|${expiration}` }))
-    .filter(requirement => !closeByKey.has(requirement.key)));
+  const requirements = [...startByKey.entries()]
+    .map(([key, contractStartDate]) => {
+      const [ticker, expiration] = key.split('|');
+      return { ticker, expiration, contractStartDate, key };
+    })
+    .filter(requirement => !closeByKey.has(requirement.key) && !warningByKey.has(requirement.key));
   const fetchClose = options.fetchClose ?? getExpirationClosePrice;
-  const settled = await mapWithConcurrency(requirements, options.concurrency ?? 3, requirement => fetchClose(requirement.ticker, requirement.expiration));
-  settled.forEach((result, index) => closeByKey.set(
-    requirements[index].key,
-    result.status === 'fulfilled' ? result.value : null,
+  const settled = await mapWithConcurrency(requirements, options.concurrency ?? 3, requirement => fetchClose(
+    requirement.ticker,
+    requirement.expiration,
+    { contractStartDate: requirement.contractStartDate },
   ));
+  settled.forEach((result, index) => {
+    const key = requirements[index].key;
+    closeByKey.set(key, result.status === 'fulfilled' ? result.value : null);
+    if (result.status === 'rejected' && result.reason instanceof Error) warningByKey.set(key, result.reason.message);
+  });
 
   const byId = new Map<string, PortfolioTrade>();
   expired.forEach(trade => {
@@ -235,8 +309,8 @@ export async function archiveExpiredOpenTrades(trades: PortfolioTrade[], options
     byId.set(
       trade.id,
       result
-        ? resolveExpiredTradeWithClose(trade, result.closePrice, result.closeDate, 'expiration_close', result.warning, nowIso)
-        : markExpirationPricePending(trade, 'Expiration close unavailable', nowIso)
+        ? resolveExpiredTradeWithClose(trade, result.closePrice, result.closeDate, 'expiration_close', result.warning, nowIso, result)
+        : markExpirationPricePending(trade, warningByKey.get(`${trade.ticker.trim().toUpperCase()}|${trade.expiration}`) ?? 'Expiration close unavailable', nowIso)
     );
   });
 

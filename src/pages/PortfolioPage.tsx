@@ -34,7 +34,6 @@ import {
   updatePortfolioTrade,
   type PortfolioTrade,
   type PortfolioTradeInput,
-  type PortfolioTradeStatus,
 } from '../lib/portfolioStorage';
 import {
   calculateBreakeven,
@@ -70,8 +69,11 @@ import {
   historyDaysHeld,
   historyEntryNominalYield,
   historyEntryVix,
+  historyFinalValue,
+  historyPremium,
   historyPriceAtExpiration,
   historyRealizedIrr,
+  historyRealizedPnl,
   type HistoryGroupMode,
   type HistoryOutcome,
 } from '../lib/portfolioHistoryAnalytics';
@@ -93,10 +95,20 @@ import { OPTION_QUOTE_TABLE_DISPLAY_ORDER, orderedOptionQuoteEntries } from '../
 import { persistPortfolioMarkBasis, readPortfolioMarkBasis } from '../lib/portfolioMarkPreference';
 import { persistShowNominalYield, readShowNominalYield } from '../lib/optionTablePreferences';
 import { buildCloseCandidates, buildNeedsAttention, getRedeployBadges, type CloseCandidate } from '../lib/portfolioPolicies';
-import { backfillStoredEntryDeltas, buildEntryDeltaEditPatch, entryDeltaFromExactChain, isContemporaneousPortfolioEntry, isValidEntryDelta, usMarketDateIso } from '../lib/portfolioEntryDelta';
+import { backfillStoredEntryDeltas, buildEntryDeltaEditPatch, entryDeltaFromExactChain, isContemporaneousPortfolioEntry, isValidEntryDelta, normalizeManualHistoricalEntryDelta, usMarketDateIso } from '../lib/portfolioEntryDelta';
 import { assessPortfolioMaintenance } from '../lib/portfolioMaintenance';
 import { getPortfolioQuoteFreshness, isPortfolioQuoteDecisionEligible, summarizePortfolioQuoteFreshness } from '../lib/portfolioQuoteFreshness';
 import { resolvePortfolioEntryVix } from '../lib/portfolioEntryVix';
+import {
+  inferHistoricalTradeOutcome,
+  inferManualTradeMode,
+  isPastExpirationDate,
+  prepareManualTradeForSave,
+  resolvePreparedManualTrade,
+  type HistoricalTradeOutcome,
+  type ManualTradeMode,
+  type ManualTradeSaveIntent,
+} from '../lib/portfolioHistoricalTrade';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 const PortfolioScreenshotImportModal = lazy(() => import('../components/PortfolioScreenshotImportModal'));
@@ -108,7 +120,7 @@ const MARK_BASIS_OPTIONS: MarkBasis[] = [...OPTION_QUOTE_TABLE_DISPLAY_ORDER];
 interface TradeModalProps {
   trade: PortfolioTrade | null;
   onClose: () => void;
-  onSave: (trade: PortfolioTradeInput, id?: string) => void;
+  onSave: (trade: PortfolioTradeInput, intent: ManualTradeSaveIntent, id?: string) => Promise<boolean>;
   onDelete: (id: string) => void;
 }
 interface DrawerSelection {
@@ -253,6 +265,10 @@ function formatHistoryDate(value: string | number | null | undefined): string {
   }
   const monthLabel = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][month - 1];
   return monthLabel ? `${monthLabel} ${day}, '${String(year).slice(-2)}` : DASH;
+}
+
+function formatHistoricalOptionPrice(value: number | null | undefined): string {
+  return isFiniteNumber(value) ? value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 8 }) : DASH;
 }
 
 function calendarDaysSince(value: string | null | undefined, now = new Date()): number | null {
@@ -878,20 +894,18 @@ function getTradeDaysHeld(trade: PortfolioTrade): number | null {
 }
 
 function getArchivedPremium(trade: PortfolioTrade): number | null {
-  return isFiniteNumber(trade.premiumCollected) ? trade.premiumCollected : calculatePremiumCollected(trade);
+  return historyPremium(trade);
 }
 
 function getArchivedRealizedPnl(trade: PortfolioTrade): number | null {
-  if (isFiniteNumber(trade.realizedPnl)) return trade.realizedPnl;
-  if (trade.status !== 'closed' || !isFiniteNumber(trade.closePrice)) return null;
-  return (trade.soldPrice - trade.closePrice) * trade.contracts * 100;
+  return historyRealizedPnl(trade);
 }
 
 function getArchivedPercentCaptured(trade: PortfolioTrade): number | null {
-  if (isFiniteNumber(trade.percentCaptured)) return trade.percentCaptured;
   const premium = getArchivedPremium(trade);
   const pnl = getArchivedRealizedPnl(trade);
-  return isFiniteNumber(premium) && premium > 0 && isFiniteNumber(pnl) ? pnl / premium : null;
+  if (isFiniteNumber(premium) && premium > 0 && isFiniteNumber(pnl)) return pnl / premium;
+  return isFiniteNumber(trade.percentCaptured) ? trade.percentCaptured : null;
 }
 
 function buildArchiveSummary(archivedTrades: PortfolioTrade[]) {
@@ -912,18 +926,21 @@ function parseNumber(value: string): number | null {
 }
 
 function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
+  const marketDate = usMarketDateIso();
   const [ticker, setTicker] = useState(trade?.ticker ?? '');
   const [expiration, setExpiration] = useState(trade?.expiration ?? '');
   const [strike, setStrike] = useState(trade ? String(trade.strike) : '');
   const [contracts, setContracts] = useState(trade ? String(trade.contracts) : '1');
   const [soldPrice, setSoldPrice] = useState(trade ? String(trade.soldPrice) : '');
   const [soldDate, setSoldDate] = useState(trade?.soldDate ?? todayIso());
-  const [status, setStatus] = useState<PortfolioTradeStatus>(trade?.status ?? 'open');
+  const [tradeMode, setTradeMode] = useState<ManualTradeMode>(() => inferManualTradeMode(trade, marketDate));
+  const [historicalOutcome, setHistoricalOutcome] = useState<HistoricalTradeOutcome>(() => inferHistoricalTradeOutcome(trade));
   const [notes, setNotes] = useState(trade?.notes ?? '');
   const [closePrice, setClosePrice] = useState(trade?.closePrice != null ? String(trade.closePrice) : '');
   const [closeDate, setCloseDate] = useState(trade?.closeDate ?? todayIso());
   const [entryDelta, setEntryDelta] = useState(trade?.entryDelta != null ? String(trade.entryDelta) : '');
   const [submitted, setSubmitted] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -946,67 +963,68 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
     entryDelta: parseNumber(entryDelta),
   };
 
+  const normalizedEntryDelta = entryDelta.trim() === ''
+    ? null
+    : tradeMode === 'historical' && parsed.entryDelta != null && Math.abs(parsed.entryDelta) <= 1
+      ? normalizeManualHistoricalEntryDelta(parsed.entryDelta)
+      : parsed.entryDelta;
+  const isClosedHistorical = tradeMode === 'historical' && historicalOutcome === 'closed';
+  const historicalRequiresPastExpiration = tradeMode === 'historical' && historicalOutcome !== 'closed';
+
   const validation = {
     ticker: ticker.trim().length > 0,
-    expiration: /^\d{4}-\d{2}-\d{2}$/.test(expiration),
+    expiration: /^\d{4}-\d{2}-\d{2}$/.test(expiration)
+      && (tradeMode === 'open' ? expiration >= marketDate : !historicalRequiresPastExpiration || isPastExpirationDate(expiration, marketDate)),
     strike: parsed.strike != null && parsed.strike > 0,
     contracts: parsed.contracts != null && Number.isInteger(parsed.contracts) && parsed.contracts > 0,
     soldPrice: parsed.soldPrice != null && parsed.soldPrice >= 0,
-    soldDate: /^\d{4}-\d{2}-\d{2}$/.test(soldDate),
-    closePrice: status !== 'closed' || (parsed.closePrice != null && parsed.closePrice >= 0),
-    closeDate: status !== 'closed' || /^\d{4}-\d{2}-\d{2}$/.test(closeDate),
-    entryDelta: entryDelta.trim() === '' || isValidEntryDelta(parsed.entryDelta),
+    soldDate: /^\d{4}-\d{2}-\d{2}$/.test(soldDate) && (!expiration || soldDate <= expiration),
+    closePrice: !isClosedHistorical || (parsed.closePrice != null && parsed.closePrice >= 0),
+    closeDate: !isClosedHistorical || (/^\d{4}-\d{2}-\d{2}$/.test(closeDate) && closeDate >= soldDate && closeDate <= expiration && closeDate <= marketDate),
+    entryDelta: entryDelta.trim() === '' || (tradeMode === 'historical'
+      ? parsed.entryDelta != null && Math.abs(parsed.entryDelta) <= 1
+      : isValidEntryDelta(parsed.entryDelta)),
   };
   const isValid = Object.values(validation).every(Boolean);
-  const entryDeltaFields = trade && validation.entryDelta ? buildEntryDeltaEditPatch(trade, parsed.entryDelta) : {};
+  const showEntryDelta = trade != null || tradeMode === 'historical';
+  const entryDeltaFields = showEntryDelta && validation.entryDelta
+    ? buildEntryDeltaEditPatch(trade ?? { entryDelta: undefined, entryDeltaSource: undefined, entryDeltaCapturedAt: undefined }, normalizedEntryDelta)
+    : {};
+  const saveIntent: ManualTradeSaveIntent = {
+    mode: tradeMode,
+    ...(tradeMode === 'historical' ? { historicalOutcome } : {}),
+  };
+  const draftInput: PortfolioTradeInput = {
+    ticker: ticker.trim().toUpperCase(),
+    optionType: 'put',
+    strike: parsed.strike as number,
+    expiration,
+    contracts: parsed.contracts as number,
+    soldPrice: parsed.soldPrice as number,
+    soldDate,
+    status: tradeMode === 'open' ? 'open' : historicalOutcome === 'closed' ? 'closed' : historicalOutcome === 'assigned' ? 'assigned' : 'open',
+    notes,
+    closePrice: isClosedHistorical ? parsed.closePrice ?? undefined : undefined,
+    closeDate: isClosedHistorical ? closeDate : undefined,
+    entryVixClose: trade?.soldDate === soldDate ? trade.entryVixClose : undefined,
+    entryVixDate: trade?.soldDate === soldDate ? trade.entryVixDate : undefined,
+    entryVixSource: trade?.soldDate === soldDate ? trade.entryVixSource : undefined,
+    ...entryDeltaFields,
+    entrySnapshot: trade?.entrySnapshot,
+    latestMarketData: trade?.latestMarketData,
+    importedSnapshot: trade?.importedSnapshot,
+  };
 
   const previewTrade: PortfolioTrade | null = isValid
-    ? {
-      id: trade?.id ?? 'preview',
-      ticker: ticker.trim().toUpperCase(),
-      optionType: 'put',
-      strike: parsed.strike as number,
-      expiration,
-      contracts: parsed.contracts as number,
-      soldPrice: parsed.soldPrice as number,
-      soldDate,
-      status,
-      notes,
-      closePrice: status === 'closed' ? parsed.closePrice ?? undefined : trade?.closePrice,
-      closeDate: status === 'closed' ? closeDate : trade?.closeDate,
-      entryVixClose: trade?.soldDate === soldDate ? trade.entryVixClose : undefined,
-      entryVixDate: trade?.soldDate === soldDate ? trade.entryVixDate : undefined,
-      entryVixSource: trade?.soldDate === soldDate ? trade.entryVixSource : undefined,
-      ...entryDeltaFields,
-      createdAt: trade?.createdAt ?? new Date().toISOString(),
-      updatedAt: trade?.updatedAt ?? new Date().toISOString(),
-      entrySnapshot: trade?.entrySnapshot,
-      latestMarketData: trade?.latestMarketData,
-    }
+    ? prepareManualTradeForSave(draftInput, trade, saveIntent).trade
     : null;
 
-  const submit = () => {
+  const submit = async () => {
     setSubmitted(true);
-    if (!isValid) return;
-    onSave({
-      ticker: ticker.trim().toUpperCase(),
-      optionType: 'put',
-      strike: parsed.strike as number,
-      expiration,
-      contracts: parsed.contracts as number,
-      soldPrice: parsed.soldPrice as number,
-      soldDate,
-      status,
-      notes,
-      closePrice: status === 'closed' ? parsed.closePrice ?? undefined : undefined,
-      closeDate: status === 'closed' ? closeDate : undefined,
-      entryVixClose: trade?.soldDate === soldDate ? trade.entryVixClose : undefined,
-      entryVixDate: trade?.soldDate === soldDate ? trade.entryVixDate : undefined,
-      entryVixSource: trade?.soldDate === soldDate ? trade.entryVixSource : undefined,
-      ...entryDeltaFields,
-      entrySnapshot: trade?.entrySnapshot,
-      latestMarketData: trade?.latestMarketData,
-    }, trade?.id);
+    if (!isValid || saving) return;
+    setSaving(true);
+    const saved = await onSave(draftInput, saveIntent, trade?.id);
+    if (!saved) setSaving(false);
   };
 
   const errorText = (ok: boolean, label: string) => submitted && !ok ? <p className="mt-1 text-[11px]" style={{ color: 'var(--red)' }}>{label}</p> : null;
@@ -1033,8 +1051,15 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
           </label>
           <label>
             <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Expiration</span>
-            <input type="date" value={expiration} onChange={event => setExpiration(event.target.value)} className={inputClass} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
-            {errorText(validation.expiration, 'Expiration is required.')}
+            <input type="date" value={expiration} onChange={event => {
+              const value = event.target.value;
+              setExpiration(value);
+              if (!trade && isPastExpirationDate(value, marketDate)) {
+                setTradeMode('historical');
+                setHistoricalOutcome('held_to_expiration');
+              }
+            }} className={inputClass} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+            {errorText(validation.expiration, tradeMode === 'open' ? 'Open positions require an unexpired expiration date.' : historicalRequiresPastExpiration ? 'Held/assigned historical positions require a past expiration date.' : 'Expiration is required.')}
           </label>
           <label>
             <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Strike</span>
@@ -1056,25 +1081,32 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
             <input type="date" value={soldDate} onChange={event => setSoldDate(event.target.value)} className={inputClass} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
             {errorText(validation.soldDate, 'Sold date is required.')}
           </label>
-          {trade && (
+          {showEntryDelta && (
             <label>
               <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Entry Delta (optional)</span>
-              <input value={entryDelta} inputMode="decimal" placeholder="e.g. -0.20" onChange={event => setEntryDelta(event.target.value)} className={`${inputClass} font-mono`} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
-              <p className="mt-1 text-[11px]" style={{ color: 'var(--text-dim)' }}>Stored historical Delta at entry. Edit to replace it, or clear it when unavailable.</p>
-              {errorText(validation.entryDelta, 'Entry Delta must be between -1 and 0.')}
+              <input value={entryDelta} inputMode="decimal" placeholder={tradeMode === 'historical' ? 'e.g. 0.20 or -0.20' : 'e.g. -0.20'} onChange={event => setEntryDelta(event.target.value)} className={`${inputClass} font-mono`} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+              <p className="mt-1 text-[11px]" style={{ color: 'var(--text-dim)' }}>{tradeMode === 'historical' ? 'Historical put Delta accepts a signed value or positive magnitude and is stored canonically as negative.' : 'Stored historical Delta at entry. Edit to replace it, or clear it when unavailable.'}</p>
+              {errorText(validation.entryDelta, tradeMode === 'historical' ? 'Entry Delta magnitude must be between 0 and 1.' : 'Entry Delta must be between -1 and 0.')}
             </label>
           )}
           <label>
-            <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Status</span>
-            <select value={status} onChange={event => setStatus(event.target.value as PortfolioTradeStatus)} className={inputClass} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
+            <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Trade State</span>
+            <select value={tradeMode} onChange={event => setTradeMode(event.target.value as ManualTradeMode)} className={inputClass} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
               <option value="open">Open</option>
-              <option value="closed">Closed</option>
-              <option value="expired">Expired</option>
-              <option value="expired_price_pending">Expiration Price Pending</option>
-              <option value="assigned">Assigned</option>
+              <option value="historical">Historical / Realized</option>
             </select>
           </label>
-          {status === 'closed' && (
+          {tradeMode === 'historical' && (
+            <label>
+              <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Historical Outcome</span>
+              <select value={historicalOutcome} onChange={event => setHistoricalOutcome(event.target.value as HistoricalTradeOutcome)} className={inputClass} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
+                <option value="held_to_expiration">Held to Expiration</option>
+                <option value="closed">Closed / Bought Back</option>
+                <option value="assigned">Assigned (Confirmed)</option>
+              </select>
+            </label>
+          )}
+          {isClosedHistorical && (
             <>
               <label>
                 <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Close Price</span>
@@ -1084,7 +1116,7 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
               <label>
                 <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Close Date</span>
                 <input type="date" value={closeDate} onChange={event => setCloseDate(event.target.value)} className={inputClass} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
-                {errorText(validation.closeDate, 'Close date is required.')}
+                {errorText(validation.closeDate, 'Close date must be on/after entry, on/before expiration, and not in the future.')}
               </label>
             </>
           )}
@@ -1094,14 +1126,30 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
           </label>
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-6 gap-2 mt-4">
+        {tradeMode === 'historical' && historicalOutcome === 'held_to_expiration' && (
+          <p className="mt-3 text-[11px]" style={{ color: 'var(--text-dim)' }}>Price @ Exp. and realized economics are resolved on Save from the cached/canonical historical close path. If the close or corporate-action basis is unsafe, the trade still saves for Portfolio Maintenance.</p>
+        )}
+        {tradeMode === 'historical' && historicalOutcome === 'assigned' && (
+          <p className="mt-3 text-[11px]" style={{ color: 'var(--text-dim)' }}>Assigned is explicit confirmation of a brokerage event. Put Scanner preserves the assignment record without inventing stock-position proceeds or basis.</p>
+        )}
+
+        <div className="grid grid-cols-2 lg:grid-cols-7 gap-2 mt-4">
           <SummaryCard label="Premium" value={previewTrade ? formatCurrency(calculatePremiumCollected(previewTrade), 0) : DASH} color="var(--green)" />
-          <SummaryCard label="Equity Risk" value={previewTrade ? formatCurrency(calculateEquityAtRisk(previewTrade), 0) : DASH} />
+          <SummaryCard label="Gross Risk" value={previewTrade ? formatCurrency(calculateEquityAtRisk(previewTrade), 0) : DASH} />
           <SummaryCard label="Net Risk" value={previewTrade ? formatCurrency(calculateNetCapitalAtRisk(previewTrade), 0) : DASH} />
           <SummaryCard label="Breakeven" value={previewTrade ? formatCurrency(calculateBreakeven(previewTrade)) : DASH} />
           <SummaryCard label="Original DTE" value={previewTrade ? formatDteValue(calculateOriginalDte(previewTrade)) : DASH} />
+          <SummaryCard label="Entry NY" value={previewTrade ? formatPctValue(calculateOriginalNominalYield(previewTrade)) : DASH} />
           <SummaryCard label="Entry AY" value={previewTrade ? formatPctValue(calculateOriginalAnnualizedYield(previewTrade)) : DASH} />
         </div>
+        {tradeMode === 'historical' && (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mt-2">
+            <SummaryCard label="Price @ Exp." value={previewTrade ? formatCurrency(historyPriceAtExpiration(previewTrade)) : DASH} />
+            <SummaryCard label="Final Option Value" value={previewTrade ? formatCurrency(historyFinalValue(previewTrade)) : DASH} />
+            <SummaryCard label="Realized P&L" value={previewTrade ? formatCurrency(historyRealizedPnl(previewTrade)) : DASH} color={previewTrade ? pnlColor(historyRealizedPnl(previewTrade)) : undefined} />
+            <SummaryCard label="Realized IRR" value={previewTrade ? formatPctValue(historyRealizedIrr(previewTrade)) : DASH} color={previewTrade ? pnlColor(historyRealizedIrr(previewTrade)) : undefined} />
+          </div>
+        )}
 
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-5">
           {trade ? (
@@ -1111,7 +1159,7 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
           ) : <span />}
           <div className="flex gap-2">
             <button onClick={onClose} className="px-4 py-2 rounded-lg text-xs min-h-[44px]" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
-            <button onClick={submit} className="px-4 py-2 rounded-lg text-xs font-medium text-white min-h-[44px]" style={{ backgroundColor: 'var(--accent)' }}>{trade ? 'Save Changes' : 'Save Trade'}</button>
+            <button onClick={() => void submit()} disabled={saving} className="px-4 py-2 rounded-lg text-xs font-medium text-white min-h-[44px] disabled:opacity-60" style={{ backgroundColor: 'var(--accent)' }}>{saving ? 'Saving…' : trade ? 'Save Changes' : 'Save Trade'}</button>
           </div>
         </div>
       </div>
@@ -1325,24 +1373,44 @@ export default function PortfolioPage() {
     }
   }, [persistTrades]);
 
-  const handleSaveTrade = useCallback(async (input: PortfolioTradeInput, id?: string) => {
+  const handleSaveTrade = useCallback(async (input: PortfolioTradeInput, intent: ManualTradeSaveIntent, id?: string): Promise<boolean> => {
     const before = loadPortfolioTrades();
-    const next = id ? updatePortfolioTrade(id, input as Partial<PortfolioTrade>) : addPortfolioTrade(input);
+    const existing = id ? before.find(trade => trade.id === id) ?? null : null;
+    if (id && !existing) {
+      setTrades(before);
+      return false;
+    }
+    const prepared = prepareManualTradeForSave(input, existing, intent);
+    const resolved = await resolvePreparedManualTrade(prepared);
+    if (id) {
+      const latest = loadPortfolioTrades();
+      const current = latest.find(trade => trade.id === id);
+      if (!current || current.updatedAt !== existing?.updatedAt) {
+        setTrades(latest);
+        setDurableActivityNotice('This trade changed while the edit was open. Reopen it and apply the edit to the latest account state.');
+        return false;
+      }
+    }
+    const next = id ? updatePortfolioTrade(id, resolved) : addPortfolioTrade(resolved);
     const persistedMutation = id
       ? JSON.stringify(next.find(trade => trade.id === id)) !== JSON.stringify(before.find(trade => trade.id === id))
       : next.length > before.length;
     if (!persistedMutation) {
       setTrades(before);
-      return;
+      return false;
     }
     setTrades(next);
     setShowAddModal(false);
     setEditingTrade(null);
-    if (!id) {
+    if (resolved.status === 'expired_price_pending') {
+      setDurableActivityNotice(resolved.resolutionWarning ?? 'Historical trade saved; expiration price remains pending for Portfolio Maintenance.');
+    }
+    if (!id && intent.mode === 'open') {
       const beforeIds = new Set(before.map(trade => trade.id));
       const added = next.find(trade => !beforeIds.has(trade.id));
       if (added) void captureEntryDeltaForTrade(added);
     }
+    return true;
   }, [captureEntryDeltaForTrade]);
 
   const handleBackupImported = useCallback(() => {
@@ -1596,11 +1664,11 @@ export default function PortfolioPage() {
   const handleRetryResolve = useCallback(async (trade: PortfolioTrade) => {
     setResolvingArchiveIds(previous => new Set(previous).add(trade.id));
     try {
-      const result = await getExpirationClosePrice(trade.ticker, trade.expiration, { forceRefresh: true }).catch(() => null);
+      const result = await getExpirationClosePrice(trade.ticker, trade.expiration, { forceRefresh: true, contractStartDate: trade.soldDate }).catch(() => null);
       const next = loadPortfolioTrades().map(current => {
         if (current.id !== trade.id) return current;
         return result
-          ? resolveExpiredTradeWithClose(current, result.closePrice, result.closeDate, 'expiration_close', result.warning)
+          ? resolveExpiredTradeWithClose(current, result.closePrice, result.closeDate, 'expiration_close', result.warning, undefined, result)
           : {
             ...current,
             status: 'expired_price_pending' as const,
@@ -2372,6 +2440,7 @@ function ArchiveHistorySection({
                 <span className="rounded px-1.5 py-1 text-[10px] font-semibold" style={{ color: getArchiveOutcomeColor(trade), backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>{getArchiveOutcomeLabel(trade)}</span>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2">
+                <Metric label="Sold Price" value={formatHistoricalOptionPrice(trade.soldPrice)} />
                 <Metric label="Premium" value={formatCurrency(getArchivedPremium(trade))} color="var(--green)" />
                 <Metric label="Realized P&L" value={formatCurrency(realizedPnl)} color={pnlColor(realizedPnl)} />
                 <Metric label="Captured" value={formatPctValue(percentCaptured)} color={pnlColor(percentCaptured)} />
@@ -2437,14 +2506,14 @@ function ArchiveHistorySection({
                 const percentCaptured = getArchivedPercentCaptured(trade);
                 const realizedIrr = historyRealizedIrr(trade);
                 return (
-                  <tr key={trade.id} title={`${trade.ticker} ${formatCurrency(trade.strike)} Put\nEntry: ${formatHistoryDate(trade.soldDate)}\nResolved: ${formatHistoryDate(trade.closeDate ?? trade.resolvedDate ?? trade.expiration)}\nDays held: ${formatDays(historyDaysHeld(trade))}\nSold: ${formatOptionPrice(trade.soldPrice)}\nClose: ${formatOptionPrice(trade.closePrice)}\nPrice @ Exp.: ${formatCurrency(historyPriceAtExpiration(trade))}\nPremium: ${formatCurrency(getArchivedPremium(trade))}\nRealized P&L: ${formatCurrency(realizedPnl)}\nRealized IRR: ${formatPctValue(realizedIrr)}\nCaptured: ${formatPctValue(percentCaptured)}\nNY: ${formatPctValue(historyEntryNominalYield(trade))}\nVIX @ Entry: ${isFiniteNumber(historyEntryVix(trade)) ? historyEntryVix(trade)!.toFixed(2) : DASH}\nOutcome: ${getArchiveOutcomeLabel(trade)}`} style={{ borderBottom: '1px solid var(--border)', backgroundColor: index % 2 ? 'var(--row-alt)' : 'transparent' }}>
+                  <tr key={trade.id} title={`${trade.ticker} ${formatCurrency(trade.strike)} Put\nEntry: ${formatHistoryDate(trade.soldDate)}\nResolved: ${formatHistoryDate(trade.closeDate ?? trade.resolvedDate ?? trade.expiration)}\nDays held: ${formatDays(historyDaysHeld(trade))}\nSold: ${formatHistoricalOptionPrice(trade.soldPrice)}\nClose: ${formatOptionPrice(trade.closePrice)}\nPrice @ Exp.: ${formatCurrency(historyPriceAtExpiration(trade))}\nPremium: ${formatCurrency(getArchivedPremium(trade))}\nRealized P&L: ${formatCurrency(realizedPnl)}\nRealized IRR: ${formatPctValue(realizedIrr)}\nCaptured: ${formatPctValue(percentCaptured)}\nNY: ${formatPctValue(historyEntryNominalYield(trade))}\nVIX @ Entry: ${isFiniteNumber(historyEntryVix(trade)) ? historyEntryVix(trade)!.toFixed(2) : DASH}\nOutcome: ${getArchiveOutcomeLabel(trade)}`} style={{ borderBottom: '1px solid var(--border)', backgroundColor: index % 2 ? 'var(--row-alt)' : 'transparent' }}>
                     <td className="px-2 py-1 text-left font-mono font-bold whitespace-nowrap" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatHistoryDate(trade.expiration)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatCurrency(trade.strike)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{trade.contracts}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatHistoryDate(trade.soldDate)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{formatDays(getTradeDaysHeld(trade))}</td>
-                    <td className="px-2 py-1 text-right font-mono tabular-nums">{formatOptionPrice(trade.soldPrice)}</td>
+                    <td className="px-2 py-1 text-right font-mono tabular-nums">{formatHistoricalOptionPrice(trade.soldPrice)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{formatPctValue(historyEntryNominalYield(trade))}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{isFiniteNumber(historyEntryVix(trade)) ? historyEntryVix(trade)!.toFixed(2) : DASH}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums" title="Underlying closing price on expiration, or the nearest prior trading close used by lifecycle resolution.">{formatCurrency(historyPriceAtExpiration(trade))}</td>

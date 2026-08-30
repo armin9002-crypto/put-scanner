@@ -155,13 +155,23 @@ test('optional Entry Delta is backward compatible, rejects invalid data, and cre
 
 test('backup and canonical cloud documents retain Entry Delta while old backups remain valid', () => {
   const source = new MemoryStorage();
-  const enriched = trade({ entryDelta: -0.24, entryDeltaSource: 'provider', entryDeltaCapturedAt: '2026-08-28T15:05:00.000Z', latestMarketData: undefined });
+  const enriched = resolveExpiredTradeWithClose(
+    trade({ expiration: '2026-08-27', soldDate: '2026-07-01', entryDelta: -0.24, entryDeltaSource: 'provider', entryDeltaCapturedAt: '2026-07-01T15:05:00.000Z', latestMarketData: undefined }),
+    60,
+    '2026-08-27',
+    'expiration_close',
+    undefined,
+    '2026-08-28T16:00:00.000Z',
+    { basisStatus: 'provider_no_actions', basisCheckedFrom: '2026-07-01' },
+  );
   writePortfolioTrades(source, [enriched], { now: new Date('2026-08-28T15:06:00Z') });
   const backup = createPutScannerBackup(source, { now: new Date('2026-08-28T16:00:00Z') });
   assert.equal(backup.data.portfolio.data[0].entryDelta, -0.24);
+  assert.equal(backup.data.portfolio.data[0].expirationBasisStatus, 'provider_no_actions');
   const destination = new MemoryStorage();
   applyPutScannerBackup(destination, backup);
   assert.equal(readPortfolioTrades(destination).data[0].entryDelta, -0.24);
+  assert.equal(readPortfolioTrades(destination).data[0].expirationBasisStatus, 'provider_no_actions');
 
   const oldSource = new MemoryStorage({ [PORTFOLIO_STORAGE_KEY]: JSON.stringify([trade({ entrySnapshot: undefined, latestMarketData: undefined })]) });
   const oldBackup = createPutScannerBackup(oldSource);
@@ -170,6 +180,7 @@ test('backup and canonical cloud documents retain Entry Delta while old backups 
   const cloudValidated = validateCloudNamespaceDocument('portfolio', 1, { data: backup.data.portfolio.data }, 'fetch_all');
   assert.equal(cloudValidated.ok, true);
   assert.equal(cloudValidated.value.payload.data[0].entryDelta, -0.24, 'cloud validation retains Entry Delta');
+  assert.equal(cloudValidated.value.payload.data[0].expirationBasisStatus, 'provider_no_actions', 'cloud validation retains expiration basis provenance');
 
   const manual = trade({ entryDelta: -0.31, entryDeltaSource: 'manual', entryDeltaCapturedAt: '2026-08-30T15:00:00.000Z', latestMarketData: undefined });
   const manualStorage = new MemoryStorage();
@@ -248,15 +259,21 @@ test('Portfolio mount, refresh, save, and import keep durable maintenance explic
   assert.match(page, /handleResolveEntryVixMaintenance/);
 });
 
-test('Add Trade omits manual Entry Delta while Edit retains the explicit override field', async () => {
+test('Add Trade exposes manual Entry Delta only for historical entry while Edit retains the explicit override field', async () => {
   const page = await read('src/pages/PortfolioPage.tsx');
   const modal = page.slice(page.indexOf('function TradeModal'), page.indexOf('function PortfolioPage'));
   const field = modal.indexOf('Entry Delta (optional)');
   assert.ok(field > 0);
-  assert.ok(modal.lastIndexOf('{trade && (', field) > 0, 'Entry Delta input is conditional on an existing durable trade');
-  assert.match(modal, /const entryDeltaFields = trade && validation\.entryDelta/);
+  assert.ok(modal.lastIndexOf('{showEntryDelta && (', field) > 0, 'Entry Delta input is conditional on Edit or Historical mode');
+  assert.match(modal, /const showEntryDelta = trade != null \|\| tradeMode === 'historical'/);
+  assert.match(modal, /Historical \/ Realized/);
+  assert.match(modal, /Held to Expiration/);
+  assert.match(modal, /Closed \/ Bought Back/);
+  assert.match(modal, /Assigned \(Confirmed\)/);
+  assert.doesNotMatch(modal, /<option value="expired"|<option value="expired_price_pending"/);
+  assert.match(modal, /isPastExpirationDate\(value, marketDate\)/, 'past expiration entry deterministically prefers Historical mode');
   const save = page.slice(page.indexOf('const handleSaveTrade'), page.indexOf('const handleBackupImported'));
-  assert.match(save, /if \(!id\)/, 'only creation can start automatic capture, so Edit clearing remains unavailable');
+  assert.match(save, /if \(!id && intent\.mode === 'open'\)/, 'only current/open creation can start automatic capture, so historical manual values remain frozen');
   assert.match(page, /useState<HistoryGroupMode>\('year'\)/, 'History defaults to expiration-year grouping without durable preference state');
   assert.match(page, /summary\.totalHistoricalNotional/, 'the headline notional always covers all History, independent of outcome filtering');
   assert.match(page, /label="Total Realized IRR"/, 'History exposes the combined realized money-weighted return');
@@ -265,6 +282,7 @@ test('Add Trade omits manual Entry Delta while Edit retains the explicit overrid
   assert.match(page, /label="Total Historical Notional"/, 'History exposes cumulative historical notional');
   assert.doesNotMatch(page, /label="Premium Collected"/, 'Portfolio-facing summary labels use the concise Premium name');
   assert.match(page, /\['Ticker', 'Exp\.', 'Strike'.*'VIX @ Entry', 'Price @ Exp\.'/s, 'History table uses compact date and historical market columns');
+  assert.match(page, /formatHistoricalOptionPrice\(trade\.soldPrice\)/, 'History does not visually round precise historical Sold Price back to two decimals');
   assert.doesNotMatch(page, /\['Ticker', 'Expiration'.*'Final Value'/s, 'History table does not display the legacy Final Value column');
   assert.match(page, /function formatHistoryDate/, 'History dates use a deterministic compact formatter');
   assert.match(page, /aria-label="Group history by"/, 'History grouping uses the shared segmented-control interaction language');
@@ -281,8 +299,8 @@ test('Add Trade omits manual Entry Delta while Edit retains the explicit overrid
 });
 
 test('History group analytics expose only the additive subtotal values used by the grouped table', () => {
-  const first = trade({ id: 'history-a', expiration: '2026-10-16', contracts: 2, premiumCollected: 410, realizedPnl: 390, entryVixClose: 22 });
-  const second = trade({ id: 'history-b', expiration: '2026-12-18', contracts: 1, premiumCollected: 225, realizedPnl: 225, entryVixClose: undefined });
+  const first = trade({ id: 'history-a', expiration: '2026-10-16', contracts: 2, status: 'closed', closePrice: 0.05, closeDate: '2026-10-16', entryVixClose: 22 });
+  const second = trade({ id: 'history-b', expiration: '2026-12-18', contracts: 1, status: 'expired', resolutionType: 'expired_worthless', expirationClosePrice: 60, expirationCloseDate: '2026-12-18', entryVixClose: undefined });
   const groups = buildHistoryGroups([first, second], 'year');
   assert.equal(groups.length, 1);
   assert.equal(groups[0].contractCount, 3);
@@ -312,6 +330,8 @@ test('Scanner uses one controlled local filter/direct-submit form and the suppli
 test('Stage 6B.4 request ledger makes cached and cold maintenance costs explicit', () => {
   assert.deepEqual(REQUEST_BUDGET_LEDGER['portfolio-entry-delta-capture'].expected, { browserRequests: 0, functionInvocations: 0, providerAcquisitions: 0 });
   assert.deepEqual(REQUEST_BUDGET_LEDGER['portfolio-entry-delta-capture'].ceiling, { browserRequests: 1, functionInvocations: 1, providerAcquisitions: 1 });
+  assert.deepEqual(REQUEST_BUDGET_LEDGER['portfolio-historical-expiration-save'].expected, { browserRequests: 0, functionInvocations: 0, providerAcquisitions: 0 });
+  assert.deepEqual(REQUEST_BUDGET_LEDGER['portfolio-historical-expiration-save'].ceiling, { browserRequests: 1, functionInvocations: 1, providerAcquisitions: 1 });
   assert.equal(REQUEST_BUDGET_LEDGER['portfolio-entry-vix-maintenance'].ceiling.browserRequests, 1);
   assert.equal(REQUEST_BUDGET_LEDGER['portfolio-lifecycle-maintenance'].ceiling.providerAcquisitions, 1);
 });

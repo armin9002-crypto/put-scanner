@@ -24,6 +24,13 @@ export function isValidEntryDelta(value: unknown): value is number {
   return isFiniteNumber(value) && value >= -1 && value <= 0;
 }
 
+/** Historical broker exports often represent put Delta as an unsigned magnitude. */
+export function normalizeManualHistoricalEntryDelta(value: number | null): number | null {
+  if (value == null) return null;
+  if (!isFiniteNumber(value) || Math.abs(value) > 1) throw new RangeError('Historical Entry Delta magnitude must be between 0 and 1.');
+  return value === 0 ? 0 : -Math.abs(value);
+}
+
 /**
  * Resolves an explicit Edit Trade value without consulting current market data.
  * An unchanged value preserves its historical provenance, a changed value becomes

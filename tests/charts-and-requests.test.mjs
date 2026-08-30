@@ -95,7 +95,7 @@ test('True Leverage is order-independent and uses exact common timestamps', () =
 test('1Y daily history supplies 6M/3M/YTD with adequate coverage', async () => {
   const now = Math.floor(Date.now() / 1000);
   const points = [400, 250, 150, 60, 1].map(days => point(now - days * 86400, 100 + days));
-  await requestMarketData({ key: 'chart_history_cache:DAILY:1Y', source: 'unit', endpoint: 'chart-history', softTtlMs: 999999, hardTtlMs: 999999, schemaVersion: 2, validator: () => true, fetcher: async () => ({ ticker: 'DAILY', displayTicker: 'DAILY', timeframe: '1Y', points, fetchedAt: Date.now(), metadata: { interval: '1d' } }) });
+  await requestMarketData({ key: 'chart_history_cache:DAILY:1Y', source: 'unit', endpoint: 'chart-history', softTtlMs: 999999, hardTtlMs: 999999, schemaVersion: 3, validator: () => true, fetcher: async () => ({ ticker: 'DAILY', displayTicker: 'DAILY', timeframe: '1Y', points, corporateActions: [], fetchedAt: Date.now(), metadata: { interval: '1d' } }) });
   const realFetch = globalThis.fetch;
   globalThis.fetch = async () => { throw new Error('unexpected request'); };
   try { for (const timeframe of ['6M', '3M', 'YTD']) assert.equal((await getChartHistory('DAILY', timeframe)).metadata.derivedFrom, '1Y'); }
@@ -105,10 +105,10 @@ test('1Y daily history supplies 6M/3M/YTD with adequate coverage', async () => {
 test('5Y weekly supplies 3Y but not a daily timeframe', async () => {
   const now = Math.floor(Date.now() / 1000);
   const points = [1500, 1000, 500, 1].map(days => point(now - days * 86400, 100 + days));
-  await requestMarketData({ key: 'chart_history_cache:WEEKLY:5Y', source: 'unit', endpoint: 'chart-history', softTtlMs: 999999, hardTtlMs: 999999, schemaVersion: 2, validator: () => true, fetcher: async () => ({ ticker: 'WEEKLY', displayTicker: 'WEEKLY', timeframe: '5Y', points, fetchedAt: Date.now(), metadata: { interval: '1wk' } }) });
+  await requestMarketData({ key: 'chart_history_cache:WEEKLY:5Y', source: 'unit', endpoint: 'chart-history', softTtlMs: 999999, hardTtlMs: 999999, schemaVersion: 3, validator: () => true, fetcher: async () => ({ ticker: 'WEEKLY', displayTicker: 'WEEKLY', timeframe: '5Y', points, corporateActions: [], fetchedAt: Date.now(), metadata: { interval: '1wk' } }) });
   assert.equal((await getChartHistory('WEEKLY', '3Y')).metadata.derivedFrom, '5Y');
   const realFetch = globalThis.fetch;
-  globalThis.fetch = async () => Response.json({ ticker: 'WEEKLY', displayTicker: 'WEEKLY', timeframe: '1Y', points: [point(now - 10, 1), point(now, 2)], fetchedAt: Date.now(), metadata: { interval: '1d' } });
+  globalThis.fetch = async () => Response.json({ ticker: 'WEEKLY', displayTicker: 'WEEKLY', timeframe: '1Y', points: [point(now - 10, 1), point(now, 2)], corporateActions: [], fetchedAt: Date.now(), metadata: { interval: '1d' } });
   try { assert.equal((await getChartHistory('WEEKLY', '1Y')).metadata.derivedFrom, undefined); }
   finally { globalThis.fetch = realFetch; }
 });

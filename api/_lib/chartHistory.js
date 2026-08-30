@@ -22,7 +22,7 @@ function displayTickerFor(ticker) {
 export async function fetchYahooChartHistory({ ticker, timeframe, config, endpoint = 'chart', timeoutMs, signal }) {
   const hasDateRange = config.period1 != null && config.period2 != null;
   const rangeParams = hasDateRange ? `period1=${config.period1}&period2=${config.period2}` : `range=${config.range}`;
-  const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=${config.interval}&${rangeParams}`;
+  const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=${config.interval}&${rangeParams}&events=div%2Csplits%2CcapitalGains`;
   const yahooRes = await yahooFetch(url, { endpoint, signal, ...(timeoutMs ? { timeoutMs } : {}) });
   if (!yahooRes.ok) throw new Error(`Yahoo chart request failed with ${yahooRes.status}`);
   const data = await readYahooJson(yahooRes, endpoint);
@@ -40,12 +40,35 @@ export async function fetchYahooChartHistory({ ticker, timeframe, config, endpoi
     return { timestamp: normalizedTimestamp, date: new Date(normalizedTimestamp * 1000).toISOString(), price: normalizedPrice };
   }).filter(Boolean);
   const points = downsample(rawPoints, config.maxPoints);
+  const corporateActions = [
+    ...Object.values(result.events?.splits || {}).map(event => ({
+      type: 'split',
+      timestamp: normalizeTimestampSeconds(event?.date),
+      date: normalizeTimestampSeconds(event?.date) == null ? null : new Date(normalizeTimestampSeconds(event.date) * 1000).toISOString(),
+      splitRatio: typeof event?.splitRatio === 'string' ? event.splitRatio : null,
+      numerator: normalizeFiniteNumber(event?.numerator),
+      denominator: normalizeFiniteNumber(event?.denominator),
+    })),
+    ...Object.values(result.events?.dividends || {}).map(event => ({
+      type: 'dividend',
+      timestamp: normalizeTimestampSeconds(event?.date),
+      date: normalizeTimestampSeconds(event?.date) == null ? null : new Date(normalizeTimestampSeconds(event.date) * 1000).toISOString(),
+      amount: normalizeFiniteNumber(event?.amount),
+    })),
+    ...Object.values(result.events?.capitalGains || {}).map(event => ({
+      type: 'capital_gain',
+      timestamp: normalizeTimestampSeconds(event?.date),
+      date: normalizeTimestampSeconds(event?.date) == null ? null : new Date(normalizeTimestampSeconds(event.date) * 1000).toISOString(),
+      amount: normalizeFiniteNumber(event?.amount),
+    })),
+  ].filter(event => event.timestamp != null && event.date != null);
   const meta = result.meta || {};
   return {
     ticker,
     displayTicker: displayTickerFor(ticker),
     timeframe: hasDateRange ? 'custom' : timeframe,
     points,
+    corporateActions,
     previousClose: normalizeFiniteNumber(meta.chartPreviousClose) ?? normalizeFiniteNumber(meta.previousClose) ?? null,
     latestPrice: normalizeFiniteNumber(meta.regularMarketPrice) ?? points.at(-1)?.price ?? null,
     providerMarketTime: normalizeProviderTimestampSeconds(meta.regularMarketTime),

@@ -308,6 +308,51 @@ test('two devices use stale-CAS protection; stale device reloads latest and can 
   assert.equal(backend.state.portfolio.payload.data[0].notes, 'Device B retry');
 });
 
+test('realized Sold Price and Entry Delta edits survive CAS, conflict rollback, and fresh cloud bootstrap', async t => {
+  const realized = trade('realized', 'history', {
+    status: 'closed', closePrice: 0.5, closeDate: '2026-09-01', premiumCollected: 250, realizedPnl: 150, percentCaptured: 0.6,
+  });
+  const backend = new SharedCloudBackend(cloudState([realized]));
+  const a = runtime(backend);
+  const stale = runtime(backend);
+  t.after(() => { a.manager.destroy(); stale.manager.destroy(); });
+  await a.manager.setAccount(userId, true);
+  await stale.manager.setAccount(userId, true);
+
+  const aState = readPortfolioTrades(a.storage);
+  assert.equal(writePortfolioTrades(a.storage, aState.data.map(item => ({
+    ...item,
+    soldPrice: 2.3456,
+    premiumCollected: 469.12,
+    realizedPnl: 369.12,
+    percentCaptured: 369.12 / 469.12,
+    entryDelta: -0.31,
+    entryDeltaSource: 'manual',
+    entryDeltaCapturedAt: '2026-08-30T12:00:00.000Z',
+  }))).status, 'ok');
+  await waitFor(() => backend.state.portfolio.revision === 11);
+  assert.deepEqual(
+    [backend.state.portfolio.payload.data[0].soldPrice, backend.state.portfolio.payload.data[0].premiumCollected, backend.state.portfolio.payload.data[0].realizedPnl, backend.state.portfolio.payload.data[0].entryDelta],
+    [2.3456, 469.12, 369.12, -0.31],
+  );
+
+  const staleState = readPortfolioTrades(stale.storage);
+  assert.equal(writePortfolioTrades(stale.storage, staleState.data.map(item => ({ ...item, notes: 'stale runtime write' }))).status, 'ok');
+  await waitFor(() => stale.manager.getSnapshot().phase === 'conflict');
+  assert.equal(backend.state.portfolio.payload.data[0].soldPrice, 2.3456);
+  assert.deepEqual(
+    [readPortfolioTrades(stale.storage).data[0].soldPrice, readPortfolioTrades(stale.storage).data[0].entryDelta],
+    [2.3456, -0.31],
+    'conflict rollback hydrates the authoritative edited economics',
+  );
+
+  const fresh = runtime(backend);
+  t.after(() => fresh.manager.destroy());
+  await fresh.manager.setAccount(userId, true);
+  const bootstrapped = readPortfolioTrades(fresh.storage).data[0];
+  assert.deepEqual([bootstrapped.soldPrice, bootstrapped.premiumCollected, bootstrapped.realizedPnl, bootstrapped.entryDelta], [2.3456, 469.12, 369.12, -0.31]);
+});
+
 test('quote-only refresh stays transient and creates zero cloud durable writes', async t => {
   const backend = new SharedCloudBackend();
   const device = runtime(backend);

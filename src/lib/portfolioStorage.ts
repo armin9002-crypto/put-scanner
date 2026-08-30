@@ -1,9 +1,11 @@
 import { normalizeMarketTimestamp } from './marketTimestamp.ts';
 import type { MarketTimestampSource } from './marketTimestamp.ts';
+import { reconcilePortfolioTradeEconomics } from './portfolioRealizedEconomics.ts';
 
 export type PortfolioTradeStatus = 'open' | 'closed' | 'expired' | 'assigned' | 'expired_price_pending';
 export type PortfolioResolutionType = 'expired_worthless' | 'expired_itm' | 'expired_price_pending';
 export type PortfolioResolutionSource = 'expiration_close' | 'manual_expiration_close';
+export type PortfolioExpirationBasisStatus = 'provider_no_actions';
 export type PortfolioAvailabilityStatus = 'live' | 'expired' | 'unavailable' | 'refresh_failed' | 'stale' | 'imported_snapshot';
 export type PortfolioEntryVixSource = 'historical_close' | 'nearest_prior_close';
 export type PortfolioEntryDeltaSource = 'provider' | 'calculated' | 'manual' | 'imported' | 'stored_snapshot';
@@ -71,6 +73,8 @@ export interface PortfolioTrade {
   resolutionType?: PortfolioResolutionType;
   expirationClosePrice?: number;
   expirationCloseDate?: string;
+  expirationBasisStatus?: PortfolioExpirationBasisStatus;
+  expirationBasisCheckedFrom?: string;
   finalOptionValue?: number;
   realizedPnl?: number;
   percentCaptured?: number;
@@ -305,6 +309,8 @@ export function normalizePortfolioTrade(
   const resolvedDate = normalizeIsoDate(raw.resolvedDate);
   const expirationClosePrice = nonNegativeNumber(raw.expirationClosePrice);
   const expirationCloseDate = normalizeIsoDate(raw.expirationCloseDate);
+  const expirationBasisStatus = raw.expirationBasisStatus === 'provider_no_actions' ? raw.expirationBasisStatus : undefined;
+  const expirationBasisCheckedFrom = expirationBasisStatus ? normalizeIsoDate(raw.expirationBasisCheckedFrom) : undefined;
   const finalOptionValue = nonNegativeNumber(raw.finalOptionValue);
   const realizedPnl = finiteNumber(raw.realizedPnl);
   const percentCaptured = finiteNumber(raw.percentCaptured);
@@ -346,6 +352,8 @@ export function normalizePortfolioTrade(
     resolutionType,
     expirationClosePrice: expirationClosePrice ?? undefined,
     expirationCloseDate: expirationCloseDate ?? undefined,
+    expirationBasisStatus,
+    expirationBasisCheckedFrom: expirationBasisCheckedFrom ?? undefined,
     finalOptionValue: finalOptionValue ?? undefined,
     realizedPnl: realizedPnl ?? undefined,
     percentCaptured: percentCaptured ?? undefined,
@@ -405,7 +413,10 @@ function invalidPortfolioEnumFields(entry: Record<string, unknown>): boolean {
     || (entry.entryDeltaSource !== undefined
       && (typeof entry.entryDeltaSource !== 'string' || !VALID_ENTRY_DELTA_SOURCES.includes(entry.entryDeltaSource as PortfolioEntryDeltaSource)))
     || (entry.entryDelta === undefined && (entry.entryDeltaSource !== undefined || entry.entryDeltaCapturedAt !== undefined))
-    || (entry.entryDeltaCapturedAt !== undefined && normalizeIsoTimestamp(entry.entryDeltaCapturedAt) === undefined);
+    || (entry.entryDeltaCapturedAt !== undefined && normalizeIsoTimestamp(entry.entryDeltaCapturedAt) === undefined)
+    || (entry.expirationBasisStatus !== undefined && entry.expirationBasisStatus !== 'provider_no_actions')
+    || (entry.expirationBasisStatus === undefined && entry.expirationBasisCheckedFrom !== undefined)
+    || (entry.expirationBasisCheckedFrom !== undefined && normalizeIsoDate(entry.expirationBasisCheckedFrom) === undefined);
 }
 
 export type PortfolioStateMigrationOutcome =
@@ -651,7 +662,7 @@ export function addPortfolioTrade(trade: PortfolioTradeInput): PortfolioTrade[] 
     updatedAt: now,
   });
   if (!normalized) return current;
-  const trades = [...current, normalized];
+  const trades = [...current, reconcilePortfolioTradeEconomics(null, normalized)];
   return savePortfolioTrades(trades).status === 'ok' ? trades : current;
 }
 
@@ -666,7 +677,7 @@ export function updatePortfolioTrade(id: string, patch: Partial<PortfolioTrade>)
       createdAt: trade.createdAt,
       updatedAt: new Date().toISOString(),
     });
-    return normalized ?? trade;
+    return normalized ? reconcilePortfolioTradeEconomics(trade, normalized) : trade;
   });
   return savePortfolioTrades(trades).status === 'ok' ? trades : current;
 }

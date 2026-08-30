@@ -187,7 +187,7 @@ test('expiration repair reuses one rich ticker history and never re-resolves imm
     base('a', '2024-01-19', 470), base('b', '2024-01-19', 475), base('c', '2024-02-16', 490),
   ], {
     now: new Date('2026-08-14T00:00:00Z'),
-    findRichHistory: () => { richLookups += 1; return { points }; },
+    findRichHistory: () => { richLookups += 1; return { ticker: 'SPY', displayTicker: 'SPY', timeframe: '2Y', points, corporateActions: [], fetchedAt: Date.now(), metadata: { interval: '1d' } }; },
     fetchClose: async () => { networkLookups += 1; return null; },
   });
   assert.equal(richLookups, 1);

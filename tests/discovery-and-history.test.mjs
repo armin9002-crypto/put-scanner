@@ -70,7 +70,7 @@ test('history analytics excludes pending records and reconciles blended capture 
 test('history days held excludes missing dates and monthly P&L groups by resolution month', () => {
   const august = trade({ id: 'august' });
   const september = trade({ id: 'september', status: 'closed', resolutionType: undefined, closeDate: '2026-09-05', closePrice: 1 });
-  assert.equal(historyDaysHeld(august), 52);
+  assert.equal(historyDaysHeld(august), 51, 'held-to-expiration uses the contract expiration, not the later maintenance timestamp');
   assert.equal(historyDaysHeld(trade({ soldDate: '' })), null);
   const months = buildMonthlyRealizedPnl([august, september]);
   assert.deepEqual(months.map(month => month.month), ['2026-08', '2026-09']);
@@ -81,8 +81,8 @@ test('realized IRR compounds realized return on net risk over actual calendar da
   const winner = trade({ soldDate: '2026-01-01', closeDate: '2027-01-01', daysHeld: 7, status: 'closed', resolutionType: undefined, closePrice: 1 });
   const expected = Math.pow(1 + 100 / 4_800, 365.25 / 365) - 1;
   assert.ok(Math.abs(historyRealizedIrr(winner) - expected) < 1e-12);
-  assert.equal(historyRealizedIrr(trade({ daysHeld: 365, realizedPnl: -4_800 })), -1);
-  assert.equal(historyRealizedIrr(trade({ daysHeld: 365, realizedPnl: -5_000 })), null);
+  assert.equal(historyRealizedIrr(trade({ status: 'assigned', resolutionType: undefined, soldDate: '2025-08-21', resolvedDate: '2026-08-21', daysHeld: 365, realizedPnl: -4_800 })), -1);
+  assert.equal(historyRealizedIrr(trade({ status: 'assigned', resolutionType: undefined, soldDate: '2025-08-21', resolvedDate: '2026-08-21', daysHeld: 365, realizedPnl: -5_000 })), null);
   assert.equal(historyRealizedIrr(trade({ soldDate: '2026-08-21', resolvedDate: '2026-08-21', daysHeld: 99 })), null);
   assert.equal(historyRealizedIrr(trade({ soldDate: '' })), null);
 });
@@ -133,10 +133,10 @@ test('History Entry Delta uses signed Gross Risk weighting and reports notional 
 
 test('History grouping uses expiration year and canonical group P&L with deterministic fallbacks', () => {
   const trades = [
-    trade({ id: 'a', ticker: 'AAA', expiration: '2027-05-21', realizedPnl: 100 }),
-    trade({ id: 'b', ticker: 'BBB', expiration: '2027-12-17', realizedPnl: -25 }),
-    trade({ id: 'c', ticker: 'AAA', expiration: '2026-09-18', realizedPnl: 50 }),
-    trade({ id: 'bad', ticker: 'CCC', expiration: 'bad-date', realizedPnl: 10 }),
+    trade({ id: 'a', ticker: 'AAA', expiration: '2027-05-21', status: 'closed', resolutionType: undefined, closeDate: '2026-08-10', closePrice: 1 }),
+    trade({ id: 'b', ticker: 'BBB', expiration: '2027-12-17', status: 'closed', resolutionType: undefined, closeDate: '2026-08-10', closePrice: 2.25 }),
+    trade({ id: 'c', ticker: 'AAA', expiration: '2026-09-18', status: 'closed', resolutionType: undefined, closeDate: '2026-08-10', closePrice: 1.5 }),
+    trade({ id: 'bad', ticker: 'CCC', expiration: 'bad-date', status: 'closed', resolutionType: undefined, closeDate: '2026-08-10', closePrice: 1.9 }),
   ];
   const years = buildHistoryGroups(trades, 'year');
   assert.deepEqual(years.map(group => group.label), ['2027', '2026', 'Unknown']);
