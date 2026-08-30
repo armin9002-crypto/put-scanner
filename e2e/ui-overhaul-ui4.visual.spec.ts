@@ -167,7 +167,7 @@ async function captureDesktop(page: Page, testInfo: TestInfo) {
 async function capturePhone(page: Page, testInfo: TestInfo) {
   await installDeterministicMarketApi(page);
   await page.goto('/');
-  await expect(page.getByText('Analyze Ticker').first()).toBeVisible();
+  await expect(page.getByPlaceholder(/Filter \/ Search by Ticker/i).first()).toBeVisible();
   await settle(page);
   await capture(page, testInfo, 'mobile-scanner-shell');
   for (const route of ['/screener', '/pulse', '/watchlist', '/portfolio', '/options/TQQQ']) {

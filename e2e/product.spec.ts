@@ -33,7 +33,7 @@ test.afterEach(async ({ page }, testInfo) => {
 test('viewport workflow is deterministic, cloud-authoritative, and usable', async ({ page }) => {
   test.setTimeout(180_000);
   await page.goto('/');
-  await expect(page.getByText('Analyze Ticker').first()).toBeVisible();
+  await expect(page.getByPlaceholder(/Filter \/ Search by Ticker/i).first()).toBeVisible();
 
   await page.goto('/options/TQQQ');
   await expect(page.getByText('TQQQ', { exact: true }).first()).toBeVisible();
@@ -109,7 +109,7 @@ test('Scanner filtering and exact-expiry navigation remain request-bounded', asy
   test.skip(testInfo.project.name !== 'desktop-1440x900', 'one deterministic desktop request-graph scenario');
   test.setTimeout(120_000);
   await page.goto('/');
-  const filter = page.getByPlaceholder(/Filter by ticker/i);
+  const filter = page.getByPlaceholder(/Filter \/ Search by Ticker/i);
   await expect(filter).toBeVisible();
   const beforeFilter = [...marketHarness.counts.values()].reduce((sum, count) => sum + count, 0);
   await filter.fill('TQQQ');

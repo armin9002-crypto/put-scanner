@@ -56,7 +56,7 @@ async function seed(page: Page) {
 
 async function openScanner(page: Page) {
   await page.goto('/');
-  await expect(page.getByText('Analyze Ticker').first()).toBeVisible();
+  await expect(page.getByPlaceholder(/Filter \/ Search by Ticker/i).first()).toBeVisible();
   await settle(page);
 }
 
@@ -87,10 +87,10 @@ test.describe('UI-2 discovery workflow visual matrix', () => {
     if (project === 'desktop-1440x900') {
       await openScanner(page);
       await capture(page, testInfo, 'scanner-default-populated');
-      await page.getByPlaceholder(/Filter by ticker/i).fill('TQQQ');
+      await page.getByPlaceholder(/Filter \/ Search by Ticker/i).fill('TQQQ');
       await page.getByRole('button', { name: '3x', exact: true }).click();
       await capture(page, testInfo, 'scanner-filters-active');
-      await page.getByPlaceholder(/Filter by ticker/i).fill('');
+      await page.getByPlaceholder(/Filter \/ Search by Ticker/i).fill('');
       await page.locator('.scanner-desktop-controls select').first().selectOption('lte_30dte');
       await capture(page, testInfo, 'scanner-different-expiry');
 
@@ -155,14 +155,14 @@ test.describe('UI-2 discovery workflow visual matrix', () => {
       marketHarness.delays.set('prices', 1_200);
       await clearScannerPriceCache(page);
       await page.goto('/');
-      await expect(page.getByText('Analyze Ticker').first()).toBeVisible();
+      await expect(page.getByPlaceholder(/Filter \/ Search by Ticker/i).first()).toBeVisible();
       await capture(page, testInfo, 'scanner-loading');
     }
     if (project === 'tablet-1024x768') {
       marketHarness.failNext.add('prices');
       await clearScannerPriceCache(page);
       await page.goto('/');
-      await expect(page.getByText('Analyze Ticker').first()).toBeVisible();
+      await expect(page.getByPlaceholder(/Filter \/ Search by Ticker/i).first()).toBeVisible();
       await page.waitForTimeout(600);
       await capture(page, testInfo, 'scanner-error-or-partial');
     }

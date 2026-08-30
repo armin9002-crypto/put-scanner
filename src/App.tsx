@@ -1,6 +1,6 @@
-import { Suspense, lazy, useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useState, type CSSProperties } from 'react';
 import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom';
-import { ShieldCheck, ScanLine, BarChart3, Moon, MoonStar, Sun, BookOpen, Star, Briefcase, Activity } from 'lucide-react';
+import { ScanLine, BarChart3, Moon, MoonStar, Sun, BookOpen, Star, Briefcase, Activity } from 'lucide-react';
 import { ThemeProvider, useTheme } from './lib/theme';
 import { AuthProvider } from './lib/auth';
 import { useResponsiveMode } from './lib/responsive';
@@ -9,6 +9,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import MobilePageHeader from './components/mobile/MobilePageHeader';
 import { getDevelopmentRequestSummary, getRequestDiagnosticsSnapshot, getScreenerScanDiagnostics, isRequestDiagnosticsEnabled, type DevelopmentRequestSummary, type RequestDiagnosticsSnapshot, type ScreenerScanDiagnostics } from './lib/requestDiagnostics';
 import { LOCAL_STORAGE_FAILURE_MESSAGE, subscribeToLocalStorageFailures } from './lib/storageFeedback';
+import wordmarkUrl from './assets/put-scanner-wordmark.png';
 
 const HomePage = lazy(() => import('./pages/HomePage'));
 const OptionsPage = lazy(() => import('./pages/OptionsPage'));
@@ -75,15 +76,10 @@ function NavBar() {
   return (
     <nav className="app-desktop-nav sticky top-0 z-50" style={{ backgroundColor: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
       <div className="app-desktop-nav__inner app-nav-scroll mx-auto px-2 sm:px-4 lg:px-7 flex items-center gap-1 md:gap-2 max-w-full overflow-x-auto touch-scroll" style={{ paddingLeft: 'max(0.5rem, env(safe-area-inset-left))', paddingRight: 'max(0.5rem, env(safe-area-inset-right))' }}>
-        <div className="app-brand flex items-center gap-2 mr-1 md:mr-5 flex-shrink-0">
-          <div className="app-brand__mark w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'var(--accent-bg)' }}>
-            <ShieldCheck className="w-4 h-4" style={{ color: 'var(--accent)' }} />
-          </div>
-          <span className="hidden md:flex flex-col leading-tight" style={{ color: 'var(--text)' }}>
-            <span className="text-sm font-bold tracking-tight">Put Scanner</span>
-            <span className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>Leveraged ETFs</span>
-          </span>
-        </div>
+        <NavLink to="/" end aria-label="Put Scanner" className="app-brand flex items-center mr-1 md:mr-5 flex-shrink-0">
+          <span className="app-brand__wordmark" aria-hidden="true" style={{ '--wordmark-image': `url(${wordmarkUrl})` } as CSSProperties} />
+          <span className="sr-only">Put Scanner</span>
+        </NavLink>
         <div className="flex items-center gap-1 min-w-max md:min-w-0 flex-1 md:flex-none">
           <NavLink
             to="/"

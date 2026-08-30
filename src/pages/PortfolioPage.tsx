@@ -2304,9 +2304,16 @@ function ArchiveHistorySection({
 }) {
   const [outcomeFilter, setOutcomeFilter] = useState<HistoryOutcome>('all');
   const [groupMode, setGroupMode] = useState<HistoryGroupMode>('year');
+  const [collapsedHistoryGroups, setCollapsedHistoryGroups] = useState<Record<string, boolean>>({});
   const visibleTrades = useMemo(() => filterHistoryTrades(trades, outcomeFilter), [outcomeFilter, trades]);
   const visibleSummary = useMemo(() => outcomeFilter === 'all' ? summary : buildArchiveSummary(visibleTrades), [outcomeFilter, summary, visibleTrades]);
   const visibleGroups = useMemo(() => buildHistoryGroups(visibleTrades, groupMode), [groupMode, visibleTrades]);
+  const historyGroupLabel = (group: ReturnType<typeof buildHistoryGroups>[number]) => groupMode === 'expiration' ? formatHistoryDate(group.label) : group.label;
+  const historyGroupKey = (group: ReturnType<typeof buildHistoryGroups>[number]) => `${groupMode}:${group.key}`;
+  const toggleHistoryGroup = (group: ReturnType<typeof buildHistoryGroups>[number]) => {
+    const key = historyGroupKey(group);
+    setCollapsedHistoryGroups(current => ({ ...current, [key]: !current[key] }));
+  };
   if (trades.length === 0) return null;
 
   return (
@@ -2338,14 +2345,17 @@ function ArchiveHistorySection({
       </div>
       <MonthlyRealizedChart trades={visibleTrades} />
       <div className="space-y-2 md:hidden">
-        {visibleGroups.map(group => <Fragment key={`mobile-history-group-${group.key}`}>
-          {groupMode !== 'none' && (
-            <div className="flex items-center justify-between rounded-lg px-3 py-2" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
-              <span className="text-xs font-semibold" style={{ color: 'var(--text)' }}>{groupMode === 'expiration' ? formatHistoryDate(group.label) : group.label}</span>
-              <span className="text-right text-[11px] font-mono tabular-nums" style={{ color: pnlColor(group.realizedPnl) }}>{group.tradeCount} trades &middot; {formatCurrency(group.realizedPnl)} P&amp;L</span>
-            </div>
-          )}
-          {group.trades.map(trade => {
+        {visibleGroups.map(group => {
+          const collapsed = groupMode !== 'none' && collapsedHistoryGroups[historyGroupKey(group)] === true;
+          const label = historyGroupLabel(group);
+          return <Fragment key={`mobile-history-group-${group.key}`}>
+           {groupMode !== 'none' && (
+              <button type="button" className="portfolio-history-mobile-group-header" aria-expanded={!collapsed} onClick={() => toggleHistoryGroup(group)}>
+                <span className="portfolio-history-mobile-group-header__identity"><span className="portfolio-history-group-chevron" aria-hidden="true">{collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</span><span className="min-w-0"><strong>{label}</strong><small>{group.tradeCount} trades</small></span></span>
+                <span className="portfolio-history-mobile-group-header__totals"><span><small>Premium</small><strong>{formatCurrency(group.premium, 0)}</strong></span><span className="portfolio-history-mobile-group-header__pnl"><small>Realized P&amp;L</small><strong style={{ color: pnlColor(group.realizedPnl) }}>{formatCurrency(group.realizedPnl)}</strong></span></span>
+              </button>
+            )}
+          {(groupMode === 'none' || !collapsed) && group.trades.map(trade => {
           const pending = trade.status === 'expired_price_pending' || trade.resolutionType === 'expired_price_pending';
           const canSetExpirationClose = trade.status === 'expired' || trade.status === 'expired_price_pending';
           const resolving = resolvingIds.has(trade.id);
@@ -2381,7 +2391,8 @@ function ArchiveHistorySection({
             </article>
           );
           })}
-        </Fragment>)}
+          </Fragment>;
+        })}
       </div>
       <div className="hidden rounded-lg overflow-hidden md:block" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
         <div className="overflow-x-auto max-w-full overscroll-contain">
@@ -2394,18 +2405,31 @@ function ArchiveHistorySection({
               </tr>
             </thead>
             <tbody>
-              {visibleGroups.map(group => <Fragment key={`desktop-history-group-${group.key}`}>
+              {visibleGroups.map(group => {
+                const collapsed = groupMode !== 'none' && collapsedHistoryGroups[historyGroupKey(group)] === true;
+                const label = historyGroupLabel(group);
+                return <Fragment key={`desktop-history-group-${group.key}`}>
                 {groupMode !== 'none' && (
-                  <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
-                    <td colSpan={17} className="px-2 py-2">
-                      <div className="flex items-center justify-between gap-4">
-                        <span className="font-semibold" style={{ color: 'var(--text)' }}>{groupMode === 'expiration' ? formatHistoryDate(group.label) : group.label}</span>
-                        <span className="text-right font-mono tabular-nums" style={{ color: pnlColor(group.realizedPnl) }}>{group.tradeCount} trades &middot; Premium {formatCurrency(group.premium, 0)} &middot; {formatCurrency(group.realizedPnl)} P&amp;L</span>
-                      </div>
-                    </td>
-                  </tr>
+                  <>
+                    <tr className="portfolio-history-group-header">
+                      <td colSpan={17}>
+                        <button type="button" className="portfolio-history-group-toggle" aria-expanded={!collapsed} onClick={() => toggleHistoryGroup(group)}>
+                          {collapsed ? <ChevronRight className="h-4 w-4" aria-hidden="true" /> : <ChevronDown className="h-4 w-4" aria-hidden="true" />}
+                          <span>{label}</span>
+                        </button>
+                      </td>
+                    </tr>
+                    <tr className="portfolio-history-group-subtotal" aria-label={`${label} subtotal`}>
+                      <td className="px-2 py-2 text-left"><span>{label}</span><small>{group.tradeCount} trades</small></td>
+                      <td /><td /><td className="px-2 py-2 text-right font-mono tabular-nums">{group.contractCount}</td>
+                      <td /><td /><td /><td /><td /><td />
+                      <td className="px-2 py-2 text-right font-mono tabular-nums">{formatCurrency(group.premium, 0)}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums portfolio-history-group-subtotal__pnl" style={{ color: pnlColor(group.realizedPnl) }}>{formatCurrency(group.realizedPnl)}</td>
+                      <td /><td /><td /><td /><td />
+                    </tr>
+                  </>
                 )}
-                {group.trades.map((trade, index) => {
+                {(groupMode === 'none' || !collapsed) && group.trades.map((trade, index) => {
                 const pending = trade.status === 'expired_price_pending' || trade.resolutionType === 'expired_price_pending';
                 const canSetExpirationClose = trade.status === 'expired' || trade.status === 'expired_price_pending';
                 const resolving = resolvingIds.has(trade.id);
@@ -2452,7 +2476,8 @@ function ArchiveHistorySection({
                   </tr>
                 );
                 })}
-              </Fragment>)}
+              </Fragment>;
+              })}
             </tbody>
           </table>
         </div>

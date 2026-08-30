@@ -27,6 +27,7 @@ import {
   writePortfolioTrades,
 } from '../src/lib/portfolioStorage.ts';
 import { resolveExpiredTradeWithClose } from '../src/lib/portfolioExpirationArchive.ts';
+import { buildHistoryGroups, historyEntryVix, historyPremium, historyRealizedPnl } from '../src/lib/portfolioHistoryAnalytics.ts';
 import { parsedBrokerageRowToPortfolioTrade } from '../src/lib/portfolioScreenshotImport.ts';
 import { REQUEST_BUDGET_LEDGER } from '../src/lib/requestBudgets.ts';
 import { createPutScannerBackup, applyPutScannerBackup } from '../src/lib/userDataBackup.ts';
@@ -267,8 +268,45 @@ test('Add Trade omits manual Entry Delta while Edit retains the explicit overrid
   assert.doesNotMatch(page, /\['Ticker', 'Expiration'.*'Final Value'/s, 'History table does not display the legacy Final Value column');
   assert.match(page, /function formatHistoryDate/, 'History dates use a deterministic compact formatter');
   assert.match(page, /aria-label="Group history by"/, 'History grouping uses the shared segmented-control interaction language');
+  assert.match(page, /collapsedHistoryGroups/, 'History group disclosure is session-local presentation state');
+  assert.match(page, /aria-expanded={!collapsed}/, 'History group toggles expose expanded state');
+  assert.match(page, /group\.contractCount/, 'History subtotals align additive contract totals under Contracts');
+  assert.match(page, /group\.premium/, 'History subtotals align Premium under Premium');
+  assert.match(page, /group\.realizedPnl/, 'History subtotals align realized P&L under Realized P&L');
+  assert.doesNotMatch(page, /portfolio-history-group-subtotal[\s\S]{0,600}group\.grossRisk/, 'History subtotals do not introduce a naive notional total');
+  assert.doesNotMatch(page, /group\.realizedIrr|average.*IRR.*group/i, 'History subtotals do not average IRR');
+  assert.doesNotMatch(page, /trades.*Premium.*P&amp;L/, 'History does not use the detached hanging group-summary sentence');
   const historyAnalytics = await read('src/lib/portfolioHistoryAnalytics.ts');
   assert.doesNotMatch(historyAnalytics, /fetch\(|requestMarketData|fetchOptions/, 'History analytics remain request-free');
+});
+
+test('History group analytics expose only the additive subtotal values used by the grouped table', () => {
+  const first = trade({ id: 'history-a', expiration: '2026-10-16', contracts: 2, premiumCollected: 410, realizedPnl: 390, entryVixClose: 22 });
+  const second = trade({ id: 'history-b', expiration: '2026-12-18', contracts: 1, premiumCollected: 225, realizedPnl: 225, entryVixClose: undefined });
+  const groups = buildHistoryGroups([first, second], 'year');
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].contractCount, 3);
+  assert.equal(groups[0].premium, historyPremium(first) + historyPremium(second));
+  assert.equal(groups[0].realizedPnl, historyRealizedPnl(first) + historyRealizedPnl(second));
+  assert.equal(historyEntryVix(second), null, 'missing Entry VIX remains unavailable rather than falling back to current VIX');
+  assert.equal(buildHistoryGroups([first, second], 'none').length, 1, 'None remains ungrouped');
+});
+
+test('Scanner uses one controlled local filter/direct-submit form and the supplied wordmark', async () => {
+  const page = await read('src/pages/HomePage.tsx');
+  const form = await read('src/components/AnalyzeTickerForm.tsx');
+  const app = await read('src/App.tsx');
+  assert.equal((page.match(/<AnalyzeTickerForm/g) ?? []).length, 2, 'mobile and desktop Scanner render the same unified form');
+  assert.doesNotMatch(page, /Filter by ticker or underlying index|Search ETFs|Analyze Ticker/, 'old duplicate search and micro-label copy is gone');
+  assert.doesNotMatch(page, /Find high-quality put opportunities across leveraged ETFs|Compare price action, option context, and liquidity before opening the chain\./, 'removed Scanner descriptions are absent');
+  assert.match(page, /placeholder="Filter \/ Search by Ticker"/, 'unified placeholder is exact');
+  assert.match(page, /setSearch\(event\.target\.value\)|onValueChange=\{setSearch\}/, 'typing remains local state-driven');
+  assert.match(page, /ticker\.toLowerCase\(\).*underlying|underlying\.toLowerCase\(\).*ticker/s, 'local filter preserves ticker/underlying search semantics');
+  assert.match(form, /navigate\(`\/options\//, 'explicit submit preserves direct option-chain navigation');
+  assert.doesNotMatch(form, /fetch\(|fetchBatch|requestMarketData/, 'typing and submit form do not add provider fetch behavior');
+  assert.match(app, /put-scanner-wordmark\.png|wordmarkUrl/, 'supplied wordmark asset is referenced');
+  assert.match(app, /aria-label="Put Scanner"/, 'brand remains accessible');
+  assert.doesNotMatch(app, /ShieldCheck|Leveraged ETFs/, 'old shield/two-line brand treatment is removed');
 });
 
 test('Stage 6B.4 request ledger makes cached and cold maintenance costs explicit', () => {

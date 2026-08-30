@@ -92,7 +92,7 @@ async function openPortfolio(page: Page) {
 }
 
 async function captureCoreRoutes(page: Page, testInfo: TestInfo) {
-  await page.goto('/'); await expect(page.getByText('Analyze Ticker').first()).toBeVisible(); await settle(page); await capture(page, testInfo, 'scanner');
+  await page.goto('/'); await expect(page.getByPlaceholder(/Filter \/ Search by Ticker/i).first()).toBeVisible(); await settle(page); await capture(page, testInfo, 'scanner');
   await page.goto('/screener'); await expect(page.getByRole('button', { name: /Load|Run Screener/i }).first()).toBeVisible(); await settle(page); await capture(page, testInfo, 'screener');
   await page.goto('/watchlist'); await expect(page.getByText(/saved contracts/i).first()).toBeVisible(); await settle(page); await capture(page, testInfo, 'watchlist');
   await openPortfolio(page); await capture(page, testInfo, 'portfolio');
@@ -104,8 +104,8 @@ async function captureCoreRoutes(page: Page, testInfo: TestInfo) {
 
 async function captureDesktop(page: Page, testInfo: TestInfo) {
   const harness = await installDeterministicMarketApi(page);
-  await page.goto('/'); await expect(page.getByText('Analyze Ticker').first()).toBeVisible(); await settle(page); await capture(page, testInfo, 'scanner-default');
-  await page.getByPlaceholder(/Filter by ticker/i).fill('TQQQ'); await page.getByRole('button', { name: '3x', exact: true }).click(); await capture(page, testInfo, 'scanner-filters-active');
+  await page.goto('/'); await expect(page.getByPlaceholder(/Filter \/ Search by Ticker/i).first()).toBeVisible(); await settle(page); await capture(page, testInfo, 'scanner-default');
+  await page.getByPlaceholder(/Filter \/ Search by Ticker/i).fill('TQQQ'); await page.getByRole('button', { name: '3x', exact: true }).click(); await capture(page, testInfo, 'scanner-filters-active');
   harness.delays.set('prices', 900); await page.evaluate(() => { for (const key of ['price_cache_batch_v5', 'price_cache_batch_v4', 'prices_cache']) localStorage.removeItem(key); }); await page.reload(); await page.waitForTimeout(160); await capture(page, testInfo, 'scanner-loading'); harness.delays.delete('prices');
 
   await page.goto('/screener'); await expect(page.getByRole('button', { name: /Load|Run Screener/i }).first()).toBeVisible(); await settle(page); await capture(page, testInfo, 'screener-initial');

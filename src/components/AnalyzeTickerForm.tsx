@@ -3,10 +3,25 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Search } from 'lucide-react';
 import { normalizeAnalyzeTicker } from '../lib/tickerDetail';
 
-export default function AnalyzeTickerForm({ compact = false }: { compact?: boolean }) {
+interface AnalyzeTickerFormProps {
+  compact?: boolean;
+  value?: string;
+  onValueChange?: (value: string) => void;
+  placeholder?: string;
+  submitLabel?: string;
+  ariaLabel?: string;
+}
+
+export default function AnalyzeTickerForm({ compact = false, value, onValueChange, placeholder = 'NVDA', submitLabel = 'Analyze', ariaLabel = 'Analyze ticker' }: AnalyzeTickerFormProps) {
   const navigate = useNavigate();
-  const [value, setValue] = useState('');
+  const [internalValue, setInternalValue] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const inputValue = value ?? internalValue;
+  const updateValue = (nextValue: string) => {
+    setInternalValue(nextValue);
+    onValueChange?.(nextValue);
+    if (error) setError(null);
+  };
 
   return (
     <form
@@ -14,7 +29,7 @@ export default function AnalyzeTickerForm({ compact = false }: { compact?: boole
       style={compact ? undefined : { backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
       onSubmit={event => {
         event.preventDefault();
-        const normalized = normalizeAnalyzeTicker(value);
+        const normalized = normalizeAnalyzeTicker(inputValue);
         if (!normalized.ticker) {
           setError(normalized.error);
           return;
@@ -22,7 +37,7 @@ export default function AnalyzeTickerForm({ compact = false }: { compact?: boole
         setError(null);
         navigate(`/options/${encodeURIComponent(normalized.ticker)}`);
       }}
-      aria-label="Analyze ticker"
+      aria-label={ariaLabel}
     >
       {!compact && (
         <div className="mb-2">
@@ -36,13 +51,13 @@ export default function AnalyzeTickerForm({ compact = false }: { compact?: boole
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: 'var(--text-dim)' }} />
           <input
             type="text"
-            value={value}
-            onChange={event => { setValue(event.target.value); if (error) setError(null); }}
+            value={inputValue}
+            onChange={event => updateValue(event.target.value)}
             autoCapitalize="characters"
             autoCorrect="off"
             spellCheck={false}
             inputMode="text"
-            placeholder="NVDA"
+            placeholder={placeholder}
             className="control-field min-h-11 sm:min-h-10 w-full rounded-lg pl-9 pr-3 text-base font-mono uppercase outline-none"
             style={{ backgroundColor: 'var(--input-bg)', border: `1px solid ${error ? 'var(--red)' : 'var(--border)'}`, color: 'var(--text)' }}
             aria-invalid={error ? 'true' : 'false'}
@@ -50,7 +65,7 @@ export default function AnalyzeTickerForm({ compact = false }: { compact?: boole
           />
         </label>
         <button type="submit" className="pressable button-primary inline-flex min-h-11 sm:min-h-10 items-center justify-center gap-1.5 rounded-lg px-3 text-sm text-white" style={{ backgroundColor: 'var(--accent)' }}>
-          Analyze <ArrowRight className="h-4 w-4" />
+          {submitLabel} <ArrowRight className="h-4 w-4" />
         </button>
       </div>
       {error && <p id="analyze-ticker-error" className="mt-1.5 text-[11px]" style={{ color: 'var(--red)' }}>{error}</p>}

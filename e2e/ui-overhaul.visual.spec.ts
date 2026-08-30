@@ -65,10 +65,10 @@ async function capture(page: Page, testInfo: TestInfo, name: string) {
 
 async function captureDesktop(page: Page, testInfo: TestInfo, marketHarness: Awaited<ReturnType<typeof installDeterministicMarketApi>>) {
   await page.goto('/');
-  await expect(page.getByText('Analyze Ticker').first()).toBeVisible();
+  await expect(page.getByPlaceholder(/Filter \/ Search by Ticker/i).first()).toBeVisible();
   await settle(page);
   await capture(page, testInfo, 'scanner');
-  await page.getByPlaceholder(/Filter by ticker/i).fill('TQQQ');
+  await page.getByPlaceholder(/Filter \/ Search by Ticker/i).fill('TQQQ');
   await page.getByRole('button', { name: '3x', exact: true }).click();
   await capture(page, testInfo, 'scanner-filters-active');
 
@@ -114,7 +114,7 @@ async function captureDesktop(page: Page, testInfo: TestInfo, marketHarness: Awa
   await capture(page, testInfo, 'account-signed-in');
 
   await page.goto('/');
-  await page.getByPlaceholder(/Filter by ticker/i).fill('NO_MATCH');
+  await page.getByPlaceholder(/Filter \/ Search by Ticker/i).fill('NO_MATCH');
   await expect(page.getByText(/No ETFs match your filters/i)).toBeVisible();
   await capture(page, testInfo, 'state-empty');
 
@@ -136,7 +136,7 @@ async function captureDesktop(page: Page, testInfo: TestInfo, marketHarness: Awa
 
 async function capturePhone(page: Page, testInfo: TestInfo) {
   await page.goto('/');
-  await expect(page.getByText('Analyze Ticker').first()).toBeVisible();
+  await expect(page.getByPlaceholder(/Filter \/ Search by Ticker/i).first()).toBeVisible();
   await settle(page);
   await capture(page, testInfo, 'scanner');
   await page.goto('/screener');
@@ -161,7 +161,7 @@ async function capturePhone(page: Page, testInfo: TestInfo) {
 
 async function captureLandscape(page: Page, testInfo: TestInfo) {
   await page.goto('/');
-  await expect(page.getByText('Analyze Ticker').first()).toBeVisible();
+  await expect(page.getByPlaceholder(/Filter \/ Search by Ticker/i).first()).toBeVisible();
   await settle(page);
   await capture(page, testInfo, 'navigation-scanner');
   await page.goto('/portfolio');
@@ -196,7 +196,7 @@ test.describe('UI overhaul deterministic visual matrix', () => {
     else if (project === 'landscape-844x390') await captureLandscape(page, testInfo);
     else {
       await page.goto('/');
-      await expect(page.getByText('Analyze Ticker').first()).toBeVisible();
+      await expect(page.getByPlaceholder(/Filter \/ Search by Ticker/i).first()).toBeVisible();
       await settle(page);
       await capture(page, testInfo, 'scanner-responsive-check');
       await page.goto('/portfolio');

@@ -54,7 +54,7 @@ async function measure(page: Page): Promise<DensityMetrics> {
 
 async function waitForPopulatedScanner(page: Page) {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByText('Analyze Ticker').first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByPlaceholder(/Filter \/ Search by Ticker/i).first()).toBeVisible({ timeout: 20_000 });
   await expect(page.locator('.instrument-card, .mobile-etf-row').first()).toBeVisible({ timeout: 30_000 });
   await page.waitForTimeout(250);
 }
@@ -73,12 +73,12 @@ test.describe('Scanner density visual review', () => {
     await capture(page, testInfo, 'scanner-selected-expiration');
 
     await page.goto('/?leverage=3x&type=Sector&liquidity=mediumPlus&sort=fiveDay', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByText('Analyze Ticker').first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByPlaceholder(/Filter \/ Search by Ticker/i).first()).toBeVisible({ timeout: 20_000 });
     await page.waitForTimeout(250);
     await capture(page, testInfo, 'scanner-filters-active');
 
     await page.goto('/?q=TQQQ', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByText('Analyze Ticker').first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByPlaceholder(/Filter \/ Search by Ticker/i).first()).toBeVisible({ timeout: 20_000 });
     await page.waitForTimeout(250);
     await capture(page, testInfo, 'scanner-search-active');
 
