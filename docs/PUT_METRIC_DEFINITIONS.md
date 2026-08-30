@@ -9,17 +9,17 @@ This section is the authoritative product contract as of Stage 6B.1. It supersed
 | Product label | Exact formula | Denominator and use |
 |---|---|---|
 | Premium per Contract | `option price × 100` | No denominator. Total premium additionally multiplies by contracts. |
-| Gross Secured Cash | `strike × 100 × contracts` | Full cash-secured assignment requirement before premium; not broker margin or buying-power reduction. |
-| Net Maximum-Loss Capital | `gross secured cash - total premium` | Assumes the underlying can fall to zero. |
-| Secured-Cash Yield (SCY) | `premium / gross secured cash` | Gross secured cash. Used for Scanner, Screener, ticker detail, and Watchlist discovery quotes. |
-| Annualized Secured-Cash Yield (Ann. SCY) | `SCY × 365 / DTE` | Gross secured cash. Simple annualization; unavailable at `DTE <= 0`. |
-| Entry Net-Risk Return | `premium collected / entry net maximum-loss capital` | Entry net maximum-loss capital. Used for an entered position in the drawer and Portfolio. |
-| Annualized Entry Net-Risk Return | `entry net-risk return × 365 / original DTE` | Entry net maximum-loss capital. Simple annualization. |
-| Remaining Liability / Entry Net Risk | `current buyback cost / entry net maximum-loss capital` | Original entry net maximum-loss capital. This is a remaining-liability ratio, not earned yield. |
-| Annualized Remaining Liability / Entry Net Risk | preceding ratio `× 365 / remaining DTE` | Original entry net maximum-loss capital. |
-| Annualized Remaining Premium / Current Net Risk | `current buyback cost / (gross secured cash - current buyback cost) × 365 / remaining DTE` | Current net maximum-loss capital. Kept distinct because its denominator is intentionally different. |
+| Gross Risk | `strike × 100 × contracts` | Full cash-secured assignment requirement before premium; not broker margin or buying-power reduction. |
+| Net Risk | `gross secured cash - total premium` | Assumes the underlying can fall to zero. |
+| Nominal Yield (NY) | `premium / gross secured cash` | Gross secured cash. Used for Scanner, Screener, ticker detail, and Watchlist discovery quotes. |
+| Annualized Yield (AY) | `NY × 365 / DTE` | Gross secured cash. Simple annualization; unavailable at `DTE <= 0`. |
+| Entry NY | `premium collected / entry net maximum-loss capital` | Entry net maximum-loss capital. Used for an entered position in Portfolio. |
+| Entry AY | `entry NY × 365 / original DTE` | Entry net maximum-loss capital. Simple annualization. |
+| Current NY | `current buyback cost / entry net maximum-loss capital` | Original entry net maximum-loss capital. This is a remaining-liability ratio, not earned yield. |
+| Current AY | preceding ratio `× 365 / remaining DTE` | Original entry net maximum-loss capital. |
+| Remaining AY to Maturity | `current buyback cost / (gross secured cash - current buyback cost) × 365 / remaining DTE` | Current net maximum-loss capital. Kept distinct because its denominator is intentionally different. |
 
-The same label now means the same formula everywhere. Discovery values remain distinct from entered-position economics because they answer different questions. Internal persisted field names such as `originalAnnualizedYield` remain for schema compatibility; visible labels and tooltips carry the canonical meaning.
+Canonical labels now map consistently to their existing context-specific formulas. Discovery values remain distinct from entered-position economics because they answer different questions. Internal persisted field names such as `originalAnnualizedYield` remain for schema compatibility; visible labels and tooltips carry the canonical meaning.
 
 ## Quote, contract, and lifecycle definitions
 
@@ -74,7 +74,7 @@ Portfolio distinguishes the time Put Scanner observed a market response from the
 
 ## Cross-surface regression contract
 
-Deterministic fixtures cover a liquid contract, wide spread, missing Bid/Ask/Last/Delta, invalid underlying, expired contract, 0-DTE contract, and non-finite provider values. For the same contract and price basis, tests reconcile premium, gross secured cash, net maximum-loss capital, SCY, Ann. SCY, entry net-risk return, breakeven, OTM %, DTE, and spread across applicable Scanner, Screener, ticker-detail, drawer, Watchlist, and Portfolio code. Intentional differences are asserted by denominator rather than allowed as unexplained drift.
+Deterministic fixtures cover a liquid contract, wide spread, missing Bid/Ask/Last/Delta, invalid underlying, expired contract, 0-DTE contract, and non-finite provider values. For the same contract and price basis, tests reconcile premium, Gross Risk, Net Risk, NY, AY, Entry NY, breakeven, OTM %, DTE, and spread across applicable Scanner, Screener, ticker-detail, drawer, Watchlist, and Portfolio code. Intentional differences are asserted by denominator rather than allowed as unexplained drift.
 
 ## Historical-value safety
 
@@ -153,11 +153,11 @@ For an identical contract, identical quote, identical underlying, and identical 
 
 ## Required naming changes before public MVP
 
-No financial definition was silently changed in Stage 6A. A future UI/copy stage should:
+No financial definition was silently changed in Stage 6A. The UI nomenclature reversal keeps these definitions intact:
 
-1. Rename discovery `AY` to `Annualized return on secured cash (gross)` or provide that definition in a tooltip.
-2. Rename drawer/Entry AY to `Annualized return on net risk`.
-3. Rename Portfolio `Current AY` to a plain-language remaining-premium metric after a product decision on whether original or current net risk is the preferred denominator.
+1. Discovery `AY` retains the gross-risk denominator and is defined in the shared tooltip contract.
+2. Drawer and Portfolio `Entry AY` retain the net-risk denominator and original DTE.
+3. Portfolio `Current AY` retains the original entry net-risk denominator; `Remaining AY to Maturity` remains distinct because its denominator is current net risk.
 4. Rename the current `IV Rank` unless true historical implied-volatility data is obtained.
 5. Keep the mark basis adjacent to all position-management metrics.
 

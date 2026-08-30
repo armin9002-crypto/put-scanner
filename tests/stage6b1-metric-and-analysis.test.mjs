@@ -17,6 +17,7 @@ import {
   calculateYieldPercent,
 } from '../src/lib/optionMetrics.ts';
 import { PUT_METRIC_CONTRACT } from '../src/lib/putMetricContract.ts';
+import { OPTION_YIELD_DISPLAY_LABELS } from '../src/lib/optionQuoteDisplay.ts';
 import { compareNullableMetric, formatMetric, getMetricAvailability } from '../src/lib/metricValue.ts';
 import { calculatePutDelta, resolvePutDelta } from '../src/lib/putDelta.ts';
 import {
@@ -45,6 +46,64 @@ test('canonical metric contract preserves formulas while making every denominato
   assert.equal(calculateBreakeven(100, 2), 98);
   assert.equal(calculateBidAskSpread(2, 2.5), 0.5);
   assert.equal(calculateBidAskSpreadPercent(2, 2.5), 0.5 / 2.25);
+});
+
+test('yield and risk labels use the restored NY/AY nomenclature', () => {
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(PUT_METRIC_CONTRACT).map(([key, value]) => [key, value.label])),
+    {
+      premiumPerContract: 'Premium per Contract',
+      grossSecuredCash: 'Gross Risk',
+      netMaximumLossCapital: 'Net Risk',
+      securedCashYield: 'Nominal Yield',
+      annualizedSecuredCashYield: 'Annualized Yield',
+      entryNetRiskReturn: 'Entry NY',
+      annualizedEntryNetRiskReturn: 'Entry AY',
+      remainingLiabilityOnEntryNetRisk: 'Current NY',
+      annualizedRemainingLiabilityOnEntryNetRisk: 'Current AY',
+      annualizedRemainingPremiumOnCurrentNetRisk: 'Remaining AY to Maturity',
+    },
+  );
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(OPTION_YIELD_DISPLAY_LABELS).map(([key, value]) => [key, value.short])),
+    {
+      nomYieldLast: 'NY Last',
+      annYieldLast: 'AY Last',
+      nomYieldBid: 'NY Bid',
+      annYieldBid: 'AY Bid',
+      nomYieldAsk: 'NY Ask',
+      annYieldAsk: 'AY Ask',
+    },
+  );
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(OPTION_YIELD_DISPLAY_LABELS).map(([key, value]) => [key, value.full])),
+    {
+      nomYieldLast: 'Nominal Yield (Last): premium ÷ gross strike cash',
+      annYieldLast: 'Annualized Yield (Last): Nominal Yield × 365 ÷ DTE',
+      nomYieldBid: 'Nominal Yield (Bid): premium ÷ gross strike cash',
+      annYieldBid: 'Annualized Yield (Bid): Nominal Yield × 365 ÷ DTE',
+      nomYieldAsk: 'Nominal Yield (Ask): premium ÷ gross strike cash',
+      annYieldAsk: 'Annualized Yield (Ask): Nominal Yield × 365 ÷ DTE',
+    },
+  );
+});
+
+test('current UI surfaces contain canonical labels and no retired metric copy', async () => {
+  const sources = await Promise.all([
+    read('src/pages/OptionsPage.tsx'),
+    read('src/pages/ScreenerPage.tsx'),
+    read('src/pages/WatchlistPage.tsx'),
+    read('src/pages/PortfolioPage.tsx'),
+    read('src/components/OptionDetailDrawer.tsx'),
+    read('src/components/mobile/MobileOptionRow.tsx'),
+  ]);
+  const currentUi = sources.join('\n');
+  assert.match(currentUi, /Show Nominal Yield/);
+  assert.match(currentUi, /Gross Risk/);
+  assert.match(currentUi, /Net Risk/);
+  assert.match(currentUi, /Entry Wtd\. Avg\. AY/);
+  assert.match(currentUi, /Current Wtd\. Avg\. AY/);
+  assert.doesNotMatch(currentUi, /Secured-Cash Yield|Ann\. SCY|Net Maximum-Loss Capital|Net-Risk Return|Remaining Liability \/ Entry Net Risk/);
 });
 
 test('the same deterministic contract reconciles discovery, Screener, drawer, and Portfolio economics', () => {
@@ -168,11 +227,14 @@ test('product copy removes conventional IV Rank claims and names every yield den
   assert.doesNotMatch(options, />IV Rank</);
   assert.doesNotMatch(screener, />IV Rank</);
   assert.match(options, /not traditional historical IV Rank/);
-  assert.match(drawer, /Gross Secured Cash/);
-  assert.match(drawer, /Net Maximum-Loss Capital/);
-  assert.match(drawer, /Annualized Net-Risk Return/);
-  assert.match(portfolio, /Ann\. Entry Net-Risk Return/);
-  assert.match(portfolio, /Ann\. Remaining Liability \/ Entry Net Risk/);
+  assert.match(drawer, /Gross Risk/);
+  assert.match(drawer, /Net Risk/);
+  assert.match(drawer, /Annualized Yield/);
+  assert.doesNotMatch(drawer, /Net-Risk Return/);
+  assert.doesNotMatch(drawer, /Annualized Net-Risk Return/);
+  assert.match(portfolio, /Entry AY/);
+  assert.match(portfolio, /Current AY/);
   assert.match(labels, /PUT_METRIC_CONTRACT/);
-  assert.match(metricContract, /Secured-Cash Yield/);
+  assert.match(metricContract, /Nominal Yield/);
+  assert.match(metricContract, /Annualized Yield/);
 });

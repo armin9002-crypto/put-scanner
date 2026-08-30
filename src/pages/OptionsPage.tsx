@@ -267,7 +267,7 @@ function OptionQuickTooltip({ put, ticker, expirationLabel, dte }: { put: Enrich
         Δ {put.delta != null ? put.delta.toFixed(2) : '—'} · IV {put.impliedVolatility != null ? `${put.impliedVolatility.toFixed(1)}%` : '—'} · {put.otmItmLabel || '—'}
       </div>
       <div className="mt-1 font-mono text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
-        Spread {formatSpreadPercent(put.bid, put.ask)} · Ann. SCY Bid {put.annYieldBid != null ? formatYield(put.annYieldBid) : '—'} · Ann. SCY Ask {put.annYieldAsk != null ? formatYield(put.annYieldAsk) : '—'}
+        Spread {formatSpreadPercent(put.bid, put.ask)} · AY Bid {put.annYieldBid != null ? formatYield(put.annYieldBid) : '—'} · AY Ask {put.annYieldAsk != null ? formatYield(put.annYieldAsk) : '—'}
       </div>
       <div className="mt-1 font-mono text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
         Vol {formatNumber(put.volume)} · OI {formatNumber(put.openInterest)}
@@ -372,8 +372,8 @@ function MobileOptionCard({
       <div className={`mobile-secondary-grid mt-2 grid gap-2 ${showNominalYield ? 'grid-cols-4' : 'grid-cols-3'}`}>
         <MobileStat label="Delta" value={put.delta != null ? put.delta.toFixed(2) : '—'} color={deltaColor(put.delta)} />
         <MobileStat label="IV" value={put.impliedVolatility != null ? `${put.impliedVolatility.toFixed(1)}%` : '—'} color={ivColor(put.impliedVolatility)} />
-        <MobileStat label="Ann. SCY Bid" value={put.annYieldBid != null ? formatYield(put.annYieldBid) : '—'} color={put.annYieldBid != null ? yieldColor(put.annYieldBid) : 'var(--text-dim)'} />
-        {showNominalYield && <MobileStat label="SCY Bid" value={put.nomYieldBid != null ? formatYield(put.nomYieldBid) : '—'} />}
+        <MobileStat label="AY Bid" value={put.annYieldBid != null ? formatYield(put.annYieldBid) : '—'} color={put.annYieldBid != null ? yieldColor(put.annYieldBid) : 'var(--text-dim)'} />
+        {showNominalYield && <MobileStat label="NY Bid" value={put.nomYieldBid != null ? formatYield(put.nomYieldBid) : '—'} />}
       </div>
       {showVolOI && (
         <div className="mobile-secondary-grid mt-2 grid grid-cols-3 gap-2 border-t pt-2" style={{ borderColor: 'var(--border)' }}>
@@ -902,7 +902,7 @@ export default function OptionsPage() {
     { field: 'strike', label: 'Strike' },
     ...OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => ({ field, label: OPTION_QUOTE_DISPLAY_LABELS[field] })),
     { field: 'delta', label: 'Delta' },
-    { field: 'annYieldBid', label: 'Ann. SCY Bid' },
+    { field: 'annYieldBid', label: 'AY Bid' },
     { field: 'iv', label: 'IV' },
     { field: 'otmItm', label: 'Moneyness' },
   ];
@@ -983,7 +983,7 @@ export default function OptionsPage() {
 
         <div className="flex min-h-[46px] items-center gap-2 border-b px-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
           <span className="mr-auto text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Puts <span className="font-mono font-normal" style={{ color: 'var(--text-muted)' }}>{sortedPuts.length}</span></span>
-          <label className="flex min-h-11 items-center gap-1 text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}><input type="checkbox" checked={showNominalYield} onChange={event => handleShowNominalYieldChange(event.target.checked)} className="rounded" /> SCY</label>
+          <label className="flex min-h-11 items-center gap-1 text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}><input type="checkbox" checked={showNominalYield} onChange={event => handleShowNominalYieldChange(event.target.checked)} className="rounded" /> NY</label>
           <select value={sortField} onChange={event => setSortField(event.target.value as SortField)} className="min-h-11 rounded-lg px-2 text-[12px] outline-none" aria-label="Sort option chain" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>{mobileSortOptions.map(option => <option key={option.field} value={option.field}>{option.label}</option>)}</select>
           <button type="button" onClick={() => setSortDir(current => current === 'asc' ? 'desc' : 'asc')} className="pressable flex h-11 min-w-11 items-center justify-center rounded-lg text-[11px] font-semibold" aria-label={`Sort ${sortDir === 'asc' ? 'descending' : 'ascending'}`} style={{ color: 'var(--accent-light)' }}>{sortDir === 'asc' ? '↑' : '↓'}</button>
         </div>
@@ -1152,7 +1152,7 @@ export default function OptionsPage() {
                   onChange={event => handleShowNominalYieldChange(event.target.checked)}
                   className="rounded"
                 />
-                Show Secured-Cash Yield
+                Show Nominal Yield
               </label>
               <label className="flex items-center gap-1.5 text-xs cursor-pointer min-h-[44px] sm:min-h-0" style={{ color: 'var(--text-muted)' }}>
                 <input

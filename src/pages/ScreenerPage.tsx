@@ -397,7 +397,7 @@ export default function ScreenerPage() {
       ['Expiration', optionLabel(expDropdownOptions, currentCriteria.expFilter)],
       ['Delta', optionLabel(DELTA_OPTIONS, currentCriteria.deltaFilter)],
       ['Moneyness', optionLabel(MONEYNESS_OPTIONS, currentCriteria.moneynessFilter)],
-      ['Ann. Secured-Cash Yield Bid', optionLabel(YIELD_OPTIONS, currentCriteria.yieldFilter)],
+      ['Annualized Yield Bid', optionLabel(YIELD_OPTIONS, currentCriteria.yieldFilter)],
       ['Min OI', optionLabel(OI_OPTIONS, currentCriteria.oiFilter)],
       ['Min Volume', optionLabel(VOL_OPTIONS, currentCriteria.volFilter)],
       ['IV vs 1Y Realized Range', optionLabel(IV_VS_REALIZED_RANGE_OPTIONS, currentCriteria.ivVsRealizedRangeFilter)],
@@ -624,7 +624,7 @@ export default function ScreenerPage() {
     const activeCriteria = [
       deltaFilter !== 'all' ? `Δ ${DELTA_OPTIONS.find(option => option.value === deltaFilter)?.label}` : null,
       moneynessFilter !== 'all' ? MONEYNESS_OPTIONS.find(option => option.value === moneynessFilter)?.label : null,
-      yieldFilter !== 'all' ? `Ann. SCY ${YIELD_OPTIONS.find(option => option.value === yieldFilter)?.label}` : null,
+      yieldFilter !== 'all' ? `AY ${YIELD_OPTIONS.find(option => option.value === yieldFilter)?.label}` : null,
       oiFilter !== 'all' ? `OI ${OI_OPTIONS.find(option => option.value === oiFilter)?.label}` : null,
     ].filter(Boolean).join(' · ') || 'All deltas · All moneyness · All yields';
     const resetFilters = () => clearFilters();
@@ -647,7 +647,7 @@ export default function ScreenerPage() {
 
         <div className="screener-results-header flex min-h-[46px] items-center gap-2 border-b px-3.5" style={{ borderColor: 'var(--border)' }}>
           <h2 className="mr-auto text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Results <span className="font-mono font-normal" style={{ color: 'var(--text-muted)' }}>{loaded ? sortedRows.length : '—'}</span></h2>
-          <select value={sortField} onChange={event => setSortField(event.target.value as ScreenerSortField)} className="min-h-11 min-w-0 rounded-lg px-2 text-[12px] outline-none" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} aria-label="Sort screener results"><option value="annYieldBid">Ann. secured-cash yield</option><option value="ticker">Ticker</option><option value="expDate">Expiration</option><option value="strike">Strike</option><option value="delta">Delta</option><option value="last">Last</option><option value="bid">Bid</option><option value="ask">Ask</option><option value="iv">IV</option><option value="openInterest">Open interest</option></select>
+          <select value={sortField} onChange={event => setSortField(event.target.value as ScreenerSortField)} className="min-h-11 min-w-0 rounded-lg px-2 text-[12px] outline-none" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} aria-label="Sort screener results"><option value="annYieldBid">AY Bid</option><option value="ticker">Ticker</option><option value="expDate">Expiration</option><option value="strike">Strike</option><option value="delta">Delta</option><option value="last">Last</option><option value="bid">Bid</option><option value="ask">Ask</option><option value="iv">IV</option><option value="openInterest">Open interest</option></select>
           <button type="button" onClick={() => setSortDir(current => current === 'asc' ? 'desc' : 'asc')} className="pressable flex h-11 w-11 items-center justify-center rounded-lg text-sm font-semibold" aria-label={`Sort ${sortDir === 'asc' ? 'descending' : 'ascending'}`} style={{ color: 'var(--accent-light)' }}>{sortDir === 'asc' ? '↑' : '↓'}</button>
         </div>
 
@@ -661,7 +661,7 @@ export default function ScreenerPage() {
           <div className="space-y-4">
             <div><span className="mobile-sheet-label">ETFs</span><div className="flex min-h-11 flex-wrap gap-1.5 rounded-lg border p-1.5" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--input-bg)' }}>{selectedETFs.map(etf => <span key={etf.ticker} className="inline-flex items-center gap-1 rounded-md px-2 text-xs" style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)' }}>{etf.ticker}<button type="button" onClick={() => removeETF(etf.ticker)} className="flex h-7 w-7 items-center justify-center" aria-label={`Remove ${etf.ticker}`}><X className="h-3 w-3" /></button></span>)}<input value={etfSearch} onChange={event => { setEtfSearch(event.target.value); setShowEtfDropdown(true); }} onFocus={() => setShowEtfDropdown(true)} placeholder={selectedETFs.length ? 'Add ETF' : 'All ETFs'} className="min-w-[100px] flex-1 bg-transparent px-2 text-base outline-none" style={{ color: 'var(--text)' }} /></div>{showEtfDropdown && etfOptions.length > 0 && <div className="mt-1 max-h-40 overflow-y-auto rounded-lg border" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>{etfOptions.slice(0, 20).map(etf => <button type="button" key={etf.ticker} onClick={() => addETF(etf)} className="flex min-h-11 w-full items-center gap-2 border-b px-3 text-left" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}><b className="font-mono">{etf.ticker}</b><span className="truncate text-xs" style={{ color: 'var(--text-muted)' }}>{etf.name}</span></button>)}</div>}</div>
             <ExpirationFilter value={expFilter} onChange={setExpFilter} options={expDropdownOptions} loadingDates={loadingDates} datesLoaded={datesLoaded} />
-            {([['Delta (abs)', deltaFilter, setDeltaFilter, DELTA_OPTIONS], ['Moneyness', moneynessFilter, setMoneynessFilter, MONEYNESS_OPTIONS], ['Ann. Secured-Cash Yield Bid', yieldFilter, setYieldFilter, YIELD_OPTIONS], ['Minimum OI', oiFilter, setOiFilter, OI_OPTIONS], ['Minimum Volume', volFilter, setVolFilter, VOL_OPTIONS], ['IV vs 1Y Realized Range', ivVsRealizedRangeFilter, setIvVsRealizedRangeFilter, IV_VS_REALIZED_RANGE_OPTIONS]] as const).map(([label, value, setter, options]) => <label key={label} className="block"><span className="mobile-sheet-label">{label}</span><select value={value} onChange={event => setter(event.target.value)} className="mobile-control-field w-full">{options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>)}
+            {([['Delta (abs)', deltaFilter, setDeltaFilter, DELTA_OPTIONS], ['Moneyness', moneynessFilter, setMoneynessFilter, MONEYNESS_OPTIONS], ['Annualized Yield Bid', yieldFilter, setYieldFilter, YIELD_OPTIONS], ['Minimum OI', oiFilter, setOiFilter, OI_OPTIONS], ['Minimum Volume', volFilter, setVolFilter, VOL_OPTIONS], ['IV vs 1Y Realized Range', ivVsRealizedRangeFilter, setIvVsRealizedRangeFilter, IV_VS_REALIZED_RANGE_OPTIONS]] as const).map(([label, value, setter, options]) => <label key={label} className="block"><span className="mobile-sheet-label">{label}</span><select value={value} onChange={event => setter(event.target.value)} className="mobile-control-field w-full">{options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>)}
           </div>
         </MobileBottomSheet>}
 
@@ -781,7 +781,7 @@ export default function ScreenerPage() {
 
             {/* Ann Yield */}
             <div className="screener-filter-field screener-filter-field--local w-full sm:w-auto min-w-0">
-              <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Ann. Secured-Cash Yield Bid</label>
+              <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Annualized Yield Bid</label>
               <select value={yieldFilter} onChange={e => setYieldFilter(e.target.value)}
                 className="w-full sm:w-auto rounded-lg px-3 py-2 sm:py-1.5 text-base sm:text-xs outline-none cursor-pointer min-h-[44px] sm:min-h-0"
                 style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
@@ -964,7 +964,7 @@ export default function ScreenerPage() {
           <label className="min-w-0">
             <span className="sr-only">Sort results</span>
             <select value={sortField} onChange={event => setSortField(event.target.value as ScreenerSortField)} className="min-h-[44px] w-full rounded-lg px-3 text-base outline-none" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}>
-              <option value="annYieldBid">Ann. SCY Bid</option>
+              <option value="annYieldBid">AY Bid</option>
               <option value="ticker">Ticker</option>
               <option value="expDate">Expiration</option>
               <option value="strike">Strike</option>
@@ -992,7 +992,7 @@ export default function ScreenerPage() {
           {loaded && sortedRows.length === 0 && (
             <div className="rounded-xl px-5 py-10 text-center" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
               <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No matching options</p>
-              <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Try relaxing Delta, Moneyness, or Annualized Secured-Cash Yield.</p>
+              <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Try relaxing Delta, Moneyness, or Annualized Yield.</p>
               <button type="button" onClick={() => setMobileFiltersOpen(true)} className="tap-target mt-4 rounded-lg px-4 text-xs font-semibold" style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)', border: '1px solid var(--accent-border)' }}>Adjust filters</button>
             </div>
           )}
@@ -1022,7 +1022,7 @@ export default function ScreenerPage() {
                   ['Last', `$${formatPrice(row.last)}`, 'var(--text)'],
                   ['Bid', `$${formatPrice(row.bid)}`, 'var(--green)'],
                   ['Ask', `$${formatPrice(row.ask)}`, 'var(--text)'],
-                  ['Ann. SCY Bid', row.annYieldBid != null ? `${row.annYieldBid.toFixed(1)}%` : '—', annYieldColor(row.annYieldBid)],
+                  ['AY Bid', row.annYieldBid != null ? `${row.annYieldBid.toFixed(1)}%` : '—', annYieldColor(row.annYieldBid)],
                 ].map(([label, value, color]) => (
                   <div key={label} className="min-w-0 rounded-lg p-2 text-center" style={{ backgroundColor: 'var(--surface-alt)' }}>
                     <div className="truncate text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>{label}</div>

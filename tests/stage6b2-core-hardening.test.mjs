@@ -171,8 +171,9 @@ test('page state guards expose retryable failures, supersession, canonical drawe
   assert.match(watchlist, /refreshInFlightRef\.current/);
   assert.match(watchlist, /refreshGenerationRef\.current/);
   assert.match(pulse, /requestGenerationRef/);
-  assert.match(drawer, /Secured-Cash Yield/);
-  assert.match(drawer, /Annualized Secured-Cash Yield/);
+  assert.match(drawer, /Nominal Yield/);
+  assert.match(drawer, /Annualized Yield/);
+  assert.doesNotMatch(drawer, /Net-Risk Return/);
 
   const refreshStart = portfolio.indexOf('const handleRefreshOpenTrades');
   const refreshEnd = portfolio.indexOf('const handleRetryResolve', refreshStart);
@@ -181,6 +182,6 @@ test('page state guards expose retryable failures, supersession, canonical drawe
   assert.match(refreshSource, /mergePortfolioMarketRefresh/);
   assert.match(refreshSource, /quoteRefreshInFlightRef\.current/);
   assert.match(refreshSource, /quoteRefreshGenerationRef\.current/);
-  assert.match(watchlist, /Ann\. SCY Bid/);
-  assert.match(screener, /Ann\. SCY Bid/);
+  assert.match(watchlist, /AY Bid/);
+  assert.match(screener, /AY Bid/);
 });

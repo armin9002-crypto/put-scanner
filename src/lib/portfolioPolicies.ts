@@ -124,7 +124,7 @@ export function buildCloseCandidates(trades: PortfolioTrade[], basis: MarkBasis,
         && percentCaptured >= PORTFOLIO_CLOSE_POLICY.standardCapture
         && isFiniteNumber(currentAnnualizedYield)
         && currentAnnualizedYield < PORTFOLIO_CLOSE_POLICY.lowAnnualizedRemainingLiability) {
-        reasons.push('low annualized remaining liability');
+        reasons.push('Low Current AY');
       }
       if (isFiniteNumber(currentMark) && currentMark <= PORTFOLIO_CLOSE_POLICY.smallRemainingOptionMark) reasons.push('small remaining premium');
       if (isFiniteNumber(dte)
@@ -156,7 +156,7 @@ export function getRedeployBadges(trade: PortfolioTrade, basis: MarkBasis): stri
 
   if (isFiniteNumber(percentCaptured) && percentCaptured >= PORTFOLIO_CLOSE_POLICY.highCapture) badges.push('75%+ Captured');
   else if (isFiniteNumber(percentCaptured) && percentCaptured >= PORTFOLIO_CLOSE_POLICY.standardCapture) badges.push('50%+ Captured');
-  if (isFiniteNumber(currentAnnualizedYield) && currentAnnualizedYield < PORTFOLIO_CLOSE_POLICY.lowAnnualizedRemainingLiability) badges.push('Low Ann. Remaining Liability');
+  if (isFiniteNumber(currentAnnualizedYield) && currentAnnualizedYield < PORTFOLIO_CLOSE_POLICY.lowAnnualizedRemainingLiability) badges.push('Low Current AY');
   if (isFiniteNumber(dte) && dte <= PORTFOLIO_CLOSE_POLICY.nearExpiryDte) badges.push('Near Expiry');
 
   return badges;

@@ -23,12 +23,12 @@ export const OPTION_QUOTE_DISPLAY_LABELS: Record<OptionQuoteDisplayField, string
 };
 
 export const OPTION_YIELD_DISPLAY_LABELS: Record<OptionYieldDisplayField, { short: string; full: string }> = {
-  nomYieldLast: { short: 'SCY Last', full: `${PUT_METRIC_CONTRACT.securedCashYield.label} (Last): ${PUT_METRIC_CONTRACT.securedCashYield.formula}` },
-  annYieldLast: { short: 'Ann. SCY Last', full: `${PUT_METRIC_CONTRACT.annualizedSecuredCashYield.label} (Last): ${PUT_METRIC_CONTRACT.annualizedSecuredCashYield.formula}` },
-  nomYieldBid: { short: 'SCY Bid', full: `${PUT_METRIC_CONTRACT.securedCashYield.label} (Bid): ${PUT_METRIC_CONTRACT.securedCashYield.formula}` },
-  annYieldBid: { short: 'Ann. SCY Bid', full: `${PUT_METRIC_CONTRACT.annualizedSecuredCashYield.label} (Bid): ${PUT_METRIC_CONTRACT.annualizedSecuredCashYield.formula}` },
-  nomYieldAsk: { short: 'SCY Ask', full: `${PUT_METRIC_CONTRACT.securedCashYield.label} (Ask): ${PUT_METRIC_CONTRACT.securedCashYield.formula}` },
-  annYieldAsk: { short: 'Ann. SCY Ask', full: `${PUT_METRIC_CONTRACT.annualizedSecuredCashYield.label} (Ask): ${PUT_METRIC_CONTRACT.annualizedSecuredCashYield.formula}` },
+  nomYieldLast: { short: 'NY Last', full: `${PUT_METRIC_CONTRACT.securedCashYield.label} (Last): ${PUT_METRIC_CONTRACT.securedCashYield.formula}` },
+  annYieldLast: { short: 'AY Last', full: `${PUT_METRIC_CONTRACT.annualizedSecuredCashYield.label} (Last): Nominal Yield × 365 ÷ DTE` },
+  nomYieldBid: { short: 'NY Bid', full: `${PUT_METRIC_CONTRACT.securedCashYield.label} (Bid): ${PUT_METRIC_CONTRACT.securedCashYield.formula}` },
+  annYieldBid: { short: 'AY Bid', full: `${PUT_METRIC_CONTRACT.annualizedSecuredCashYield.label} (Bid): Nominal Yield × 365 ÷ DTE` },
+  nomYieldAsk: { short: 'NY Ask', full: `${PUT_METRIC_CONTRACT.securedCashYield.label} (Ask): ${PUT_METRIC_CONTRACT.securedCashYield.formula}` },
+  annYieldAsk: { short: 'AY Ask', full: `${PUT_METRIC_CONTRACT.annualizedSecuredCashYield.label} (Ask): Nominal Yield × 365 ÷ DTE` },
 };
 
 export function isNominalYieldField(field: OptionYieldDisplayField): boolean {

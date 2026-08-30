@@ -103,5 +103,5 @@ test('Schedule of Positions removes only the Net Capital at Risk display column'
   assert.doesNotMatch(sortOptions, /netCapitalRisk|Net Capital at Risk/);
   assert.doesNotMatch(schedule, /netCapitalRisk|Net Capital at Risk|group\.netCapitalAtRisk|scheduleTotals\.netRisk|calculateNetCapitalAtRisk\(trade\)/);
   assert.match(source, /calculateNetCapitalAtRisk/);
-  assert.match(source, /SummaryCard label="Net Maximum-Loss Capital"/);
+  assert.match(source, /SummaryCard label="Net Risk"/);
 });

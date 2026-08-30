@@ -152,7 +152,7 @@ async function capturePhone(page: Page, testInfo: TestInfo) {
   await expect(page.getByText('TQQQ', { exact: true }).first()).toBeVisible();
   await capture(page, testInfo, 'ticker-detail');
   await page.getByRole('button', { name: 'Open details for $90.00 Put' }).click();
-  await expect(page.getByText('Secured-Cash Yield').first()).toBeVisible();
+  await expect(page.getByText('Nominal Yield').first()).toBeVisible();
   await capture(page, testInfo, 'option-drawer');
   await page.goto('/?account-ui-fixture=synced');
   await expect(page.getByRole('dialog')).toBeVisible();

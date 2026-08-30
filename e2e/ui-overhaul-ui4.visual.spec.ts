@@ -63,7 +63,7 @@ async function captureScreener(page: Page, testInfo: TestInfo) {
   await waitScreenerReady(page);
   await capture(page, testInfo, 'screener-populated');
 
-  const yieldHeader = page.getByRole('columnheader', { name: /Ann\. SCY Bid/i });
+  const yieldHeader = page.getByRole('columnheader', { name: /AY Bid/i });
   if (await yieldHeader.count()) await yieldHeader.click();
   await capture(page, testInfo, 'screener-sorted');
 
