@@ -1,5 +1,7 @@
 # Supabase Stage 5 local-first sync design
 
+> **Historical and obsolete.** Stage 7A removed the local-first authority, device enrollment, reconciliation matrix, and winner-selection conflict recovery. Do not use this document for current implementation decisions. See [Stage 7A cloud-authoritative account state](./PRODUCT_STAGE7A_CLOUD_AUTHORITATIVE_STATE.md).
+
 Status: Stage 5C/5D production synchronization is live and has been validated through restore, enrollment, startup reconciliation, durable updates, quote-only refresh, mobile Account, and sign-out. Stage 5E adds explicit backup-first conflict recovery without changing the authoritative local-first architecture. This implementation does not authorize a deployment or live conflict canary.
 
 Stage 4C Account Data remains the explicit first-save and new-browser restore surface. Restore and ongoing-sync enrollment stay separate; signing in never chooses a winner or uploads browser data. Stage 5E recovery is documented in [Supabase Stage 5E conflict recovery](./SUPABASE_STAGE5E_CONFLICT_RECOVERY.md).

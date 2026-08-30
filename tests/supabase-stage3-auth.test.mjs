@@ -152,8 +152,8 @@ test('passwordless request uses auth only, current-origin redirect, and automati
   assert.equal(mock.databaseCalls(), 0);
 });
 
-test('sign-out calls auth only and preserves Portfolio, Watchlist, and Preferences storage', async () => {
-  const durableKeys = [PORTFOLIO_STORAGE_KEY, WATCHLIST_STORAGE_KEY, THEME_STORAGE_KEY, PORTFOLIO_MARK_BASIS_KEY];
+test('auth sign-out is auth-only; account-memory clearing remains provider-owned', async () => {
+  const trackedKeys = [PORTFOLIO_STORAGE_KEY, WATCHLIST_STORAGE_KEY, THEME_STORAGE_KEY, PORTFOLIO_MARK_BASIS_KEY];
   const storage = new MemoryStorage({
     [PORTFOLIO_STORAGE_KEY]: '{"schemaVersion":1,"revision":7,"data":[{"id":"trade-a"}]}',
     [WATCHLIST_STORAGE_KEY]: '{"schemaVersion":1,"revision":4,"data":[{"id":"contract-a"}]}',
@@ -161,10 +161,10 @@ test('sign-out calls auth only and preserves Portfolio, Watchlist, and Preferenc
     [PORTFOLIO_MARK_BASIS_KEY]: 'bid',
     'sb-project-auth-token': '{"access_token":"managed-by-supabase"}',
   });
-  const before = storage.snapshot(durableKeys);
+  const before = storage.snapshot(trackedKeys);
   const mock = authMock({ storage });
   assert.deepEqual(await endAuthSession(mock.client), { ok: true, error: null });
-  assert.deepEqual(storage.snapshot(durableKeys), before);
+  assert.deepEqual(storage.snapshot(trackedKeys), before);
   assert.equal(storage.getItem('sb-project-auth-token'), null);
   assert.deepEqual(mock.calls, [['signOut']]);
   assert.equal(mock.databaseCalls(), 0);
@@ -208,7 +208,7 @@ test('Stage 3A source has no database access, durable-key mutation, protected ro
 
   const appSource = sources[5];
   assert.match(appSource, /function AppBody\(\)[\s\S]*?<ThemeProvider>[\s\S]*?<AppContent/);
-  assert.match(appSource, /<AuthProvider>[\s\S]*?<ProductionCloudSyncProvider>[\s\S]*?<AppBody/);
+  assert.match(appSource, /<AuthProvider>[\s\S]*?<AccountStateProvider>[\s\S]*?<AppBody/);
   assert.doesNotMatch(appSource, /ProtectedRoute|RequireAuth|isAuthLoading\s*\?/);
 });
 
@@ -222,8 +222,8 @@ test('account UI is optional, truthful, and does not add a primary route or mobi
   ]);
   assert.match(accountSource, /if \(!isConfigured\) return null/);
   assert.match(accountSource, /Check your email for a sign-in link\./);
-  assert.match(accountSource, /Your data stays on this browser\. Account Data lets you explicitly save or restore an account copy\./);
-  assert.match(accountSource, /Your current app data remains local and is not uploaded merely by signing in\./);
+  assert.match(accountSource, /Supabase is the durable source of truth/);
+  assert.match(accountSource, /Account data is not saved in this browser while signed out\./);
   assert.match(accountSource, /min-h-11 min-w-11/);
   assert.match(appSource, /<AccountControl \/>/);
   assert.equal((appSource.match(/to="\/account"/g) ?? []).length, 0);
@@ -233,6 +233,6 @@ test('account UI is optional, truthful, and does not add a primary route or mobi
   const packageJson = JSON.parse(packageSource);
   assert.equal(packageJson.dependencies['@supabase/supabase-js'], '^2.57.4');
   assert.equal(packageJson.devDependencies.supabase, '^2.115.0');
-  assert.equal(envExample, 'VITE_SUPABASE_URL=\nVITE_SUPABASE_PUBLISHABLE_KEY=\nVITE_CLOUD_SYNC_ENABLED=false\nVITE_CLOUD_MIGRATION_TEST_MODE=false\nVITE_CLOUD_SYNC_TEST_MODE=false\nVITE_CLOUD_SYNC_TEST_EMAIL=\n');
+  assert.equal(envExample, 'VITE_SUPABASE_URL=\nVITE_SUPABASE_PUBLISHABLE_KEY=\n');
   assert.match(gitignore, /^\*\.local$/m);
 });

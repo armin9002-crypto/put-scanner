@@ -1,5 +1,7 @@
 # Durable user state contract
 
+> **Historical (Stages 1–5).** Stage 7A replaced local durable account state with cloud-authoritative Supabase state. Do not use this document to design current runtime persistence. See [Stage 7A cloud-authoritative account state](./PRODUCT_STAGE7A_CLOUD_AUTHORITATIVE_STATE.md).
+
 ## Purpose
 
 This document defines the local data that may become a future cloud source of truth. Stage 1.5 does not add accounts, Supabase, network synchronization, or a global browser-data migration.

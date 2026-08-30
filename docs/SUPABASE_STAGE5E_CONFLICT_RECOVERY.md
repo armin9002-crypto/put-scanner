@@ -1,5 +1,7 @@
 # Supabase Stage 5E conflict recovery
 
+> **Historical and obsolete.** Keep-This-Device/Use-Account-Copy conflict recovery was removed in Stage 7A. Current conflicts mean only a stale cloud CAS. See [the current architecture](./PRODUCT_STAGE7A_CLOUD_AUTHORITATIVE_STATE.md).
+
 Status: explicit namespace-level conflict recovery is implemented with deterministic local tests and mock browser fixtures. This stage performs no live Supabase/Auth request, SQL/RLS change, Vercel change, deployment, production environment change, real-account inspection, or production canary.
 
 ## Why conflict recovery is explicit

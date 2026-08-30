@@ -1,5 +1,7 @@
 # Stage 3A Supabase authentication foundation
 
+> **Historical.** Authentication mechanics remain relevant, but the local-first/no-sync product behavior described here was superseded by [Stage 7A cloud-authoritative account state](./PRODUCT_STAGE7A_CLOUD_AUTHORITATIVE_STATE.md).
+
 Status: authentication identity only. No Put Scanner user-state synchronization exists in this stage.
 
 ## Architecture

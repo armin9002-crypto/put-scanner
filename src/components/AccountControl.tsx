@@ -4,41 +4,21 @@ import { CircleUserRound, Loader2, LogOut, Mail, X } from 'lucide-react';
 import { useAuth } from '../lib/authContext';
 import { useResponsiveMode } from '../lib/responsive';
 import MobileAccountSheet from './MobileAccountSheet';
-import { isCloudMigrationTestModeEnabled } from '../lib/cloudState/devTestMode';
-import { useProductionSync } from '../lib/cloudState/productionSyncContext';
+import { useAccountState } from '../lib/cloudState/accountStateContext';
 
-const AccountDataSection = lazy(() => import('./AccountDataSection'));
-const DevCloudMigrationTestHarness = import.meta.env.DEV
-  ? lazy(() => import('./CloudMigrationTestHarness'))
-  : null;
-const DevCloudSyncTestHarness = import.meta.env.DEV
-  ? lazy(() => import('./CloudSyncTestHarness'))
-  : null;
-const ProductionCloudSyncSection = import.meta.env.VITE_CLOUD_SYNC_ENABLED === 'true'
-  ? lazy(() => import('./CloudSyncSection'))
-  : null;
-const cloudSyncTestConfiguredEmail = import.meta.env.DEV
-  && import.meta.env.VITE_CLOUD_SYNC_TEST_MODE === 'true'
-  ? import.meta.env.VITE_CLOUD_SYNC_TEST_EMAIL?.trim().toLowerCase() ?? ''
-  : '';
-const cloudMigrationTestModeEnabled = isCloudMigrationTestModeEnabled({
-  dev: import.meta.env.DEV,
-  flag: import.meta.env.VITE_CLOUD_MIGRATION_TEST_MODE,
-});
+const CloudAccountStatus = lazy(() => import('./CloudSyncSection'));
 
 export function AccountPanel({
   onSignedOut,
   presentation,
-  accountDataContent,
   accountSyncContent,
 }: {
   onSignedOut: () => void;
   presentation: 'mobile' | 'desktop';
-  accountDataContent?: ReactNode;
   accountSyncContent?: ReactNode;
 }) {
   const { user, isAuthLoading, authError, signInWithEmail, signOut } = useAuth();
-  const productionSync = useProductionSync();
+  const accountState = useAccountState();
   const [email, setEmail] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [linkSent, setLinkSent] = useState(false);
@@ -69,21 +49,11 @@ export function AccountPanel({
   }
 
   if (user) {
-    const cloudSyncTestModeEnabled = Boolean(
-      DevCloudSyncTestHarness
-      && cloudSyncTestConfiguredEmail
-      && user.email?.trim().toLowerCase() === cloudSyncTestConfiguredEmail,
-    );
-    const accountData = accountDataContent ?? (
+    const accountSync = accountSyncContent ?? (
       <Suspense fallback={null}>
-        <AccountDataSection userId={user.id} ongoingSyncState={productionSync.featureEnabled ? productionSync.enrollment : 'none'} />
+        <CloudAccountStatus />
       </Suspense>
     );
-    const accountSync = accountSyncContent ?? (ProductionCloudSyncSection ? (
-      <Suspense fallback={null}>
-        <ProductionCloudSyncSection />
-      </Suspense>
-    ) : null);
     return (
       <div className="space-y-4">
         {presentation === 'desktop' && (
@@ -93,22 +63,13 @@ export function AccountPanel({
           </div>
         )}
         <p className="text-xs leading-5" style={{ color: 'var(--text-muted)' }}>
-          {productionSync.featureEnabled
-            ? 'Your data stays on this browser first. Account Sync runs only after you enable it on this device.'
-            : 'Your data stays on this browser. Account Data lets you explicitly save or restore an account copy.'}
+          Supabase is the durable source of truth for your Portfolio, Watchlist, and account preferences. This browser keeps only the loaded in-memory view.
         </p>
-        {presentation === 'mobile' && accountSync}
-        {accountData}
-        {presentation === 'desktop' && accountSync}
-        {cloudMigrationTestModeEnabled && DevCloudMigrationTestHarness && (
-          <Suspense fallback={null}>
-            <DevCloudMigrationTestHarness userId={user.id} />
-          </Suspense>
-        )}
-        {cloudSyncTestModeEnabled && DevCloudSyncTestHarness && (
-          <Suspense fallback={null}>
-            <DevCloudSyncTestHarness key={user.id} userId={user.id} authenticatedEmail={user.email} />
-          </Suspense>
+        {accountSync}
+        {accountState.phase === 'conflict' && (
+          <p className="rounded-lg border px-3 py-2 text-xs leading-5" style={{ borderColor: 'color-mix(in srgb, var(--yellow) 35%, var(--border))', color: 'var(--yellow)' }}>
+            The latest cloud version was loaded. Retry your intended change when ready.
+          </p>
         )}
         {authError && <AccountError>{authError}</AccountError>}
         <button
@@ -128,7 +89,7 @@ export function AccountPanel({
   return (
     <form onSubmit={event => void handleSubmit(event)} className="space-y-4">
       <p className="text-xs leading-5" style={{ color: 'var(--text-muted)' }}>
-        Sign in to use your account across devices. Your current app data remains local and is not uploaded merely by signing in.
+        Sign in to load your cloud Portfolio and Watchlist. Account data is not saved in this browser while signed out.
       </p>
       <label className="block">
         <span className="mb-1.5 block text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Email</span>
@@ -230,7 +191,7 @@ export function DesktopAccountDialog({ onClose, accountSyncContent }: { onClose:
         <div className="mb-4 flex flex-none items-center justify-between gap-3 border-b px-5 pb-3 pt-5" style={{ borderColor: 'var(--border)' }}>
           <div>
             <h2 id={titleId} className="text-base font-semibold" style={{ color: 'var(--text)' }}>Put Scanner Account</h2>
-            <p className="mt-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>Optional account access</p>
+            <p className="mt-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>Cloud-backed account data</p>
           </div>
           <button type="button" onClick={onClose} className="pressable flex h-10 w-10 items-center justify-center rounded-full" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }} aria-label="Close account">
             <X className="h-4 w-4" aria-hidden="true" />

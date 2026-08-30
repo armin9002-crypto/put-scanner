@@ -1,5 +1,7 @@
 # Supabase Stage 4A dormant migration foundation
 
+> **Historical.** Automatic/local-first migration was removed in Stage 7A. Do not reintroduce it. See [the current cloud-authoritative architecture](./PRODUCT_STAGE7A_CLOUD_AUTHORITATIVE_STATE.md).
+
 Status: machinery only. Real migration, cloud synchronization, and cloud restore have **not begun**.
 
 ## What Stage 4A builds

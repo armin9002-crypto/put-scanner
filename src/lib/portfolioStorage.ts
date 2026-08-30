@@ -127,11 +127,7 @@ const VALID_AVAILABILITY: PortfolioAvailabilityStatus[] = ['live', 'expired', 'u
 const VALID_ENTRY_DELTA_SOURCES: PortfolioEntryDeltaSource[] = ['provider', 'calculated', 'manual', 'imported', 'stored_snapshot'];
 
 function getStorage(): StorageLike | null {
-  try {
-    return typeof localStorage !== 'undefined' ? localStorage : null;
-  } catch {
-    return null;
-  }
+  return getAccountStateStorage();
 }
 
 function finiteNumber(value: unknown): number | null {
@@ -635,7 +631,6 @@ export function writePortfolioTrades(
 export function savePortfolioTrades(trades: PortfolioTrade[]): StorageWriteResult {
   const storage = getStorage();
   const result: StorageWriteResult = storage ? writePortfolioTrades(storage, trades) : { status: 'error', error: 'Portfolio storage is unavailable.' };
-  if (result.status === 'error') notifyLocalStorageFailure();
   return result;
 }
 
@@ -694,4 +689,4 @@ import {
   type StorageWriteResult,
 } from './durableStorage.ts';
 import { emitDurableMutation } from './cloudState/syncEvents.ts';
-import { notifyLocalStorageFailure } from './storageFeedback.ts';
+import { getAccountStateStorage } from './cloudState/accountStateStorage.ts';

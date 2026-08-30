@@ -1,5 +1,7 @@
 # Supabase Stage 5D production rollout
 
+> **Historical and obsolete.** The local-first rollout model was retired in Stage 7A. See [the current architecture and rollout checklist](./PRODUCT_STAGE7A_CLOUD_AUTHORITATIVE_STATE.md).
+
 Status: Stage 5D.1 mobile Account and rollout hardening are deployed and production synchronization has been validated. Stage 5E extends this surface with explicit conflict recovery; see [Supabase Stage 5E conflict recovery](./SUPABASE_STAGE5E_CONFLICT_RECOVERY.md). This document does not authorize an environment-variable change, deployment, live account inspection, or conflict canary.
 
 ## Final production behavior

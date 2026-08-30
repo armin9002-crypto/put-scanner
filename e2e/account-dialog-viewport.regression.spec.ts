@@ -34,19 +34,6 @@ async function openFixture(page: Page, state: string) {
   await expect(page.getByRole('dialog')).toBeVisible();
 }
 
-async function expandAccountData(page: Page) {
-  const collapsed = page.getByRole('button', { name: 'Account Data', exact: true });
-  if (await collapsed.count()) await collapsed.click();
-  await expect(page.getByLabel('Account Data', { exact: true })).toBeVisible();
-}
-
-async function expandSyncDetails(page: Page) {
-  const summary = page.getByText('Sync details', { exact: true });
-  await expect(summary).toBeVisible();
-  await summary.click();
-  await expect(summary.locator('..')).toHaveAttribute('open', '');
-}
-
 async function measure(page: Page): Promise<AccountMetrics> {
   return page.getByRole('dialog').evaluate(dialog => {
     const panel = dialog as HTMLElement;
@@ -114,22 +101,18 @@ test.describe('Account dialog viewport and clipping regression', () => {
     expectContained(await measure(page));
   });
 
-  test('desktop tall Account content scrolls internally', async ({ page }, testInfo) => {
+  test('desktop cloud account status remains contained', async ({ page }, testInfo) => {
     test.skip(!isDesktop(testInfo));
     await openFixture(page, 'conflict');
-    await expandAccountData(page);
-    await expandSyncDetails(page);
     const metrics = await measure(page);
     expectContained(metrics);
-    expect(metrics.scrollRegion.scrollHeight).toBeGreaterThan(metrics.scrollRegion.clientHeight);
-    await page.screenshot({ path: testInfo.outputPath('account-desktop-tall.png'), fullPage: true });
+    await expect(page.getByText(/changed on another device/i).first()).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath('account-desktop-conflict.png'), fullPage: true });
   });
 
   test('desktop close remains visible after scrolling', async ({ page }, testInfo) => {
     test.skip(!isDesktop(testInfo));
     await openFixture(page, 'conflict');
-    await expandAccountData(page);
-    await expandSyncDetails(page);
     await scrollAccountBodyToEnd(page);
     expectContained(await measure(page));
   });
@@ -148,25 +131,17 @@ test.describe('Account dialog viewport and clipping regression', () => {
     await page.screenshot({ path: testInfo.outputPath('account-mobile-landscape.png'), fullPage: true });
   });
 
-  test('Account Data expanded remains reachable', async ({ page }) => {
+  test('cloud account status remains reachable', async ({ page }) => {
     await openFixture(page, 'synced');
-    await expandAccountData(page);
-    await expect(page.getByText(/Account copy established|Account association needs attention/).first()).toBeVisible();
-    expectContained(await measure(page));
-  });
-
-  test('Account Sync details expanded remains reachable', async ({ page }) => {
-    await openFixture(page, 'synced');
-    await expandSyncDetails(page);
-    await expect(page.getByText('portfolio', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Cloud account status')).toBeVisible();
+    await expect(page.getByText('Your account data is loaded from the cloud.')).toBeVisible();
     expectContained(await measure(page));
   });
 
   test('conflict and attention states remain reachable', async ({ page }, testInfo) => {
     await openFixture(page, 'conflict');
-    await expandAccountData(page);
-    await expandSyncDetails(page);
-    await expect(page.getByLabel(/Portfolio conflict recovery/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Reload Latest Cloud Data' })).toBeVisible();
+    await expect(page.getByText(/latest cloud version was reloaded/i)).toBeVisible();
     await scrollAccountBodyToEnd(page);
     expectContained(await measure(page));
     if (!isDesktop(testInfo)) await page.screenshot({ path: testInfo.outputPath('account-mobile-tall-conflict.png'), fullPage: true });
@@ -183,8 +158,6 @@ test.describe('Account dialog viewport and clipping regression', () => {
 
   test('Account open does not create page-level overflow', async ({ page }) => {
     await openFixture(page, 'conflict');
-    await expandAccountData(page);
-    await expandSyncDetails(page);
     const metrics = await measure(page);
     expect(metrics.bodyOverflow).toBe('hidden');
     expect(metrics.rootOverflow).toContain('hidden');

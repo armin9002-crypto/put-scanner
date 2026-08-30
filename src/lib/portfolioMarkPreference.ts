@@ -1,12 +1,12 @@
 import type { MarkBasis } from './portfolioMetrics.ts';
 import { emitDurableMutation } from './cloudState/syncEvents.ts';
-import { notifyLocalStorageFailure } from './storageFeedback.ts';
+import { getAccountStateStorage } from './cloudState/accountStateStorage.ts';
 
 export const PORTFOLIO_MARK_BASIS_KEY = 'put_scanner_portfolio_mark_basis';
 export const PORTFOLIO_MARK_BASIS_OPTIONS: MarkBasis[] = ['last', 'bid', 'ask'];
 
 export function readPortfolioMarkBasis(
-  storage: Pick<Storage, 'getItem'> | null = typeof localStorage === 'undefined' ? null : localStorage,
+  storage: Pick<Storage, 'getItem'> | null = getAccountStateStorage(),
 ): MarkBasis {
   try {
     const saved = storage?.getItem(PORTFOLIO_MARK_BASIS_KEY);
@@ -18,13 +18,11 @@ export function readPortfolioMarkBasis(
 
 export function persistPortfolioMarkBasis(
   value: MarkBasis,
-  storage: (Pick<Storage, 'setItem'> & Partial<Pick<Storage, 'getItem'>>) | null = typeof localStorage === 'undefined' ? null : localStorage,
+  storage: (Pick<Storage, 'setItem'> & Partial<Pick<Storage, 'getItem'>>) | null = getAccountStateStorage(),
 ): void {
   try {
     const previous = storage?.getItem?.(PORTFOLIO_MARK_BASIS_KEY);
     storage?.setItem(PORTFOLIO_MARK_BASIS_KEY, value);
     if (storage && previous !== value) emitDurableMutation('preferences');
-  } catch {
-    notifyLocalStorageFailure();
-  }
+  } catch { /* Account storage reports signed-out/save failures centrally. */ }
 }

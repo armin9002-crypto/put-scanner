@@ -6,7 +6,7 @@ import { assertWithinRequestBudget, failedScreenerRetryBudget, REQUEST_BUDGET_LE
 import { getDevelopmentRequestEvents, getDevelopmentRequestSummary, getRequestDiagnosticsSnapshot, resetRequestDiagnosticsForTests, setRequestDiagnosticsEnabledForTests, fetchObservedMarketData } from '../src/lib/requestDiagnostics.ts';
 import { requestMarketData } from '../src/lib/marketDataRequest.ts';
 import { LOCAL_STORAGE_FAILURE_MESSAGE, notifyLocalStorageFailure, subscribeToLocalStorageFailures } from '../src/lib/storageFeedback.ts';
-import { persistShowNominalYield } from '../src/lib/optionTablePreferences.ts';
+import { persistCollapsedExpirationGroups } from '../src/lib/portfolioSchedulePreferences.ts';
 
 class MockResponse extends EventEmitter {
   headers = new Map();
@@ -141,10 +141,10 @@ test('request budgets reject material request multiplication and failed Screener
   assert.deepEqual(uniqueChainRefreshBudget(21, 6), { browserRequests: 7, functionInvocations: 7, providerAcquisitions: 8 });
 });
 
-test('local storage failure feedback is transient and contains no durable data', () => {
+test('device-local storage failure feedback is transient and contains no account data', () => {
   let calls = 0;
   const unsubscribe = subscribeToLocalStorageFailures(() => { calls += 1; });
-  persistShowNominalYield(true, { setItem() { throw new Error('quota fixture'); } });
+  persistCollapsedExpirationGroups({ '2026-10-16': true }, { setItem() { throw new Error('quota fixture'); } });
   unsubscribe();
   notifyLocalStorageFailure();
   assert.equal(calls, 1);

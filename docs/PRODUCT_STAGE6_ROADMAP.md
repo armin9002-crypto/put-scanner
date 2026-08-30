@@ -1,5 +1,7 @@
 # Product Stage 6 Roadmap
 
+> **Historical persistence note.** The product roadmap remains useful, but its local-first account-storage assumptions were superseded by [Stage 7A](./PRODUCT_STAGE7A_CLOUD_AUTHORITATIVE_STATE.md). Supabase is now the sole durable authority for signed-in account data.
+
 Stage 6B.1 completion date: 2026-08-26
 
 ## Current decision after Stage 6B.2

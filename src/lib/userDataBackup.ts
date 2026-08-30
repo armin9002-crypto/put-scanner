@@ -39,6 +39,7 @@ import {
 } from './durablePreferences.ts';
 import type { DurableStateEnvelope } from './durableStorage.ts';
 import { emitDurableMutation } from './cloudState/syncEvents.ts';
+import type { CloudStateSet } from './cloudState/types.ts';
 
 export const PUT_SCANNER_BACKUP_FORMAT = 'put-scanner-backup';
 export const PUT_SCANNER_BACKUP_SCHEMA_VERSION = 2 as const;
@@ -164,6 +165,38 @@ export function createPutScannerBackup(
       ),
     },
   };
+}
+
+/** Builds an export directly from the canonical cloud rows, never browser persistence. */
+export function createPutScannerBackupFromCloudState(
+  cloud: CloudStateSet,
+  options: { now?: Date; appVersion?: string } = {},
+): PutScannerBackup {
+  const now = options.now ?? new Date();
+  return validatePutScannerBackup({
+    format: PUT_SCANNER_BACKUP_FORMAT,
+    schemaVersion: PUT_SCANNER_BACKUP_SCHEMA_VERSION,
+    exportedAt: now.toISOString(),
+    appVersion: options.appVersion?.trim() || '0.0.0',
+    data: {
+      portfolio: {
+        schemaVersion: 1,
+        updatedAt: cloud.portfolio.updatedAt,
+        revision: cloud.portfolio.revision,
+        data: cloud.portfolio.payload.data,
+      },
+      watchlist: {
+        schemaVersion: 1,
+        updatedAt: cloud.watchlist.updatedAt,
+        revision: cloud.watchlist.revision,
+        data: cloud.watchlist.payload.data,
+      },
+      preferences: createPreferencesEnvelope(cloud.preferences.payload.data, {
+        updatedAt: cloud.preferences.updatedAt,
+        revision: cloud.preferences.revision,
+      }),
+    },
+  });
 }
 
 export function validatePutScannerBackup(value: unknown): PutScannerBackup {

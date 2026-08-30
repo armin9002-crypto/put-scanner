@@ -149,11 +149,11 @@ try {
       await delay(100);
     }
     if (new URL(baseUrl).searchParams.get('account-ui-fixture') === 'restore') {
-      await evaluate(client, `document.querySelector('[aria-label="Account Data"]')?.scrollIntoView({ block: 'start' })`);
+      await evaluate(client, `document.querySelector('[aria-label="Cloud account status"]')?.scrollIntoView({ block: 'start' })`);
       await delay(150);
     }
     if (confirmationMode) {
-      await evaluate(client, `[...document.querySelectorAll('button')].find(button => button.textContent?.includes('Keep This Device') && !button.disabled)?.click()`);
+      await evaluate(client, `[...document.querySelectorAll('button')].find(button => button.textContent?.includes('Reload Latest Cloud Data'))?.focus()`);
       await delay(150);
     }
 
@@ -165,18 +165,11 @@ try {
       const layer = document.querySelector('.mobile-sheet-layer, .mobile-account-sheet-layer');
       const content = document.querySelector('.mobile-account-sheet__content');
       const close = document.querySelector('.mobile-account-sheet__header button[aria-label="Close Account"]');
-      const sync = document.querySelector('[aria-label="Account Sync"]');
-      const accountData = document.querySelector('[aria-label="Account Data"]');
+      const accountStatus = document.querySelector('[aria-label="Cloud account status"]');
       const signOut = [...document.querySelectorAll('button')].find(button => button.textContent?.trim() === 'Sign Out');
       const emailInput = document.querySelector('input[type="email"]');
       const signInButton = [...document.querySelectorAll('button')].find(button => button.textContent?.includes('Send Sign-In Link'));
-      const conflictRecovery = document.querySelector('[aria-label$="conflict recovery"]');
-      const backupButton = [...document.querySelectorAll('button')].find(button => /Download Recovery Backup|Recovery Backup Ready/.test(button.textContent ?? ''));
-      const keepDevice = [...document.querySelectorAll('button')].find(button => button.textContent?.includes('Keep This Device') && !button.closest('[role="alertdialog"]'));
-      const useAccountCopy = [...document.querySelectorAll('button')].find(button => button.textContent?.includes('Use Account Copy') && !button.closest('[role="alertdialog"]'));
-      const confirmation = document.querySelector('[role="alertdialog"]');
-      const confirmationCancel = confirmation ? [...confirmation.querySelectorAll('button')].find(button => button.textContent?.trim() === 'Cancel') : null;
-      const confirmationAction = confirmation ? [...confirmation.querySelectorAll('button')].find(button => /Keep This Device|Use Account Copy/.test(button.textContent ?? '')) : null;
+      const reloadLatest = [...document.querySelectorAll('button')].find(button => button.textContent?.includes('Reload Latest Cloud Data'));
       const parent = layer?.parentElement;
       return {
         viewport: { width: innerWidth, height: innerHeight },
@@ -187,18 +180,11 @@ try {
         nav: rect(nav),
         layerParent: parent ? { tag: parent.tagName, className: parent.className } : null,
         close: rect(close),
-        accountSync: rect(sync),
-        accountData: rect(accountData),
+        accountStatus: rect(accountStatus),
         signOut: rect(signOut),
         emailInput: rect(emailInput),
         signInButton: rect(signInButton),
-        conflictRecovery: rect(conflictRecovery),
-        backupButton: rect(backupButton),
-        keepDevice: keepDevice ? { ...rect(keepDevice), disabled: keepDevice.disabled } : null,
-        useAccountCopy: useAccountCopy ? { ...rect(useAccountCopy), disabled: useAccountCopy.disabled } : null,
-        confirmation: rect(confirmation),
-        confirmationCancel: rect(confirmationCancel),
-        confirmationAction: rect(confirmationAction),
+        reloadLatest: rect(reloadLatest),
         contentScroll: content ? { clientHeight: content.clientHeight, scrollHeight: content.scrollHeight, scrollTop: content.scrollTop, horizontalOverflow: content.scrollWidth > content.clientWidth + 1 } : null,
         layerZIndex: layer ? getComputedStyle(layer).zIndex : null,
         headerZIndex: header ? getComputedStyle(header).zIndex : null,
@@ -218,15 +204,6 @@ try {
     await writeFile(filePath, Buffer.from(screenshot.data, 'base64'));
     results.push({ ...metrics, screenshot: filePath });
 
-    if (confirmationMode) {
-      await evaluate(client, `(() => {
-        const confirmation = document.querySelector('[role="alertdialog"]');
-        [...(confirmation?.querySelectorAll('button') ?? [])]
-          .find(button => button.textContent?.trim() === 'Cancel')?.click();
-      })()`);
-      await delay(50);
-      results[results.length - 1].confirmationClosed = await evaluate(client, `!document.querySelector('[role="alertdialog"]')`);
-    }
     await evaluate(client, `document.querySelector('[aria-label^="Close account"], [aria-label^="Close Account"], [aria-label^="Close Put Scanner Account"]')?.click()`);
     await delay(100);
     const closed = await evaluate(client, `!document.querySelector('[role="dialog"]')`);
@@ -244,13 +221,9 @@ try {
     if (result.pageOverflow || result.contentScroll?.horizontalOverflow) failures.push(`${key}: horizontal overflow detected`);
     if (Number(result.layerZIndex) <= Number(result.navZIndex || 0)) failures.push(`${key}: overlay does not outrank mobile navigation`);
     if (result.trigger && (result.trigger.width < 44 || result.trigger.height < 44)) failures.push(`${key}: Account trigger is smaller than 44px`);
-    if (fixtureNeedsSignedInSections && (!result.accountSync || !result.accountData || !result.signOut)) failures.push(`${key}: signed-in Account sections are not reachable`);
+    if (fixtureNeedsSignedInSections && (!result.accountStatus || !result.signOut)) failures.push(`${key}: signed-in Account status is not reachable`);
     if (keyboardMode && !result.emailFormVisible) failures.push(`${key}: email form is not visible in the reduced dynamic viewport`);
-    if (fixtureConflict && (!result.conflictRecovery || !result.backupButton || !result.keepDevice || !result.useAccountCopy)) failures.push(`${key}: conflict recovery controls are not reachable`);
-    if (fixtureState === 'conflict' && (!result.keepDevice?.disabled || !result.useAccountCopy?.disabled)) failures.push(`${key}: resolution controls must be disabled before backup`);
-    if (fixtureState === 'conflict-backed-up' && (result.keepDevice?.disabled || result.useAccountCopy?.disabled)) failures.push(`${key}: resolution controls must be enabled after backup`);
-    if (confirmationMode && (!result.confirmation || result.confirmation.top < 0 || result.confirmation.bottom > result.viewport.height || !result.confirmationCancel || result.confirmationCancel.height < 44 || !result.confirmationAction || result.confirmationAction.height < 44)) failures.push(`${key}: confirmation is not viewport-safe and touch-safe`);
-    if (confirmationMode && !result.confirmationClosed) failures.push(`${key}: confirmation Cancel did not close the confirmation`);
+    if (fixtureConflict && !result.reloadLatest) failures.push(`${key}: stale-cloud reload control is not reachable`);
     if (!result.closed) failures.push(`${key}: close control did not close the Account sheet`);
   }
   if (failures.length > 0) throw new Error(`Mobile Account visual checks failed:\n${failures.join('\n')}`);
@@ -263,8 +236,7 @@ try {
         layerParent: result.layerParent,
         closeVisible: result.closeVisible,
         sections: {
-          accountSync: Boolean(result.accountSync),
-          accountData: Boolean(result.accountData),
+          accountStatus: Boolean(result.accountStatus),
           signOut: Boolean(result.signOut),
         },
         contentScroll: result.contentScroll,

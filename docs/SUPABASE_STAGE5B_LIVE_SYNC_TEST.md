@@ -1,5 +1,7 @@
 # Supabase Stage 5B Live Sync Test
 
+> **Historical; harness removed.** Stage 7A deleted this local-first development harness. See [the current cloud-authoritative architecture](./PRODUCT_STAGE7A_CLOUD_AUTHORITATIVE_STATE.md).
+
 This checklist is for a human operator testing the development-only Stage 5B harness. Codex implementation and automated tests make no live Supabase or Auth requests. Stage 5B never enables production synchronization.
 
 ## PHASE 0 — Safety

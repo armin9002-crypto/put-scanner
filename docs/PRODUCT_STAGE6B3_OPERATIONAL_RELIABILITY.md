@@ -1,5 +1,7 @@
 # Stage 6B.3 Revised - Operational Reliability
 
+> **Historical persistence note.** Request observability remains current. References to local-first durable-account writes or Stage 1–5 account architecture were superseded by [Stage 7A](./PRODUCT_STAGE7A_CLOUD_AUTHORITATIVE_STATE.md); only genuine device-local settings still use localStorage failure feedback.
+
 This document supersedes the earlier Stage 6B.3 implementation note for the post-UI-5 codebase at `b071c95`. The UI-5 design, market-product scope, financial formulas, and Stage 1-5 account/cloud architecture remain frozen.
 
 ## Request terminology

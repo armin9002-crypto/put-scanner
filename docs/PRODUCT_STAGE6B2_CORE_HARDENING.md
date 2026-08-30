@@ -1,5 +1,7 @@
 # Stage 6B.2 - Core Product Reliability and UX Hardening
 
+> **Historical persistence note.** The reliability decisions remain relevant, but local-first account persistence was removed in [Stage 7A](./PRODUCT_STAGE7A_CLOUD_AUTHORITATIVE_STATE.md). Current Portfolio, Watchlist, and account-preference writes are cloud-authoritative CAS operations.
+
 Completion date: 2026-08-27
 
 ## Scope and outcome

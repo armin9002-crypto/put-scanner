@@ -61,11 +61,7 @@ export interface WatchlistMigrationResult {
 }
 
 function getStorage(): StorageLike | null {
-  try {
-    return typeof localStorage !== 'undefined' ? localStorage : null;
-  } catch {
-    return null;
-  }
+  return getAccountStateStorage();
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -513,7 +509,6 @@ export function writeWatchlist(
 export function saveWatchlist(items: WatchlistItem[]): StorageWriteResult {
   const storage = getStorage();
   const result: StorageWriteResult = storage ? writeWatchlist(storage, items) : { status: 'error', error: 'Watchlist storage is unavailable.' };
-  if (result.status === 'error') notifyLocalStorageFailure();
   return result;
 }
 
@@ -600,4 +595,4 @@ import {
   type StorageWriteResult,
 } from './durableStorage.ts';
 import { emitDurableMutation } from './cloudState/syncEvents.ts';
-import { notifyLocalStorageFailure } from './storageFeedback.ts';
+import { getAccountStateStorage } from './cloudState/accountStateStorage.ts';

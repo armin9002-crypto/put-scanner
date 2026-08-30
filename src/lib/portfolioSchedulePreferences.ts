@@ -1,8 +1,11 @@
+import { emitDurableMutation } from './cloudState/syncEvents.ts';
+import { getAccountStateStorage } from './cloudState/accountStateStorage.ts';
+import { notifyLocalStorageFailure } from './storageFeedback.ts';
+
 export const PORTFOLIO_EXPIRY_GROUPS_KEY = 'put_scanner_portfolio_expiry_groups:v1';
 export const PORTFOLIO_UNDERLYING_GROUPS_KEY = 'put_scanner_portfolio_underlying_groups:v1';
 export const PORTFOLIO_GROUP_MODE_KEY = 'put_scanner_portfolio_group_mode:v1';
 export type PortfolioGroupMode = 'expiration' | 'underlying' | 'none';
-import { notifyLocalStorageFailure } from './storageFeedback.ts';
 
 function readCollapsedGroups(key: string, storage: Pick<Storage, 'getItem'> | null): Record<string, boolean> {
   if (!storage) return {};
@@ -18,9 +21,7 @@ type PreferenceWriteStorage = Pick<Storage, 'setItem'> & Partial<Pick<Storage, '
 function persistCollapsedGroups(key: string, value: Record<string, boolean>, storage: PreferenceWriteStorage | null): void {
   try {
     const serialized = JSON.stringify(value);
-    const previous = storage?.getItem?.(key);
     storage?.setItem(key, serialized);
-    if (storage && previous !== serialized) emitDurableMutation('preferences');
   } catch { notifyLocalStorageFailure(); }
 }
 
@@ -40,19 +41,19 @@ export function persistCollapsedUnderlyingGroups(value: Record<string, boolean>,
   persistCollapsedGroups(PORTFOLIO_UNDERLYING_GROUPS_KEY, value, storage);
 }
 
-export function readPortfolioGroupMode(storage: Pick<Storage, 'getItem'> | null = typeof localStorage === 'undefined' ? null : localStorage): PortfolioGroupMode {
+export function readPortfolioGroupMode(storage: Pick<Storage, 'getItem'> | null = getAccountStateStorage()): PortfolioGroupMode {
   try {
     const value = storage?.getItem(PORTFOLIO_GROUP_MODE_KEY);
     return value === 'underlying' || value === 'none' ? value : 'expiration';
   } catch { return 'expiration'; }
 }
 
-export function persistPortfolioGroupMode(value: PortfolioGroupMode, storage: PreferenceWriteStorage | null = typeof localStorage === 'undefined' ? null : localStorage): void {
+export function persistPortfolioGroupMode(value: PortfolioGroupMode, storage: PreferenceWriteStorage | null = getAccountStateStorage()): void {
   try {
     const previous = storage?.getItem?.(PORTFOLIO_GROUP_MODE_KEY);
     storage?.setItem(PORTFOLIO_GROUP_MODE_KEY, value);
     if (storage && previous !== value) emitDurableMutation('preferences');
-  } catch { notifyLocalStorageFailure(); }
+  } catch { /* Account storage reports signed-out/save failures centrally. */ }
 }
 
 export function toggleCollapsedExpirationGroup(value: Record<string, boolean>, expiration: string): Record<string, boolean> {
@@ -62,4 +63,3 @@ export function toggleCollapsedExpirationGroup(value: Record<string, boolean>, e
 export function setAllExpirationGroupsCollapsed(expirations: string[], collapsed: boolean): Record<string, boolean> {
   return Object.fromEntries(expirations.map(expiration => [expiration, collapsed]));
 }
-import { emitDurableMutation } from './cloudState/syncEvents.ts';

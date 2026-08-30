@@ -10,6 +10,8 @@ const visualBuildCommand = process.platform === 'win32'
 
 export default defineConfig({
   testDir: './e2e',
+  // Historical screenshot-capture suites run only through visual:ui* scripts.
+  testIgnore: visualCapture ? [] : ['**/*.visual.spec.ts'],
   fullyParallel: false,
   workers: 1,
   timeout: 45_000,

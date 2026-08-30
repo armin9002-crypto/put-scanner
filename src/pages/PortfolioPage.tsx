@@ -1001,7 +1001,7 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
         <div className="flex items-start justify-between gap-3 mb-4">
           <div>
             <h2 className="text-lg font-bold" style={{ color: 'var(--text)' }}>{trade ? 'Edit Sold Put' : 'Add Sold Put'}</h2>
-            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Manual cash-secured put tracking. Data stays in this browser.</p>
+            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Manual cash-secured put tracking saved to your cloud account.</p>
           </div>
           <button onClick={onClose} className="px-3 py-2 rounded-lg text-xs min-h-[40px]" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
         </div>
@@ -1352,7 +1352,7 @@ export default function PortfolioPage() {
         setDurableActivityNotice('Explicit Portfolio maintenance updated expiration lifecycle history.');
         setMaintenanceMessage(`${reconciled.filter((trade, index) => trade !== latest[index]).length} lifecycle ${reconciled.filter((trade, index) => trade !== latest[index]).length === 1 ? 'position was' : 'positions were'} updated.`);
       } else {
-        setMaintenanceMessage('Could not save lifecycle maintenance on this browser.');
+        setMaintenanceMessage('Could not save lifecycle maintenance to your account.');
       }
     } catch {
       setMaintenanceMessage('Could not complete lifecycle maintenance. Existing positions were preserved.');
@@ -1373,7 +1373,7 @@ export default function PortfolioPage() {
         : latest;
       const applied = reconciled.some((trade, index) => trade !== latest[index]);
       if (applied && !persistTrades(reconciled)) {
-        setMaintenanceMessage('Could not save Entry VIX maintenance on this browser.');
+        setMaintenanceMessage('Could not save Entry VIX maintenance to your account.');
         return;
       }
       setTrades(applied ? reconciled : latest);
@@ -1399,7 +1399,7 @@ export default function PortfolioPage() {
       if (persistTrades(recovered.trades)) {
         setMaintenanceMessage(`${recovered.resolved} stored Entry Delta ${recovered.resolved === 1 ? 'snapshot was' : 'snapshots were'} recovered with zero market requests.`);
       } else {
-        setMaintenanceMessage('Could not save recovered Entry Delta snapshots on this browser.');
+        setMaintenanceMessage('Could not save recovered Entry Delta snapshots to your account.');
       }
     } finally {
       setMaintenanceBusy(null);
@@ -2168,7 +2168,7 @@ export default function PortfolioPage() {
         )}
 
         <footer className="mt-8 pb-6 text-center">
-          <p className="text-xs" style={{ color: 'var(--text-dim)' }}>Portfolio data is stored locally in this browser. Not financial advice.</p>
+          <p className="text-xs" style={{ color: 'var(--text-dim)' }}>Portfolio durable data is cloud-backed when signed in. Not financial advice.</p>
         </footer>
       </div>
 

@@ -1,5 +1,7 @@
 # Put Scanner Cloud Migration Readiness Audit
 
+> **Historical inventory.** The migration architecture described here was retired by Stage 7A. See [the current cloud-authoritative architecture](./PRODUCT_STAGE7A_CLOUD_AUTHORITATIVE_STATE.md).
+
 Date: 2026-08-14
 Scope: Stage 1 safety, storage inventory, infrastructure audit, and local backup only
 

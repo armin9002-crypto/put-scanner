@@ -1,5 +1,7 @@
 # Stage 6B.4 - Portfolio Maintenance, Quote Freshness, and Entry Delta
 
+> **Historical persistence note.** Entry Delta, freshness, and explicit maintenance semantics remain current. The local-first sync, fingerprint, winner-selection, and browser-durable references were superseded by [Stage 7A cloud-authoritative account state](./PRODUCT_STAGE7A_CLOUD_AUTHORITATIVE_STATE.md).
+
 Implementation date: 2026-08-28
 
 This stage remains within the current Put Scanner product. It adds explicit durable Portfolio maintenance, truthful quote-freshness policy, and a historical Entry Delta snapshot. It does not add a historical Greeks service, polling, scheduled work, rolling, alerts, or new cloud architecture.

@@ -28,7 +28,7 @@ import { resolveExpiredTradeWithClose } from '../src/lib/portfolioExpirationArch
 import { parsedBrokerageRowToPortfolioTrade } from '../src/lib/portfolioScreenshotImport.ts';
 import { REQUEST_BUDGET_LEDGER } from '../src/lib/requestBudgets.ts';
 import { createPutScannerBackup, applyPutScannerBackup } from '../src/lib/userDataBackup.ts';
-import { fingerprintNamespaceDocument } from '../src/lib/cloudState/syncFingerprint.ts';
+import { canonicalJsonEqual } from '../src/lib/cloudState/stateComparison.ts';
 import { validateCloudNamespaceDocument } from '../src/lib/cloudState/cloudValidation.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -118,7 +118,7 @@ test('optional Entry Delta is backward compatible, rejects invalid data, and cre
   assert.equal(after.updatedAt, before.updatedAt);
 });
 
-test('backup and canonical cloud fingerprints retain Entry Delta while old backups remain valid', () => {
+test('backup and canonical cloud documents retain Entry Delta while old backups remain valid', () => {
   const source = new MemoryStorage();
   const enriched = trade({ entryDelta: -0.24, entryDeltaSource: 'provider', entryDeltaCapturedAt: '2026-08-28T15:05:00.000Z', latestMarketData: undefined });
   writePortfolioTrades(source, [enriched], { now: new Date('2026-08-28T15:06:00Z') });
@@ -131,12 +131,10 @@ test('backup and canonical cloud fingerprints retain Entry Delta while old backu
   const oldSource = new MemoryStorage({ [PORTFOLIO_STORAGE_KEY]: JSON.stringify([trade({ entrySnapshot: undefined, latestMarketData: undefined })]) });
   const oldBackup = createPutScannerBackup(oldSource);
   assert.equal('entryDelta' in oldBackup.data.portfolio.data[0], false);
-  const legacyFingerprint = fingerprintNamespaceDocument({ schemaVersion: 1, payload: { data: oldBackup.data.portfolio.data } });
-  const enrichedFingerprint = fingerprintNamespaceDocument({ schemaVersion: 1, payload: { data: backup.data.portfolio.data } });
-  assert.notEqual(legacyFingerprint, enrichedFingerprint, 'Entry Delta participates in canonical conflict detection');
+  assert.equal(canonicalJsonEqual(oldBackup.data.portfolio.data, backup.data.portfolio.data), false, 'Entry Delta participates in canonical CAS documents');
   const cloudValidated = validateCloudNamespaceDocument('portfolio', 1, { data: backup.data.portfolio.data }, 'fetch_all');
   assert.equal(cloudValidated.ok, true);
-  assert.equal(cloudValidated.value.payload.data[0].entryDelta, -0.24, 'cloud push/pull validation retains Entry Delta');
+  assert.equal(cloudValidated.value.payload.data[0].entryDelta, -0.24, 'cloud validation retains Entry Delta');
 });
 
 test('OCR imports never manufacture Entry Delta from screenshot market values', () => {

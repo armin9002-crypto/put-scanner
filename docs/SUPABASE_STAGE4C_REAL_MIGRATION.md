@@ -1,5 +1,7 @@
 # Supabase Stage 4C production first-account migration
 
+> **Historical.** The first-login local migration and browser restore flow was removed in Stage 7A. See [the current cloud-authoritative architecture](./PRODUCT_STAGE7A_CLOUD_AUTHORITATIVE_STATE.md).
+
 Stage 4C provides a production-safe, explicit first-migration and new-device restore workflow. It does **not** enable ongoing synchronization. Local browser storage remains Put Scanner's active runtime state.
 
 ## Entry point and request boundary

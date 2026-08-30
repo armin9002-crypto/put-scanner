@@ -1,5 +1,7 @@
 # Supabase Stage 5C.1 production sync integration
 
+> **Historical and obsolete.** Stage 7A replaced this enrolled local-first lifecycle with cloud-authoritative account state. See [the current architecture](./PRODUCT_STAGE7A_CLOUD_AUTHORITATIVE_STATE.md).
+
 Status: the Stage 5C/5D production lifecycle is live and validated. Stage 5E adds explicit backup-first conflict recovery while preserving the same feature gate, root coordinator, enrollment, request discipline, and local-first durable contract. Stage 5E does not authorize changing Vercel, deploying, inspecting the live account, or performing a live conflict canary.
 
 Put Scanner remains local-first. Portfolio/history, Watchlist, and portable Preferences are written and read locally first. Supabase is an authenticated durable account copy, cross-device state source, and revision authority only after this browser is explicitly enrolled.

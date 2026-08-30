@@ -38,33 +38,27 @@ if (largestJs && largestJs.size > MAIN_CHUNK_WARN_KB * 1024) {
 const javascript = (await Promise.all(
   files.filter(file => file.path.endsWith('.js')).map(file => readFile(file.path, 'utf8')),
 )).join('\n');
-const dormantSyncMarkers = [
-  'put_scanner_cloud_sync_engine:v1',
-  'Only verified eligible device metadata can enable sync.',
-  'Sync retry delays must be non-negative durations.',
-];
-const productionSyncMarkers = [
+const retiredLocalFirstMarkers = [
   'Enable Sync on This Device',
-  'Account sync is up to date.',
+  'Keep This Device',
+  'Use Account Copy',
+  'BOTH_CHANGED',
+  'LOCAL_AHEAD',
 ];
-const productionSyncPresent = javascript.includes('Enable Sync on This Device');
-if (productionSyncPresent) {
-  const missingMarker = productionSyncMarkers.find(marker => !javascript.includes(marker));
-  if (missingMarker) {
-    throw new Error(`Feature-enabled production sync bundle is incomplete: ${missingMarker}`);
-  }
-  const missingEngineMarker = dormantSyncMarkers.find(marker => !javascript.includes(marker));
-  if (missingEngineMarker) {
-    throw new Error(`Feature-enabled production sync engine is incomplete: ${missingEngineMarker}`);
-  }
-  console.log('\nFeature-gated production sync orchestration is present and includes explicit enrollment.');
-} else {
-  const leakedMarker = dormantSyncMarkers.find(marker => javascript.includes(marker));
-  if (leakedMarker) {
-    throw new Error(`Dormant Stage 5 sync engine entered the feature-disabled production bundle: ${leakedMarker}`);
-  }
-  console.log('\nFeature-disabled production bundle excludes sync orchestration and the Stage 5 engine.');
+const cloudAuthoritativeMarkers = [
+  'Loading your account data',
+  'Sign in to save account data',
+  'Your account changed on another device',
+];
+const missingAuthoritativeMarker = cloudAuthoritativeMarkers.find(marker => !javascript.includes(marker));
+if (missingAuthoritativeMarker) {
+  throw new Error(`Cloud-authoritative account bundle is incomplete: ${missingAuthoritativeMarker}`);
 }
+const leakedLocalFirstMarker = retiredLocalFirstMarkers.find(marker => javascript.includes(marker));
+if (leakedLocalFirstMarker) {
+  throw new Error(`Retired local-first account architecture entered the production bundle: ${leakedLocalFirstMarker}`);
+}
+console.log('\nCloud-authoritative account bootstrap/CAS handling is present; local-first enrollment and reconciliation are absent.');
 
 const stage5bHarnessMarkers = [
   'Sync Test Harness',
@@ -106,4 +100,4 @@ const leakedAccountUiMarker = accountUiFixtureMarkers.find(marker => javascript.
 if (leakedAccountUiMarker) {
   throw new Error(`Development Account UI fixture entered the production bundle: ${leakedAccountUiMarker}`);
 }
-console.log('Development Stage 4B/5B harnesses, Account UI fixtures, coordinator attachment, fixtures, and email allow-list are excluded from production assets.');
+console.log('Retired Stage 4B/5B harnesses and Account UI fixtures are excluded from production assets.');

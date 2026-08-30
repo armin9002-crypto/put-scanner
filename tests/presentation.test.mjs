@@ -19,7 +19,7 @@ test('desktop Scanner daily move presentation is percentage-only', () => {
   assert.equal(formatScannerDailyChangePercent(null), '—');
 });
 
-test('Nominal Yield visibility defaults off and persists locally', () => {
+test('Nominal Yield account preference defaults off and roundtrips its storage adapter', () => {
   const values = new Map();
   const storage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };
   assert.equal(readShowNominalYield(storage), false);

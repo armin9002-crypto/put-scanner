@@ -16,9 +16,7 @@ const ScreenerPage = lazy(() => import('./pages/ScreenerPage'));
 const WatchlistPage = lazy(() => import('./pages/WatchlistPage'));
 const PortfolioPage = lazy(() => import('./pages/PortfolioPage'));
 const EtfPulsePage = lazy(() => import('./pages/EtfPulsePage'));
-const ProductionCloudSyncProvider = import.meta.env.VITE_CLOUD_SYNC_ENABLED === 'true'
-  ? lazy(() => import('./components/CloudSyncProvider'))
-  : null;
+const AccountStateProvider = lazy(() => import('./components/CloudSyncProvider'));
 const visualFixturesEnabled = import.meta.env.DEV || import.meta.env.VITE_UI_VISUAL_FIXTURES === 'true';
 const DevAccountUiTestFixture = visualFixturesEnabled
   ? lazy(() => import('./components/AccountUiTestFixture'))
@@ -362,15 +360,11 @@ export default function App() {
 
   return (
     <AuthProvider>
-      {ProductionCloudSyncProvider
-        ? (
-          <Suspense fallback={null}>
-            <ProductionCloudSyncProvider>
-              <AppBody />
-            </ProductionCloudSyncProvider>
-          </Suspense>
-        )
-        : <AppBody />}
+      <Suspense fallback={null}>
+        <AccountStateProvider>
+          <AppBody />
+        </AccountStateProvider>
+      </Suspense>
     </AuthProvider>
   );
 }

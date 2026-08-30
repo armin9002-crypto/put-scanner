@@ -1,5 +1,7 @@
 # Product Stage 6A Audit
 
+> **Historical persistence note.** Product findings remain useful, but every local-first account-data statement was superseded by [Stage 7A cloud-authoritative account state](./PRODUCT_STAGE7A_CLOUD_AUTHORITATIVE_STATE.md). Do not use this audit to design current Portfolio, Watchlist, or account-preference persistence.
+
 Audit date: 2026-08-26
 
 Code baseline: `3d1ed6b93303a4ff9d5d8963abda74f10c325cb8`
