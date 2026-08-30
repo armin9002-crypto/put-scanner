@@ -2202,11 +2202,38 @@ td {
 .portfolio-history-section {
   border-top: 1px solid var(--border-subtle);
   padding-top: 0.85rem;
+  min-width: 0;
 }
 
 .portfolio-history-section > .grid > * {
   border-color: var(--border-default) !important;
   background: var(--bg-secondary) !important;
+}
+
+.portfolio-history-header,
+.portfolio-history-controls,
+.portfolio-history-control-group {
+  min-width: 0;
+}
+
+.portfolio-history-control-group {
+  scrollbar-width: none;
+}
+
+.portfolio-history-control-group::-webkit-scrollbar {
+  display: none;
+}
+
+.portfolio-history-table {
+  table-layout: auto;
+}
+
+.portfolio-history-table tbody td {
+  height: 30px;
+}
+
+.portfolio-history-summary-grid > * {
+  min-height: 62px;
 }
 
 @media (max-width: 767px) {
@@ -2257,6 +2284,31 @@ td {
 
   .portfolio-analytics-disclosure__hint {
     font-size: 0.58rem;
+  }
+
+  .portfolio-history-section {
+    padding-top: 0.7rem;
+  }
+
+  .portfolio-history-controls {
+    width: 100%;
+  }
+
+  .portfolio-history-control-group {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .portfolio-history-summary-grid > * {
+    min-height: 58px;
+  }
+
+  .portfolio-history-summary-grid .portfolio-summary-card__value {
+    font-size: 0.78rem;
+  }
+
+  .portfolio-history-section article {
+    min-width: 0;
   }
 
   .watchlist-mobile-card .font-mono.text-lg {

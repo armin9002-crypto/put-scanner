@@ -258,6 +258,15 @@ test('Add Trade omits manual Entry Delta while Edit retains the explicit overrid
   assert.match(save, /if \(!id\)/, 'only creation can start automatic capture, so Edit clearing remains unavailable');
   assert.match(page, /useState<HistoryGroupMode>\('year'\)/, 'History defaults to expiration-year grouping without durable preference state');
   assert.match(page, /summary\.totalHistoricalNotional/, 'the headline notional always covers all History, independent of outcome filtering');
+  assert.match(page, /label="Total Realized IRR"/, 'History exposes the combined realized money-weighted return');
+  assert.match(page, /label="Wtd\. Avg\. Entry Delta"/, 'History exposes the signed weighted Entry Delta summary');
+  assert.match(page, /label="Avg Days Held" value=\{formatAverageDays/, 'History keeps one-decimal average holding periods');
+  assert.match(page, /label="Total Historical Notional"/, 'History exposes cumulative historical notional');
+  assert.doesNotMatch(page, /label="Premium Collected"/, 'Portfolio-facing summary labels use the concise Premium name');
+  assert.match(page, /\['Ticker', 'Exp\.', 'Strike'.*'VIX @ Entry', 'Price @ Exp\.'/s, 'History table uses compact date and historical market columns');
+  assert.doesNotMatch(page, /\['Ticker', 'Expiration'.*'Final Value'/s, 'History table does not display the legacy Final Value column');
+  assert.match(page, /function formatHistoryDate/, 'History dates use a deterministic compact formatter');
+  assert.match(page, /aria-label="Group history by"/, 'History grouping uses the shared segmented-control interaction language');
   const historyAnalytics = await read('src/lib/portfolioHistoryAnalytics.ts');
   assert.doesNotMatch(historyAnalytics, /fetch\(|requestMarketData|fetchOptions/, 'History analytics remain request-free');
 });
