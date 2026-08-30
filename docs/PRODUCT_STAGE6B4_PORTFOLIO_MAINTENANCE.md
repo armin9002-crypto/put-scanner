@@ -1,6 +1,8 @@
 # Stage 6B.4 - Portfolio Maintenance, Quote Freshness, and Entry Delta
 
 > **Historical persistence note.** Entry Delta, freshness, and explicit maintenance semantics remain current. The local-first sync, fingerprint, winner-selection, and browser-durable references were superseded by [Stage 7A cloud-authoritative account state](./PRODUCT_STAGE7A_CLOUD_AUTHORITATIVE_STATE.md).
+>
+> **Entry lifecycle refinement.** Add Trade no longer accepts manual Entry Delta. Automatic creation-time capture, Edit-only override/clear behavior, and History weighting are defined in [Portfolio History Semantics and Entry Delta Lifecycle](./PORTFOLIO_HISTORY_SEMANTICS_REFINEMENT.md).
 
 Implementation date: 2026-08-28
 
@@ -21,7 +23,7 @@ Portfolio work is now separated into three classes:
 | Class | Examples | Durable revision |
 |---|---|---|
 | Transient market refresh | Underlying, Bid, Ask, Last, Current Delta, IV, OI, Volume, observation time | No; stored only in device-local `localMarketData` |
-| Durable user edit | Add/edit/delete, notes, manual Entry Delta, explicit close/archive, import/restore | Yes, after successful validation and storage |
+| Durable user edit | Add/edit/delete, notes, Edit-only manual Entry Delta, explicit close/archive, import/restore | Yes, after successful validation and storage |
 | Durable maintenance | Expiration resolution, historical Entry VIX, recovery of an actually stored entry-snapshot Delta | Yes, only after an explicit maintenance action |
 
 Portfolio mount, route navigation, Maintenance panel open, hover, intervals, Refresh Open Trades, and backup import completion perform no automatic maintenance request or maintenance write. The Fidelity import review can still apply lifecycle statuses the user explicitly selects in that review.

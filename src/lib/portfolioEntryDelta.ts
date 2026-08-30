@@ -15,8 +15,37 @@ export interface PortfolioEntryDeltaCaptureResult {
   reason: string;
 }
 
+export type PortfolioEntryDeltaEditPatch = Pick<
+  PortfolioTrade,
+  'entryDelta' | 'entryDeltaSource' | 'entryDeltaCapturedAt'
+>;
+
 export function isValidEntryDelta(value: unknown): value is number {
   return isFiniteNumber(value) && value >= -1 && value <= 0;
+}
+
+/**
+ * Resolves an explicit Edit Trade value without consulting current market data.
+ * An unchanged value preserves its historical provenance, a changed value becomes
+ * a manual override, and an explicit blank clears all Entry Delta metadata.
+ */
+export function buildEntryDeltaEditPatch(
+  trade: Pick<PortfolioTrade, 'entryDelta' | 'entryDeltaSource' | 'entryDeltaCapturedAt'>,
+  value: number | null,
+  capturedAt = new Date().toISOString(),
+): PortfolioEntryDeltaEditPatch {
+  if (value == null) {
+    return { entryDelta: undefined, entryDeltaSource: undefined, entryDeltaCapturedAt: undefined };
+  }
+  if (!isValidEntryDelta(value)) throw new RangeError('Entry Delta must be between -1 and 0.');
+  if (trade.entryDelta === value) {
+    return {
+      entryDelta: trade.entryDelta,
+      entryDeltaSource: trade.entryDeltaSource,
+      entryDeltaCapturedAt: trade.entryDeltaCapturedAt,
+    };
+  }
+  return { entryDelta: value, entryDeltaSource: 'manual', entryDeltaCapturedAt: capturedAt };
 }
 
 export function usMarketDateIso(value: Date | number = new Date()): string {

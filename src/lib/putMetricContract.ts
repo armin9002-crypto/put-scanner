@@ -26,7 +26,7 @@ export const PUT_METRIC_CONTRACT = {
   },
   entryNetRiskReturn: {
     label: 'Entry NY',
-    formula: 'premium collected ÷ entry net maximum-loss capital',
+    formula: 'premium ÷ entry net maximum-loss capital',
     denominator: 'entry net maximum-loss capital',
   },
   annualizedEntryNetRiskReturn: {

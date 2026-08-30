@@ -13,7 +13,7 @@ This section is the authoritative product contract as of Stage 6B.1. It supersed
 | Net Risk | `gross secured cash - total premium` | Assumes the underlying can fall to zero. |
 | Nominal Yield (NY) | `premium / gross secured cash` | Gross secured cash. Used for Scanner, Screener, ticker detail, and Watchlist discovery quotes. |
 | Annualized Yield (AY) | `NY × 365 / DTE` | Gross secured cash. Simple annualization; unavailable at `DTE <= 0`. |
-| Entry NY | `premium collected / entry net maximum-loss capital` | Entry net maximum-loss capital. Used for an entered position in Portfolio. |
+| Entry NY | `premium / entry net maximum-loss capital` | Entry net maximum-loss capital. Used for an entered position in Portfolio and historical NY. |
 | Entry AY | `entry NY × 365 / original DTE` | Entry net maximum-loss capital. Simple annualization. |
 | Current NY | `current buyback cost / entry net maximum-loss capital` | Original entry net maximum-loss capital. This is a remaining-liability ratio, not earned yield. |
 | Current AY | preceding ratio `× 365 / remaining DTE` | Original entry net maximum-loss capital. |
@@ -31,7 +31,7 @@ Canonical labels now map consistently to their existing context-specific formula
 - DTE is UTC expiration date minus the UTC current date. Expiration day is 0 DTE; a contract is expired only below 0 DTE.
 - Bid-Ask Spread is `ask - bid`. Spread % is `(ask - bid) / ((bid + ask) / 2)` and is unavailable when quotes are invalid or the midpoint is zero.
 - Premium Captured is open-position gain/loss divided by premium collected. It is mark-dependent and not clamped.
-- Realized IRR is `(1 + realized P&L / original net risk)^(365.25 / days held) - 1`; invalid capital or holding periods produce unavailable.
+- Per-trade Realized IRR is `(1 + realized P&L / original net risk)^(365.25 / days held) - 1`; invalid capital or holding periods produce unavailable. Total Realized IRR is a combined date-aware XIRR over every resolved trade's `-original net risk` entry flow and `original net risk + realized P&L` resolution flow; it is never an average of individual IRRs.
 
 Volume and Open Interest remain transparent primitives. Put Scanner does not create a proprietary liquidity score. A user can inspect Bid, Ask, spread, Spread %, Volume, Open Interest, and quote age where supported.
 
@@ -66,7 +66,7 @@ Delta remains a model sensitivity, not a guaranteed probability of assignment.
 
 Portfolio **Entry Delta** is distinct from **Current Delta**. Entry Delta is the finite signed put Delta in `[-1, 0]` observed or validly calculated for the exact contract at/near entry. Current Delta is transient market state and is never substituted for an older missing Entry Delta.
 
-Eligible automatic capture requires the trade's sold date to match the current U.S. market date, a contemporaneous non-stale exact chain, and either a valid provider Delta or every input required by the canonical calculation. Manual broker Entry Delta is optional and explicitly durable. Legacy recovery is limited to an actual `entrySnapshot.delta`; current Delta, IV, and underlying are prohibited historical inputs. See `PRODUCT_STAGE6B4_PORTFOLIO_MAINTENANCE.md` for provenance and compatibility.
+Eligible automatic capture requires the trade's sold date to match the current U.S. market date, a contemporaneous non-stale exact chain, and either a valid provider Delta or every input required by the canonical calculation. Add Trade does not expose a Delta input; explicit manual population, override, or clearing is available only through Edit and is durable. Legacy recovery is limited to an actual `entrySnapshot.delta`; current Delta, IV, and underlying are prohibited historical inputs. See `PORTFOLIO_HISTORY_SEMANTICS_REFINEMENT.md` for lifecycle, weighting, and compatibility.
 
 ### Portfolio quote freshness (Stage 6B.4)
 
@@ -139,7 +139,10 @@ Primary implementation: `src/lib/optionMetrics.ts`, `src/lib/portfolioMetrics.ts
 | Distance to strike | `(underlying − strike) / underlying`. | Positive means OTM for a put. |
 | Distance to breakeven | `(underlying − (strike − soldPrice)) / underlying`. | Includes the original credit cushion. |
 | Realized P&L at expiry | `premium − max(strike − expirationClose, 0) × 100 × contracts`. | Automatic archive uses an expiration close or nearest prior close and records warnings/source. Corporate actions are not modeled. |
-| Realized IRR | `(1 + realizedPnl / originalNetRisk)^(365.25/daysHeld) − 1`. | History only. Returns `null` for invalid periods/capital and should not be compared casually across tiny holding periods. |
+| Realized IRR | `(1 + realizedPnl / originalNetRisk)^(365.25/daysHeld) − 1`. | Per History trade. Returns `null` for invalid periods/capital and should not be compared casually across tiny holding periods. |
+| Total Realized IRR | XIRR of combined `-originalNetRisk` entry flows and `originalNetRisk + realizedPnl` resolution flows on actual dates. | Money-weighted realized History return. Multiple/no-real roots and incomplete valid cash-flow sets return `null`; individual IRRs are never averaged. |
+| Wtd. Avg. Entry Delta | `sum(entryDelta × Gross Risk) / sum(known-Delta Gross Risk)`. | Signed historical Delta. Missing values are excluded; coverage is known-Delta Gross Risk divided by total historical Gross Risk. |
+| Total Historical Notional | `sum(Gross Risk)` across all History positions. | Cumulative gross secured risk processed; no premium or current-value adjustment. |
 
 ## Cross-page consistency result
 

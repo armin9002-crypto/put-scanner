@@ -6,11 +6,13 @@ import { fileURLToPath } from 'node:url';
 
 import {
   backfillStoredEntryDeltas,
+  buildEntryDeltaEditPatch,
   entryDeltaFromExactChain,
   isContemporaneousPortfolioEntry,
   isValidEntryDelta,
   usMarketDateIso,
 } from '../src/lib/portfolioEntryDelta.ts';
+import { mergePortfolioMarketRefresh } from '../src/lib/portfolioMarketRefresh.ts';
 import { assessPortfolioMaintenance } from '../src/lib/portfolioMaintenance.ts';
 import {
   elapsedMarketSessions,
@@ -87,6 +89,36 @@ test('historical trades and stale chains can never receive current Delta as Entr
   assert.equal(usMarketDateIso(new Date('2026-08-29T02:00:00Z')), '2026-08-28', 'market date follows New York rather than UTC rollover');
 });
 
+test('Edit Trade can populate, override, preserve, or explicitly clear frozen Entry Delta', () => {
+  const capturedAt = '2026-08-30T15:00:00.000Z';
+  assert.deepEqual(buildEntryDeltaEditPatch(trade({ entryDelta: undefined, entryDeltaSource: undefined }), -0.2, capturedAt), {
+    entryDelta: -0.2, entryDeltaSource: 'manual', entryDeltaCapturedAt: capturedAt,
+  });
+  const captured = trade({ entryDelta: -0.24, entryDeltaSource: 'provider', entryDeltaCapturedAt: '2026-08-28T15:05:00.000Z' });
+  assert.deepEqual(buildEntryDeltaEditPatch(captured, -0.24, capturedAt), {
+    entryDelta: -0.24, entryDeltaSource: 'provider', entryDeltaCapturedAt: '2026-08-28T15:05:00.000Z',
+  }, 'unrelated edits preserve the frozen value and its original provenance');
+  assert.deepEqual(buildEntryDeltaEditPatch(captured, -0.31, capturedAt), {
+    entryDelta: -0.31, entryDeltaSource: 'manual', entryDeltaCapturedAt: capturedAt,
+  });
+  assert.deepEqual(buildEntryDeltaEditPatch(captured, null, capturedAt), {
+    entryDelta: undefined, entryDeltaSource: undefined, entryDeltaCapturedAt: undefined,
+  });
+  assert.throws(() => buildEntryDeltaEditPatch(captured, -1.1, capturedAt), RangeError);
+});
+
+test('manual Entry Delta remains position-specific and quote refresh cannot replace it', () => {
+  const first = trade({ id: 'same-contract-1', entryDelta: -0.21, entryDeltaSource: 'manual', entryDeltaCapturedAt: '2026-08-30T15:00:00.000Z' });
+  const second = trade({ id: 'same-contract-2', entryDelta: -0.33, entryDeltaSource: 'manual', entryDeltaCapturedAt: '2026-08-30T15:01:00.000Z' });
+  const refreshed = [
+    trade({ ...first, entryDelta: -0.7, latestMarketData: { ...first.latestMarketData, delta: -0.7, refreshedAt: '2026-08-30T16:00:00.000Z' } }),
+    trade({ ...second, entryDelta: -0.8, latestMarketData: { ...second.latestMarketData, delta: -0.8, refreshedAt: '2026-08-30T16:00:00.000Z' } }),
+  ];
+  const merged = mergePortfolioMarketRefresh([first, second], refreshed);
+  assert.deepEqual(merged.map(item => item.entryDelta), [-0.21, -0.33]);
+  assert.deepEqual(merged.map(item => item.latestMarketData.delta), [-0.7, -0.8]);
+});
+
 test('legacy Entry Delta recovery uses only a stored entry snapshot and preserves lifecycle history', () => {
   const missing = trade({ id: 'missing', entrySnapshot: { underlyingPrice: 65, iv: 45 } });
   const recovered = backfillStoredEntryDeltas([trade(), missing], '2026-08-28T16:00:00.000Z');
@@ -97,6 +129,8 @@ test('legacy Entry Delta recovery uses only a stored entry snapshot and preserve
   const archived = resolveExpiredTradeWithClose({ ...recovered.trades[0], expiration: '2026-08-27' }, 60, '2026-08-27', 'expiration_close', undefined, '2026-08-28T17:00:00.000Z');
   assert.equal(archived.entryDelta, -0.22);
   assert.equal(archived.entryDeltaSource, 'stored_snapshot');
+  const archivedManual = resolveExpiredTradeWithClose({ ...trade(), expiration: '2026-08-27', entryDelta: -0.31, entryDeltaSource: 'manual', entryDeltaCapturedAt: '2026-08-27T15:00:00.000Z' }, 60, '2026-08-27', 'expiration_close');
+  assert.deepEqual([archivedManual.entryDelta, archivedManual.entryDeltaSource], [-0.31, 'manual']);
 });
 
 test('optional Entry Delta is backward compatible, rejects invalid data, and creates no legacy churn', () => {
@@ -135,6 +169,16 @@ test('backup and canonical cloud documents retain Entry Delta while old backups 
   const cloudValidated = validateCloudNamespaceDocument('portfolio', 1, { data: backup.data.portfolio.data }, 'fetch_all');
   assert.equal(cloudValidated.ok, true);
   assert.equal(cloudValidated.value.payload.data[0].entryDelta, -0.24, 'cloud validation retains Entry Delta');
+
+  const manual = trade({ entryDelta: -0.31, entryDeltaSource: 'manual', entryDeltaCapturedAt: '2026-08-30T15:00:00.000Z', latestMarketData: undefined });
+  const manualStorage = new MemoryStorage();
+  writePortfolioTrades(manualStorage, [manual]);
+  const reloadedManual = readPortfolioTrades(manualStorage).data[0];
+  assert.deepEqual(
+    [reloadedManual.id, reloadedManual.entryDelta, reloadedManual.entryDeltaSource, reloadedManual.entryDeltaCapturedAt],
+    ['trade-1', -0.31, 'manual', '2026-08-30T15:00:00.000Z'],
+    'manual override survives a durable reload',
+  );
 });
 
 test('OCR imports never manufacture Entry Delta from screenshot market values', () => {
@@ -201,6 +245,21 @@ test('Portfolio mount, refresh, save, and import keep durable maintenance explic
   assert.match(page, /Portfolio Maintenance/);
   assert.match(page, /handleResolveLifecycleMaintenance/);
   assert.match(page, /handleResolveEntryVixMaintenance/);
+});
+
+test('Add Trade omits manual Entry Delta while Edit retains the explicit override field', async () => {
+  const page = await read('src/pages/PortfolioPage.tsx');
+  const modal = page.slice(page.indexOf('function TradeModal'), page.indexOf('function PortfolioPage'));
+  const field = modal.indexOf('Entry Delta (optional)');
+  assert.ok(field > 0);
+  assert.ok(modal.lastIndexOf('{trade && (', field) > 0, 'Entry Delta input is conditional on an existing durable trade');
+  assert.match(modal, /const entryDeltaFields = trade && validation\.entryDelta/);
+  const save = page.slice(page.indexOf('const handleSaveTrade'), page.indexOf('const handleBackupImported'));
+  assert.match(save, /if \(!id\)/, 'only creation can start automatic capture, so Edit clearing remains unavailable');
+  assert.match(page, /useState<HistoryGroupMode>\('year'\)/, 'History defaults to expiration-year grouping without durable preference state');
+  assert.match(page, /summary\.totalHistoricalNotional/, 'the headline notional always covers all History, independent of outcome filtering');
+  const historyAnalytics = await read('src/lib/portfolioHistoryAnalytics.ts');
+  assert.doesNotMatch(historyAnalytics, /fetch\(|requestMarketData|fetchOptions/, 'History analytics remain request-free');
 });
 
 test('Stage 6B.4 request ledger makes cached and cold maintenance costs explicit', () => {

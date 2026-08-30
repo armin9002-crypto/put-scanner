@@ -62,7 +62,20 @@ import ErrorBoundary from '../components/ErrorBoundary';
 import DataFreshness from '../components/DataFreshness';
 import { PageHeader } from '../components/ui/PageHeader';
 import { persistCollapsedExpirationGroups, persistCollapsedUnderlyingGroups, persistPortfolioGroupMode, readCollapsedExpirationGroups, readCollapsedUnderlyingGroups, readPortfolioGroupMode, setAllExpirationGroupsCollapsed, toggleCollapsedExpirationGroup, type PortfolioGroupMode } from '../lib/portfolioSchedulePreferences';
-import { buildHistoryAnalytics, buildMonthlyRealizedPnl, filterHistoryTrades, historyDaysHeld, historyRealizedIrr, type HistoryOutcome } from '../lib/portfolioHistoryAnalytics';
+import {
+  buildHistoryAnalytics,
+  buildHistoryGroups,
+  buildMonthlyRealizedPnl,
+  filterHistoryTrades,
+  historyDaysHeld,
+  historyEntryNominalYield,
+  historyEntryVix,
+  historyFinalValue,
+  historyPriceAtExpiration,
+  historyRealizedIrr,
+  type HistoryGroupMode,
+  type HistoryOutcome,
+} from '../lib/portfolioHistoryAnalytics';
 import { applyTransientPortfolioMarketData, mergePortfolioLifecycleResults, mergePortfolioMarketRefresh } from '../lib/portfolioMarketRefresh';
 import { useResponsiveMode } from '../lib/responsive';
 import MobileBottomSheet from '../components/mobile/MobileBottomSheet';
@@ -81,7 +94,7 @@ import { OPTION_QUOTE_TABLE_DISPLAY_ORDER, orderedOptionQuoteEntries } from '../
 import { persistPortfolioMarkBasis, readPortfolioMarkBasis } from '../lib/portfolioMarkPreference';
 import { persistShowNominalYield, readShowNominalYield } from '../lib/optionTablePreferences';
 import { buildCloseCandidates, buildNeedsAttention, getRedeployBadges, type CloseCandidate } from '../lib/portfolioPolicies';
-import { backfillStoredEntryDeltas, entryDeltaFromExactChain, isContemporaneousPortfolioEntry, isValidEntryDelta, usMarketDateIso } from '../lib/portfolioEntryDelta';
+import { backfillStoredEntryDeltas, buildEntryDeltaEditPatch, entryDeltaFromExactChain, isContemporaneousPortfolioEntry, isValidEntryDelta, usMarketDateIso } from '../lib/portfolioEntryDelta';
 import { assessPortfolioMaintenance } from '../lib/portfolioMaintenance';
 import { getPortfolioQuoteFreshness, isPortfolioQuoteDecisionEligible, summarizePortfolioQuoteFreshness } from '../lib/portfolioQuoteFreshness';
 import { resolvePortfolioEntryVix } from '../lib/portfolioEntryVix';
@@ -117,7 +130,7 @@ const PORTFOLIO_SCHEDULE_SORT_OPTIONS: Array<{ value: PortfolioScheduleSortField
   { value: 'strike', label: 'Strike' },
   { value: 'contracts', label: 'Contracts' },
   { value: 'soldPrice', label: 'Sold Price' },
-  { value: 'premium', label: 'Premium Collected' },
+  { value: 'premium', label: 'Premium' },
   { value: 'grossRisk', label: 'Gross Risk' },
   { value: 'currentMark', label: 'Current Mark' },
   { value: 'currentValue', label: 'Current Value' },
@@ -186,6 +199,10 @@ function VixEntryTooltipContent({ trade }: { trade: PortfolioTrade }) {
       ]} />
     </div>
   );
+}
+
+function formatAverageDays(value: number | null | undefined): string {
+  return isFiniteNumber(value) ? value.toFixed(1) : DASH;
 }
 
 function EntryDeltaTooltipContent({ trade }: { trade: PortfolioTrade }) {
@@ -496,11 +513,11 @@ function completeSumValues(values: Array<number | null | undefined>): number | n
   return sumValues(values);
 }
 
-function SummaryCard({ label, value, color }: { label: string; value: string; color?: string }) {
+function SummaryCard({ label, value, color, detail }: { label: string; value: string; color?: string; detail?: string }) {
   return (
-    <div className="portfolio-summary-card rounded-lg p-2 min-w-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-      <div className="portfolio-summary-card__label text-[9px] uppercase tracking-wider mb-0.5" title={label} style={{ color: 'var(--text-dim)' }}>{label}</div>
-      <div className="portfolio-summary-card__value text-xs xl:text-sm font-mono font-semibold tabular-nums" title={value} style={{ color: color ?? 'var(--text)' }}>{value}</div>
+    <div className="portfolio-summary-card rounded-lg p-2 min-w-0" title={detail} style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <div className="portfolio-summary-card__label text-[9px] uppercase tracking-wider mb-0.5" title={detail ?? label} style={{ color: 'var(--text-dim)' }}>{label}</div>
+      <div className="portfolio-summary-card__value text-xs xl:text-sm font-mono font-semibold tabular-nums" title={detail ?? value} style={{ color: color ?? 'var(--text)' }}>{value}</div>
     </div>
   );
 }
@@ -841,9 +858,7 @@ function getTradeDaysHeld(trade: PortfolioTrade): number | null {
 }
 
 function getArchivedFinalValue(trade: PortfolioTrade): number | null {
-  if (isFiniteNumber(trade.finalOptionValue)) return trade.finalOptionValue;
-  if (trade.status === 'closed' && isFiniteNumber(trade.closePrice)) return trade.closePrice * trade.contracts * 100;
-  return null;
+  return historyFinalValue(trade);
 }
 
 function getArchivedPremium(trade: PortfolioTrade): number | null {
@@ -927,6 +942,7 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
     entryDelta: entryDelta.trim() === '' || isValidEntryDelta(parsed.entryDelta),
   };
   const isValid = Object.values(validation).every(Boolean);
+  const entryDeltaFields = trade && validation.entryDelta ? buildEntryDeltaEditPatch(trade, parsed.entryDelta) : {};
 
   const previewTrade: PortfolioTrade | null = isValid
     ? {
@@ -945,17 +961,7 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
       entryVixClose: trade?.soldDate === soldDate ? trade.entryVixClose : undefined,
       entryVixDate: trade?.soldDate === soldDate ? trade.entryVixDate : undefined,
       entryVixSource: trade?.soldDate === soldDate ? trade.entryVixSource : undefined,
-      entryDelta: parsed.entryDelta ?? undefined,
-      entryDeltaSource: parsed.entryDelta == null
-        ? undefined
-        : trade?.soldDate === soldDate && trade.entryDelta === parsed.entryDelta
-          ? trade.entryDeltaSource
-          : 'manual',
-      entryDeltaCapturedAt: parsed.entryDelta == null
-        ? undefined
-        : trade?.soldDate === soldDate && trade.entryDelta === parsed.entryDelta
-          ? trade.entryDeltaCapturedAt
-          : new Date().toISOString(),
+      ...entryDeltaFields,
       createdAt: trade?.createdAt ?? new Date().toISOString(),
       updatedAt: trade?.updatedAt ?? new Date().toISOString(),
       entrySnapshot: trade?.entrySnapshot,
@@ -966,7 +972,6 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
   const submit = () => {
     setSubmitted(true);
     if (!isValid) return;
-    const unchangedEntryDelta = trade?.soldDate === soldDate && trade.entryDelta === parsed.entryDelta;
     onSave({
       ticker: ticker.trim().toUpperCase(),
       optionType: 'put',
@@ -982,9 +987,7 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
       entryVixClose: trade?.soldDate === soldDate ? trade.entryVixClose : undefined,
       entryVixDate: trade?.soldDate === soldDate ? trade.entryVixDate : undefined,
       entryVixSource: trade?.soldDate === soldDate ? trade.entryVixSource : undefined,
-      entryDelta: parsed.entryDelta ?? undefined,
-      entryDeltaSource: parsed.entryDelta == null ? undefined : unchangedEntryDelta ? trade?.entryDeltaSource : 'manual',
-      entryDeltaCapturedAt: parsed.entryDelta == null ? undefined : unchangedEntryDelta ? trade?.entryDeltaCapturedAt : new Date().toISOString(),
+      ...entryDeltaFields,
       entrySnapshot: trade?.entrySnapshot,
       latestMarketData: trade?.latestMarketData,
     }, trade?.id);
@@ -1037,12 +1040,14 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
             <input type="date" value={soldDate} onChange={event => setSoldDate(event.target.value)} className={inputClass} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
             {errorText(validation.soldDate, 'Sold date is required.')}
           </label>
-          <label>
-            <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Entry Delta (optional)</span>
-            <input value={entryDelta} inputMode="decimal" placeholder="e.g. -0.20" onChange={event => setEntryDelta(event.target.value)} className={`${inputClass} font-mono`} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
-            <p className="mt-1 text-[11px]" style={{ color: 'var(--text-dim)' }}>Use the broker's put Delta at entry. Leave blank if unknown.</p>
-            {errorText(validation.entryDelta, 'Entry Delta must be between -1 and 0.')}
-          </label>
+          {trade && (
+            <label>
+              <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Entry Delta (optional)</span>
+              <input value={entryDelta} inputMode="decimal" placeholder="e.g. -0.20" onChange={event => setEntryDelta(event.target.value)} className={`${inputClass} font-mono`} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+              <p className="mt-1 text-[11px]" style={{ color: 'var(--text-dim)' }}>Override with the historically correct put Delta, or clear it to mark unavailable.</p>
+              {errorText(validation.entryDelta, 'Entry Delta must be between -1 and 0.')}
+            </label>
+          )}
           <label>
             <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Status</span>
             <select value={status} onChange={event => setStatus(event.target.value as PortfolioTradeStatus)} className={inputClass} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
@@ -1798,7 +1803,7 @@ export default function PortfolioPage() {
                   <div className="mt-1 text-xs font-mono" style={{ color: pnlColor(markSummary.percentCaptured) }}>{formatPctValue(markSummary.percentCaptured)} captured</div>
                 </div>
                 <SummaryCard label="Open Trades" value={String(summary.totalOpenTrades)} />
-                <SummaryCard label="Premium Collected" value={formatCurrency(summary.totalPremiumCollected, 0)} color="var(--green)" />
+                <SummaryCard label="Premium" value={formatCurrency(summary.totalPremiumCollected, 0)} color="var(--green)" />
                 <SummaryCard label="Gross Risk" value={formatCurrency(summary.totalEquityAtRisk, 0)} />
                 <SummaryCard label="Net Risk" value={formatCurrency(summary.totalNetCapitalAtRisk, 0)} />
               </div>
@@ -1815,7 +1820,7 @@ export default function PortfolioPage() {
 
             <div className="portfolio-summary-grid hidden grid-cols-2 md:grid md:grid-cols-5 2xl:grid-cols-10 gap-1.5 mb-3">
               <SummaryCard label="Open Trades" value={String(summary.totalOpenTrades)} />
-              <SummaryCard label="Premium Collected" value={formatCurrency(summary.totalPremiumCollected, 0)} color="var(--green)" />
+              <SummaryCard label="Premium" value={formatCurrency(summary.totalPremiumCollected, 0)} color="var(--green)" />
               <SummaryCard label="Gross Risk" value={formatCurrency(summary.totalEquityAtRisk, 0)} />
               <SummaryCard label="Net Risk" value={formatCurrency(summary.totalNetCapitalAtRisk, 0)} />
               <SummaryCard label="Total Gain/Loss" value={formatCurrency(markSummary.totalGainLoss, 0)} color={pnlColor(markSummary.totalGainLoss)} />
@@ -1980,7 +1985,7 @@ export default function PortfolioPage() {
                       {sortButton('strike', 'Strike')}
                       {sortButton('contracts', 'Contracts')}
                       {sortButton('soldPrice', 'Sold Price')}
-                      {sortButton('premium', 'Premium Collected')}
+                      {sortButton('premium', 'Premium')}
                       {sortButton('grossRisk', 'Gross Risk', 'text-right', 'Strike × 100 × contracts.')}
                       {sortButton('currentMark', 'Current Mark')}
                       {sortButton('currentValue', 'Current Value')}
@@ -1993,7 +1998,7 @@ export default function PortfolioPage() {
                       {sortButton('iv', 'IV')}
                       {sortButton('entryVix', 'VIX @ Entry')}
                       {showOpenInterestVolume && sortButton('openInterest', 'OI / Volume', 'text-right', 'Sorts by Open Interest')}
-                      {showNominalYield && sortButton('originalNy', 'Entry NY', 'text-right', 'Premium collected ÷ entry net risk.')}
+                      {showNominalYield && sortButton('originalNy', 'Entry NY', 'text-right', 'Premium ÷ entry net risk.')}
                       {sortButton('originalAy', 'Entry AY', 'text-right', 'Entry NY × 365 ÷ original DTE.')}
                       {showNominalYield && sortButton('currentNy', 'Current NY', 'text-right', 'Current buyback cost ÷ entry net risk.')}
                       {sortButton('currentAy', 'Current AY', 'text-right', 'Current NY × 365 ÷ remaining DTE.')}
@@ -2236,6 +2241,13 @@ const HISTORY_FILTERS: Array<{ value: HistoryOutcome; label: string }> = [
   { value: 'closed', label: 'Closed' }, { value: 'expired_itm', label: 'Expired ITM' }, { value: 'assigned', label: 'Assigned' },
 ];
 
+const HISTORY_GROUP_OPTIONS: Array<{ value: HistoryGroupMode; label: string }> = [
+  { value: 'year', label: 'Year' },
+  { value: 'expiration', label: 'Expiry' },
+  { value: 'underlying', label: 'Underlying' },
+  { value: 'none', label: 'None' },
+];
+
 function MonthlyRealizedChart({ trades }: { trades: PortfolioTrade[] }) {
   const months = buildMonthlyRealizedPnl(trades);
   if (months.length === 0) return null;
@@ -2247,7 +2259,7 @@ function MonthlyRealizedChart({ trades }: { trades: PortfolioTrade[] }) {
         {months.map(month => {
           const captured = month.premiumCollected > 0 ? month.realizedPnl / month.premiumCollected : null;
           const label = new Date(`${month.month}-01T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
-          return <div key={month.month} className="group/month relative flex h-full min-w-[42px] flex-1 flex-col items-center justify-end" title={`${label}\nTrades: ${month.trades}\nPremium Collected: ${formatCurrency(month.premiumCollected, 0)}\nRealized P&L: ${formatCurrency(month.realizedPnl, 0)}\nCaptured: ${formatPctValue(captured)}`}>
+          return <div key={month.month} className="group/month relative flex h-full min-w-[42px] flex-1 flex-col items-center justify-end" title={`${label}\nTrades: ${month.trades}\nPremium: ${formatCurrency(month.premiumCollected, 0)}\nRealized P&L: ${formatCurrency(month.realizedPnl, 0)}\nCaptured: ${formatPctValue(captured)}`}>
             <div className="w-full max-w-10 rounded-t transition-opacity hover:opacity-80 motion-reduce:transition-none" style={{ height: `${Math.max(5, Math.abs(month.realizedPnl) / max * 78)}px`, backgroundColor: month.realizedPnl >= 0 ? 'var(--green)' : 'var(--red)' }} />
             <span className="mt-1 text-[9px] whitespace-nowrap" style={{ color: 'var(--text-dim)' }}>{label}</span>
           </div>;
@@ -2275,33 +2287,47 @@ function ArchiveHistorySection({
   onDelete: (id: string) => void;
 }) {
   const [outcomeFilter, setOutcomeFilter] = useState<HistoryOutcome>('all');
+  const [groupMode, setGroupMode] = useState<HistoryGroupMode>('year');
   const visibleTrades = useMemo(() => filterHistoryTrades(trades, outcomeFilter), [outcomeFilter, trades]);
   const visibleSummary = useMemo(() => outcomeFilter === 'all' ? summary : buildArchiveSummary(visibleTrades), [outcomeFilter, summary, visibleTrades]);
+  const visibleGroups = useMemo(() => buildHistoryGroups(visibleTrades, groupMode), [groupMode, visibleTrades]);
   if (trades.length === 0) return null;
 
   return (
     <section className="portfolio-history-section mt-5">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
         <h2 className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--text-muted)' }}>Expired / Closed History</h2>
-        <div className="flex max-w-full gap-1 overflow-x-auto pb-0.5">
-          {HISTORY_FILTERS.map(filter => <button type="button" key={filter.value} onClick={() => setOutcomeFilter(filter.value)} className="rounded px-2 py-1 text-[10px] whitespace-nowrap" style={{ backgroundColor: outcomeFilter === filter.value ? 'var(--accent-bg)' : 'var(--surface)', color: outcomeFilter === filter.value ? 'var(--accent-light)' : 'var(--text-muted)', border: `1px solid ${outcomeFilter === filter.value ? 'var(--accent-border)' : 'var(--border)'}` }}>{filter.label}</button>)}
+        <div className="flex max-w-full flex-wrap justify-end gap-1 pb-0.5">
+          <div className="flex max-w-full gap-1 overflow-x-auto">
+            {HISTORY_FILTERS.map(filter => <button type="button" key={filter.value} onClick={() => setOutcomeFilter(filter.value)} className="rounded px-2 py-1 text-[10px] whitespace-nowrap" style={{ backgroundColor: outcomeFilter === filter.value ? 'var(--accent-bg)' : 'var(--surface)', color: outcomeFilter === filter.value ? 'var(--accent-light)' : 'var(--text-muted)', border: `1px solid ${outcomeFilter === filter.value ? 'var(--accent-border)' : 'var(--border)'}` }}>{filter.label}</button>)}
+          </div>
+          <div className="flex max-w-full gap-1 overflow-x-auto" aria-label="Group History">
+            {HISTORY_GROUP_OPTIONS.map(option => <button type="button" key={option.value} onClick={() => setGroupMode(option.value)} className="rounded px-2 py-1 text-[10px] whitespace-nowrap" style={{ backgroundColor: groupMode === option.value ? 'var(--accent-bg)' : 'var(--surface)', color: groupMode === option.value ? 'var(--accent-light)' : 'var(--text-muted)', border: `1px solid ${groupMode === option.value ? 'var(--accent-border)' : 'var(--border)'}` }}>{option.label}</button>)}
+          </div>
         </div>
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-1.5 mb-2">
         <SummaryCard label="Resolved Trades" value={String(visibleSummary.resolvedTrades)} />
         <SummaryCard label="Realized P&L" value={formatCurrency(visibleSummary.realizedPnl)} color={pnlColor(visibleSummary.realizedPnl)} />
-        <SummaryCard label="Premium Collected" value={formatCurrency(visibleSummary.premiumCollected)} color="var(--green)" />
+        <SummaryCard label="Total Realized IRR" value={formatPctValue(visibleSummary.totalRealizedIrr)} color={pnlColor(visibleSummary.totalRealizedIrr)} detail="Date-aware money-weighted XIRR of combined realized History cash flows. Undefined when no unique real return exists." />
         <SummaryCard label="Blended Capture" value={formatPctValue(visibleSummary.blendedCapture)} color={pnlColor(visibleSummary.blendedCapture)} />
-        <SummaryCard label="Avg Days Held" value={formatDays(visibleSummary.averageDaysHeld)} />
-        <SummaryCard label="Worthless %" value={formatPctValue(visibleSummary.percentages.expired_worthless)} color="var(--green)" />
-        <SummaryCard label="Expired ITM %" value={formatPctValue(visibleSummary.percentages.expired_itm)} color={visibleSummary.counts.expired_itm > 0 ? 'var(--red)' : undefined} />
+        <SummaryCard label="Avg Days Held" value={formatAverageDays(visibleSummary.averageDaysHeld)} />
+        <SummaryCard label="Wtd. Avg. Entry Delta" value={formatDelta(visibleSummary.weightedAverageEntryDelta)} detail={visibleSummary.entryDeltaCoverage == null ? 'Entry Delta coverage is unavailable.' : `Based on positions representing ${(visibleSummary.entryDeltaCoverage * 100).toFixed(1)}% of historical Gross Risk.`} />
+        <SummaryCard label="Total Historical Notional" value={formatCurrency(summary.totalHistoricalNotional, 0)} detail="Cumulative canonical Gross Risk across all closed and historical positions." />
       </div>
       <div className="mb-2 flex h-2 overflow-hidden rounded-full" style={{ backgroundColor: 'var(--surface-alt)' }} title={`Expired Worthless ${visibleSummary.counts.expired_worthless} · Closed ${visibleSummary.counts.closed} · Expired ITM ${visibleSummary.counts.expired_itm} · Assigned ${visibleSummary.counts.assigned}`}>
         {(['expired_worthless', 'closed', 'expired_itm', 'assigned'] as const).map((outcome, index) => <div key={outcome} style={{ width: `${visibleSummary.percentages[outcome] * 100}%`, backgroundColor: ['var(--green)', 'var(--accent)', 'var(--red)', 'var(--orange)'][index] }} />)}
       </div>
       <MonthlyRealizedChart trades={visibleTrades} />
       <div className="space-y-2 md:hidden">
-        {visibleTrades.map(trade => {
+        {visibleGroups.map(group => <Fragment key={`mobile-history-group-${group.key}`}>
+          {groupMode !== 'none' && (
+            <div className="flex items-center justify-between rounded-lg px-3 py-2" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
+              <span className="text-xs font-semibold" style={{ color: 'var(--text)' }}>{groupMode === 'expiration' ? formatFullDate(group.label) : group.label}</span>
+              <span className="text-[11px] font-mono" style={{ color: pnlColor(group.realizedPnl) }}>{group.tradeCount} trades &middot; {formatCurrency(group.realizedPnl)} P&amp;L</span>
+            </div>
+          )}
+          {group.trades.map(trade => {
           const pending = trade.status === 'expired_price_pending' || trade.resolutionType === 'expired_price_pending';
           const canSetExpirationClose = trade.status === 'expired' || trade.status === 'expired_price_pending';
           const resolving = resolvingIds.has(trade.id);
@@ -2322,6 +2348,9 @@ function ArchiveHistorySection({
                 <Metric label="Realized P&L" value={formatCurrency(realizedPnl)} color={pnlColor(realizedPnl)} />
                 <Metric label="Captured" value={formatPctValue(percentCaptured)} color={pnlColor(percentCaptured)} />
                 <Metric label="Realized IRR" value={formatPctValue(realizedIrr)} color={pnlColor(realizedIrr)} />
+                <Metric label="NY" value={formatPctValue(historyEntryNominalYield(trade))} />
+                <Metric label="VIX @ Entry" value={isFiniteNumber(historyEntryVix(trade)) ? historyEntryVix(trade)!.toFixed(2) : DASH} />
+                <Metric label="Price @ Exp." value={formatCurrency(historyPriceAtExpiration(trade))} />
                 <Metric label="Final value" value={formatCurrency(getArchivedFinalValue(trade))} />
                 <Metric label="Entry Delta" value={formatDelta(trade.entryDelta)} />
               </div>
@@ -2334,20 +2363,32 @@ function ArchiveHistorySection({
               </div>
             </article>
           );
-        })}
+          })}
+        </Fragment>)}
       </div>
       <div className="hidden rounded-lg overflow-hidden md:block" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
         <div className="overflow-x-auto max-w-full overscroll-contain">
           <table className="financial-table min-w-max w-full text-[12px] leading-none">
             <thead>
               <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
-                {['Ticker', 'Expiration', 'Strike', 'Contracts', 'Written Date', 'Days Held', 'Sold Price', 'Expiration Close', 'Final Value', 'Premium Collected', 'Realized P&L', 'Realized IRR', '% Captured', 'Entry Delta', 'Outcome', 'Actions'].map((label, index) => (
+                {['Ticker', 'Expiration', 'Strike', 'Contracts', 'Entry Date', 'Days Held', 'Sold Price', 'NY', 'VIX @ Entry', 'Price @ Exp.', 'Final Value', 'Premium', 'Realized P&L', 'Realized IRR', '% Captured', 'Entry Delta', 'Outcome', 'Actions'].map((label, index) => (
                   <th key={label} title={label === 'Realized IRR' ? 'Compounded annualized return on original net capital at risk over actual calendar days held.' : undefined} className={`px-2 py-2 text-[11px] font-medium whitespace-nowrap ${index === 0 || label === 'Outcome' || label === 'Actions' ? 'text-left' : 'text-right'}`} style={{ color: 'var(--text-muted)' }}>{label}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {visibleTrades.map((trade, index) => {
+              {visibleGroups.map(group => <Fragment key={`desktop-history-group-${group.key}`}>
+                {groupMode !== 'none' && (
+                  <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
+                    <td colSpan={18} className="px-2 py-2">
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="font-semibold" style={{ color: 'var(--text)' }}>{groupMode === 'expiration' ? formatFullDate(group.label) : group.label}</span>
+                        <span className="font-mono tabular-nums" style={{ color: pnlColor(group.realizedPnl) }}>{group.tradeCount} trades &middot; {group.contractCount} contracts &middot; {formatCurrency(group.realizedPnl)} P&amp;L</span>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                {group.trades.map((trade, index) => {
                 const pending = trade.status === 'expired_price_pending' || trade.resolutionType === 'expired_price_pending';
                 const canSetExpirationClose = trade.status === 'expired' || trade.status === 'expired_price_pending';
                 const resolving = resolvingIds.has(trade.id);
@@ -2355,7 +2396,7 @@ function ArchiveHistorySection({
                 const percentCaptured = getArchivedPercentCaptured(trade);
                 const realizedIrr = historyRealizedIrr(trade);
                 return (
-                  <tr key={trade.id} title={`${trade.ticker} ${formatCurrency(trade.strike)} Put\nWritten: ${formatFullDate(trade.soldDate)}\nResolved: ${formatFullDate(trade.closeDate ?? trade.resolvedDate ?? trade.expiration)}\nDays held: ${formatDays(historyDaysHeld(trade))}\nSold: ${formatOptionPrice(trade.soldPrice)}\nClose: ${formatOptionPrice(trade.closePrice)}\nUnderlying expiration close: ${formatCurrency(trade.expirationClosePrice)}\nFinal value: ${formatCurrency(getArchivedFinalValue(trade))}\nPremium: ${formatCurrency(getArchivedPremium(trade))}\nRealized P&L: ${formatCurrency(realizedPnl)}\nRealized IRR: ${formatPctValue(realizedIrr)}\nCaptured: ${formatPctValue(percentCaptured)}\nEntry AY: ${formatPctValue(calculateOriginalAnnualizedYield(trade))}\nOutcome: ${getArchiveOutcomeLabel(trade)}`} style={{ borderBottom: '1px solid var(--border)', backgroundColor: index % 2 ? 'var(--row-alt)' : 'transparent' }}>
+                  <tr key={trade.id} title={`${trade.ticker} ${formatCurrency(trade.strike)} Put\nEntry: ${formatFullDate(trade.soldDate)}\nResolved: ${formatFullDate(trade.closeDate ?? trade.resolvedDate ?? trade.expiration)}\nDays held: ${formatDays(historyDaysHeld(trade))}\nSold: ${formatOptionPrice(trade.soldPrice)}\nClose: ${formatOptionPrice(trade.closePrice)}\nPrice @ Exp.: ${formatCurrency(historyPriceAtExpiration(trade))}\nFinal value: ${formatCurrency(getArchivedFinalValue(trade))}\nPremium: ${formatCurrency(getArchivedPremium(trade))}\nRealized P&L: ${formatCurrency(realizedPnl)}\nRealized IRR: ${formatPctValue(realizedIrr)}\nCaptured: ${formatPctValue(percentCaptured)}\nNY: ${formatPctValue(historyEntryNominalYield(trade))}\nVIX @ Entry: ${isFiniteNumber(historyEntryVix(trade)) ? historyEntryVix(trade)!.toFixed(2) : DASH}\nOutcome: ${getArchiveOutcomeLabel(trade)}`} style={{ borderBottom: '1px solid var(--border)', backgroundColor: index % 2 ? 'var(--row-alt)' : 'transparent' }}>
                     <td className="px-2 py-1 text-left font-mono font-bold whitespace-nowrap" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatFullDate(trade.expiration)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatCurrency(trade.strike)}</td>
@@ -2363,7 +2404,9 @@ function ArchiveHistorySection({
                     <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatFullDate(trade.soldDate)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{formatDays(getTradeDaysHeld(trade))}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{formatOptionPrice(trade.soldPrice)}</td>
-                    <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(trade.expirationClosePrice)}</td>
+                    <td className="px-2 py-1 text-right font-mono tabular-nums">{formatPctValue(historyEntryNominalYield(trade))}</td>
+                    <td className="px-2 py-1 text-right font-mono tabular-nums">{isFiniteNumber(historyEntryVix(trade)) ? historyEntryVix(trade)!.toFixed(2) : DASH}</td>
+                    <td className="px-2 py-1 text-right font-mono tabular-nums" title="Underlying closing price on expiration, or the nearest prior trading close used by lifecycle resolution.">{formatCurrency(historyPriceAtExpiration(trade))}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(getArchivedFinalValue(trade))}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(getArchivedPremium(trade))}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(realizedPnl) }}>{formatCurrency(realizedPnl)}</td>
@@ -2392,7 +2435,8 @@ function ArchiveHistorySection({
                     </td>
                   </tr>
                 );
-              })}
+                })}
+              </Fragment>)}
             </tbody>
           </table>
         </div>
