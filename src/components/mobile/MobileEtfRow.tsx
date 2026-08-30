@@ -56,19 +56,19 @@ export default function MobileEtfRow({
             <span className="font-mono text-[17px] font-bold tracking-tight" style={{ color: 'var(--text)' }}>{etf.ticker}</span>
             <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold" style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)' }}>{etf.leverage}</span>
           </div>
-          <div className="truncate text-[12px]" style={{ color: 'var(--text-muted)' }}>{etf.name}</div>
+          <div className="mobile-etf-row__name text-[12px] leading-tight" style={{ color: 'var(--text-muted)' }} title={etf.name}>{etf.name}</div>
         </div>
         <div className="flex-none text-right">
           <div className="font-mono text-[16px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{priceData?.price != null ? `$${priceData.price.toFixed(2)}` : '—'}</div>
           <div className="font-mono text-[12px] font-semibold tabular-nums" style={{ color: valueColor(priceData?.changePct) }}>{signedPercent(priceData?.changePct, 2)}</div>
         </div>
       </div>
-      <div className="mt-2 grid grid-cols-4 gap-2">
+      <div className="mt-1 grid grid-cols-4 gap-x-2 gap-y-0">
         {([['5D', priceData?.fiveDay], ['1M', priceData?.oneMonth], ['3M', priceData?.threeMonth], ['52W', priceData?.fiftyTwoWeekHighPct]] as const).map(([label, value]) => (
           <span key={label} className="min-w-0 text-[11px]"><span style={{ color: 'var(--text-dim)' }}>{label} </span><span className="font-mono tabular-nums" style={{ color: valueColor(value) }}>{signedPercent(value)}</span></span>
         ))}
       </div>
-      <div className="mt-2 truncate border-t pt-2 text-[11px] font-medium" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+      <div className="mt-1 truncate border-t pt-1 text-[11px] font-medium" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
         <span style={{ color: 'var(--text-secondary)' }}>IV60 {ivText(optionSnapshot)}</span><span aria-hidden="true"> · </span><span>{liquidity}</span><span aria-hidden="true"> · </span><span>Assets {formatFundAssets(netAssets)}</span>
       </div>
     </Link>

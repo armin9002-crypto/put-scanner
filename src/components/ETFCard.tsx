@@ -290,7 +290,7 @@ export default function ETFCard({
   return (
     <div
       title={`${etf.ticker} - ${etf.name}\nNet Assets ${formatFundAssetsDetail(netAssets)}`}
-      className="group surface-card instrument-card p-3 text-left w-full relative min-w-0"
+      className="group surface-card instrument-card p-2 text-left w-full relative min-w-0"
       style={{
         backgroundColor: rangeStyle ? rangeStyle.bgTint : 'var(--surface)',
         border: `1px solid ${rangeStyle ? rangeStyle.borderColor : 'var(--border)'}`,
@@ -306,55 +306,35 @@ export default function ETFCard({
         className="absolute inset-0 z-0 rounded-xl focus:outline-none"
       />
 
-      <span className="instrument-card__leverage pointer-events-none absolute top-2 right-2 z-10 text-xs font-semibold px-1.5 py-0.5 rounded-md leading-none" style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)', border: '1px solid var(--accent-border)' }}>
-        {etf.leverage}
-      </span>
-
-      <div className="instrument-card__body pointer-events-none relative z-10 flex flex-row gap-3 pr-8 min-w-0">
-        <div className="instrument-card__primary flex flex-col justify-between flex-shrink-0 w-[52%] sm:w-1/2 min-w-0">
+      <div className="instrument-card__body pointer-events-none relative z-10 flex flex-row gap-2 pr-1 min-w-0">
+        <div className="instrument-card__primary flex flex-col justify-between flex-shrink-0 w-[50%] min-w-0">
           <div>
-            <div className="flex items-baseline gap-1.5 min-w-0">
-              <span className="text-lg font-bold font-mono tracking-tight leading-none flex-shrink-0" style={{ color: 'var(--text)' }}>{etf.ticker}</span>
-              <span className="text-xs leading-tight truncate" style={{ color: 'var(--text-muted)' }}>{etf.name}</span>
+            <div className="flex min-w-0 items-start justify-between gap-1.5">
+              <div className="flex min-w-0 items-center gap-1.5">
+                <span className="text-lg font-bold font-mono tracking-tight leading-none flex-shrink-0" style={{ color: 'var(--text)' }}>{etf.ticker}</span>
+                <span className="instrument-card__leverage pointer-events-none shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold leading-none" style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)', border: '1px solid var(--accent-border)' }}>{etf.leverage}</span>
+              </div>
+              <div className="shrink-0 text-right">
+                {hasValidPrice ? (
+                  <>
+                    <div className="text-base font-semibold font-mono tabular-nums leading-none" style={{ color: 'var(--text)' }}>${priceData!.price!.toFixed(2)}</div>
+                    {priceData!.changePct != null && <div className="mt-0.5 flex items-center justify-end gap-0.5 text-[10px] font-mono tabular-nums leading-none" style={{ color: changePositive ? 'var(--green)' : 'var(--red)' }}>{changePositive ? <TrendingUp className="h-2.5 w-2.5" /> : <TrendingDown className="h-2.5 w-2.5" />}{formatScannerDailyChangePercent(priceData!.changePct)}</div>}
+                  </>
+                ) : priceError ? (
+                  <>
+                    <PricePlaceholder />
+                    {onRetry && <button type="button" onClick={onRetry} className="pointer-events-auto relative z-20 block text-[10px] underline" style={{ color: 'var(--accent-light)' }}>Retry</button>}
+                  </>
+                ) : <PricePlaceholder showPriceSkeleton />}
+              </div>
             </div>
-            <div className="mt-0.5 flex min-w-0 items-center gap-1 text-xs leading-tight" style={{ color: 'var(--text-dim)' }}>
+            <div className="instrument-card__name mt-0.5 text-[11px] leading-tight" style={{ color: 'var(--text-muted)' }} title={etf.name}>{etf.name}</div>
+            <div className="mt-0.5 flex min-w-0 items-center gap-1 text-[11px] leading-tight" style={{ color: 'var(--text-dim)' }}>
               <span className="min-w-0 truncate">{etf.underlying}</span>
               <span className="shrink-0 text-[9px]">
                 Assets <span className="font-mono tabular-nums" style={{ color: 'var(--text-secondary)' }}>{assetsText}</span>
               </span>
             </div>
-          </div>
-
-          <div className="mt-1">
-            {hasValidPrice ? (
-              <>
-                <div className="text-base font-semibold font-mono tabular-nums leading-tight" style={{ color: 'var(--text)' }}>
-                  ${priceData!.price!.toFixed(2)}
-                </div>
-                {priceData!.changePct != null && (
-                <div className="flex items-center gap-1 text-xs font-mono tabular-nums leading-tight min-w-0" style={{ color: changePositive ? 'var(--green)' : 'var(--red)' }}>
-                  {changePositive ? <TrendingUp className="w-3 h-3 flex-shrink-0" /> : <TrendingDown className="w-3 h-3 flex-shrink-0" />}
-                    <span className="truncate">{formatScannerDailyChangePercent(priceData!.changePct)}</span>
-                  </div>
-                )}
-              </>
-            ) : priceError ? (
-              <>
-                <PricePlaceholder />
-                {onRetry && (
-                  <button
-                    type="button"
-                    onClick={onRetry}
-                    className="pointer-events-auto relative z-20 block text-[10px] mt-0.5 underline"
-                    style={{ color: 'var(--accent-light)' }}
-                  >
-                    Retry
-                  </button>
-                )}
-              </>
-            ) : (
-              <PricePlaceholder showPriceSkeleton />
-            )}
           </div>
         </div>
 
@@ -375,7 +355,7 @@ export default function ETFCard({
         state={navigationState}
         aria-label={`${etf.ticker} ${ivLabel} ${snapshotIvText(optionSnapshot)}, liquidity ${liquidityText}`}
         aria-describedby={snapshotTooltipId}
-        className="group/snapshot absolute bottom-2 right-2 z-20 flex w-[48%] items-center justify-end gap-1 whitespace-nowrap text-[9px] font-medium leading-none focus:outline-none"
+        className="group/snapshot absolute bottom-1.5 right-2 z-20 flex w-[50%] items-center justify-end gap-1 whitespace-nowrap text-[9px] font-medium leading-none focus:outline-none"
       >
         <span className="shrink-0" style={{ color: 'var(--text-dim)' }}>{ivLabel} <span style={{ color: 'var(--text-secondary)' }}>{snapshotIvText(optionSnapshot)}</span></span>
         <span style={{ color: 'var(--text-dim)' }}>·</span>

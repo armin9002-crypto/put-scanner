@@ -121,7 +121,7 @@ function MarketChartCard({
         </button>
       </div>
       {loading && !data ? (
-        <div className="flex items-center justify-center h-[48px] sm:h-[52px]">
+        <div className="flex items-center justify-center h-[28px]">
           <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--text-muted)' }} />
         </div>
       ) : data && data.sparkline.length >= 2 ? (
@@ -133,7 +133,7 @@ function MarketChartCard({
             height={48}
             referenceValue={chartReferenceClose(data)}
           />
-          <div className="flex items-center justify-between gap-2 mt-1">
+          <div className="flex items-center justify-between gap-2 mt-0.5">
             <span className="text-xs font-mono font-semibold tabular-nums truncate" style={{ color: 'var(--text)' }}>
               {prefix}{data.price.toFixed(2)}
             </span>
@@ -143,7 +143,7 @@ function MarketChartCard({
           </div>
         </>
       ) : (
-        <div className="flex items-center justify-center h-[70px] text-xs" style={{ color: 'var(--text-dim)' }}>Market data unavailable</div>
+        <div className="flex items-center justify-center h-[28px] text-xs" style={{ color: 'var(--text-dim)' }}>Market data unavailable</div>
       )}
     </div>
   );
@@ -547,12 +547,11 @@ export default function HomePage() {
         <PageHeader
           title="Scanner"
           description="Find high-quality put opportunities across leveraged ETFs."
-          meta={<span className="status-badge" data-status={pricesFreshness === 'failed' ? 'failed' : pricesFreshness === 'updating' ? 'updating' : 'fresh'}>{filtered.length} {filtered.length === 1 ? 'opportunity' : 'opportunities'} · {expDropdownOptions.find(option => option.value === expFilter)?.label ?? 'All dates'}</span>}
-          actions={<div className="scanner-quick-analyze"><span className="scanner-quick-analyze__label">Analyze Ticker</span><AnalyzeTickerForm compact /></div>}
+          actions={<div className="scanner-command-actions"><span className="scanner-command-summary">{filtered.length} {filtered.length === 1 ? 'opportunity' : 'opportunities'} · {expDropdownOptions.find(option => option.value === expFilter)?.label ?? 'All dates'}</span><div className="scanner-quick-analyze"><span className="scanner-quick-analyze__label">Analyze Ticker</span><AnalyzeTickerForm compact /></div></div>}
         />
 
         <section className="scanner-market-rail surface-inset" aria-label="Market context">
-          <SectionHeader title="Market context" description="Underlying and volatility benchmarks" actions={<DataFreshness updatedAt={lastMarketUpdate} status={marketLoading ? 'updating' : marketRefreshFailed ? 'failed' : lastMarketUpdate ? 'fresh' : 'cached'} label="Market" />} />
+          <SectionHeader title="Market context" actions={<DataFreshness updatedAt={lastMarketUpdate} status={marketLoading ? 'updating' : marketRefreshFailed ? 'failed' : lastMarketUpdate ? 'fresh' : 'cached'} label="Market" />} />
           <div className="scanner-market-rail__grid">
             <MarketChartCard ticker="SPY" chartTicker="SPY" data={spyData} loading={marketLoading} onRefresh={loadMarketData} onOpenChart={(chartTicker, displayTicker) => setChartModal({ ticker: chartTicker, displayTicker })} />
             <MarketChartCard ticker="VIX" chartTicker="^VIX" data={vixData} loading={marketLoading} onRefresh={loadMarketData} onOpenChart={(chartTicker, displayTicker) => setChartModal({ ticker: chartTicker, displayTicker })} />
@@ -569,11 +568,12 @@ export default function HomePage() {
             </div>
             <div className="scanner-control-plane__summary">{mobileActiveFilterCount + (expFilter !== 'all' ? 1 : 0) + (search.trim() ? 1 : 0)} active controls</div>
           </div>
+          <div className="scanner-control-plane__toolbar">
           <div className="scanner-control-plane__search">
             <Search className="h-4 w-4" style={{ color: 'var(--text-muted)' }} />
             <input type="text" placeholder="Filter by ticker or underlying index..." value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Filter by ticker or underlying index" />
           </div>
-          <div className="scanner-control-plane__row">
+          <div className="scanner-control-plane__criteria">
             <div className="grid grid-cols-[86px_minmax(96px,1fr)_70px_62px] items-end gap-1">
               <div className="min-w-0">
                 <span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Leverage</span>
@@ -581,24 +581,18 @@ export default function HomePage() {
                   {LEVERAGE_OPTIONS.map(opt => <button key={opt} onClick={() => setLeverageFilter(opt)} className="pressable h-8 w-[26px] rounded-md px-0 text-[11px] font-medium" style={{ backgroundColor: leverageFilter === opt ? 'var(--accent)' : 'var(--surface-alt)', color: leverageFilter === opt ? 'white' : 'var(--text-muted)', border: `1px solid ${leverageFilter === opt ? 'var(--accent)' : 'var(--border)'}` }}>{opt}</button>)}
                 </div>
               </div>
-              <ExpirationFilter value={expFilter} onChange={handleExpirationChange} options={expDropdownOptions} loadingDates={false} datesLoaded />
+              <div className="scanner-control-plane__expiration"><ExpirationFilter value={expFilter} onChange={handleExpirationChange} options={expDropdownOptions} loadingDates={false} datesLoaded /></div>
               <label className="min-w-0"><span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Sort</span><select value={scannerSort} onChange={event => setScannerSort(event.target.value as ScannerSort)} className="h-8 w-full rounded-md px-1.5 text-[11px] outline-none" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>{SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
               <label className="min-w-0"><span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Liquidity</span><select value={liquidityFilter} onChange={event => setLiquidityFilter(event.target.value as ScannerLiquidityFilter)} className="h-8 w-full rounded-md px-1.5 text-[11px] outline-none" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}><option value="all">All</option><option value="mediumPlus">Medium+</option><option value="liquidPlus">Liquid+</option></select></label>
             </div>
-            <div className="mt-1.5 flex min-w-0 items-end justify-between gap-1.5 border-t pt-1.5" style={{ borderColor: 'var(--border)' }}>
-              <div className="min-w-0 flex-1"><span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Type</span><div className="grid min-w-0 grid-cols-5 gap-1">{TYPE_OPTIONS.map(opt => <button key={opt} title={opt} onClick={() => setTypeFilter(opt)} className="pressable h-8 min-w-0 truncate rounded-md px-1 text-[10px] font-medium" style={{ backgroundColor: typeFilter === opt ? 'var(--accent)' : 'var(--surface-alt)', color: typeFilter === opt ? 'white' : 'var(--text-muted)', border: `1px solid ${typeFilter === opt ? 'var(--accent)' : 'var(--border)'}` }}>{opt === 'Broad Index' ? 'Broad' : opt === 'Commodity' ? 'Commod.' : opt}</button>)}</div></div>
-              <button type="button" onClick={() => void updateVisibleOptionSnapshots()} disabled={snapshotUpdateRunningRef.current} className="inline-flex h-8 flex-none items-center gap-1 rounded-md px-2 text-[10px] font-medium whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-60" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)', color: 'var(--text-muted)' }} title="Update missing or stale IV60 and liquidity snapshots for visible ETFs">{snapshotProgress && !snapshotProgress.complete && <Loader2 className="h-3 w-3 animate-spin" />}{snapshotProgressLabel(snapshotProgress)}</button>
-            </div>
+          </div>
+          <div className="scanner-control-plane__types min-w-0"><span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Type</span><div className="grid min-w-0 grid-cols-5 gap-1">{TYPE_OPTIONS.map(opt => <button key={opt} title={opt} onClick={() => setTypeFilter(opt)} className="pressable h-8 min-w-0 truncate rounded-md px-1 text-[10px] font-medium" style={{ backgroundColor: typeFilter === opt ? 'var(--accent)' : 'var(--surface-alt)', color: typeFilter === opt ? 'white' : 'var(--text-muted)', border: `1px solid ${typeFilter === opt ? 'var(--accent)' : 'var(--border)'}` }}>{opt === 'Broad Index' ? 'Broad' : opt === 'Commodity' ? 'Commod.' : opt}</button>)}</div></div>
+          <button type="button" onClick={() => void updateVisibleOptionSnapshots()} disabled={snapshotUpdateRunningRef.current} className="scanner-control-plane__update inline-flex h-8 flex-none items-center gap-1 rounded-md px-2 text-[10px] font-medium whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-60" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)', color: 'var(--text-muted)' }} title="Update missing or stale IV60 and liquidity snapshots for visible ETFs">{snapshotProgress && !snapshotProgress.complete && <Loader2 className="h-3 w-3 animate-spin" />}{snapshotProgressLabel(snapshotProgress)}</button>
           </div>
         </section>
 
-        <div className="scanner-status-line">
-          <DataFreshness updatedAt={pricesUpdatedAt} status={pricesFreshness} label="Scanner prices" />
-          {pricesError && <span className="scanner-status-line__error">{pricesError}</span>}
-        </div>
-
         <section aria-label="ETF opportunities">
-          <SectionHeader title="ETF opportunities" description="Compare price action, option context, and liquidity before opening the chain." actions={<span className="scanner-results-count">{filtered.length} results</span>} />
+          <SectionHeader title="ETF opportunities" description="Compare price action, option context, and liquidity before opening the chain." actions={<div className="scanner-results-meta"><DataFreshness updatedAt={pricesUpdatedAt} status={pricesFreshness} label="Scanner prices" />{pricesError && <span className="scanner-status-line__error">{pricesError}</span>}<span className="scanner-results-count">{filtered.length} results</span></div>} />
           <div className="scanner-results-grid">
           {filtered.map(etf => (
             <ETFCard
