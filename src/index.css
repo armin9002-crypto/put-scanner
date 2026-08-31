@@ -1285,6 +1285,103 @@ td {
   margin-bottom: 0.5rem;
 }
 
+.portfolio-trade-sheet {
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.portfolio-trade-sheet__action-group {
+  min-width: 0;
+}
+
+.portfolio-trade-sheet .trade-modal-choice {
+  transition: background-color var(--transition-ui), border-color var(--transition-ui), color var(--transition-ui);
+}
+
+.portfolio-trade-sheet .trade-modal-choice:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.portfolio-trade-sheet .portfolio-summary-card {
+  min-height: 44px;
+}
+
+@media (max-width: 639px) {
+  .portfolio-trade-sheet__action-group {
+    width: 100%;
+  }
+
+  .portfolio-trade-sheet__action-group > button {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .portfolio-trade-sheet .trade-modal-choice {
+    transition: none;
+  }
+}
+
+@media (min-width: 640px) {
+  .portfolio-trade-sheet input,
+  .portfolio-trade-sheet select {
+    min-height: 36px !important;
+    padding-block: 0.3rem;
+  }
+
+  .portfolio-trade-sheet textarea {
+    min-height: 44px !important;
+  }
+
+  .portfolio-trade-sheet .trade-modal-choice {
+    min-height: 34px;
+    padding-block: 0.3rem;
+  }
+
+  .portfolio-trade-sheet .portfolio-summary-card {
+    min-height: 36px;
+    padding-block: 0.25rem;
+  }
+}
+
+/* Phone landscape is mobile even when its width crosses the tablet breakpoint. */
+@media (orientation: landscape) and (max-height: 520px) and (max-width: 950px) {
+  .portfolio-trade-sheet {
+    inset-inline: 0 !important;
+    top: auto !important;
+    bottom: 0 !important;
+    width: 100% !important;
+    max-height: 96dvh !important;
+    transform: none !important;
+    border-radius: var(--radius-overlay) var(--radius-overlay) 0 0 !important;
+    padding: 0.75rem !important;
+  }
+
+  .portfolio-trade-sheet .trade-modal-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .portfolio-trade-sheet .trade-modal-outcome {
+    grid-column: span 2 / span 2;
+  }
+
+  .portfolio-trade-sheet__action-group > button {
+    width: auto;
+  }
+
+  .portfolio-trade-sheet input,
+  .portfolio-trade-sheet select,
+  .portfolio-trade-sheet textarea,
+  .portfolio-trade-sheet .trade-modal-choice {
+    min-height: 44px !important;
+  }
+
+  .portfolio-trade-sheet .portfolio-summary-card {
+    min-height: 44px;
+  }
+}
+
 .scanner-page .page-header > :last-child {
   width: auto;
 }

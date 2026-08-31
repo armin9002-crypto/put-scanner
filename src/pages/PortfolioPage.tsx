@@ -120,7 +120,7 @@ const MARK_BASIS_OPTIONS: MarkBasis[] = [...OPTION_QUOTE_TABLE_DISPLAY_ORDER];
 interface TradeModalProps {
   trade: PortfolioTrade | null;
   onClose: () => void;
-  onSave: (trade: PortfolioTradeInput, intent: ManualTradeSaveIntent, id?: string) => Promise<boolean>;
+  onSave: (trade: PortfolioTradeInput, intent: ManualTradeSaveIntent, id?: string, options?: { keepOpen?: boolean }) => Promise<boolean>;
   onDelete: (id: string) => void;
 }
 interface DrawerSelection {
@@ -925,6 +925,14 @@ function parseNumber(value: string): number | null {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
+function formatEntryDeltaInput(value: number | null | undefined): string {
+  if (!isFiniteNumber(value)) return '';
+  // Four decimal places are enough for spreadsheet reconciliation without
+  // turning a stored value into an uncontrolled 15–17 digit input string.
+  if (value === 0) return '0';
+  return value.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
+}
+
 function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
   const marketDate = usMarketDateIso();
   const [ticker, setTicker] = useState(trade?.ticker ?? '');
@@ -938,20 +946,41 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
   const [notes, setNotes] = useState(trade?.notes ?? '');
   const [closePrice, setClosePrice] = useState(trade?.closePrice != null ? String(trade.closePrice) : '');
   const [closeDate, setCloseDate] = useState(trade?.closeDate ?? todayIso());
-  const [entryDelta, setEntryDelta] = useState(trade?.entryDelta != null ? String(trade.entryDelta) : '');
+  const [entryDelta, setEntryDelta] = useState(formatEntryDeltaInput(trade?.entryDelta));
+  const [entryDeltaValue, setEntryDeltaValue] = useState<number | null>(trade?.entryDelta ?? null);
+  const [entryDeltaDirty, setEntryDeltaDirty] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const dialogRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
+    previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
+      if (event.key !== 'Tab') return;
+      const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('button, input, textarea, select, [tabindex]:not([tabindex="-1"])') ?? [])
+        .filter(element => !element.hasAttribute('disabled') && element.getAttribute('aria-hidden') !== 'true');
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
+    window.requestAnimationFrame(() => dialogRef.current?.focus());
     return () => {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener('keydown', handleKeyDown);
+      previousFocusRef.current?.focus();
     };
   }, [onClose]);
 
@@ -965,9 +994,9 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
 
   const normalizedEntryDelta = entryDelta.trim() === ''
     ? null
-    : tradeMode === 'historical' && parsed.entryDelta != null && Math.abs(parsed.entryDelta) <= 1
-      ? normalizeManualHistoricalEntryDelta(parsed.entryDelta)
-      : parsed.entryDelta;
+    : tradeMode === 'historical' && entryDeltaValue != null && Math.abs(entryDeltaValue) <= 1
+      ? normalizeManualHistoricalEntryDelta(entryDeltaValue)
+      : entryDeltaValue;
   const isClosedHistorical = tradeMode === 'historical' && historicalOutcome === 'closed';
   const historicalRequiresPastExpiration = tradeMode === 'historical' && historicalOutcome !== 'closed';
 
@@ -988,7 +1017,10 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
   const isValid = Object.values(validation).every(Boolean);
   const showEntryDelta = trade != null || tradeMode === 'historical';
   const entryDeltaFields = showEntryDelta && validation.entryDelta
-    ? buildEntryDeltaEditPatch(trade ?? { entryDelta: undefined, entryDeltaSource: undefined, entryDeltaCapturedAt: undefined }, normalizedEntryDelta)
+    ? buildEntryDeltaEditPatch(
+      trade ?? { entryDelta: undefined, entryDeltaSource: undefined, entryDeltaCapturedAt: undefined },
+      entryDeltaDirty ? normalizedEntryDelta : trade?.entryDelta ?? normalizedEntryDelta,
+    )
     : {};
   const saveIntent: ManualTradeSaveIntent = {
     mode: tradeMode,
@@ -1019,38 +1051,121 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
     ? prepareManualTradeForSave(draftInput, trade, saveIntent).trade
     : null;
 
-  const submit = async () => {
+  const modeGuidance = !trade && tradeMode === 'historical' && historicalOutcome === 'held_to_expiration' && isPastExpirationDate(expiration, marketDate)
+    ? 'This past expiration uses Historical / Realized mode, with Held to Expiration selected by default.'
+    : tradeMode === 'open' && isPastExpirationDate(expiration, marketDate)
+      ? 'Open trades require an unexpired expiration. Choose Historical / Realized to record how this trade ended.'
+      : tradeMode === 'historical' && historicalRequiresPastExpiration && expiration && !isPastExpirationDate(expiration, marketDate)
+        ? 'Held/assigned records need a past expiration. Choose Closed / Bought Back if this trade was exited before expiration.'
+        : '';
+
+  const handleModeChange = (mode: ManualTradeMode) => {
+    setTradeMode(mode);
+    setSubmitted(false);
+    setSaveError('');
+  };
+
+  const handleEntryDeltaChange = (value: string) => {
+    setEntryDelta(value);
+    setEntryDeltaValue(parseNumber(value));
+    setEntryDeltaDirty(true);
+    setSaveError('');
+  };
+
+  const handleEntryDeltaBlur = () => {
+    const value = parseNumber(entryDelta);
+    if (value == null) return;
+    const normalized = tradeMode === 'historical' && Math.abs(value) <= 1
+      ? normalizeManualHistoricalEntryDelta(value)
+      : value;
+    if (normalized != null && (tradeMode === 'historical' ? Math.abs(value) <= 1 : isValidEntryDelta(value))) {
+      setEntryDeltaValue(normalized);
+      setEntryDelta(formatEntryDeltaInput(normalized));
+    }
+  };
+
+  const resetForNextTrade = () => {
+    setTicker('');
+    setExpiration('');
+    setStrike('');
+    setContracts('1');
+    setSoldPrice('');
+    setSoldDate(todayIso());
+    setNotes('');
+    setClosePrice('');
+    setCloseDate(todayIso());
+    setEntryDelta('');
+    setEntryDeltaValue(null);
+    setEntryDeltaDirty(false);
+    // Historical entry is the repeated workflow; start each next row at its
+    // normal Held to Expiration outcome while retaining the selected mode.
+    setHistoricalOutcome('held_to_expiration');
+    setSubmitted(false);
+    setSaveError('');
+  };
+
+  const submit = async (keepOpen = false) => {
     setSubmitted(true);
     if (!isValid || saving) return;
     setSaving(true);
-    const saved = await onSave(draftInput, saveIntent, trade?.id);
-    if (!saved) setSaving(false);
+    setSaveError('');
+    try {
+      const saved = await onSave(draftInput, saveIntent, trade?.id, { keepOpen });
+      if (!saved) {
+        setSaveError('Could not save this trade. Review the fields and try again.');
+        setSaving(false);
+      } else if (keepOpen) {
+        resetForNextTrade();
+        setSaving(false);
+      }
+    } catch {
+      setSaveError('Could not save this trade. Review the fields and try again.');
+      setSaving(false);
+    }
   };
 
-  const errorText = (ok: boolean, label: string) => submitted && !ok ? <p className="mt-1 text-[11px]" style={{ color: 'var(--red)' }}>{label}</p> : null;
+  const errorText = (ok: boolean, label: string) => submitted && !ok ? <p role="alert" className="mt-1 text-[11px]" style={{ color: 'var(--red)' }}>{label}</p> : null;
   const inputClass = 'w-full rounded-lg px-3 py-2 text-base sm:text-sm outline-none min-h-[44px]';
+  const optionClass = 'trade-modal-choice flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs';
+  const choiceStyle = (selected: boolean) => ({
+    backgroundColor: selected ? 'var(--accent-bg)' : 'var(--input-bg)',
+    borderColor: selected ? 'var(--accent-border)' : 'var(--border)',
+    color: selected ? 'var(--text)' : 'var(--text-muted)',
+  });
 
   return (
-    <div className="fixed inset-0 z-[80]">
+    <div className="fixed inset-0 z-[130]">
       <button type="button" aria-label="Close add trade modal" onClick={onClose} className="absolute inset-0 bg-black/55" />
-      <div className="portfolio-trade-sheet absolute inset-x-0 bottom-0 max-h-[96dvh] rounded-t-2xl overflow-y-auto p-3 sm:inset-x-1/2 sm:top-8 sm:bottom-8 sm:max-h-none sm:w-[720px] sm:-translate-x-1/2 sm:rounded-lg sm:p-5 shadow-2xl" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
+      <section ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="trade-modal-title" className="portfolio-trade-sheet absolute inset-x-0 bottom-0 max-h-[96dvh] overflow-y-auto rounded-t-2xl p-3 shadow-2xl sm:inset-x-1/2 sm:top-1/2 sm:bottom-auto sm:max-h-[calc(100dvh-1rem)] sm:w-[760px] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl sm:p-4" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
         <div className="mx-auto mb-2 h-1 w-10 rounded-full sm:hidden" aria-hidden="true" style={{ backgroundColor: 'var(--border-strong)' }} />
-        <div className="flex items-start justify-between gap-3 mb-4">
+        <div className="mb-3 flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-bold" style={{ color: 'var(--text)' }}>{trade ? 'Edit Sold Put' : 'Add Sold Put'}</h2>
-            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Manual cash-secured put tracking saved to your cloud account.</p>
+            <h2 id="trade-modal-title" className="text-lg font-bold" style={{ color: 'var(--text)' }}>{trade ? 'Edit Sold Put' : 'Add Sold Put'}</h2>
+            <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>{trade ? 'Update this durable trade record.' : 'Track a current or historical short put.'}</p>
           </div>
-          <button onClick={onClose} className="px-3 py-2 rounded-lg text-xs min-h-[40px]" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
+          <button type="button" onClick={onClose} aria-label="Close add trade modal" className="icon-button min-h-11 min-w-11 rounded-lg text-lg" style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}>×</button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <fieldset className="trade-modal-section mb-3 rounded-lg border p-2.5" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+          <legend className="px-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Trade mode</legend>
+          <div role="radiogroup" aria-label="Trade mode" className="grid grid-cols-2 gap-2">
+            {([{ value: 'open', label: 'Open', detail: 'Current position' }, { value: 'historical', label: 'Historical / Realized', detail: 'Already ended' }] as Array<{ value: ManualTradeMode; label: string; detail: string }>).map(option => {
+              const selected = tradeMode === option.value;
+              return <button type="button" key={option.value} role="radio" aria-checked={selected} onClick={() => handleModeChange(option.value)} className={optionClass} style={choiceStyle(selected)}><span className={`h-2 w-2 rounded-full ${selected ? 'bg-[var(--accent)]' : 'border'}`} style={selected ? undefined : { borderColor: 'var(--border-strong)' }} aria-hidden="true" /><span><b className="block font-semibold">{option.label}</b><span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>{option.detail}</span></span></button>;
+            })}
+          </div>
+          {modeGuidance && <p role="status" className="mt-2 text-[11px] leading-4" style={{ color: 'var(--yellow)' }}>{modeGuidance}</p>}
+          {!trade && tradeMode === 'open' && <p className="mt-2 text-[11px]" style={{ color: 'var(--text-dim)' }}>Entry Delta is captured automatically when available.</p>}
+        </fieldset>
+
+        <div className="trade-modal-fields grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-2.5">
           <label>
-            <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Ticker</span>
-            <input value={ticker} onChange={event => setTicker(event.target.value.toUpperCase())} className={`${inputClass} font-mono`} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+            <span className="mb-1 block text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Ticker</span>
+            <input aria-label="Ticker" value={ticker} onChange={event => { setTicker(event.target.value.toUpperCase()); setSaveError(''); }} className={`${inputClass} font-mono`} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
             {errorText(validation.ticker, 'Ticker is required.')}
           </label>
           <label>
-            <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Expiration</span>
+            <span className="mb-1 block text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Expiration</span>
             <input type="date" value={expiration} onChange={event => {
               const value = event.target.value;
               setExpiration(value);
@@ -1058,111 +1173,116 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
                 setTradeMode('historical');
                 setHistoricalOutcome('held_to_expiration');
               }
+              setSaveError('');
             }} className={inputClass} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
             {errorText(validation.expiration, tradeMode === 'open' ? 'Open positions require an unexpired expiration date.' : historicalRequiresPastExpiration ? 'Held/assigned historical positions require a past expiration date.' : 'Expiration is required.')}
           </label>
           <label>
-            <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Strike</span>
-            <input value={strike} inputMode="decimal" onChange={event => setStrike(event.target.value)} onBlur={() => parsed.strike != null && parsed.strike > 0 ? setStrike(String(parsed.strike)) : undefined} className={`${inputClass} font-mono`} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+            <span className="mb-1 block text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Strike</span>
+            <input aria-label="Strike" value={strike} inputMode="decimal" onChange={event => { setStrike(event.target.value); setSaveError(''); }} onBlur={() => parsed.strike != null && parsed.strike > 0 ? setStrike(String(parsed.strike)) : undefined} className={`${inputClass} font-mono`} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
             {errorText(validation.strike, 'Strike must be greater than 0.')}
           </label>
           <label>
-            <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Contracts</span>
-            <input value={contracts} inputMode="numeric" onChange={event => /^\d*$/.test(event.target.value) && setContracts(event.target.value)} onBlur={() => validation.contracts ? setContracts(String(parsed.contracts)) : undefined} className={`${inputClass} font-mono`} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+            <span className="mb-1 block text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Contracts</span>
+            <input aria-label="Contracts" value={contracts} inputMode="numeric" onChange={event => /^\d*$/.test(event.target.value) && (setContracts(event.target.value), setSaveError(''))} onBlur={() => validation.contracts ? setContracts(String(parsed.contracts)) : undefined} className={`${inputClass} font-mono`} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
             {errorText(validation.contracts, 'Contracts must be a positive whole number.')}
           </label>
           <label>
-            <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Sold Price</span>
-            <input value={soldPrice} inputMode="decimal" onChange={event => setSoldPrice(event.target.value)} onBlur={() => parsed.soldPrice != null && parsed.soldPrice >= 0 ? setSoldPrice(String(parsed.soldPrice)) : undefined} className={`${inputClass} font-mono`} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+            <span className="mb-1 block text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>{tradeMode === 'historical' ? 'Sold Price (Net)' : 'Sold Price'}</span>
+            <input aria-label={tradeMode === 'historical' ? 'Sold Price (Net)' : 'Sold Price'} value={soldPrice} inputMode="decimal" onChange={event => { setSoldPrice(event.target.value); setSaveError(''); }} onBlur={() => parsed.soldPrice != null && parsed.soldPrice >= 0 ? setSoldPrice(String(parsed.soldPrice)) : undefined} className={`${inputClass} font-mono`} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
             {errorText(validation.soldPrice, 'Sold price must be 0 or more.')}
           </label>
           <label>
-            <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Sold Date</span>
+            <span className="mb-1 block text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>{tradeMode === 'historical' ? 'Sold Date / Entry Date' : 'Sold Date'}</span>
             <input type="date" value={soldDate} onChange={event => setSoldDate(event.target.value)} className={inputClass} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
             {errorText(validation.soldDate, 'Sold date is required.')}
           </label>
           {showEntryDelta && (
-            <label>
-              <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Entry Delta (optional)</span>
-              <input value={entryDelta} inputMode="decimal" placeholder={tradeMode === 'historical' ? 'e.g. 0.20 or -0.20' : 'e.g. -0.20'} onChange={event => setEntryDelta(event.target.value)} className={`${inputClass} font-mono`} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
-              <p className="mt-1 text-[11px]" style={{ color: 'var(--text-dim)' }}>{tradeMode === 'historical' ? 'Historical put Delta accepts a signed value or positive magnitude and is stored canonically as negative.' : 'Stored historical Delta at entry. Edit to replace it, or clear it when unavailable.'}</p>
+            <label className="sm:col-span-2">
+              <span className="mb-1 block text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Entry Delta (optional)</span>
+              <input aria-label="Entry Delta (optional)" value={entryDelta} inputMode="decimal" placeholder={tradeMode === 'historical' ? '0.1235 or -0.1235' : '-0.20'} onChange={event => handleEntryDeltaChange(event.target.value)} onBlur={handleEntryDeltaBlur} className={`${inputClass} font-mono`} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+              <p className="mt-1 text-[11px]" style={{ color: 'var(--text-dim)' }}>{tradeMode === 'historical' ? 'Historical put Delta. Enter 0.1235 or -0.1235; it is stored as the canonical put Delta.' : 'Stored historical Delta at entry. Edit to replace it, or clear it when unavailable.'}</p>
               {errorText(validation.entryDelta, tradeMode === 'historical' ? 'Entry Delta magnitude must be between 0 and 1.' : 'Entry Delta must be between -1 and 0.')}
             </label>
           )}
-          <label>
-            <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Trade State</span>
-            <select value={tradeMode} onChange={event => setTradeMode(event.target.value as ManualTradeMode)} className={inputClass} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
-              <option value="open">Open</option>
-              <option value="historical">Historical / Realized</option>
-            </select>
-          </label>
           {tradeMode === 'historical' && (
-            <label>
-              <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Historical Outcome</span>
-              <select value={historicalOutcome} onChange={event => setHistoricalOutcome(event.target.value as HistoricalTradeOutcome)} className={inputClass} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
-                <option value="held_to_expiration">Held to Expiration</option>
-                <option value="closed">Closed / Bought Back</option>
-                <option value="assigned">Assigned (Confirmed)</option>
-              </select>
-            </label>
+            <fieldset className="trade-modal-outcome sm:col-span-2 rounded-lg border p-2" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+              <legend className="px-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>How did it end?</legend>
+              <div role="radiogroup" aria-label="Historical trade outcome" className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                {([
+                  { value: 'held_to_expiration', label: 'Held to Expiration' },
+                  { value: 'closed', label: 'Closed / Bought Back' },
+                  { value: 'assigned', label: 'Assigned (Confirmed)' },
+                ] as Array<{ value: HistoricalTradeOutcome; label: string }>).map(option => {
+                  const selected = historicalOutcome === option.value;
+                  return <button type="button" key={option.value} role="radio" aria-checked={selected} onClick={() => { setHistoricalOutcome(option.value); setSubmitted(false); setSaveError(''); }} className={optionClass} style={choiceStyle(selected)}><span className={`h-2 w-2 rounded-full ${selected ? 'bg-[var(--accent)]' : 'border'}`} style={selected ? undefined : { borderColor: 'var(--border-strong)' }} aria-hidden="true" /><span>{option.label}</span></button>;
+                })}
+              </div>
+            </fieldset>
           )}
           {isClosedHistorical && (
             <>
               <label>
-                <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Close Price</span>
-                <input value={closePrice} inputMode="decimal" onChange={event => setClosePrice(event.target.value)} className={`${inputClass} font-mono`} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
-                {errorText(validation.closePrice, 'Close price must be 0 or more.')}
-              </label>
-              <label>
-                <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Close Date</span>
+                <span className="mb-1 block text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Close Date</span>
                 <input type="date" value={closeDate} onChange={event => setCloseDate(event.target.value)} className={inputClass} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
                 {errorText(validation.closeDate, 'Close date must be on/after entry, on/before expiration, and not in the future.')}
+              </label>
+              <label>
+                <span className="mb-1 block text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Close Price</span>
+                <input aria-label="Close Price" value={closePrice} inputMode="decimal" onChange={event => { setClosePrice(event.target.value); setSaveError(''); }} className={`${inputClass} font-mono`} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+                {errorText(validation.closePrice, 'Close price must be 0 or more.')}
               </label>
             </>
           )}
           <label className="sm:col-span-2">
-            <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Notes</span>
-            <textarea value={notes} onChange={event => setNotes(event.target.value)} rows={3} className={`${inputClass} resize-y`} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+            <span className="mb-1 block text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Notes</span>
+            <textarea aria-label="Notes" value={notes} onChange={event => { setNotes(event.target.value); setSaveError(''); }} rows={1} className={`${inputClass} resize-y`} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
           </label>
         </div>
 
         {tradeMode === 'historical' && historicalOutcome === 'held_to_expiration' && (
-          <p className="mt-3 text-[11px]" style={{ color: 'var(--text-dim)' }}>Price @ Exp. and realized economics are resolved on Save from the cached/canonical historical close path. If the close or corporate-action basis is unsafe, the trade still saves for Portfolio Maintenance.</p>
+          <p className="mt-2 text-[11px] leading-4" style={{ color: 'var(--text-dim)' }}>Price @ Exp. and realized P&amp;L resolve on Save. Expiration price will be resolved through Portfolio Maintenance if pending.</p>
         )}
         {tradeMode === 'historical' && historicalOutcome === 'assigned' && (
-          <p className="mt-3 text-[11px]" style={{ color: 'var(--text-dim)' }}>Assigned is explicit confirmation of a brokerage event. Put Scanner preserves the assignment record without inventing stock-position proceeds or basis.</p>
+          <p className="mt-2 text-[11px] leading-4" style={{ color: 'var(--text-dim)' }}>Assigned is a confirmed brokerage event; no stock proceeds or basis are invented.</p>
         )}
 
-        <div className="grid grid-cols-2 lg:grid-cols-7 gap-2 mt-4">
-          <SummaryCard label="Premium" value={previewTrade ? formatCurrency(calculatePremiumCollected(previewTrade), 0) : DASH} color="var(--green)" />
+        <section className="trade-modal-preview mt-2 rounded-lg border p-2.5" aria-label="Derived trade preview" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+          <div className="mb-2 flex items-baseline justify-between gap-2"><h3 className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text)' }}>Derived preview</h3><span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Canonical values · updates as you type</span></div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+          <SummaryCard label="Premium" value={previewTrade ? formatCurrency(calculatePremiumCollected(previewTrade), 2) : DASH} color="var(--green)" />
           <SummaryCard label="Gross Risk" value={previewTrade ? formatCurrency(calculateEquityAtRisk(previewTrade), 0) : DASH} />
-          <SummaryCard label="Net Risk" value={previewTrade ? formatCurrency(calculateNetCapitalAtRisk(previewTrade), 0) : DASH} />
+          <SummaryCard label="Net Risk" value={previewTrade ? formatCurrency(calculateNetCapitalAtRisk(previewTrade), 2) : DASH} />
           <SummaryCard label="Breakeven" value={previewTrade ? formatCurrency(calculateBreakeven(previewTrade)) : DASH} />
           <SummaryCard label="Original DTE" value={previewTrade ? formatDteValue(calculateOriginalDte(previewTrade)) : DASH} />
           <SummaryCard label="Entry NY" value={previewTrade ? formatPctValue(calculateOriginalNominalYield(previewTrade)) : DASH} />
           <SummaryCard label="Entry AY" value={previewTrade ? formatPctValue(calculateOriginalAnnualizedYield(previewTrade)) : DASH} />
-        </div>
-        {tradeMode === 'historical' && (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mt-2">
-            <SummaryCard label="Price @ Exp." value={previewTrade ? formatCurrency(historyPriceAtExpiration(previewTrade)) : DASH} />
-            <SummaryCard label="Final Option Value" value={previewTrade ? formatCurrency(historyFinalValue(previewTrade)) : DASH} />
-            <SummaryCard label="Realized P&L" value={previewTrade ? formatCurrency(historyRealizedPnl(previewTrade)) : DASH} color={previewTrade ? pnlColor(historyRealizedPnl(previewTrade)) : undefined} />
-            <SummaryCard label="Realized IRR" value={previewTrade ? formatPctValue(historyRealizedIrr(previewTrade)) : DASH} color={previewTrade ? pnlColor(historyRealizedIrr(previewTrade)) : undefined} />
           </div>
-        )}
+          {tradeMode === 'historical' && (
+            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <SummaryCard label="Price @ Exp." value={previewTrade ? formatCurrency(historyPriceAtExpiration(previewTrade), 2) : DASH} />
+              <SummaryCard label="Final Option Value" value={previewTrade ? formatCurrency(historyFinalValue(previewTrade), 2) : DASH} />
+              <SummaryCard label="Realized P&L" value={previewTrade ? formatCurrency(historyRealizedPnl(previewTrade), 2) : DASH} color={previewTrade ? pnlColor(historyRealizedPnl(previewTrade)) : undefined} />
+              <SummaryCard label="Realized IRR" value={previewTrade ? formatPctValue(historyRealizedIrr(previewTrade)) : DASH} color={previewTrade ? pnlColor(historyRealizedIrr(previewTrade)) : undefined} />
+            </div>
+          )}
+        </section>
 
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-5">
+        {saveError && <p role="alert" className="mt-2 rounded-lg px-3 py-2 text-[11px]" style={{ color: 'var(--red)', backgroundColor: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.24)' }}>{saveError}</p>}
+
+        <div className="portfolio-trade-sheet__actions mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           {trade ? (
-            <button onClick={() => onDelete(trade.id)} className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-xs min-h-[44px]" style={{ backgroundColor: 'rgba(239,68,68,0.12)', color: 'var(--red)', border: '1px solid rgba(239,68,68,0.28)' }}>
-              <Trash2 className="w-3.5 h-3.5" /> Delete
+            <button type="button" onClick={() => onDelete(trade.id)} className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-xs" style={{ backgroundColor: 'rgba(239,68,68,0.12)', color: 'var(--red)', border: '1px solid rgba(239,68,68,0.28)' }}>
+              <Trash2 className="h-3.5 w-3.5" /> Delete
             </button>
-          ) : <span />}
-          <div className="flex gap-2">
-            <button onClick={onClose} className="px-4 py-2 rounded-lg text-xs min-h-[44px]" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
-            <button onClick={() => void submit()} disabled={saving} className="px-4 py-2 rounded-lg text-xs font-medium text-white min-h-[44px] disabled:opacity-60" style={{ backgroundColor: 'var(--accent)' }}>{saving ? 'Saving…' : trade ? 'Save Changes' : 'Save Trade'}</button>
+          ) : <span className="hidden sm:block" />}
+          <div className="portfolio-trade-sheet__action-group flex flex-col gap-2 sm:flex-row sm:items-center">
+            <button type="button" onClick={onClose} className="order-3 min-h-11 rounded-lg px-4 py-2 text-xs sm:order-1" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
+            {!trade && <button type="button" onClick={() => void submit(true)} disabled={saving} className="order-2 min-h-11 rounded-lg px-4 py-2 text-xs disabled:opacity-60" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>{saving ? 'Saving…' : 'Save & Add Another'}</button>}
+            <button type="button" onClick={() => void submit(false)} disabled={saving} className="order-1 min-h-11 rounded-lg px-4 py-2 text-xs font-medium text-white disabled:opacity-60 sm:order-3" style={{ backgroundColor: 'var(--accent)' }}>{saving ? 'Saving…' : trade ? 'Save Changes' : 'Save Trade'}</button>
           </div>
         </div>
-      </div>
+      </section>
     </div>
   );
 }
@@ -1373,7 +1493,7 @@ export default function PortfolioPage() {
     }
   }, [persistTrades]);
 
-  const handleSaveTrade = useCallback(async (input: PortfolioTradeInput, intent: ManualTradeSaveIntent, id?: string): Promise<boolean> => {
+  const handleSaveTrade = useCallback(async (input: PortfolioTradeInput, intent: ManualTradeSaveIntent, id?: string, options?: { keepOpen?: boolean }): Promise<boolean> => {
     const before = loadPortfolioTrades();
     const existing = id ? before.find(trade => trade.id === id) ?? null : null;
     if (id && !existing) {
@@ -1400,8 +1520,10 @@ export default function PortfolioPage() {
       return false;
     }
     setTrades(next);
-    setShowAddModal(false);
-    setEditingTrade(null);
+    if (!options?.keepOpen) {
+      setShowAddModal(false);
+      setEditingTrade(null);
+    }
     if (resolved.status === 'expired_price_pending') {
       setDurableActivityNotice(resolved.resolutionWarning ?? 'Historical trade saved; expiration price remains pending for Portfolio Maintenance.');
     }

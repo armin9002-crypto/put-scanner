@@ -298,6 +298,24 @@ test('Add Trade exposes manual Entry Delta only for historical entry while Edit 
   assert.doesNotMatch(historyAnalytics, /fetch\(|requestMarketData|fetchOptions/, 'History analytics remain request-free');
 });
 
+test('historical entry UX keeps outcome states and repeated-entry actions in the modal', async () => {
+  const page = await read('src/pages/PortfolioPage.tsx');
+  const modal = page.slice(page.indexOf('function TradeModal'), page.indexOf('function PortfolioPage'));
+  assert.match(modal, /role="dialog" aria-modal="true"/);
+  assert.match(modal, /aria-label="Trade mode"/);
+  assert.match(modal, /How did it end\?/);
+  assert.match(modal, /Save & Add Another/);
+  assert.match(modal, /keepOpen/);
+  assert.match(modal, /setHistoricalOutcome\('held_to_expiration'\)/, 'Save & Add Another resets the default historical outcome');
+  assert.match(modal, /This past expiration uses Historical \/ Realized mode/);
+  assert.match(modal, /Expiration price will be resolved through Portfolio Maintenance/);
+  assert.match(modal, /formatEntryDeltaInput/);
+  assert.match(modal, /entryDeltaDirty/);
+  assert.match(modal, /Close Date/);
+  assert.match(modal, /Close Price/);
+  assert.doesNotMatch(modal, /<option value="expired_price_pending"/);
+});
+
 test('History group analytics expose only the additive subtotal values used by the grouped table', () => {
   const first = trade({ id: 'history-a', expiration: '2026-10-16', contracts: 2, status: 'closed', closePrice: 0.05, closeDate: '2026-10-16', entryVixClose: 22 });
   const second = trade({ id: 'history-b', expiration: '2026-12-18', contracts: 1, status: 'expired', resolutionType: 'expired_worthless', expirationClosePrice: 60, expirationCloseDate: '2026-12-18', entryVixClose: undefined });
