@@ -316,7 +316,7 @@ test('historical entry UX keeps outcome states and repeated-entry actions in the
   assert.doesNotMatch(modal, /<option value="expired_price_pending"/);
 });
 
-test('History group analytics expose only the additive subtotal values used by the grouped table', () => {
+test('History grouped table keeps its existing additive subtotal presentation before the dedicated UI pass', () => {
   const first = trade({ id: 'history-a', expiration: '2026-10-16', contracts: 2, status: 'closed', closePrice: 0.05, closeDate: '2026-10-16', entryVixClose: 22 });
   const second = trade({ id: 'history-b', expiration: '2026-12-18', contracts: 1, status: 'expired', resolutionType: 'expired_worthless', expirationClosePrice: 60, expirationCloseDate: '2026-12-18', entryVixClose: undefined });
   const groups = buildHistoryGroups([first, second], 'year');

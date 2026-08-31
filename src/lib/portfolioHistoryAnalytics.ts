@@ -23,15 +23,33 @@ export interface HistoryCashFlow {
   amount: number;
 }
 
-export interface HistoryGroup {
-  key: string;
-  label: string;
-  trades: PortfolioTrade[];
+export interface HistoryGroupAggregates {
   tradeCount: number;
   contractCount: number;
   grossRisk: number;
   realizedPnl: number | null;
   premium: number;
+  weightedAverageDaysHeld: number | null;
+  weightedAverageNy: number | null;
+  weightedAverageEntryVix: number | null;
+  entryVixCoverage: number | null;
+  weightedAverageEntryDelta: number | null;
+  entryDeltaCoverage: number | null;
+  weightedAverageRealizedIrr: number | null;
+  weightedAveragePercentCaptured: number | null;
+}
+
+export interface HistoryGroup extends HistoryGroupAggregates {
+  key: string;
+  label: string;
+  trades: PortfolioTrade[];
+}
+
+export interface HistoryGrossRiskWeightedMetric {
+  value: number | null;
+  coverage: number | null;
+  knownGrossRisk: number;
+  totalGrossRisk: number;
 }
 
 export function historyOutcome(trade: PortfolioTrade): Exclude<HistoryOutcome, 'all'> | 'pending' {
@@ -52,6 +70,18 @@ export function historyRealizedPnl(trade: PortfolioTrade): number | null {
 export function historyPremium(trade: PortfolioTrade): number | null {
   return canonicalHistoricalPremium(trade)
     ?? (Number.isFinite(trade.premiumCollected) ? trade.premiumCollected! : calculatePremiumCollected(trade));
+}
+
+/** Canonical cash-secured historical notional; independent of current quotes. */
+export function historyGrossRisk(trade: PortfolioTrade): number | null {
+  return calculateEquityAtRisk(trade);
+}
+
+export function historyPercentCaptured(trade: PortfolioTrade): number | null {
+  const premium = historyPremium(trade);
+  const realizedPnl = historyRealizedPnl(trade);
+  if (isFiniteNumber(premium) && premium > 0 && isFiniteNumber(realizedPnl)) return realizedPnl / premium;
+  return isFiniteNumber(trade.percentCaptured) ? trade.percentCaptured : null;
 }
 
 export function historyDaysHeld(trade: PortfolioTrade): number | null {
@@ -173,29 +203,83 @@ export function calculateHistoryTotalRealizedIrr(trades: PortfolioTrade[]): numb
   return cashFlows ? calculateXirr(cashFlows) : null;
 }
 
-export function calculateHistoryWeightedEntryDelta(trades: PortfolioTrade[]) {
+function calculateWeightedHistoryMetric(
+  trades: PortfolioTrade[],
+  valueFor: (trade: PortfolioTrade) => number | null,
+  weightFor: (trade: PortfolioTrade) => number | null,
+): number | null {
+  let weightedTotal = 0;
+  let knownWeight = 0;
+  trades.forEach(trade => {
+    const value = valueFor(trade);
+    const weight = weightFor(trade);
+    if (!isFiniteNumber(value) || !isFiniteNumber(weight) || weight <= 0) return;
+    weightedTotal += value * weight;
+    knownWeight += weight;
+  });
+  return knownWeight > 0 ? weightedTotal / knownWeight : null;
+}
+
+function calculateGrossRiskWeightedHistoryMetric(
+  trades: PortfolioTrade[],
+  valueFor: (trade: PortfolioTrade) => number | null,
+): HistoryGrossRiskWeightedMetric {
   let totalGrossRisk = 0;
   let knownGrossRisk = 0;
-  let weightedDelta = 0;
+  let weightedValue = 0;
   trades.forEach(trade => {
-    const grossRisk = calculateEquityAtRisk(trade);
+    const grossRisk = historyGrossRisk(trade);
     if (!isFiniteNumber(grossRisk) || grossRisk <= 0) return;
     totalGrossRisk += grossRisk;
-    if (!isValidEntryDelta(trade.entryDelta)) return;
+    const value = valueFor(trade);
+    if (!isFiniteNumber(value)) return;
     knownGrossRisk += grossRisk;
-    weightedDelta += trade.entryDelta * grossRisk;
+    weightedValue += value * grossRisk;
   });
   return {
-    value: knownGrossRisk > 0 ? weightedDelta / knownGrossRisk : null,
+    value: knownGrossRisk > 0 ? weightedValue / knownGrossRisk : null,
     coverage: totalGrossRisk > 0 ? knownGrossRisk / totalGrossRisk : null,
     knownGrossRisk,
     totalGrossRisk,
   };
 }
 
+export function calculateHistoryWeightedEntryDelta(trades: PortfolioTrade[]): HistoryGrossRiskWeightedMetric {
+  return calculateGrossRiskWeightedHistoryMetric(
+    trades,
+    trade => isValidEntryDelta(trade.entryDelta) ? trade.entryDelta : null,
+  );
+}
+
+/**
+ * Canonical numeric aggregates for any History group. Group identity never changes
+ * the formulas: exposure metrics use Gross Risk, Entry NY uses original Net Risk,
+ * and captured premium uses Premium so its weighted value reconciles to group P&L.
+ */
+export function buildHistoryGroupAggregates(trades: PortfolioTrade[]): HistoryGroupAggregates {
+  const realizedPnlValues = trades.map(historyRealizedPnl).filter(isFiniteNumber);
+  const entryVix = calculateGrossRiskWeightedHistoryMetric(trades, historyEntryVix);
+  const entryDelta = calculateHistoryWeightedEntryDelta(trades);
+  return {
+    tradeCount: trades.length,
+    contractCount: trades.reduce((sum, trade) => sum + trade.contracts, 0),
+    grossRisk: trades.map(historyGrossRisk).filter(isFiniteNumber).reduce((sum, value) => sum + value, 0),
+    premium: trades.map(historyPremium).filter(isFiniteNumber).reduce((sum, value) => sum + value, 0),
+    realizedPnl: realizedPnlValues.length > 0 ? realizedPnlValues.reduce((sum, value) => sum + value, 0) : null,
+    weightedAverageDaysHeld: calculateGrossRiskWeightedHistoryMetric(trades, historyDaysHeld).value,
+    weightedAverageNy: calculateWeightedHistoryMetric(trades, historyEntryNominalYield, calculateNetCapitalAtRisk),
+    weightedAverageEntryVix: entryVix.value,
+    entryVixCoverage: entryVix.coverage,
+    weightedAverageEntryDelta: entryDelta.value,
+    entryDeltaCoverage: entryDelta.coverage,
+    weightedAverageRealizedIrr: calculateGrossRiskWeightedHistoryMetric(trades, historyRealizedIrr).value,
+    weightedAveragePercentCaptured: calculateWeightedHistoryMetric(trades, historyPercentCaptured, historyPremium),
+  };
+}
+
 export function calculateTotalHistoricalNotional(trades: PortfolioTrade[]): number | null {
   if (trades.length === 0) return null;
-  return trades.reduce((sum, trade) => sum + (calculateEquityAtRisk(trade) ?? 0), 0);
+  return trades.reduce((sum, trade) => sum + (historyGrossRisk(trade) ?? 0), 0);
 }
 
 export function historyEntryNominalYield(trade: PortfolioTrade): number | null {
@@ -237,19 +321,12 @@ export function buildHistoryGroups(trades: PortfolioTrade[], mode: HistoryGroupM
     bucket.trades.push(trade);
     buckets.set(identity.key, bucket);
   });
-  const groups = [...buckets.entries()].map(([key, bucket]) => {
-    const realized = bucket.trades.map(historyRealizedPnl).filter((value): value is number => value != null);
-    return {
-      key,
-      label: bucket.label,
-      trades: bucket.trades,
-      tradeCount: bucket.trades.length,
-      contractCount: bucket.trades.reduce((sum, trade) => sum + trade.contracts, 0),
-      grossRisk: bucket.trades.reduce((sum, trade) => sum + (calculateEquityAtRisk(trade) ?? 0), 0),
-      realizedPnl: realized.length ? realized.reduce((sum, value) => sum + value, 0) : null,
-      premium: bucket.trades.reduce((sum, trade) => sum + (historyPremium(trade) ?? 0), 0),
-    };
-  });
+  const groups = [...buckets.entries()].map(([key, bucket]) => ({
+    key,
+    label: bucket.label,
+    trades: bucket.trades,
+    ...buildHistoryGroupAggregates(bucket.trades),
+  }));
   return groups.sort((a, b) => {
     if (a.key === 'unknown') return 1;
     if (b.key === 'unknown') return -1;
