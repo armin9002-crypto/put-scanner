@@ -33,8 +33,8 @@ const read = relative => readFile(path.join(root, relative), 'utf8');
 
 test('canonical metric contract preserves formulas while making every denominator explicit', () => {
   assert.equal(PUT_METRIC_CONTRACT.securedCashYield.denominator, 'gross secured cash');
-  assert.equal(PUT_METRIC_CONTRACT.entryNetRiskReturn.denominator, 'entry net maximum-loss capital');
-  assert.equal(PUT_METRIC_CONTRACT.remainingLiabilityOnEntryNetRisk.denominator, 'entry net maximum-loss capital');
+  assert.equal(PUT_METRIC_CONTRACT.entryNominalYield.denominator, 'gross secured cash');
+  assert.equal(PUT_METRIC_CONTRACT.currentNominalYield.denominator, 'gross secured cash');
   assert.equal(PUT_METRIC_CONTRACT.annualizedRemainingPremiumOnCurrentNetRisk.denominator, 'current net maximum-loss capital');
 
   assert.equal(calculatePremiumPerContract(2), 200);
@@ -57,10 +57,10 @@ test('yield and risk labels use the restored NY/AY nomenclature', () => {
       netMaximumLossCapital: 'Net Risk',
       securedCashYield: 'Nominal Yield',
       annualizedSecuredCashYield: 'Annualized Yield',
-      entryNetRiskReturn: 'Entry NY',
-      annualizedEntryNetRiskReturn: 'Entry AY',
-      remainingLiabilityOnEntryNetRisk: 'Current NY',
-      annualizedRemainingLiabilityOnEntryNetRisk: 'Current AY',
+      entryNominalYield: 'Entry NY',
+      entryAnnualizedYield: 'Entry AY',
+      currentNominalYield: 'Current NY',
+      currentAnnualizedYield: 'Current AY',
       annualizedRemainingPremiumOnCurrentNetRisk: 'Remaining AY to Maturity',
     },
   );
@@ -127,8 +127,8 @@ test('the same deterministic contract reconciles discovery, Screener, drawer, an
   const trade = { ticker: 'TST', optionType: 'put', strike: 100, expiration: '2026-01-31', contracts: 2, soldPrice: 2, soldDate: '2026-01-01', status: 'open' };
   assert.equal(calculatePremiumCollected(trade), 400);
   assert.equal(calculatePortfolioNetCapitalAtRisk(trade), 19_600);
-  assert.equal(calculateOriginalAnnualizedYield(trade), 400 / 19_600 * 365 / 30);
-  assert.notEqual(rows[0].annYieldBid / 100, calculateOriginalAnnualizedYield(trade), 'gross secured cash and net maximum-loss capital are intentionally different denominators');
+  assert.equal(calculateOriginalAnnualizedYield(trade), 400 / 20_000 * 365 / 30);
+  assert.equal(rows[0].annYieldBid / 100, calculateOriginalAnnualizedYield(trade), 'equivalent price bases use the same Gross Risk denominator');
 });
 
 test('missing-value semantics distinguish zero, unavailable, stale, and loading', () => {

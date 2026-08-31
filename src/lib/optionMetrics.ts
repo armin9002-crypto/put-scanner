@@ -122,7 +122,7 @@ export function calculateNetCapitalAtRisk(strike: number | null | undefined, opt
 export const calculateNetMaximumLossCapital = calculateNetCapitalAtRisk;
 
 export function calculateNominalYield(optionPrice: number | null | undefined, strike: number | null | undefined): number | null {
-  const price = sanitizePositive(optionPrice);
+  const price = sanitizePositive(optionPrice, true);
   const validStrike = sanitizePositive(strike);
   return price != null && validStrike != null ? price / validStrike : null;
 }

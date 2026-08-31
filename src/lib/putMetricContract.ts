@@ -24,25 +24,25 @@ export const PUT_METRIC_CONTRACT = {
     formula: 'secured-cash yield × 365 ÷ DTE',
     denominator: 'gross secured cash',
   },
-  entryNetRiskReturn: {
+  entryNominalYield: {
     label: 'Entry NY',
-    formula: 'premium ÷ entry net maximum-loss capital',
-    denominator: 'entry net maximum-loss capital',
+    formula: 'net sold price ÷ strike',
+    denominator: 'gross secured cash',
   },
-  annualizedEntryNetRiskReturn: {
+  entryAnnualizedYield: {
     label: 'Entry AY',
-    formula: 'entry net-risk return × 365 ÷ original DTE',
-    denominator: 'entry net maximum-loss capital',
+    formula: 'Entry NY × 365 ÷ original DTE',
+    denominator: 'gross secured cash',
   },
-  remainingLiabilityOnEntryNetRisk: {
+  currentNominalYield: {
     label: 'Current NY',
-    formula: 'current buyback cost ÷ entry net maximum-loss capital',
-    denominator: 'entry net maximum-loss capital',
+    formula: 'selected current mark ÷ strike',
+    denominator: 'gross secured cash',
   },
-  annualizedRemainingLiabilityOnEntryNetRisk: {
+  currentAnnualizedYield: {
     label: 'Current AY',
-    formula: 'remaining-liability ratio × 365 ÷ remaining DTE',
-    denominator: 'entry net maximum-loss capital',
+    formula: 'Current NY × 365 ÷ remaining DTE',
+    denominator: 'gross secured cash',
   },
   annualizedRemainingPremiumOnCurrentNetRisk: {
     label: 'Remaining AY to Maturity',

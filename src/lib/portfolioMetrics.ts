@@ -1,4 +1,4 @@
-import { calculateDte, isFiniteNumber } from './optionMetrics.ts';
+import { calculateAnnualizedYield, calculateDte, calculateNominalYield, isFiniteNumber } from './optionMetrics.ts';
 import type { PortfolioTrade } from './portfolioStorage';
 
 export type MarkBasis = 'ask' | 'mid' | 'bid' | 'last';
@@ -91,12 +91,7 @@ export function calculateRemainingDte(trade: PortfolioTrade): number | null {
 }
 
 export function calculateOriginalAnnualizedYield(trade: PortfolioTrade): number | null {
-  const premium = calculatePremiumCollected(trade);
-  const netRisk = calculateNetCapitalAtRisk(trade);
-  const originalDte = calculateOriginalDte(trade);
-  if (!isFiniteNumber(originalDte) || originalDte <= 0) return null;
-  const ratio = safeRatio(premium, netRisk);
-  return ratio == null ? null : ratio * (365 / originalDte);
+  return calculateAnnualizedYield(trade.soldPrice, trade.strike, calculateOriginalDte(trade));
 }
 
 export function calculateCurrentOptionMark(trade: PortfolioTrade, basis: MarkBasis): number | null {
@@ -114,7 +109,7 @@ export function calculateCurrentOptionMark(trade: PortfolioTrade, basis: MarkBas
 }
 
 export function calculateOriginalNominalYield(trade: PortfolioTrade): number | null {
-  return safeRatio(calculatePremiumCollected(trade), calculateNetCapitalAtRisk(trade));
+  return calculateNominalYield(trade.soldPrice, trade.strike);
 }
 
 export function calculateUnrealizedPnl(trade: PortfolioTrade, basis: MarkBasis): number | null {
@@ -157,14 +152,13 @@ export function calculatePercentCaptured(trade: PortfolioTrade, basis: MarkBasis
 }
 
 export function calculateCurrentNominalYield(trade: PortfolioTrade, basis: MarkBasis): number | null {
-  return safeRatio(calculateCurrentMarkValueAbsolute(trade, basis), calculateNetCapitalAtRisk(trade));
+  if (!isOpenTrade(trade)) return null;
+  return calculateNominalYield(calculateCurrentOptionMark(trade, basis), trade.strike);
 }
 
 export function calculateCurrentAnnualizedYield(trade: PortfolioTrade, basis: MarkBasis): number | null {
-  const nominal = calculateCurrentNominalYield(trade, basis);
-  const remainingDte = calculateRemainingDte(trade);
-  if (nominal == null || !isFiniteNumber(remainingDte) || remainingDte <= 0) return null;
-  return nominal * (365 / remainingDte);
+  if (!isOpenTrade(trade)) return null;
+  return calculateAnnualizedYield(calculateCurrentOptionMark(trade, basis), trade.strike, calculateRemainingDte(trade));
 }
 
 export function calculatePreferredCurrentPositionValue(trade: PortfolioTrade): number | null {
@@ -276,7 +270,7 @@ export function calculatePortfolioSummary(trades: PortfolioTrade[]): PortfolioSu
     weightedAverageOriginalAnnualizedYield: weightedAverage(
       openTrades.map(trade => ({
         value: calculateOriginalAnnualizedYield(trade),
-        weight: calculateNetCapitalAtRisk(trade),
+        weight: calculateEquityAtRisk(trade),
       }))
     ),
     weightedAverageRemainingAnnualizedYield: weightedAverage(
@@ -300,31 +294,26 @@ export function calculatePortfolioSummary(trades: PortfolioTrade[]): PortfolioSu
 export function calculatePortfolioMarkSummary(trades: PortfolioTrade[], basis: MarkBasis): PortfolioMarkSummaryMetrics {
   const openTrades = trades.filter(isOpenTrade);
   const totalPremium = sum(openTrades.map(calculatePremiumCollected));
-  const totalNetRisk = sum(openTrades.map(calculateNetCapitalAtRisk));
+  const totalGrossRisk = sum(openTrades.map(calculateEquityAtRisk));
   const totalCurrentValue = completeNullableSum(openTrades.map(trade => calculateCurrentPositionValue(trade, basis)));
   const totalCurrentPremium = completeNullableSum(openTrades.map(trade => calculateCurrentMarkValueAbsolute(trade, basis)));
   const totalGainLoss = totalCurrentValue != null ? totalPremium + totalCurrentValue : null;
-
-  const originalDollarDays = sum(openTrades.map(trade => {
-    const netRisk = calculateNetCapitalAtRisk(trade);
-    const dte = calculateOriginalDte(trade);
-    return netRisk != null && isFiniteNumber(dte) && dte > 0 ? netRisk * dte / 365 : null;
-  }));
-  const currentDollarDays = sum(openTrades.map(trade => {
-    const netRisk = calculateNetCapitalAtRisk(trade);
-    const dte = calculateRemainingDte(trade);
-    return netRisk != null && isFiniteNumber(dte) && dte > 0 ? netRisk * dte / 365 : null;
-  }));
 
   return {
     totalCurrentValue,
     totalGainLoss,
     totalCurrentPremium,
     percentCaptured: safeRatio(totalGainLoss, totalPremium),
-    portfolioOriginalNominalYield: safeRatio(totalPremium, totalNetRisk),
-    portfolioOriginalAnnualizedYield: originalDollarDays > 0 ? totalPremium / originalDollarDays : null,
-    portfolioCurrentNominalYield: safeRatio(totalCurrentPremium, totalNetRisk),
-    portfolioCurrentAnnualizedYield: totalCurrentPremium != null && currentDollarDays > 0 ? totalCurrentPremium / currentDollarDays : null,
+    portfolioOriginalNominalYield: safeRatio(totalPremium, totalGrossRisk),
+    portfolioOriginalAnnualizedYield: weightedAverage(openTrades.map(trade => ({
+      value: calculateOriginalAnnualizedYield(trade),
+      weight: calculateEquityAtRisk(trade),
+    }))),
+    portfolioCurrentNominalYield: safeRatio(totalCurrentPremium, totalGrossRisk),
+    portfolioCurrentAnnualizedYield: totalCurrentPremium == null ? null : weightedAverage(openTrades.map(trade => ({
+      value: calculateCurrentAnnualizedYield(trade, basis),
+      weight: calculateEquityAtRisk(trade),
+    }))),
     weightedAverageDelta: calculateWeightedAverageDelta(openTrades),
     totalDeltaExposure: calculateTotalDeltaExposure(openTrades),
   };

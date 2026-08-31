@@ -12,7 +12,6 @@ import {
   historyRealizedIrr,
   historyRealizedPnl,
 } from '../src/lib/portfolioHistoryAnalytics.ts';
-import { calculateNetCapitalAtRisk } from '../src/lib/portfolioMetrics.ts';
 
 const trade = (overrides = {}) => ({
   id: 'trade',
@@ -76,20 +75,17 @@ test('Wtd. Avg. Days Held uses Gross Risk, excludes missing values, and fails cl
   assert.equal(buildHistoryGroupAggregates([trade({ strike: 0 })]).weightedAverageDaysHeld, null);
 });
 
-test('Wtd. Avg. NY follows canonical Entry NY Net-Risk weighting and reconciles to group economics', () => {
+test('Wtd. Avg. NY follows canonical Entry NY Gross-Risk weighting and reconciles to group economics', () => {
   const small = trade({ id: 'small-ny', strike: 50, contracts: 1, soldPrice: 2 });
   const large = trade({ id: 'large-ny', strike: 100, contracts: 2, soldPrice: 5 });
-  const invalidNetRisk = trade({ id: 'invalid-net-risk', strike: 1, soldPrice: 2 });
+  const invalidGrossRisk = trade({ id: 'invalid-gross-risk', strike: 0, soldPrice: 2 });
   const zeroNy = trade({ id: 'zero-ny', strike: 25, soldPrice: 0, closePrice: 0 });
   const valid = [small, large, zeroNy];
-  const aggregates = buildHistoryGroupAggregates([...valid, invalidNetRisk]);
+  const aggregates = buildHistoryGroupAggregates([...valid, invalidGrossRisk]);
   const premium = valid.reduce((sum, item) => sum + historyPremium(item), 0);
-  const netRisk = valid.reduce((sum, item) => sum + calculateNetCapitalAtRisk(item), 0);
-  const grossRiskWeighted = valid.reduce((sum, item) => sum + historyEntryNominalYield(item) * historyGrossRisk(item), 0)
-    / valid.reduce((sum, item) => sum + historyGrossRisk(item), 0);
+  const grossRisk = valid.reduce((sum, item) => sum + historyGrossRisk(item), 0);
 
-  assertClose(aggregates.weightedAverageNy, premium / netRisk, 'Entry NY reconciliation');
-  assert.ok(Math.abs(aggregates.weightedAverageNy - grossRiskWeighted) > 1e-5, 'History NY does not silently switch to Gross-Risk weighting');
+  assertClose(aggregates.weightedAverageNy, premium / grossRisk, 'Entry NY reconciliation');
 });
 
 test('VIX and Entry Delta use Gross-Risk weighting, preserve zero, exclude missing values, and report coverage', () => {
@@ -113,7 +109,7 @@ test('VIX and Entry Delta use Gross-Risk weighting, preserve zero, exclude missi
   );
 });
 
-test('Wtd. Avg. Realized IRR is a Gross-Risk-weighted average of position IRRs, not arithmetic mean or group XIRR', () => {
+test('Wtd. Avg. and Total Realized IRR share the Gross-Risk-weighted position convention', () => {
   const highReturnSmallExposure = trade({
     id: 'high-return-small', strike: 10, soldPrice: 8, closePrice: 1,
     soldDate: '2025-01-01', closeDate: '2026-01-01', expiration: '2026-12-18',
@@ -131,11 +127,11 @@ test('Wtd. Avg. Realized IRR is a Gross-Risk-weighted average of position IRRs, 
     / known.reduce((sum, item) => sum + historyGrossRisk(item), 0);
   const weightedAverage = buildHistoryGroupAggregates([...known, missingIrr]).weightedAverageRealizedIrr;
   const arithmeticMean = (positionIrrs[0] + positionIrrs[1]) / 2;
-  const groupXirr = calculateHistoryTotalRealizedIrr(known);
+  const totalRealizedIrr = calculateHistoryTotalRealizedIrr(known);
 
   assertClose(weightedAverage, expected, 'exposure-weighted individual IRRs');
   assert.ok(Math.abs(weightedAverage - arithmeticMean) > 0.1, 'different notionals make the result differ from an arithmetic mean');
-  assert.ok(groupXirr != null && Math.abs(weightedAverage - groupXirr) > 0.1, 'the group value is explicitly not combined money-weighted XIRR');
+  assertClose(totalRealizedIrr, weightedAverage, 'headline and grouped Realized IRR semantics');
 });
 
 test('Wtd. Avg. % Captured uses Premium weighting and reconciles winners, losses, and values above 100%', () => {

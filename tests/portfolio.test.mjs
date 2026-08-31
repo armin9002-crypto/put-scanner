@@ -427,7 +427,7 @@ test('manual worthless confirmation is eligibility-gated, request-free, canonica
   assert.equal(historyPercentCaptured(confirmed), 1);
   assert.equal(historyDaysHeld(confirmed), 50);
   assert.equal(historyPriceAtExpiration(confirmed), null);
-  const expectedIrr = Math.pow(1 + 246.9 / 9_753.1, 365.25 / 50) - 1;
+  const expectedIrr = (246.9 / 10_000) * (365 / 50);
   assert.ok(Math.abs(historyRealizedIrr(confirmed) - expectedIrr) < 1e-12);
   assert.deepEqual(
     [confirmed.entryVixClose, confirmed.entryVixDate, confirmed.entryDelta, confirmed.entryDeltaSource],

@@ -1,8 +1,8 @@
 # Put Metric Definitions
 
-Stage 6B.1 contract date: 2026-08-26
+Canonical yield contract updated: 2026-08-31
 
-This section is the authoritative product contract as of Stage 6B.1. It supersedes the historical Stage 6A audit retained below.
+This section is the authoritative product contract. It supersedes the historical Stage 6A audit retained below.
 
 ## Canonical capital and return terminology
 
@@ -11,15 +11,19 @@ This section is the authoritative product contract as of Stage 6B.1. It supersed
 | Premium per Contract | `option price × 100` | No denominator. Total premium additionally multiplies by contracts. |
 | Gross Risk | `strike × 100 × contracts` | Full cash-secured assignment requirement before premium; not broker margin or buying-power reduction. |
 | Net Risk | `gross secured cash - total premium` | Assumes the underlying can fall to zero. |
-| Nominal Yield (NY) | `premium / gross secured cash` | Gross secured cash. Used for Scanner, Screener, ticker detail, and Watchlist discovery quotes. |
-| Annualized Yield (AY) | `NY × 365 / DTE` | Gross secured cash. Simple annualization; unavailable at `DTE <= 0`. |
-| Entry NY | `premium / entry net maximum-loss capital` | Entry net maximum-loss capital. Used for an entered position in Portfolio and historical NY. |
-| Entry AY | `entry NY × 365 / original DTE` | Entry net maximum-loss capital. Simple annualization. |
-| Current NY | `current buyback cost / entry net maximum-loss capital` | Original entry net maximum-loss capital. This is a remaining-liability ratio, not earned yield. |
-| Current AY | preceding ratio `× 365 / remaining DTE` | Original entry net maximum-loss capital. |
+| Nominal Yield (NY) | `option price per share / strike`, equivalent to `option value / Gross Risk` | Gross Risk. The price basis is the displayed Last, Bid, Ask, or other explicitly selected price. |
+| Annualized Yield (AY) | `NY × 365 / applicable calendar days` | Gross Risk. Simple annualization, never compounding; unavailable when days are `<= 0`. |
+| Entry NY | `net sold price per share / strike`, equivalent to `Premium / Gross Risk` | Gross Risk. Uses the durable net entry price; it never uses current market data. |
+| Entry AY | `Entry NY × 365 / Original DTE` | Gross Risk. Original DTE is the calendar-day interval from Sold Date to Expiration. |
+| Current NY | `selected current mark per share / strike`, equivalent to `current option liability / Gross Risk` | Gross Risk. Uses the visible Portfolio Mark Book basis. |
+| Current AY | `Current NY × 365 / Remaining DTE` | Gross Risk. Remaining DTE is the canonical calendar-day interval; unavailable at `<= 0`. |
+| History NY | `net sold price per share / strike` | Entry NY for the resolved position, not realized return. |
+| Realized Nominal Return | `Realized P&L / Gross Risk` | Gross Risk. May be positive, zero, or negative. |
+| Realized IRR | `(Realized P&L / Gross Risk) × 365 / actual Days Held` | Put Scanner's date-aware simple annualized realized yield. It is not textbook compounded IRR or XIRR. |
+| Total Realized IRR | `sum(position Realized IRR × Gross Risk) / sum(Gross Risk)` for positions with valid Realized IRR | Gross-Risk-weighted average using the same semantics as grouped Wtd. Avg. Realized IRR. |
 | Remaining AY to Maturity | `current buyback cost / (gross secured cash - current buyback cost) × 365 / remaining DTE` | Current net maximum-loss capital. Kept distinct because its denominator is intentionally different. |
 
-Canonical labels now map consistently to their existing context-specific formulas. Discovery values remain distinct from entered-position economics because they answer different questions. Internal persisted field names such as `originalAnnualizedYield` remain for schema compatibility; visible labels and tooltips carry the canonical meaning.
+NY and AY use the same denominator on discovery, Portfolio, and History surfaces. Contracts cancel algebraically: `(price × 100 × contracts) / (strike × 100 × contracts) = price / strike`. Aggregate NY therefore reconciles to aggregate option value divided by aggregate Gross Risk. Entry/Current AY headlines and schedule aggregates are Gross-Risk-weighted averages of valid position-level AY values. Calculations retain full precision; display rounding is presentation-only. Internal persisted field names such as `originalAnnualizedYield` remain for schema compatibility.
 
 ## Quote, contract, and lifecycle definitions
 
@@ -31,7 +35,7 @@ Canonical labels now map consistently to their existing context-specific formula
 - DTE is UTC expiration date minus the UTC current date. Expiration day is 0 DTE; a contract is expired only below 0 DTE.
 - Bid-Ask Spread is `ask - bid`. Spread % is `(ask - bid) / ((bid + ask) / 2)` and is unavailable when quotes are invalid or the midpoint is zero.
 - Premium Captured is open-position gain/loss divided by premium collected. It is mark-dependent and not clamped.
-- Per-trade Realized IRR is `(1 + realized P&L / original net risk)^(365.25 / days held) - 1`; invalid capital or holding periods produce unavailable. Total Realized IRR is a combined date-aware XIRR over every resolved trade's `-original net risk` entry flow and `original net risk + realized P&L` resolution flow; it is never an average of individual IRRs.
+- For Held to Expiration, Days Held ends on Expiration. For Closed/Bought Back, it ends on the actual Close Date. Assigned/resolved lifecycles use their canonical realized ending date. Realized IRR is unavailable when Days Held is `<= 0` or Gross Risk is invalid. A worthless expiration held for its full Original DTE has `Realized P&L = Premium`, so Realized IRR equals Entry AY.
 
 Volume and Open Interest remain transparent primitives. Put Scanner does not create a proprietary liquidity score. A user can inspect Bid, Ask, spread, Spread %, Volume, Open Interest, and quote age where supported.
 
@@ -74,11 +78,11 @@ Portfolio distinguishes the time Put Scanner observed a market response from the
 
 ## Cross-surface regression contract
 
-Deterministic fixtures cover a liquid contract, wide spread, missing Bid/Ask/Last/Delta, invalid underlying, expired contract, 0-DTE contract, and non-finite provider values. For the same contract and price basis, tests reconcile premium, Gross Risk, Net Risk, NY, AY, Entry NY, breakeven, OTM %, DTE, and spread across applicable Scanner, Screener, ticker-detail, drawer, Watchlist, and Portfolio code. Intentional differences are asserted by denominator rather than allowed as unexplained drift.
+Deterministic fixtures cover liquid and wide-spread contracts, missing Bid/Ask/Last/Delta, zero prices, invalid inputs, expired and 0-DTE contracts, contract-count invariance, entry/current marks, worthless expiration, early close, realized loss, and weighted aggregates. For the same contract, price basis, and DTE, tests reconcile NY and AY across Scanner, Screener, ticker detail, Option Drawer, Watchlist, and Portfolio. Screener display, filter, and sort values share the same unrounded canonical row fields.
 
 ## Historical-value safety
 
-Stage 6B.1 changes labels, shared helpers, and invalid-input behavior; it does not rewrite saved Portfolio trades, Watchlist contracts, backups, cloud payloads, revisions, prices, premiums, or historical return fields. Existing saved financial values retain their original arithmetic and durable schema interpretation.
+The yield correction changes derived calculations and documentation only. It does not rewrite saved Portfolio trades, Watchlist contracts, backups, cloud payloads, revisions, prices, premiums, or historical lifecycle fields. Derived values recompute from existing canonical prices, dates, realized P&L, and Gross Risk.
 
 ## Historical Stage 6A audit (superseded above)
 

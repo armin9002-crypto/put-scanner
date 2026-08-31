@@ -4,7 +4,6 @@ import { passesScannerLiquidityFilter, sortScannerEtfs } from '../src/lib/scanne
 import {
   buildHistoryAnalytics,
   buildHistoryGroups,
-  buildHistoryRealizedCashFlows,
   buildMonthlyRealizedPnl,
   calculateHistoryTotalRealizedIrr,
   calculateHistoryWeightedEntryDelta,
@@ -77,32 +76,28 @@ test('history days held excludes missing dates and monthly P&L groups by resolut
   assert.deepEqual(months.map(month => month.trades), [1, 1]);
 });
 
-test('realized IRR compounds realized return on net risk over actual calendar days', () => {
+test('realized IRR simply annualizes realized P&L on Gross Risk over actual calendar days', () => {
   const winner = trade({ soldDate: '2026-01-01', closeDate: '2027-01-01', daysHeld: 7, status: 'closed', resolutionType: undefined, closePrice: 1 });
-  const expected = Math.pow(1 + 100 / 4_800, 365.25 / 365) - 1;
+  const expected = (100 / 5_000) * (365 / 365);
   assert.ok(Math.abs(historyRealizedIrr(winner) - expected) < 1e-12);
-  assert.equal(historyRealizedIrr(trade({ status: 'assigned', resolutionType: undefined, soldDate: '2025-08-21', resolvedDate: '2026-08-21', daysHeld: 365, realizedPnl: -4_800 })), -1);
-  assert.equal(historyRealizedIrr(trade({ status: 'assigned', resolutionType: undefined, soldDate: '2025-08-21', resolvedDate: '2026-08-21', daysHeld: 365, realizedPnl: -5_000 })), null);
+  assert.equal(historyRealizedIrr(trade({ status: 'assigned', resolutionType: undefined, soldDate: '2025-08-21', resolvedDate: '2026-08-21', daysHeld: 365, realizedPnl: -4_800 })), -0.96);
+  assert.equal(historyRealizedIrr(trade({ status: 'assigned', resolutionType: undefined, soldDate: '2025-08-21', resolvedDate: '2026-08-21', daysHeld: 365, realizedPnl: -5_000 })), -1);
   assert.equal(historyRealizedIrr(trade({ soldDate: '2026-08-21', resolvedDate: '2026-08-21', daysHeld: 99 })), null);
   assert.equal(historyRealizedIrr(trade({ soldDate: '' })), null);
 });
 
-test('Total Realized IRR is one combined date-aware money-weighted return, not averaged position IRRs', () => {
+test('Total Realized IRR is the Gross-Risk-weighted average of valid position Realized IRRs', () => {
   const first = trade({ id: 'first', soldDate: '2026-01-01', closeDate: '2027-01-01', status: 'closed', resolutionType: undefined, closePrice: 1 });
   const second = trade({ id: 'second', strike: 100, soldDate: '2026-07-01', closeDate: '2027-03-01', status: 'closed', resolutionType: undefined, soldPrice: 4, closePrice: 5 });
   const trades = [first, second];
-  const cashFlows = buildHistoryRealizedCashFlows(trades);
   const combined = calculateHistoryTotalRealizedIrr(trades);
-  assert.ok(cashFlows && combined != null);
+  assert.ok(combined != null);
   assert.ok(Math.abs(calculateHistoryTotalRealizedIrr([first]) - historyRealizedIrr(first)) < 1e-9, 'one closed position reconciles to its individual realized IRR');
-  const origin = Date.parse(`${cashFlows[0].date}T00:00:00Z`);
-  const npv = cashFlows.reduce((sum, flow) => sum + flow.amount / Math.pow(1 + combined, (Date.parse(`${flow.date}T00:00:00Z`) - origin) / 86_400_000 / 365.25), 0);
-  assert.ok(Math.abs(npv) < 1e-5, 'the combined result zeroes the aggregate dated cash flows');
-  const weightedAverage = (historyRealizedIrr(first) * 4_800 + historyRealizedIrr(second) * 9_600) / 14_400;
-  assert.ok(Math.abs(combined - weightedAverage) > 1e-4, 'it is not a net-risk weighted average of individual IRRs');
+  const weightedAverage = (historyRealizedIrr(first) * 5_000 + historyRealizedIrr(second) * 10_000) / 15_000;
+  assert.ok(Math.abs(combined - weightedAverage) < 1e-12);
 });
 
-test('realized XIRR handles expiry, early close, loss, years, and undefined/non-unique cases', () => {
+test('generic XIRR utility remains isolated and handles undefined/non-unique cases', () => {
   const expiry = trade({ id: 'expiry', soldDate: '2024-01-01', expiration: '2026-01-01', resolvedDate: '2026-01-01' });
   const earlyLoss = trade({ id: 'loss', status: 'closed', resolutionType: undefined, soldDate: '2025-06-01', closeDate: '2025-08-01', closePrice: 3 });
   const assigned = trade({ id: 'assigned', status: 'assigned', resolutionType: undefined, soldDate: '2025-09-01', resolvedDate: '2026-01-01', realizedPnl: -500 });
@@ -149,7 +144,7 @@ test('History grouping uses expiration year and canonical group P&L with determi
 
 test('History data helpers use original entry economics and stored snapshots only', () => {
   const item = trade({ entryVixClose: 21.5, expirationClosePrice: 48, finalOptionValue: 200 });
-  assert.equal(historyEntryNominalYield(item), 200 / 4_800);
+  assert.equal(historyEntryNominalYield(item), 200 / 5_000);
   assert.equal(historyEntryVix(item), 21.5);
   assert.equal(historyPriceAtExpiration(item), 48);
   assert.equal(historyFinalValue(item), 200);

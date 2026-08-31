@@ -97,16 +97,10 @@ export function historyDaysHeld(trade: PortfolioTrade): number | null {
 
 export function historyRealizedIrr(trade: PortfolioTrade): number | null {
   const realizedPnl = historyRealizedPnl(trade);
-  const originalNetCapitalAtRisk = calculateNetCapitalAtRisk(trade);
-  const resolvedDate = trade.closeDate ?? trade.resolvedDate ?? trade.expiration;
-  const daysHeld = /^\d{4}-\d{2}-\d{2}$/.test(trade.soldDate) && /^\d{4}-\d{2}-\d{2}$/.test(resolvedDate)
-    ? Math.round((Date.parse(`${resolvedDate}T00:00:00Z`) - Date.parse(`${trade.soldDate}T00:00:00Z`)) / 86_400_000)
-    : null;
-  if (realizedPnl == null || originalNetCapitalAtRisk == null || originalNetCapitalAtRisk <= 0 || daysHeld == null || daysHeld <= 0) return null;
-  const realizedReturn = realizedPnl / originalNetCapitalAtRisk;
-  if (realizedReturn === -1) return -1;
-  if (1 + realizedReturn <= 0) return null;
-  const annualized = Math.pow(1 + realizedReturn, 365.25 / daysHeld) - 1;
+  const grossRisk = historyGrossRisk(trade);
+  const daysHeld = historyDaysHeld(trade);
+  if (realizedPnl == null || grossRisk == null || grossRisk <= 0 || daysHeld == null || daysHeld <= 0) return null;
+  const annualized = (realizedPnl / grossRisk) * (365 / daysHeld);
   return Number.isFinite(annualized) ? annualized : null;
 }
 
@@ -123,7 +117,11 @@ function aggregateCashFlows(cashFlows: HistoryCashFlow[]): HistoryCashFlow[] {
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
-/** Date-aware money-weighted return. Multiple/no-real roots intentionally fail closed. */
+/**
+ * General date-aware money-weighted return utility. It does not back any
+ * canonical visible History yield or Realized IRR metric.
+ * Multiple/no-real roots intentionally fail closed.
+ */
 export function calculateXirr(cashFlows: HistoryCashFlow[]): number | null {
   if (cashFlows.some(flow => !isIsoDate(flow.date) || !isFiniteNumber(flow.amount))) return null;
   const flows = aggregateCashFlows(cashFlows);
@@ -179,8 +177,8 @@ export function calculateXirr(cashFlows: HistoryCashFlow[]): number | null {
 }
 
 /**
- * Uses the existing collateral convention: deploy original Net Risk at entry,
- * then return that capital plus the trade's realized P&L at resolution.
+ * Legacy/general cash-flow helper retained for explicit XIRR analysis only.
+ * It does not back any canonical visible History yield or Realized IRR metric.
  */
 export function buildHistoryRealizedCashFlows(trades: PortfolioTrade[]): HistoryCashFlow[] | null {
   const cashFlows: HistoryCashFlow[] = [];
@@ -199,8 +197,7 @@ export function buildHistoryRealizedCashFlows(trades: PortfolioTrade[]): History
 }
 
 export function calculateHistoryTotalRealizedIrr(trades: PortfolioTrade[]): number | null {
-  const cashFlows = buildHistoryRealizedCashFlows(trades);
-  return cashFlows ? calculateXirr(cashFlows) : null;
+  return calculateGrossRiskWeightedHistoryMetric(trades, historyRealizedIrr).value;
 }
 
 function calculateWeightedHistoryMetric(
@@ -253,7 +250,7 @@ export function calculateHistoryWeightedEntryDelta(trades: PortfolioTrade[]): Hi
 
 /**
  * Canonical numeric aggregates for any History group. Group identity never changes
- * the formulas: exposure metrics use Gross Risk, Entry NY uses original Net Risk,
+ * the formulas: exposure and yield metrics use Gross Risk,
  * and captured premium uses Premium so its weighted value reconciles to group P&L.
  */
 export function buildHistoryGroupAggregates(trades: PortfolioTrade[]): HistoryGroupAggregates {
@@ -267,7 +264,7 @@ export function buildHistoryGroupAggregates(trades: PortfolioTrade[]): HistoryGr
     premium: trades.map(historyPremium).filter(isFiniteNumber).reduce((sum, value) => sum + value, 0),
     realizedPnl: realizedPnlValues.length > 0 ? realizedPnlValues.reduce((sum, value) => sum + value, 0) : null,
     weightedAverageDaysHeld: calculateGrossRiskWeightedHistoryMetric(trades, historyDaysHeld).value,
-    weightedAverageNy: calculateWeightedHistoryMetric(trades, historyEntryNominalYield, calculateNetCapitalAtRisk),
+    weightedAverageNy: calculateGrossRiskWeightedHistoryMetric(trades, historyEntryNominalYield).value,
     weightedAverageEntryVix: entryVix.value,
     entryVixCoverage: entryVix.coverage,
     weightedAverageEntryDelta: entryDelta.value,

@@ -38,7 +38,6 @@ import {
 import {
   calculateBreakeven,
   calculateCurrentAnnualizedYield,
-  calculateCurrentMarkValueAbsolute,
   calculateCurrentNominalYield,
   calculateCurrentOptionMark,
   calculateCurrentPositionValue,
@@ -2232,9 +2231,9 @@ export default function PortfolioPage() {
                       {sortButton('iv', 'IV')}
                       {sortButton('entryVix', 'VIX @ Entry')}
                       {showOpenInterestVolume && sortButton('openInterest', 'OI / Volume', 'text-right', 'Sorts by Open Interest')}
-                      {showNominalYield && sortButton('originalNy', 'Entry NY', 'text-right', 'Premium ÷ entry net risk.')}
+                      {showNominalYield && sortButton('originalNy', 'Entry NY', 'text-right', 'Net sold price ÷ strike (Premium ÷ Gross Risk).')}
                       {sortButton('originalAy', 'Entry AY', 'text-right', 'Entry NY × 365 ÷ original DTE.')}
-                      {showNominalYield && sortButton('currentNy', 'Current NY', 'text-right', 'Current buyback cost ÷ entry net risk.')}
+                      {showNominalYield && sortButton('currentNy', 'Current NY', 'text-right', 'Selected current mark ÷ strike (current liability ÷ Gross Risk).')}
                       {sortButton('currentAy', 'Current AY', 'text-right', 'Current NY × 365 ÷ remaining DTE.')}
                       {showNotesErrors && <th className="px-2 py-2 text-[11px] font-medium text-left min-w-[160px]" style={{ color: 'var(--text-muted)' }}>Notes / Errors</th>}
                       <th className="px-2 py-2 text-[11px] font-medium text-left" style={{ color: 'var(--text-muted)' }}>Actions</th>
@@ -2381,7 +2380,7 @@ export default function PortfolioPage() {
                       <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold">{formatPctValue(scheduleTotals.originalAnnualizedYield)}</td>
                       {showNominalYield && <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold">{formatPctValue(scheduleTotals.currentNominalYield)}</td>}
                       <td className="px-2 py-2 text-right font-mono tabular-nums font-semibold">{formatPctValue(scheduleTotals.currentAnnualizedYield)}</td>
-                      {showNotesErrors && <td className="px-2 py-2 text-left text-[10px]" style={{ color: 'var(--text-dim)' }}>Portfolio-level annualized ratios use aggregate dollar-days.</td>}
+                      {showNotesErrors && <td className="px-2 py-2 text-left text-[10px]" style={{ color: 'var(--text-dim)' }}>Portfolio yield totals are Gross-Risk-weighted averages of valid position yields.</td>}
                       <td className="px-2 py-2 text-left">{DASH}</td>
                     </tr>
                   </tbody>
@@ -2578,7 +2577,7 @@ function ArchiveHistorySection({
         </div>
       </div>
       <div className="portfolio-history-summary-grid grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-1.5 mb-2">
-        <SummaryCard label="Total Realized IRR" value={formatPctValue(visibleSummary.totalRealizedIrr)} color={pnlColor(visibleSummary.totalRealizedIrr)} detail="Date-aware money-weighted XIRR of combined realized History cash flows. Undefined when no unique real return exists." />
+        <SummaryCard label="Total Realized IRR" value={formatPctValue(visibleSummary.totalRealizedIrr)} color={pnlColor(visibleSummary.totalRealizedIrr)} detail="Gross-Risk-weighted average of valid position Realized IRRs. Each position uses simple annualization of realized P&L over actual days held." />
         <SummaryCard label="Avg Days Held" value={formatAverageDays(visibleSummary.averageDaysHeld)} />
         <SummaryCard label="Wtd. Avg. Entry Delta" value={formatDelta(visibleSummary.weightedAverageEntryDelta)} detail={visibleSummary.entryDeltaCoverage == null ? 'Entry Delta coverage is unavailable.' : `Based on ${(visibleSummary.entryDeltaCoverage * 100).toFixed(1)}% of historical Gross Risk with known Entry Delta.`} />
         <SummaryCard label="Total Historical Notional" value={formatCurrency(summary.totalHistoricalNotional, 0)} detail="Cumulative canonical Gross Risk across all closed and historical positions." />
@@ -2629,7 +2628,7 @@ function ArchiveHistorySection({
                 <Metric label="Realized P&L" value={formatCurrency(realizedPnl)} color={pnlColor(realizedPnl)} />
                 <Metric label="Captured" value={formatPctValue(percentCaptured)} color={pnlColor(percentCaptured)} />
                 <Metric label="Realized IRR" value={formatPctValue(realizedIrr)} color={pnlColor(realizedIrr)} />
-                <Metric label="NY" value={formatPctValue(historyEntryNominalYield(trade))} detail="Nominal Yield: premium collected ÷ original Net Risk." />
+                <Metric label="NY" value={formatPctValue(historyEntryNominalYield(trade))} detail="Entry Nominal Yield: net sold price ÷ strike, equivalent to Premium ÷ Gross Risk." />
                 <Metric label="VIX @ Entry" value={isFiniteNumber(historyEntryVix(trade)) ? historyEntryVix(trade)!.toFixed(2) : DASH} detail="Stored VIX close captured at the trade entry date." />
                 <Metric label="Price @ Exp." value={formatCurrency(historyPriceAtExpiration(trade))} detail="Underlying closing price on expiration, or the nearest prior trading close used by lifecycle resolution. It remains unavailable for a manually confirmed worthless outcome." />
                 <Metric label="Entry Delta" value={formatDelta(trade.entryDelta)} />
@@ -2659,7 +2658,7 @@ function ArchiveHistorySection({
             <thead>
               <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
                 {['Ticker', 'Exp.', 'Strike', 'Contracts', 'Gross Risk', 'Entry', 'Days Held', 'Sold Price', 'NY', 'VIX @ Entry', 'Price @ Exp.', 'Premium', 'Realized P&L', 'Realized IRR', '% Captured', 'Entry Delta', 'Outcome', 'Actions'].map((label, index) => (
-                  <th key={label} title={label === 'NY' ? 'Nominal Yield: premium collected ÷ original Net Risk.' : label === 'VIX @ Entry' ? 'Stored VIX close captured at the trade entry date.' : label === 'Realized IRR' ? 'Date-aware money-weighted return across the realized History cash flows; this is not an average IRR.' : undefined} className={`px-2 py-2 text-[11px] font-medium whitespace-nowrap ${index === 0 || label === 'Outcome' || label === 'Actions' ? 'text-left' : 'text-right'}`} style={{ color: 'var(--text-muted)' }}>{label}</th>
+                  <th key={label} title={label === 'NY' ? 'Entry Nominal Yield: net sold price ÷ strike, equivalent to Premium ÷ Gross Risk.' : label === 'VIX @ Entry' ? 'Stored VIX close captured at the trade entry date.' : label === 'Realized IRR' ? 'Realized P&L ÷ Gross Risk × 365 ÷ actual days held. Simple annualization, not textbook XIRR.' : undefined} className={`px-2 py-2 text-[11px] font-medium whitespace-nowrap ${index === 0 || label === 'Outcome' || label === 'Actions' ? 'text-left' : 'text-right'}`} style={{ color: 'var(--text-muted)' }}>{label}</th>
                 ))}
               </tr>
             </thead>
@@ -2683,7 +2682,7 @@ function ArchiveHistorySection({
                       <td /><td /><td className="px-2 py-2 text-right font-mono tabular-nums">{group.contractCount}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums">{formatCurrency(group.grossRisk, 0)}</td>
                       <td /><td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. Days Held: Gross-Risk-weighted average of known holding periods.">{formatAverageDays(group.weightedAverageDaysHeld)}</td>
-                      <td /><td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. NY: canonical Entry NY weighted by original Net Risk.">{formatPctValue(group.weightedAverageNy)}</td>
+                      <td /><td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. NY: canonical Entry NY weighted by Gross Risk; reconciles to group Premium ÷ group Gross Risk.">{formatPctValue(group.weightedAverageNy)}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. VIX @ Entry: Gross-Risk-weighted average of known stored entry VIX values.">{isFiniteNumber(group.weightedAverageEntryVix) ? group.weightedAverageEntryVix.toFixed(1) : DASH}</td>
                       <td /><td className="px-2 py-2 text-right font-mono tabular-nums">{formatCurrency(group.premium, 0)}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums portfolio-history-group-subtotal__pnl" style={{ color: pnlColor(group.realizedPnl) }}>{formatCurrency(group.realizedPnl)}</td>
@@ -2765,18 +2764,8 @@ function buildScheduleTotals(openTrades: PortfolioTrade[], basis: MarkBasis) {
   const grossRisk = sumValues(openTrades.map(calculateEquityAtRisk));
   const netRisk = sumValues(openTrades.map(calculateNetCapitalAtRisk));
   const currentValue = completeSumValues(openTrades.map(trade => calculateCurrentPositionValue(trade, basis)));
-  const totalCurrentPremium = completeSumValues(openTrades.map(trade => calculateCurrentMarkValueAbsolute(trade, basis)));
   const totalGainLoss = currentValue != null ? premium + currentValue : null;
-  const originalDollarDays = sumValues(openTrades.map(trade => {
-    const tradeNetRisk = calculateNetCapitalAtRisk(trade);
-    const dte = calculateOriginalDte(trade);
-    return tradeNetRisk != null && isFiniteNumber(dte) && dte > 0 ? tradeNetRisk * dte / 365 : null;
-  }));
-  const currentDollarDays = sumValues(openTrades.map(trade => {
-    const tradeNetRisk = calculateNetCapitalAtRisk(trade);
-    const dte = calculateRemainingDte(trade);
-    return tradeNetRisk != null && isFiniteNumber(dte) && dte > 0 ? tradeNetRisk * dte / 365 : null;
-  }));
+  const yields = calculatePortfolioMarkSummary(openTrades, basis);
 
   return {
     premium,
@@ -2786,10 +2775,10 @@ function buildScheduleTotals(openTrades: PortfolioTrade[], basis: MarkBasis) {
     totalGainLoss,
     percentCaptured: premium > 0 && totalGainLoss != null ? totalGainLoss / premium : null,
     weightedAverageDelta: weightedAverageValue(openTrades.map(trade => ({ value: trade.latestMarketData?.delta, weight: calculateEquityAtRisk(trade) }))),
-    originalNominalYield: netRisk > 0 ? premium / netRisk : null,
-    originalAnnualizedYield: originalDollarDays > 0 ? premium / originalDollarDays : null,
-    currentNominalYield: netRisk > 0 && totalCurrentPremium != null ? totalCurrentPremium / netRisk : null,
-    currentAnnualizedYield: currentDollarDays > 0 && totalCurrentPremium != null ? totalCurrentPremium / currentDollarDays : null,
+    originalNominalYield: yields.portfolioOriginalNominalYield,
+    originalAnnualizedYield: yields.portfolioOriginalAnnualizedYield,
+    currentNominalYield: yields.portfolioCurrentNominalYield,
+    currentAnnualizedYield: yields.portfolioCurrentAnnualizedYield,
     dte: weightedAverageValue(openTrades.map(trade => ({ value: calculateRemainingDte(trade), weight: calculateNetCapitalAtRisk(trade) }))),
   };
 }

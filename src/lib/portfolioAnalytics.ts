@@ -12,7 +12,6 @@ import {
   calculateEquityAtRisk,
   calculateNetCapitalAtRisk,
   calculateOriginalAnnualizedYield,
-  calculateOriginalDte,
   calculateOriginalNominalYield,
   calculatePercentCaptured,
   calculatePremiumCollected,
@@ -199,36 +198,30 @@ export function getPortfolioTotals(trades: PortfolioTrade[], markBasis: MarkBasi
 
 export function getPortfolioOriginalNY(trades: PortfolioTrade[]): number | null {
   const open = openTrades(trades);
-  return safeRatio(sum(open.map(getTradePremiumCollected)), sum(open.map(getTradeNetCapitalAtRisk)));
+  return safeRatio(sum(open.map(getTradePremiumCollected)), sum(open.map(getTradeGrossRisk)));
 }
 
-export function getPortfolioOriginalAYDollarDays(trades: PortfolioTrade[]): number | null {
+export function getPortfolioOriginalAY(trades: PortfolioTrade[]): number | null {
   const open = openTrades(trades);
-  const premium = sum(open.map(getTradePremiumCollected));
-  // Annualize against aggregate dollars-at-risk multiplied by days at risk.
-  const dollarDays = sum(open.map(trade => {
-    const netRisk = getTradeNetCapitalAtRisk(trade);
-    const dte = calculateOriginalDte(trade);
-    return netRisk != null && isFiniteNumber(dte) && dte > 0 ? netRisk * dte / 365 : null;
-  }));
-  return dollarDays > 0 ? premium / dollarDays : null;
+  return weightedAverage(open.map(trade => ({
+    value: getTradeOriginalAY(trade),
+    weight: getTradeGrossRisk(trade),
+  })));
 }
 
 export function getPortfolioCurrentNY(trades: PortfolioTrade[], markBasis: MarkBasis): number | null {
   const open = openTrades(trades);
-  return safeRatio(completeSum(open.map(trade => calculateCurrentMarkValueAbsolute(trade, markBasis))), sum(open.map(getTradeNetCapitalAtRisk)));
+  return safeRatio(completeSum(open.map(trade => calculateCurrentMarkValueAbsolute(trade, markBasis))), sum(open.map(getTradeGrossRisk)));
 }
 
-export function getPortfolioCurrentAYDollarDays(trades: PortfolioTrade[], markBasis: MarkBasis): number | null {
+export function getPortfolioCurrentAY(trades: PortfolioTrade[], markBasis: MarkBasis): number | null {
   const open = openTrades(trades);
   const currentPremium = completeSum(open.map(trade => calculateCurrentMarkValueAbsolute(trade, markBasis)));
-  // Same dollar-days approach as the annualized entry return, but using remaining liability and remaining DTE.
-  const dollarDays = sum(open.map(trade => {
-    const netRisk = getTradeNetCapitalAtRisk(trade);
-    const dte = getRemainingDte(trade);
-    return netRisk != null && isFiniteNumber(dte) && dte > 0 ? netRisk * dte / 365 : null;
-  }));
-  return currentPremium != null && dollarDays > 0 ? currentPremium / dollarDays : null;
+  if (currentPremium == null) return null;
+  return weightedAverage(open.map(trade => ({
+    value: getTradeCurrentAY(trade, markBasis),
+    weight: getTradeGrossRisk(trade),
+  })));
 }
 
 export function getWeightedAverageDelta(trades: PortfolioTrade[]): number | null {
@@ -395,10 +388,10 @@ function buildTotals(trades: PortfolioTrade[], markBasis: MarkBasis): PortfolioT
     deltaExposure: nullableSum(trades.map(getTradeDeltaExposure)),
     underlyingEquivalentExposure: nullableSum(trades.map(getTradeUnderlyingEquivalentExposure)),
     weightedAverageDelta: weightedAverage(trades.map(trade => ({ value: trade.latestMarketData?.delta, weight: getTradeGrossRisk(trade) }))),
-    originalNY: safeRatio(premiumCollected, netCapitalAtRisk),
-    originalAY: getPortfolioOriginalAYDollarDays(trades),
-    currentNY: safeRatio(currentMarkValue, netCapitalAtRisk),
-    currentAY: getPortfolioCurrentAYDollarDays(trades, markBasis),
+    originalNY: getPortfolioOriginalNY(trades),
+    originalAY: getPortfolioOriginalAY(trades),
+    currentNY: getPortfolioCurrentNY(trades, markBasis),
+    currentAY: getPortfolioCurrentAY(trades, markBasis),
     averageDte: weightedAverage(trades.map(trade => ({ value: getRemainingDte(trade), weight: getTradeNetCapitalAtRisk(trade) }))),
   };
 }
