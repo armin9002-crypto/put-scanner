@@ -100,6 +100,7 @@ import { backfillStoredEntryDeltas, buildEntryDeltaEditPatch, entryDeltaFromExac
 import { assessPortfolioMaintenance } from '../lib/portfolioMaintenance';
 import { getPortfolioQuoteFreshness, isPortfolioQuoteDecisionEligible, summarizePortfolioQuoteFreshness } from '../lib/portfolioQuoteFreshness';
 import { resolvePortfolioEntryVix } from '../lib/portfolioEntryVix';
+import { confirmPortfolioTradeExpiredWorthless, isManualWorthlessConfirmationEligible } from '../lib/portfolioRealizedEconomics';
 import {
   inferHistoricalTradeOutcome,
   inferManualTradeMode,
@@ -1314,6 +1315,7 @@ export default function PortfolioPage() {
   const [collapsedExpiryGroups, setCollapsedExpiryGroups] = useState<Record<string, boolean>>(readCollapsedExpirationGroups);
   const [collapsedUnderlyingGroups, setCollapsedUnderlyingGroups] = useState<Record<string, boolean>>(readCollapsedUnderlyingGroups);
   const [resolvingArchiveIds, setResolvingArchiveIds] = useState<Set<string>>(() => new Set());
+  const [worthlessConfirmationTrade, setWorthlessConfirmationTrade] = useState<PortfolioTrade | null>(null);
   const [activeScheduleTicker, setActiveScheduleTicker] = useState<string | null>(null);
   const [highlightedExpiration, setHighlightedExpiration] = useState<string | null>(null);
   const [highlightedTradeId, setHighlightedTradeId] = useState<string | null>(null);
@@ -1826,6 +1828,27 @@ export default function PortfolioPage() {
     persistTrades(next);
   }, [persistTrades]);
 
+  const handleConfirmExpiredWorthless = useCallback((trade: PortfolioTrade) => {
+    const latest = loadPortfolioTrades();
+    const current = latest.find(candidate => candidate.id === trade.id);
+    if (!current || current.updatedAt !== trade.updatedAt || !isManualWorthlessConfirmationEligible(current)) {
+      setTrades(latest);
+      setWorthlessConfirmationTrade(null);
+      setDurableActivityNotice('This trade changed or is no longer eligible. Review the latest account state before confirming it.');
+      return;
+    }
+    const confirmed = confirmPortfolioTradeExpiredWorthless(current);
+    if (!confirmed) {
+      setWorthlessConfirmationTrade(null);
+      return;
+    }
+    const next = latest.map(candidate => candidate.id === current.id ? confirmed : candidate);
+    if (persistTrades(next)) {
+      setDurableActivityNotice('Expired worthless confirmed. Final option value is $0; Price @ Exp. remains unavailable.');
+    }
+    setWorthlessConfirmationTrade(null);
+  }, [persistTrades]);
+
   const openDrawer = useCallback((trade: PortfolioTrade) => {
     const underlying = trade.latestMarketData?.underlyingPrice ?? trade.entrySnapshot?.underlyingPrice ?? null;
     const dte = calculateRemainingDte(trade);
@@ -1935,7 +1958,7 @@ export default function PortfolioPage() {
 
             {openTrades.length > 0 && <section className="portfolio-analytics-section border-t px-3.5 py-2" style={{ borderColor: 'var(--border)' }}><button type="button" onClick={() => setAnalyticsExpanded(expanded => !expanded)} aria-expanded={analyticsExpanded} aria-controls="portfolio-analytics-content" className="portfolio-analytics-disclosure pressable flex min-h-11 w-full items-center justify-between text-left"><span><h2 className="text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Portfolio Analytics</h2><span className="portfolio-analytics-disclosure__hint">Concentration, timing, and policy signals</span></span><ChevronDown className={`h-4 w-4 transition-transform ${analyticsExpanded ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} aria-hidden="true" /></button><div id="portfolio-analytics-content">{analyticsExpanded && <div className="portfolio-analytics-content pb-2"><MobileSegmentedControl value={mobileAnalytics} onChange={setMobileAnalytics} label="Portfolio analytics" options={[{ value: 'maturity', label: 'Maturity' }, { value: 'ticker', label: 'Exposure' }, { value: 'attention', label: 'Attention' }, { value: 'close', label: 'Close' }]} /><div className="mt-2">{mobileAnalytics === 'maturity' && <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openTrades, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." onGroupClick={drillToExpiration} />}{mobileAnalytics === 'ticker' && <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openTrades, markBasis)} totalGrossRisk={sumValues(openTrades.map(calculateEquityAtRisk))} maxItems={8} onGroupClick={drillToTicker} />}{mobileAnalytics === 'attention' && <NeedsAttentionList items={buildNeedsAttention(openTrades).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} />}{mobileAnalytics === 'close' && <CloseCandidatesCard candidates={buildCloseCandidates(openTrades, markBasis).slice(0, 5)} onNavigate={drillToTrade} />}</div></div>}</div></section>}
 
-            {archivedTrades.length > 0 && <section className="border-t px-3.5 py-3" style={{ borderColor: 'var(--border)' }}><button type="button" onClick={() => setMobileHistoryOpen(current => !current)} className="pressable flex min-h-11 w-full items-center justify-between text-left" aria-expanded={mobileHistoryOpen}><span><b className="block text-[15px]" style={{ color: 'var(--text)' }}>History</b><span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{archivedTrades.length} resolved · {formatCurrency(archiveSummary.realizedPnl, 0)} realized</span></span><ChevronDown className={`h-4 w-4 transition-transform ${mobileHistoryOpen ? 'rotate-180' : ''}`} /></button>{mobileHistoryOpen && <ArchiveHistorySection trades={archivedTrades} summary={archiveSummary} resolvingIds={resolvingArchiveIds} onRetryResolve={handleRetryResolve} onManualExpirationClose={handleManualExpirationClose} onEdit={setEditingTrade} onDelete={handleDeleteTrade} />}</section>}
+            {archivedTrades.length > 0 && <section className="border-t px-3.5 py-3" style={{ borderColor: 'var(--border)' }}><button type="button" onClick={() => setMobileHistoryOpen(current => !current)} className="pressable flex min-h-11 w-full items-center justify-between text-left" aria-expanded={mobileHistoryOpen}><span><b className="block text-[15px]" style={{ color: 'var(--text)' }}>History</b><span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{archivedTrades.length} resolved · {formatCurrency(archiveSummary.realizedPnl, 0)} realized</span></span><ChevronDown className={`h-4 w-4 transition-transform ${mobileHistoryOpen ? 'rotate-180' : ''}`} /></button>{mobileHistoryOpen && <ArchiveHistorySection trades={archivedTrades} summary={archiveSummary} resolvingIds={resolvingArchiveIds} onRetryResolve={handleRetryResolve} onManualExpirationClose={handleManualExpirationClose} onRequestWorthlessConfirmation={setWorthlessConfirmationTrade} onEdit={setEditingTrade} onDelete={handleDeleteTrade} />}</section>}
           </>
         )}
 
@@ -2376,6 +2399,7 @@ export default function PortfolioPage() {
               resolvingIds={resolvingArchiveIds}
               onRetryResolve={handleRetryResolve}
               onManualExpirationClose={handleManualExpirationClose}
+              onRequestWorthlessConfirmation={setWorthlessConfirmationTrade}
               onEdit={setEditingTrade}
               onDelete={handleDeleteTrade}
             />
@@ -2434,6 +2458,16 @@ export default function PortfolioPage() {
           <PortfolioMaintenanceModal assessment={maintenanceAssessment} busy={maintenanceBusy} message={maintenanceMessage} onResolveLifecycle={() => { void handleResolveLifecycleMaintenance(); }} onResolveEntryVix={() => { void handleResolveEntryVixMaintenance(); }} onRecoverEntryDelta={handleRecoverStoredEntryDeltas} onClose={() => setShowMaintenance(false)} />
         </Suspense>
       )}
+      {worthlessConfirmationTrade && (
+        <MobileBottomSheet
+          title="Confirm expired worthless?"
+          description={`${worthlessConfirmationTrade.ticker} ${formatCurrency(worthlessConfirmationTrade.strike)} put · ${formatFullDate(worthlessConfirmationTrade.expiration)}`}
+          onClose={() => setWorthlessConfirmationTrade(null)}
+          footer={<div className="grid grid-cols-2 gap-2"><button type="button" onClick={() => setWorthlessConfirmationTrade(null)} className="mobile-sheet-action secondary">Cancel</button><button type="button" onClick={() => handleConfirmExpiredWorthless(worthlessConfirmationTrade)} className="mobile-sheet-action primary">Confirm Expired Worthless</button></div>}
+        >
+          <p className="text-sm leading-6" style={{ color: 'var(--text-muted)' }}>Confirm this put expired worthless? Put Scanner will record final option value as $0 and keep Price @ Exp. unavailable.</p>
+        </MobileBottomSheet>
+      )}
     </div>
   );
 }
@@ -2486,6 +2520,7 @@ function ArchiveHistorySection({
   resolvingIds,
   onRetryResolve,
   onManualExpirationClose,
+  onRequestWorthlessConfirmation,
   onEdit,
   onDelete,
 }: {
@@ -2494,6 +2529,7 @@ function ArchiveHistorySection({
   resolvingIds: Set<string>;
   onRetryResolve: (trade: PortfolioTrade) => void;
   onManualExpirationClose: (trade: PortfolioTrade) => void;
+  onRequestWorthlessConfirmation: (trade: PortfolioTrade) => void;
   onEdit: (trade: PortfolioTrade) => void;
   onDelete: (id: string) => void;
 }) {
@@ -2567,6 +2603,7 @@ function ArchiveHistorySection({
           {(groupMode === 'none' || !collapsed) && group.trades.map(trade => {
           const pending = trade.status === 'expired_price_pending' || trade.resolutionType === 'expired_price_pending';
           const canSetExpirationClose = trade.status === 'expired' || trade.status === 'expired_price_pending';
+          const canConfirmWorthless = isManualWorthlessConfirmationEligible(trade);
           const resolving = resolvingIds.has(trade.id);
           const realizedPnl = getArchivedRealizedPnl(trade);
           const percentCaptured = getArchivedPercentCaptured(trade);
@@ -2589,12 +2626,13 @@ function ArchiveHistorySection({
                 <Metric label="Realized IRR" value={formatPctValue(realizedIrr)} color={pnlColor(realizedIrr)} />
                 <Metric label="NY" value={formatPctValue(historyEntryNominalYield(trade))} detail="Nominal Yield: premium collected ÷ original Net Risk." />
                 <Metric label="VIX @ Entry" value={isFiniteNumber(historyEntryVix(trade)) ? historyEntryVix(trade)!.toFixed(2) : DASH} detail="Stored VIX close captured at the trade entry date." />
-                <Metric label="Price @ Exp." value={formatCurrency(historyPriceAtExpiration(trade))} detail="Underlying closing price on expiration, or the nearest prior trading close used by lifecycle resolution." />
+                <Metric label="Price @ Exp." value={formatCurrency(historyPriceAtExpiration(trade))} detail="Underlying closing price on expiration, or the nearest prior trading close used by lifecycle resolution. It remains unavailable for a manually confirmed worthless outcome." />
                 <Metric label="Entry Delta" value={formatDelta(trade.entryDelta)} />
               </div>
               {trade.resolutionWarning && <p className="mt-2 text-[11px]" style={{ color: 'var(--yellow)' }}>{trade.resolutionWarning}</p>}
               <div className="mt-3 flex flex-wrap gap-2 border-t pt-2" style={{ borderColor: 'var(--border)' }}>
                 {pending && <button onClick={() => onRetryResolve(trade)} disabled={resolving} className="tap-target rounded-lg px-3 text-xs disabled:opacity-50" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>{resolving ? 'Resolving...' : 'Retry'}</button>}
+                {canConfirmWorthless && <button onClick={() => onRequestWorthlessConfirmation(trade)} className="tap-target rounded-lg px-3 text-xs" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Confirm Worthless</button>}
                 {canSetExpirationClose && <button onClick={() => onManualExpirationClose(trade)} className="tap-target rounded-lg px-3 text-xs" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Set close</button>}
                 <button onClick={() => onEdit(trade)} className="tap-target ml-auto flex items-center justify-center rounded-lg px-3" aria-label={`Edit ${trade.ticker} trade`} style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }}><Edit2 className="h-4 w-4" /></button>
                 <button onClick={() => onDelete(trade.id)} className="tap-target flex items-center justify-center rounded-lg px-3" aria-label={`Delete ${trade.ticker} trade`} style={{ color: 'var(--red)', backgroundColor: 'rgba(239,68,68,0.1)' }}><Trash2 className="h-4 w-4" /></button>
@@ -2649,6 +2687,7 @@ function ArchiveHistorySection({
                 {(groupMode === 'none' || !collapsed) && group.trades.map((trade, index) => {
                 const pending = trade.status === 'expired_price_pending' || trade.resolutionType === 'expired_price_pending';
                 const canSetExpirationClose = trade.status === 'expired' || trade.status === 'expired_price_pending';
+                const canConfirmWorthless = isManualWorthlessConfirmationEligible(trade);
                 const resolving = resolvingIds.has(trade.id);
                 const realizedPnl = getArchivedRealizedPnl(trade);
                 const percentCaptured = getArchivedPercentCaptured(trade);
@@ -2665,7 +2704,7 @@ function ArchiveHistorySection({
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{formatHistoricalOptionPrice(trade.soldPrice)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{formatPctValue(historyEntryNominalYield(trade))}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{isFiniteNumber(historyEntryVix(trade)) ? historyEntryVix(trade)!.toFixed(2) : DASH}</td>
-                    <td className="px-2 py-1 text-right font-mono tabular-nums" title="Underlying closing price on expiration, or the nearest prior trading close used by lifecycle resolution.">{formatCurrency(historyPriceAtExpiration(trade))}</td>
+                    <td className="px-2 py-1 text-right font-mono tabular-nums" title="Underlying closing price on expiration, or the nearest prior trading close used by lifecycle resolution. It remains unavailable for a manually confirmed worthless outcome.">{formatCurrency(historyPriceAtExpiration(trade))}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(getArchivedPremium(trade))}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(realizedPnl) }}>{formatCurrency(realizedPnl)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(realizedIrr) }}>{formatPctValue(realizedIrr)}</td>
@@ -2683,6 +2722,9 @@ function ArchiveHistorySection({
                           <button onClick={() => onRetryResolve(trade)} disabled={resolving} className="px-2 py-1.5 rounded text-[11px] disabled:opacity-50" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>
                             {resolving ? 'Resolving...' : 'Retry Resolve'}
                           </button>
+                        )}
+                        {canConfirmWorthless && (
+                          <button onClick={() => onRequestWorthlessConfirmation(trade)} className="px-2 py-1.5 rounded text-[11px]" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Confirm Worthless</button>
                         )}
                         {canSetExpirationClose && (
                           <button onClick={() => onManualExpirationClose(trade)} className="px-2 py-1.5 rounded text-[11px]" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Set Expiration Close</button>

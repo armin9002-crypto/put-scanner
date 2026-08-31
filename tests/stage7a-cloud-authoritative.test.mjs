@@ -8,6 +8,7 @@ import { readWatchlist, writeWatchlist, WATCHLIST_STORAGE_KEY } from '../src/lib
 import { THEME_STORAGE_KEY } from '../src/lib/themePreference.ts';
 import { PORTFOLIO_EXPIRY_GROUPS_KEY } from '../src/lib/portfolioSchedulePreferences.ts';
 import { createPutScannerBackupFromCloudState, validatePutScannerBackup } from '../src/lib/userDataBackup.ts';
+import { confirmPortfolioTradeExpiredWorthless } from '../src/lib/portfolioRealizedEconomics.ts';
 
 const userId = '77777777-7777-4777-8777-777777777777';
 const fixedNow = new Date('2026-08-29T15:00:00.000Z');
@@ -351,6 +352,61 @@ test('realized Sold Price and Entry Delta edits survive CAS, conflict rollback, 
   await fresh.manager.setAccount(userId, true);
   const bootstrapped = readPortfolioTrades(fresh.storage).data[0];
   assert.deepEqual([bootstrapped.soldPrice, bootstrapped.premiumCollected, bootstrapped.realizedPnl, bootstrapped.entryDelta], [2.3456, 469.12, 369.12, -0.31]);
+});
+
+test('manual worthless confirmation survives cloud CAS, sign-in bootstrap, backup, and restore without an expiration price', async t => {
+  const pending = trade('pending-worthless', 'Corporate-action basis unresolved', {
+    expiration: '2026-07-17',
+    soldDate: '2026-06-20',
+    status: 'expired_price_pending',
+    resolutionType: 'expired_price_pending',
+    resolutionWarning: 'Expiration economics remain pending because Yahoo reported an in-contract corporate action (dividend); adjusted option deliverables are not stored.',
+  });
+  const backend = new SharedCloudBackend(cloudState([pending]));
+  const device = runtime(backend);
+  const stale = runtime(backend);
+  t.after(() => { device.manager.destroy(); stale.manager.destroy(); });
+  await device.manager.setAccount(userId, true);
+  await stale.manager.setAccount(userId, true);
+
+  const current = readPortfolioTrades(device.storage);
+  const confirmed = confirmPortfolioTradeExpiredWorthless(current.data[0], fixedNow);
+  assert.ok(confirmed);
+  assert.equal(writePortfolioTrades(device.storage, [confirmed], { now: fixedNow }).status, 'ok');
+  await waitFor(() => backend.state.portfolio.revision === 11 && device.manager.getSnapshot().phase === 'ready');
+  assert.deepEqual(
+    [backend.state.portfolio.payload.data[0].status, backend.state.portfolio.payload.data[0].resolutionType, backend.state.portfolio.payload.data[0].resolutionSource, backend.state.portfolio.payload.data[0].finalOptionValue, backend.state.portfolio.payload.data[0].realizedPnl, backend.state.portfolio.payload.data[0].percentCaptured],
+    ['expired', 'expired_worthless', 'manual_worthless_confirmation', 0, 250, 1],
+  );
+  assert.equal(backend.state.portfolio.payload.data[0].expirationClosePrice, undefined);
+  assert.doesNotMatch(JSON.stringify(backend.state.portfolio.payload.data[0]), /expirationClosePrice/);
+
+  const backup = createPutScannerBackupFromCloudState(device.manager.getSnapshot().cloud, { now: fixedNow, appVersion: '7.0.0' });
+  assert.equal(backup.data.portfolio.data[0].resolutionSource, 'manual_worthless_confirmation');
+  assert.equal(backup.data.portfolio.data[0].expirationClosePrice, undefined);
+  assert.doesNotMatch(JSON.stringify(backup.data.portfolio.data[0]), /expirationClosePrice/);
+
+  const staleState = readPortfolioTrades(stale.storage);
+  assert.equal(writePortfolioTrades(stale.storage, staleState.data.map(item => ({ ...item, notes: 'stale overwrite' }))).status, 'ok');
+  await waitFor(() => stale.manager.getSnapshot().phase === 'conflict');
+  assert.equal(backend.state.portfolio.payload.data[0].resolutionSource, 'manual_worthless_confirmation');
+  assert.equal(readPortfolioTrades(stale.storage).data[0].resolutionSource, 'manual_worthless_confirmation', 'stale CAS rollback restores the authoritative attestation');
+  stale.manager.destroy();
+
+  await device.manager.setAccount(null, true);
+  assert.equal(readPortfolioTrades(device.storage).status, 'missing');
+  await device.manager.setAccount(userId, true);
+  const bootstrapped = readPortfolioTrades(device.storage).data[0];
+  assert.equal(bootstrapped.resolutionSource, 'manual_worthless_confirmation');
+  assert.equal(bootstrapped.expirationClosePrice, undefined);
+
+  assert.equal(writePortfolioTrades(device.storage, [{ ...bootstrapped, notes: 'temporary later change' }], { now: fixedNow }).status, 'ok');
+  await waitFor(() => backend.state.portfolio.revision === 12 && device.manager.getSnapshot().phase === 'ready');
+  assert.deepEqual(await device.manager.restoreBackup(backup), { ok: true });
+  assert.equal(backend.state.portfolio.payload.data[0].resolutionSource, 'manual_worthless_confirmation');
+  assert.equal(backend.state.portfolio.payload.data[0].notes, 'Corporate-action basis unresolved');
+  assert.equal(backend.state.portfolio.payload.data[0].expirationClosePrice, undefined);
+  assert.doesNotMatch(JSON.stringify(backend.state.portfolio.payload.data[0]), /expirationClosePrice/);
 });
 
 test('quote-only refresh stays transient and creates zero cloud durable writes', async t => {

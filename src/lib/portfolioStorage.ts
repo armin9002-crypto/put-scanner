@@ -4,7 +4,7 @@ import { reconcilePortfolioTradeEconomics } from './portfolioRealizedEconomics.t
 
 export type PortfolioTradeStatus = 'open' | 'closed' | 'expired' | 'assigned' | 'expired_price_pending';
 export type PortfolioResolutionType = 'expired_worthless' | 'expired_itm' | 'expired_price_pending';
-export type PortfolioResolutionSource = 'expiration_close' | 'manual_expiration_close';
+export type PortfolioResolutionSource = 'expiration_close' | 'manual_expiration_close' | 'manual_worthless_confirmation';
 export type PortfolioExpirationBasisStatus = 'provider_no_actions';
 export type PortfolioAvailabilityStatus = 'live' | 'expired' | 'unavailable' | 'refresh_failed' | 'stale' | 'imported_snapshot';
 export type PortfolioEntryVixSource = 'historical_close' | 'nearest_prior_close';
@@ -126,7 +126,7 @@ export interface PortfolioMigrationOptions {
 
 const VALID_STATUSES: PortfolioTradeStatus[] = ['open', 'closed', 'expired', 'assigned', 'expired_price_pending'];
 const VALID_RESOLUTION_TYPES: PortfolioResolutionType[] = ['expired_worthless', 'expired_itm', 'expired_price_pending'];
-const VALID_RESOLUTION_SOURCES: PortfolioResolutionSource[] = ['expiration_close', 'manual_expiration_close'];
+const VALID_RESOLUTION_SOURCES: PortfolioResolutionSource[] = ['expiration_close', 'manual_expiration_close', 'manual_worthless_confirmation'];
 const VALID_AVAILABILITY: PortfolioAvailabilityStatus[] = ['live', 'expired', 'unavailable', 'refresh_failed', 'stale', 'imported_snapshot'];
 const VALID_ENTRY_DELTA_SOURCES: PortfolioEntryDeltaSource[] = ['provider', 'calculated', 'manual', 'imported', 'stored_snapshot'];
 

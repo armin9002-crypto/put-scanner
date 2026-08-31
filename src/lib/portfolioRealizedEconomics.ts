@@ -1,11 +1,25 @@
 import { isFiniteNumber } from './optionMetrics.ts';
 import { calculatePremiumCollected } from './portfolioMetrics.ts';
+import { usMarketDateIso } from './portfolioEntryDelta.ts';
 import type { PortfolioTrade } from './portfolioStorage.ts';
 
 function calendarDaysBetween(start: string, end: string | undefined): number | undefined {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !end || !/^\d{4}-\d{2}-\d{2}$/.test(end)) return undefined;
   const days = Math.round((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86_400_000);
   return Number.isFinite(days) && days >= 0 ? days : undefined;
+}
+
+/**
+ * Manual outcome attestation is intentionally narrower than provider resolution:
+ * only an already-pending, past-expiration record can be confirmed worthless.
+ */
+export function isManualWorthlessConfirmationEligible(trade: PortfolioTrade, now = new Date()): boolean {
+  if (!Number.isFinite(now.getTime())) return false;
+  const marketDate = usMarketDateIso(now);
+  return trade.status === 'expired_price_pending'
+    && (trade.resolutionType == null || trade.resolutionType === 'expired_price_pending')
+    && /^\d{4}-\d{2}-\d{2}$/.test(trade.expiration)
+    && trade.expiration < marketDate;
 }
 
 export function canonicalHistoricalPremium(trade: PortfolioTrade): number | null {
@@ -44,6 +58,34 @@ export function canonicalHistoricalDaysHeld(trade: PortfolioTrade): number | nul
       ? trade.expiration
       : trade.resolvedDate ?? trade.closeDate;
   return calendarDaysBetween(trade.soldDate, exitDate) ?? null;
+}
+
+/**
+ * Records a user's explicit knowledge of a zero-intrinsic-value expiration.
+ * The underlying expiration close remains unknown and is never synthesized.
+ */
+export function confirmPortfolioTradeExpiredWorthless(
+  trade: PortfolioTrade,
+  now = new Date(),
+): PortfolioTrade | null {
+  if (!isManualWorthlessConfirmationEligible(trade, now)) return null;
+  const nowIso = now.toISOString();
+  return reconcilePortfolioTradeEconomics(trade, {
+    ...trade,
+    status: 'expired',
+    resolvedDate: trade.expiration,
+    resolutionType: 'expired_worthless',
+    expirationClosePrice: undefined,
+    expirationCloseDate: undefined,
+    expirationBasisStatus: undefined,
+    expirationBasisCheckedFrom: undefined,
+    finalOptionValue: undefined,
+    resolutionSource: 'manual_worthless_confirmation',
+    resolutionWarning: undefined,
+    closePrice: undefined,
+    closeDate: undefined,
+    updatedAt: nowIso,
+  });
 }
 
 function clearExpirationResolution(trade: PortfolioTrade): PortfolioTrade {

@@ -46,6 +46,14 @@ The expiration comparison continues to use Yahoo `indicators.quote[0].close`, no
 
 References: [Yahoo adjusted-close definition](https://help.yahoo.com/kb/SLN28256.html), [OCC Characteristics and Risks of Standardized Options](https://www.theocc.com/company-information/documents-and-archives/options-disclosure-document), [OCC cash-dividend and distribution guidance](https://www.theocc.com/getmedia/21ed2c99-ab15-472a-aef1-a142f140e2b7/Interpretative-Guidance-on-the-Adjustment-Policy-for-Cash-Dividends-and-Distributions.pdf), [OCC contract-adjustment information memos](https://infomemo.theocc.com/infomemo/search).
 
+### Manual worthless confirmation
+
+Automatic resolution and user attestation use intentionally different trust models. The automatic resolver still requires a trustworthy, corporate-action-safe underlying close. For an already-pending held-to-expiration put whose expiration has passed, **Confirm Expired Worthless** lets the user attest to the known outcome after a confirmation prompt. The durable record uses the canonical `expired_worthless` lifecycle, stores `manual_worthless_confirmation` provenance, sets final option value to zero, resolves on the expiration date, and derives realized P&L, percent captured, days held, and realized IRR through the existing canonical helpers.
+
+The attestation proves zero option intrinsic value, not the exact underlying close. `expirationClosePrice` and Price @ Exp. therefore remain unavailable; no strike-derived, current, or other synthetic price is stored. The action makes no provider request and does not retry Yahoo. Retry Resolve remains the separate provider path.
+
+There is no generic **Confirm Expired ITM** shortcut because an ITM label alone cannot establish intrinsic value or realized loss. A user who later learns the actual underlying expiration close can still use **Set Expiration Close**. That explicit correction reuses the canonical expiration resolver, replaces the manual-outcome provenance, and safely recalculates worthless or ITM economics. Ordinary notes or entry-snapshot edits preserve an existing manual worthless attestation and do not silently launch automatic re-resolution.
+
 ### Closed / Bought Back
 
 Close Price and Close Date are required. Close Date is the realized exit date, including when a buyback occurs on the expiration date. A known buyback never requests an expiration close. Realized P&L is `(Sold Price - Close Price) * contracts * 100`.
@@ -80,6 +88,7 @@ The form previews Premium, Gross Risk, Net Risk, Breakeven, Original DTE, Entry 
 - Closed / Bought Back Save: zero expiration acquisitions.
 - Opening Edit or History: zero expiration acquisitions.
 - Notes/Entry Delta edits on an unchanged resolved or pending trade: zero expiration acquisitions.
+- Confirm Expired Worthless: zero market-data/provider acquisitions; only the normal durable Portfolio mutation occurs.
 
 Lookup failure never blocks trade creation. The durable record enters `expired_price_pending` with a warning and remains eligible for explicit Portfolio Maintenance.
 

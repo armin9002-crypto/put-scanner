@@ -4,7 +4,7 @@ import {
   resolveExpiredTradeWithClose,
   type ExpirationCloseResult,
 } from './portfolioExpirationArchive.ts';
-import { reconcilePortfolioTradeEconomics } from './portfolioRealizedEconomics.ts';
+import { confirmPortfolioTradeExpiredWorthless, reconcilePortfolioTradeEconomics } from './portfolioRealizedEconomics.ts';
 import { makePortfolioTradeId, normalizePortfolioTrade, type PortfolioTrade, type PortfolioTradeInput } from './portfolioStorage.ts';
 import { usMarketDateIso } from './portfolioEntryDelta.ts';
 
@@ -129,6 +129,16 @@ export function prepareManualTradeForSave(
         trade: { ...resolved, resolvedDate: existing.resolvedDate ?? resolved.resolvedDate },
         needsExpirationLookup: false,
       };
+    }
+    if (existing.resolutionSource === 'manual_worthless_confirmation'
+      && existing.resolutionType === 'expired_worthless'
+      && !Number.isFinite(existing.expirationClosePrice)) {
+      const confirmed = confirmPortfolioTradeExpiredWorthless({
+        ...candidate,
+        status: 'expired_price_pending',
+        resolutionType: 'expired_price_pending',
+      }, new Date(nowIso));
+      if (confirmed) return { trade: confirmed, needsExpirationLookup: false };
     }
     if (existing.status === 'expired_price_pending' || existing.resolutionType === 'expired_price_pending') {
       const pending = markExpirationPricePending(candidate, existing.resolutionWarning, nowIso);

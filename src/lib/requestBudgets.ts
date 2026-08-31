@@ -6,6 +6,7 @@ export type RequestBudgetWorkflow =
   | 'portfolio-refresh'
   | 'portfolio-entry-delta-capture'
   | 'portfolio-historical-expiration-save'
+  | 'portfolio-manual-worthless-confirmation'
   | 'portfolio-entry-vix-maintenance'
   | 'portfolio-lifecycle-maintenance'
   | 'ticker-detail'
@@ -71,6 +72,12 @@ export const REQUEST_BUDGET_LEDGER: Record<RequestBudgetWorkflow, RequestBudgetL
     ceiling: { browserRequests: 1, functionInvocations: 1, providerAcquisitions: 1 },
     providerHttpAttemptCeiling: 6,
     fixture: 'one explicit held-to-expiration save; verified cached chart costs zero and a cold corporate-action-aware chart costs one acquisition',
+  },
+  'portfolio-manual-worthless-confirmation': {
+    expected: { browserRequests: 0, functionInvocations: 0, providerAcquisitions: 0 },
+    ceiling: { browserRequests: 0, functionInvocations: 0, providerAcquisitions: 0 },
+    providerHttpAttemptCeiling: 0,
+    fixture: 'one explicit user attestation for an already-pending expired put; only the durable account mutation is performed',
   },
   'portfolio-entry-vix-maintenance': {
     expected: { browserRequests: 1, functionInvocations: 1, providerAcquisitions: 1 },

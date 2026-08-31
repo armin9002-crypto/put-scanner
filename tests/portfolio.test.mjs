@@ -8,7 +8,8 @@ import { persistPortfolioGroupMode, readCollapsedExpirationGroups, readCollapsed
 import { normalizePortfolioTrade, readPortfolioTrades, writePortfolioTrades } from '../src/lib/portfolioStorage.ts';
 import { normalizeManualHistoricalEntryDelta } from '../src/lib/portfolioEntryDelta.ts';
 import { prepareManualTradeForSave, resolvePreparedManualTrade } from '../src/lib/portfolioHistoricalTrade.ts';
-import { buildHistoryAnalytics, buildHistoryGroups, historyPremium, historyRealizedIrr, historyRealizedPnl } from '../src/lib/portfolioHistoryAnalytics.ts';
+import { buildHistoryAnalytics, buildHistoryGroups, buildMonthlyRealizedPnl, historyDaysHeld, historyFinalValue, historyPercentCaptured, historyPremium, historyPriceAtExpiration, historyRealizedIrr, historyRealizedPnl } from '../src/lib/portfolioHistoryAnalytics.ts';
+import { confirmPortfolioTradeExpiredWorthless, isManualWorthlessConfirmationEligible } from '../src/lib/portfolioRealizedEconomics.ts';
 import {
   getPortfolioPositionHealthLevel,
   getPortfolioScheduleSortValue,
@@ -371,6 +372,112 @@ test('historical expiration corporate-action guard is deterministic across provi
   const blocked = await resolvePreparedManualTrade(prepared, { lookup: async () => { throw new Error(basis.warning); } });
   assert.equal(blocked.status, 'expired_price_pending');
   assert.match(blocked.resolutionWarning, /adjusted option deliverables/);
+});
+
+test('manual worthless confirmation is eligibility-gated, request-free, canonical, durable, and correctable', async () => {
+  const pending = markExpirationPricePending(trade({
+    id: 'manual-worthless',
+    ticker: 'SOXL',
+    expiration: '2025-06-20',
+    soldDate: '2025-05-01',
+    soldPrice: 1.2345,
+    contracts: 2,
+    entryVixClose: 20.4,
+    entryVixDate: '2025-05-01',
+    entryVixSource: 'historical_close',
+    entryDelta: -0.23,
+    entryDeltaSource: 'manual',
+    entryDeltaCapturedAt: '2026-08-30T12:00:00Z',
+  }), 'Expiration economics remain pending because Yahoo reported an in-contract corporate action (dividend); adjusted option deliverables are not stored.', '2026-08-30T12:00:00Z');
+  const now = new Date('2026-08-30T12:00:00Z');
+  assert.equal(isManualWorthlessConfirmationEligible(pending, now), true);
+  assert.equal(isManualWorthlessConfirmationEligible({ ...pending, status: 'open' }, now), false);
+  assert.equal(isManualWorthlessConfirmationEligible({ ...pending, status: 'closed' }, now), false);
+  assert.equal(isManualWorthlessConfirmationEligible({ ...pending, status: 'assigned' }, now), false);
+  assert.equal(isManualWorthlessConfirmationEligible({ ...pending, expiration: '2027-01-15' }, now), false);
+
+  const originalFetch = globalThis.fetch;
+  let providerRequests = 0;
+  globalThis.fetch = async () => {
+    providerRequests += 1;
+    throw new Error('manual confirmation must not acquire provider data');
+  };
+  let confirmed;
+  try {
+    confirmed = confirmPortfolioTradeExpiredWorthless(pending, now);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  assert.ok(confirmed);
+  assert.equal(providerRequests, 0);
+  assert.deepEqual(
+    [confirmed.status, confirmed.resolutionType, confirmed.resolutionSource, confirmed.resolvedDate, confirmed.closeDate],
+    ['expired', 'expired_worthless', 'manual_worthless_confirmation', '2025-06-20', '2025-06-20'],
+  );
+  assert.deepEqual(
+    [confirmed.expirationClosePrice, confirmed.expirationCloseDate, confirmed.expirationBasisStatus, confirmed.expirationBasisCheckedFrom],
+    [undefined, undefined, undefined, undefined],
+    'manual outcome knowledge never creates or claims an underlying expiration price',
+  );
+  assert.equal(confirmed.resolutionWarning, undefined);
+  assert.equal(historyFinalValue(confirmed), 0);
+  assert.equal(confirmed.finalOptionValue, 0);
+  assert.ok(Math.abs(historyPremium(confirmed) - 246.9) < 1e-12);
+  assert.ok(Math.abs(historyRealizedPnl(confirmed) - 246.9) < 1e-12);
+  assert.equal(historyPercentCaptured(confirmed), 1);
+  assert.equal(historyDaysHeld(confirmed), 50);
+  assert.equal(historyPriceAtExpiration(confirmed), null);
+  const expectedIrr = Math.pow(1 + 246.9 / 9_753.1, 365.25 / 50) - 1;
+  assert.ok(Math.abs(historyRealizedIrr(confirmed) - expectedIrr) < 1e-12);
+  assert.deepEqual(
+    [confirmed.entryVixClose, confirmed.entryVixDate, confirmed.entryDelta, confirmed.entryDeltaSource],
+    [20.4, '2025-05-01', -0.23, 'manual'],
+  );
+
+  const analytics = buildHistoryAnalytics([confirmed]);
+  assert.deepEqual([analytics.resolvedTrades, analytics.blendedCapture, analytics.counts.expired_worthless, analytics.totalHistoricalNotional], [1, 1, 1, 10_000]);
+  assert.ok(Math.abs(analytics.realizedPnl - 246.9) < 1e-12);
+  assert.ok(Math.abs(analytics.premiumCollected - 246.9) < 1e-12);
+  assert.equal(analytics.weightedAverageEntryDelta, -0.23);
+  assert.notEqual(analytics.totalRealizedIrr, null);
+  for (const mode of ['year', 'expiration', 'underlying', 'none']) {
+    const group = buildHistoryGroups([confirmed], mode)[0];
+    assert.ok(Math.abs(group.premium - 246.9) < 1e-12);
+    assert.ok(Math.abs(group.realizedPnl - 246.9) < 1e-12);
+    assert.equal(group.weightedAveragePercentCaptured, 1);
+  }
+  const monthly = buildMonthlyRealizedPnl([confirmed]);
+  assert.deepEqual([monthly[0].month, monthly[0].trades], ['2025-06', 1]);
+  assert.ok(Math.abs(monthly[0].premiumCollected - 246.9) < 1e-12);
+  assert.ok(Math.abs(monthly[0].realizedPnl - 246.9) < 1e-12);
+
+  class MemoryStorage {
+    constructor() { this.values = new Map(); }
+    getItem(key) { return this.values.get(key) ?? null; }
+    setItem(key, value) { this.values.set(key, String(value)); }
+    removeItem(key) { this.values.delete(key); }
+  }
+  const storage = new MemoryStorage();
+  assert.equal(writePortfolioTrades(storage, [confirmed]).status, 'ok');
+  const reloaded = readPortfolioTrades(storage).data[0];
+  assert.equal(reloaded.resolutionSource, 'manual_worthless_confirmation');
+  assert.equal(reloaded.expirationClosePrice, undefined);
+
+  let editLookups = 0;
+  const preparedEdit = prepareManualTradeForSave({ ...reloaded, notes: 'reviewed later' }, reloaded, { mode: 'historical', historicalOutcome: 'held_to_expiration' }, '2026-09-01T12:00:00Z');
+  assert.equal(preparedEdit.needsExpirationLookup, false, 'ordinary edits preserve explicit user attestation without retrying Yahoo');
+  const edited = await resolvePreparedManualTrade(preparedEdit, { lookup: async () => { editLookups += 1; return null; } });
+  assert.equal(editLookups, 0);
+  assert.equal(edited.resolutionSource, 'manual_worthless_confirmation');
+  assert.equal(edited.expirationClosePrice, undefined);
+
+  const corrected = resolveExpiredTradeWithClose(edited, 45, edited.expiration, 'manual_expiration_close', undefined, '2026-09-02T12:00:00Z');
+  assert.deepEqual(
+    [corrected.resolutionType, corrected.resolutionSource, corrected.expirationClosePrice, corrected.finalOptionValue],
+    ['expired_itm', 'manual_expiration_close', 45, 1_000],
+    'an explicit later expiration close reuses the canonical resolver and replaces the attestation safely',
+  );
+  assert.ok(Math.abs(historyRealizedPnl(corrected) - -753.1) < 1e-12);
 });
 
 test('realized edits reconcile every dependent value and survive serialization without stale snapshots', () => {

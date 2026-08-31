@@ -298,6 +298,12 @@ test('Add Trade exposes manual Entry Delta only for historical entry while Edit 
   assert.match(page, /group\.weightedAverageEntryVix/, 'History subtotals align weighted Entry VIX');
   assert.match(page, /group\.weightedAveragePercentCaptured/, 'History subtotals align weighted % Captured');
   assert.match(page, /group\.weightedAverageEntryDelta/, 'History subtotals align weighted Entry Delta');
+  assert.match(page, /isManualWorthlessConfirmationEligible\(trade\)/, 'History derives confirmation eligibility from canonical durable state');
+  assert.match(page, />Confirm Worthless<\/button>/, 'eligible pending rows expose the narrow outcome-attestation action');
+  assert.match(page, /Confirm this put expired worthless\? Put Scanner will record final option value as \$0 and keep Price @ Exp\. unavailable\./, 'financial mutation requires the established confirmation-sheet pattern');
+  const manualConfirmation = page.slice(page.indexOf('const handleConfirmExpiredWorthless'), page.indexOf('const openDrawer'));
+  assert.match(manualConfirmation, /confirmPortfolioTradeExpiredWorthless\(current\)/);
+  assert.doesNotMatch(manualConfirmation, /getExpirationClosePrice|handleRetryResolve|fetch\(|fetchOptions|fetchBatchPrices/, 'manual attestation cannot invoke the provider resolver or any market request');
   assert.doesNotMatch(page, /trades.*Premium.*P&amp;L/, 'History does not use the detached hanging group-summary sentence');
   const historyAnalytics = await read('src/lib/portfolioHistoryAnalytics.ts');
   assert.doesNotMatch(historyAnalytics, /fetch\(|requestMarketData|fetchOptions/, 'History analytics remain request-free');
@@ -355,6 +361,9 @@ test('Stage 6B.4 request ledger makes cached and cold maintenance costs explicit
   assert.deepEqual(REQUEST_BUDGET_LEDGER['portfolio-entry-delta-capture'].ceiling, { browserRequests: 1, functionInvocations: 1, providerAcquisitions: 1 });
   assert.deepEqual(REQUEST_BUDGET_LEDGER['portfolio-historical-expiration-save'].expected, { browserRequests: 0, functionInvocations: 0, providerAcquisitions: 0 });
   assert.deepEqual(REQUEST_BUDGET_LEDGER['portfolio-historical-expiration-save'].ceiling, { browserRequests: 1, functionInvocations: 1, providerAcquisitions: 1 });
+  assert.deepEqual(REQUEST_BUDGET_LEDGER['portfolio-manual-worthless-confirmation'].expected, { browserRequests: 0, functionInvocations: 0, providerAcquisitions: 0 });
+  assert.deepEqual(REQUEST_BUDGET_LEDGER['portfolio-manual-worthless-confirmation'].ceiling, { browserRequests: 0, functionInvocations: 0, providerAcquisitions: 0 });
+  assert.equal(REQUEST_BUDGET_LEDGER['portfolio-manual-worthless-confirmation'].providerHttpAttemptCeiling, 0);
   assert.equal(REQUEST_BUDGET_LEDGER['portfolio-entry-vix-maintenance'].ceiling.browserRequests, 1);
   assert.equal(REQUEST_BUDGET_LEDGER['portfolio-lifecycle-maintenance'].ceiling.providerAcquisitions, 1);
 });
