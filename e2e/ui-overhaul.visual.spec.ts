@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { installDeterministicMarketApi } from './fixtures/marketApi';
+import { installDeterministicCloudAccount } from './fixtures/cloudAccount';
 
 const phase = process.env.UI_OVERHAUL_CAPTURE;
 const outputRoot = path.join(process.cwd(), 'e2e-artifacts', 'ui-overhaul', phase || 'disabled');
@@ -77,7 +78,7 @@ async function captureDesktop(page: Page, testInfo: TestInfo, marketHarness: Awa
   await capture(page, testInfo, 'screener-before-load');
   await page.getByRole('button', { name: /Load|Run Screener/i }).first().click();
   if (await page.getByRole('button', { name: /Run scan|Confirm/i }).count()) await page.getByRole('button', { name: /Run scan|Confirm/i }).click();
-  await expect(page.getByText(/Showing \d+ results/).first()).toBeVisible();
+  await expect(page.getByText(/(?:Showing \d+ results|\d+ contracts loaded)/).first()).toBeVisible();
   await capture(page, testInfo, 'screener-populated');
 
   await page.goto('/watchlist');
@@ -177,19 +178,18 @@ async function captureLandscape(page: Page, testInfo: TestInfo) {
 test.describe('UI overhaul deterministic visual matrix', () => {
   test.skip(!phase, 'Run through npm run visual:ui1 -- before|after.');
   test.beforeEach(async ({ page }) => {
-    await page.addInitScript(({ expiration, nearExpiration, seededWatchlist, seededPortfolio }) => {
+    await page.addInitScript(({ expiration, nearExpiration }) => {
       localStorage.setItem('scanner_option_expirations_v1', JSON.stringify({ TQQQ: { dates: [nearExpiration, expiration], updatedAt: '2026-08-27T12:00:00.000Z' } }));
-      localStorage.setItem('put_scanner_watchlist', JSON.stringify(seededWatchlist));
-      localStorage.setItem('put_scanner_portfolio_trades', JSON.stringify(seededPortfolio));
       if (!localStorage.getItem('put_scanner_theme')) localStorage.setItem('put_scanner_theme', 'dark');
       localStorage.removeItem('put_scanner_debug_layout');
       localStorage.removeItem('put_scanner_debug_network');
-    }, { expiration: EXACT_EXPIRATION, nearExpiration: NEAR_EXPIRATION, seededWatchlist: watchlist, seededPortfolio: portfolio });
+    }, { expiration: EXACT_EXPIRATION, nearExpiration: NEAR_EXPIRATION });
   });
 
   test('capture requested surfaces', async ({ page }, testInfo) => {
     test.setTimeout(180_000);
     const marketHarness = await installDeterministicMarketApi(page);
+    await installDeterministicCloudAccount(page, { portfolio, watchlist, preferences: {} });
     const project = testInfo.project.name;
     if (project === 'desktop-1440x900') await captureDesktop(page, testInfo, marketHarness);
     else if (project === 'portrait-390x844') await capturePhone(page, testInfo);

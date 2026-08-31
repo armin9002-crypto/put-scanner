@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { installDeterministicMarketApi } from './fixtures/marketApi';
+import { installDeterministicCloudAccount } from './fixtures/cloudAccount';
 
 const phase = process.env.UI_OVERHAUL_CAPTURE;
 const suite = process.env.UI_OVERHAUL_SUITE;
@@ -39,19 +40,33 @@ async function capture(page: Page, testInfo: TestInfo, name: string) {
 }
 
 async function seed(page: Page) {
-  await page.addInitScript(({ watchlistValue, portfolioValue }) => {
+  await page.addInitScript(() => {
     if (sessionStorage.getItem('put_scanner_ui3_seeded') === 'true') return;
     sessionStorage.setItem('put_scanner_ui3_seeded', 'true');
-    localStorage.setItem('put_scanner_watchlist', JSON.stringify(watchlistValue));
-    localStorage.setItem('put_scanner_portfolio_trades', JSON.stringify(portfolioValue));
     localStorage.setItem('put_scanner_theme', 'dark');
     localStorage.removeItem('put_scanner_debug_layout');
     localStorage.removeItem('put_scanner_debug_network');
-  }, { watchlistValue: watchlist, portfolioValue: portfolio });
+  });
 }
 
 async function openWatchlist(page: Page) { await page.goto('/watchlist'); await expect(page.locator('h1:visible').filter({ hasText: 'Watchlist' }).or(page.getByText(/saved contracts/i).first()).first()).toBeVisible({ timeout: 20_000 }); await settle(page); }
-async function openPortfolio(page: Page) { await page.goto('/portfolio'); await expect(page.getByText(/^(Open Positions|Schedule of Positions)$/).first()).toBeVisible({ timeout: 20_000 }); await settle(page); }
+async function openPortfolio(page: Page) {
+  await page.goto('/portfolio');
+  await expect(page.getByText(/^(Open Positions|Schedule of Positions)$/).first()).toBeVisible({ timeout: 20_000 });
+  await settle(page);
+  const refresh = page.getByRole('button', { name: 'Refresh Open Trades' });
+  if (await refresh.count() && await refresh.isEnabled()) {
+    await refresh.click();
+  } else {
+    const actions = page.getByRole('button', { name: 'Portfolio actions' });
+    if (await actions.count()) {
+      await actions.click();
+      const mobileRefresh = page.getByRole('button', { name: 'Refresh Open Trades' });
+      if (await mobileRefresh.count() && await mobileRefresh.isEnabled()) await mobileRefresh.click();
+    }
+  }
+  await page.waitForTimeout(400);
+}
 
 test.describe('UI-3 portfolio and watchlist visual matrix', () => {
   test.skip(!(phase === 'before' || phase === 'after') || suite !== 'ui3', 'Run through npm run visual:ui3 -- before|after.');
@@ -60,6 +75,11 @@ test.describe('UI-3 portfolio and watchlist visual matrix', () => {
   test('capture Watchlist → Portfolio → analytics → history workflow', async ({ page }, testInfo) => {
     test.setTimeout(180_000);
     const marketHarness = await installDeterministicMarketApi(page);
+    const cloudHarness = await installDeterministicCloudAccount(page, {
+      portfolio,
+      watchlist,
+      preferences: { portfolioMarkBasis: 'ask', portfolioGroupMode: 'expiration', showNominalYield: false },
+    });
     const project = testInfo.project.name;
     if (project === 'desktop-1440x900') {
       marketHarness.failuresRemaining.set('options', 1);
@@ -73,13 +93,24 @@ test.describe('UI-3 portfolio and watchlist visual matrix', () => {
       await capture(page, testInfo, 'watchlist-refresh-loading');
       marketHarness.delays.clear();
       await page.waitForTimeout(1_300);
-      await page.evaluate(value => localStorage.setItem('put_scanner_watchlist', JSON.stringify(value)), []);
+      cloudHarness.setNamespaceData('watchlist', []);
       await page.reload(); await expect(page.getByText(/No saved puts/i).first()).toBeVisible(); await settle(page); await capture(page, testInfo, 'watchlist-empty');
-      await page.evaluate(value => localStorage.setItem('put_scanner_watchlist', JSON.stringify(value)), watchlist);
-      await page.goto('/portfolio');
-      await expect(page.getByRole('heading', { name: 'Portfolio', exact: true })).toBeVisible();
-      await settle(page);
+      cloudHarness.setNamespaceData('watchlist', watchlist);
+      await page.reload();
+      await openPortfolio(page);
       await capture(page, testInfo, 'portfolio-analytics-collapsed');
+      const entryDeltaToggle = page.getByRole('checkbox', { name: 'Show Entry Deltas' });
+      if (await entryDeltaToggle.count()) {
+        await entryDeltaToggle.check();
+        await capture(page, testInfo, 'portfolio-entry-deltas-on');
+        await entryDeltaToggle.uncheck();
+      }
+      const nominalYieldToggle = page.getByRole('checkbox', { name: 'Show Nominal Yield' });
+      if (await nominalYieldToggle.count()) {
+        await nominalYieldToggle.check();
+        await capture(page, testInfo, 'portfolio-nominal-yield-on');
+        await nominalYieldToggle.uncheck();
+      }
       const lastMark = page.getByRole('button', { name: 'Last', exact: true }).first();
       if (await lastMark.count()) { await lastMark.click(); await capture(page, testInfo, 'portfolio-mark-last'); await page.getByRole('button', { name: 'Ask', exact: true }).first().click(); }
       const noneGroup = page.getByRole('button', { name: 'None', exact: true }).last();
@@ -92,7 +123,20 @@ test.describe('UI-3 portfolio and watchlist visual matrix', () => {
         if (await locator.count()) { await locator.scrollIntoViewIfNeeded(); await capture(page, testInfo, `portfolio-${label.toLowerCase().replaceAll(' ', '-')}`); }
       }
       const history = page.getByText('Expired / Closed History', { exact: true });
-      if (await history.count()) { await history.scrollIntoViewIfNeeded(); await capture(page, testInfo, 'portfolio-history'); }
+      if (await history.count()) {
+        await history.scrollIntoViewIfNeeded();
+        await capture(page, testInfo, 'portfolio-history');
+        const historyCollapse = page.getByRole('button', { name: 'Collapse All' }).last();
+        if (await historyCollapse.count()) {
+          await historyCollapse.click();
+          await capture(page, testInfo, 'portfolio-history-collapsed');
+          const historyExpand = page.getByRole('button', { name: 'Expand All' }).last();
+          if (await historyExpand.count()) {
+            await historyExpand.click();
+            await capture(page, testInfo, 'portfolio-history-expanded');
+          }
+        }
+      }
       const firstPosition = page.locator('[data-trade-id]:visible').first();
       const strikeButton = firstPosition.locator('button').first();
       if (await strikeButton.count()) { await strikeButton.click(); await expect(page.getByRole('complementary')).toBeVisible({ timeout: 10_000 }); await capture(page, testInfo, 'portfolio-trade-drawer'); await page.getByRole('button', { name: 'Close option detail drawer' }).last().click(); }
@@ -115,6 +159,12 @@ test.describe('UI-3 portfolio and watchlist visual matrix', () => {
       await openPortfolio(page); await capture(page, testInfo, 'portfolio-mobile-headline');
       const analytics = page.getByRole('button', { name: /Portfolio Analytics/ }).first();
       if (await analytics.count()) { await analytics.click(); await analytics.scrollIntoViewIfNeeded(); await capture(page, testInfo, 'portfolio-mobile-analytics'); }
+      const entryDeltaToggle = page.getByRole('checkbox', { name: 'Show Entry Deltas' });
+      if (await entryDeltaToggle.count()) {
+        await entryDeltaToggle.check();
+        await capture(page, testInfo, 'portfolio-mobile-entry-deltas-on');
+        await entryDeltaToggle.uncheck();
+      }
       const history = page.getByRole('button', { name: /History/ }).first();
       if (await history.count()) { await history.click(); await page.getByText('History', { exact: true }).last().scrollIntoViewIfNeeded(); await capture(page, testInfo, 'portfolio-mobile-history'); }
     } else if (project === 'landscape-844x390' || project === 'landscape-667x375') {
@@ -126,6 +176,8 @@ test.describe('UI-3 portfolio and watchlist visual matrix', () => {
       await openWatchlist(page); await capture(page, testInfo, 'watchlist-responsive');
       await openPortfolio(page); await capture(page, testInfo, 'portfolio-responsive');
     }
+    expect(cloudHarness.requests.some(request => request.startsWith('GET /rest/v1/user_state'))).toBe(true);
+    expect(await page.evaluate(() => ({ portfolio: localStorage.getItem('put_scanner_portfolio_trades'), watchlist: localStorage.getItem('put_scanner_watchlist') }))).toEqual({ portfolio: null, watchlist: null });
     await mkdir(outputRoot, { recursive: true });
     await writeFile(path.join(outputRoot, `overflow-report-${project}.json`), `${JSON.stringify(overflows.filter(entry => entry.project === project), null, 2)}\n`, 'utf8');
   });

@@ -5,8 +5,8 @@ const systemChrome = process.platform === 'win32'
   : undefined;
 const visualCapture = ['before', 'after', 'baseline', 'final'].includes(process.env.UI_OVERHAUL_CAPTURE || '');
 const visualBuildCommand = process.platform === 'win32'
-  ? 'set VITE_UI_VISUAL_FIXTURES=true&& npm run build && npm run preview -- --host 127.0.0.1 --port 4317'
-  : 'VITE_UI_VISUAL_FIXTURES=true npm run build && npm run preview -- --host 127.0.0.1 --port 4317';
+  ? 'set VITE_UI_VISUAL_FIXTURES=true&& set VITE_SUPABASE_URL=https://visual-fixture.supabase.co&& set VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_visual_fixture&& npm run build && npm run preview -- --host 127.0.0.1 --port 4317'
+  : 'VITE_UI_VISUAL_FIXTURES=true VITE_SUPABASE_URL=https://visual-fixture.supabase.co VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_visual_fixture npm run build && npm run preview -- --host 127.0.0.1 --port 4317';
 
 export default defineConfig({
   testDir: './e2e',

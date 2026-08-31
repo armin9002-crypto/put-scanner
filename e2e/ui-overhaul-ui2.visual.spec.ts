@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { installDeterministicMarketApi } from './fixtures/marketApi';
+import { installDeterministicCloudAccount } from './fixtures/cloudAccount';
 
 const phase = process.env.UI_OVERHAUL_CAPTURE;
 const suite = process.env.UI_OVERHAUL_SUITE;
@@ -43,15 +44,13 @@ async function capture(page: Page, testInfo: TestInfo, name: string) {
 }
 
 async function seed(page: Page) {
-  await page.addInitScript(({ nearExpiration, expiration, watchlistValue, portfolioValue }) => {
+  await page.addInitScript(({ nearExpiration, expiration }) => {
     if (sessionStorage.getItem('put_scanner_ui2_seeded') === 'true') return;
     sessionStorage.setItem('put_scanner_ui2_seeded', 'true');
     localStorage.setItem('scanner_option_expirations_v1', JSON.stringify({ TQQQ: { dates: [nearExpiration, expiration], updatedAt: '2026-08-27T12:00:00.000Z' } }));
-    localStorage.setItem('put_scanner_watchlist', JSON.stringify(watchlistValue));
-    localStorage.setItem('put_scanner_portfolio_trades', JSON.stringify(portfolioValue));
     localStorage.removeItem('put_scanner_debug_layout');
     localStorage.removeItem('put_scanner_debug_network');
-  }, { nearExpiration: NEAR_EXPIRATION, expiration: EXACT_EXPIRATION, watchlistValue: watchlist, portfolioValue: portfolio });
+  }, { nearExpiration: NEAR_EXPIRATION, expiration: EXACT_EXPIRATION });
 }
 
 async function openScanner(page: Page) {
@@ -82,6 +81,7 @@ test.describe('UI-2 discovery workflow visual matrix', () => {
   test('capture Scanner, ticker detail, and Option Drawer workflow', async ({ page }, testInfo) => {
     test.setTimeout(180_000);
     const marketHarness = await installDeterministicMarketApi(page);
+    await installDeterministicCloudAccount(page, { portfolio, watchlist, preferences: {} });
     const project = testInfo.project.name;
 
     if (project === 'desktop-1440x900') {

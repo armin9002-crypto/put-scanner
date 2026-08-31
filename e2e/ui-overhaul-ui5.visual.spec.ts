@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { installDeterministicMarketApi } from './fixtures/marketApi';
+import { installDeterministicCloudAccount } from './fixtures/cloudAccount';
 
 const phase = process.env.UI_OVERHAUL_CAPTURE;
 const suite = process.env.UI_OVERHAUL_SUITE;
@@ -104,6 +105,7 @@ async function captureCoreRoutes(page: Page, testInfo: TestInfo) {
 
 async function captureDesktop(page: Page, testInfo: TestInfo) {
   const harness = await installDeterministicMarketApi(page);
+  await installDeterministicCloudAccount(page, { portfolio, watchlist, preferences: {} });
   await page.goto('/'); await expect(page.getByPlaceholder(/Filter \/ Search by Ticker/i).first()).toBeVisible(); await settle(page); await capture(page, testInfo, 'scanner-default');
   await page.getByPlaceholder(/Filter \/ Search by Ticker/i).fill('TQQQ'); await page.getByRole('button', { name: '3x', exact: true }).click(); await capture(page, testInfo, 'scanner-filters-active');
   harness.delays.set('prices', 900); await page.evaluate(() => { for (const key of ['price_cache_batch_v5', 'price_cache_batch_v4', 'prices_cache']) localStorage.removeItem(key); }); await page.reload(); await page.waitForTimeout(160); await capture(page, testInfo, 'scanner-loading'); harness.delays.delete('prices');
@@ -131,14 +133,13 @@ async function captureDesktop(page: Page, testInfo: TestInfo) {
   const browser = page.context().browser();
   if (!browser) throw new Error('UI-5 theme capture requires a browser-backed context.');
   const themeContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-  await themeContext.addInitScript(({ watchlistValue, portfolioValue, expiration }) => {
-    localStorage.setItem('put_scanner_watchlist', JSON.stringify(watchlistValue));
-    localStorage.setItem('put_scanner_portfolio_trades', JSON.stringify(portfolioValue));
+  await themeContext.addInitScript(({ expiration }) => {
     localStorage.setItem('scanner_option_expirations_v1', JSON.stringify({ TQQQ: { dates: [expiration], updatedAt: '2026-08-27T12:00:00.000Z' } }));
     if (!localStorage.getItem('put_scanner_theme')) localStorage.setItem('put_scanner_theme', 'dark');
-  }, { watchlistValue: watchlist, portfolioValue: portfolio, expiration: EXPIRY_JAN });
+  }, { expiration: EXPIRY_JAN });
   const themePage = await themeContext.newPage();
   await installDeterministicMarketApi(themePage);
+  await installDeterministicCloudAccount(themePage, { portfolio, watchlist, preferences: {} });
   for (const theme of ['dark', 'dark-blue', 'light', 'sepia']) {
     await themePage.goto('/');
     await themePage.evaluate(value => localStorage.setItem('put_scanner_theme', value), theme);
@@ -155,14 +156,12 @@ async function captureDesktop(page: Page, testInfo: TestInfo) {
 test.describe('UI-5 complete deterministic visual review', () => {
   test.skip(!(phase === 'baseline' || phase === 'final') || suite !== 'ui5', 'Run through npm run visual:ui5 -- baseline|final.');
   test.beforeEach(async ({ page }) => {
-    await page.addInitScript(({ watchlistValue, portfolioValue, expiration }) => {
-      localStorage.setItem('put_scanner_watchlist', JSON.stringify(watchlistValue));
-      localStorage.setItem('put_scanner_portfolio_trades', JSON.stringify(portfolioValue));
+    await page.addInitScript(({ expiration }) => {
       localStorage.setItem('scanner_option_expirations_v1', JSON.stringify({ TQQQ: { dates: [expiration], updatedAt: '2026-08-27T12:00:00.000Z' } }));
       if (!localStorage.getItem('put_scanner_theme')) localStorage.setItem('put_scanner_theme', 'dark');
       localStorage.removeItem('put_scanner_debug_layout');
       localStorage.removeItem('put_scanner_debug_network');
-    }, { watchlistValue: watchlist, portfolioValue: portfolio, expiration: EXPIRY_JAN });
+    }, { expiration: EXPIRY_JAN });
   });
 
   test('capture every primary route, state, viewport, and representative theme', async ({ page }, testInfo) => {
@@ -171,6 +170,7 @@ test.describe('UI-5 complete deterministic visual review', () => {
     if (project === 'desktop-1440x900') await captureDesktop(page, testInfo);
     else {
       await installDeterministicMarketApi(page);
+      await installDeterministicCloudAccount(page, { portfolio, watchlist, preferences: {} });
       await captureCoreRoutes(page, testInfo);
       if (project === 'portrait-390x844' || project === 'landscape-844x390') {
         await openDetail(page, 'TQQQ');
