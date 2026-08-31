@@ -1958,7 +1958,7 @@ export default function PortfolioPage() {
 
             {openTrades.length > 0 && <section className="portfolio-analytics-section border-t px-3.5 py-2" style={{ borderColor: 'var(--border)' }}><button type="button" onClick={() => setAnalyticsExpanded(expanded => !expanded)} aria-expanded={analyticsExpanded} aria-controls="portfolio-analytics-content" className="portfolio-analytics-disclosure pressable flex min-h-11 w-full items-center justify-between text-left"><span><h2 className="text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Portfolio Analytics</h2><span className="portfolio-analytics-disclosure__hint">Concentration, timing, and policy signals</span></span><ChevronDown className={`h-4 w-4 transition-transform ${analyticsExpanded ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} aria-hidden="true" /></button><div id="portfolio-analytics-content">{analyticsExpanded && <div className="portfolio-analytics-content pb-2"><MobileSegmentedControl value={mobileAnalytics} onChange={setMobileAnalytics} label="Portfolio analytics" options={[{ value: 'maturity', label: 'Maturity' }, { value: 'ticker', label: 'Exposure' }, { value: 'attention', label: 'Attention' }, { value: 'close', label: 'Close' }]} /><div className="mt-2">{mobileAnalytics === 'maturity' && <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openTrades, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." onGroupClick={drillToExpiration} />}{mobileAnalytics === 'ticker' && <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openTrades, markBasis)} totalGrossRisk={sumValues(openTrades.map(calculateEquityAtRisk))} maxItems={8} onGroupClick={drillToTicker} />}{mobileAnalytics === 'attention' && <NeedsAttentionList items={buildNeedsAttention(openTrades).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} />}{mobileAnalytics === 'close' && <CloseCandidatesCard candidates={buildCloseCandidates(openTrades, markBasis).slice(0, 5)} onNavigate={drillToTrade} />}</div></div>}</div></section>}
 
-            {archivedTrades.length > 0 && <section className="border-t px-3.5 py-3" style={{ borderColor: 'var(--border)' }}><button type="button" onClick={() => setMobileHistoryOpen(current => !current)} className="pressable flex min-h-11 w-full items-center justify-between text-left" aria-expanded={mobileHistoryOpen}><span><b className="block text-[15px]" style={{ color: 'var(--text)' }}>History</b><span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{archivedTrades.length} resolved · {formatCurrency(archiveSummary.realizedPnl, 0)} realized</span></span><ChevronDown className={`h-4 w-4 transition-transform ${mobileHistoryOpen ? 'rotate-180' : ''}`} /></button>{mobileHistoryOpen && <ArchiveHistorySection trades={archivedTrades} summary={archiveSummary} resolvingIds={resolvingArchiveIds} onRetryResolve={handleRetryResolve} onManualExpirationClose={handleManualExpirationClose} onRequestWorthlessConfirmation={setWorthlessConfirmationTrade} onEdit={setEditingTrade} onDelete={handleDeleteTrade} />}</section>}
+            {archivedTrades.length > 0 && <section className="border-t px-3.5 py-3" style={{ borderColor: 'var(--border)' }}><button type="button" onClick={() => setMobileHistoryOpen(current => !current)} className="pressable flex min-h-11 w-full items-center justify-between text-left" aria-expanded={mobileHistoryOpen}><span><b className="block text-[15px]" style={{ color: 'var(--text)' }}>History</b><span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{archivedTrades.length} resolved · {formatCurrency(archiveSummary.realizedPnl, 0)} realized</span></span><ChevronDown className={`h-4 w-4 transition-transform ${mobileHistoryOpen ? 'rotate-180' : ''}`} /></button>{mobileHistoryOpen && <ArchiveHistorySection mobileLayout trades={archivedTrades} summary={archiveSummary} resolvingIds={resolvingArchiveIds} onRetryResolve={handleRetryResolve} onManualExpirationClose={handleManualExpirationClose} onRequestWorthlessConfirmation={setWorthlessConfirmationTrade} onEdit={setEditingTrade} onDelete={handleDeleteTrade} />}</section>}
           </>
         )}
 
@@ -2515,6 +2515,7 @@ function MonthlyRealizedChart({ trades }: { trades: PortfolioTrade[] }) {
 }
 
 function ArchiveHistorySection({
+  mobileLayout = false,
   trades,
   summary,
   resolvingIds,
@@ -2524,6 +2525,7 @@ function ArchiveHistorySection({
   onEdit,
   onDelete,
 }: {
+  mobileLayout?: boolean;
   trades: PortfolioTrade[];
   summary: ReturnType<typeof buildArchiveSummary>;
   resolvingIds: Set<string>;
@@ -2556,6 +2558,8 @@ function ArchiveHistorySection({
     }));
   };
   if (trades.length === 0) return null;
+  const mobileHistoryClass = mobileLayout ? '' : 'md:hidden';
+  const desktopHistoryClass = mobileLayout ? 'hidden' : 'hidden md:block';
 
   return (
     <section className="portfolio-history-section mt-5">
@@ -2586,7 +2590,7 @@ function ArchiveHistorySection({
         {(['expired_worthless', 'closed', 'expired_itm', 'assigned'] as const).map((outcome, index) => <div key={outcome} style={{ width: `${visibleSummary.percentages[outcome] * 100}%`, backgroundColor: ['var(--green)', 'var(--accent)', 'var(--red)', 'var(--orange)'][index] }} />)}
       </div>
       <MonthlyRealizedChart trades={visibleTrades} />
-      <div className="space-y-2 md:hidden">
+      <div className={`${mobileHistoryClass} space-y-2`}>
         {visibleGroups.map(group => {
           const collapsed = groupMode !== 'none' && collapsedHistoryGroups[historyGroupKey(group)] === true;
           const label = historyGroupLabel(group);
@@ -2602,7 +2606,8 @@ function ArchiveHistorySection({
             )}
           {(groupMode === 'none' || !collapsed) && group.trades.map(trade => {
           const pending = trade.status === 'expired_price_pending' || trade.resolutionType === 'expired_price_pending';
-          const canSetExpirationClose = trade.status === 'expired' || trade.status === 'expired_price_pending';
+          const canEnterExpirationPrice = pending;
+          const canCorrectExpirationClose = trade.status === 'expired' && !pending;
           const canConfirmWorthless = isManualWorthlessConfirmationEligible(trade);
           const resolving = resolvingIds.has(trade.id);
           const realizedPnl = getArchivedRealizedPnl(trade);
@@ -2630,12 +2635,17 @@ function ArchiveHistorySection({
                 <Metric label="Entry Delta" value={formatDelta(trade.entryDelta)} />
               </div>
               {trade.resolutionWarning && <p className="mt-2 text-[11px]" style={{ color: 'var(--yellow)' }}>{trade.resolutionWarning}</p>}
-              <div className="mt-3 flex flex-wrap gap-2 border-t pt-2" style={{ borderColor: 'var(--border)' }}>
-                {pending && <button onClick={() => onRetryResolve(trade)} disabled={resolving} className="tap-target rounded-lg px-3 text-xs disabled:opacity-50" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>{resolving ? 'Resolving...' : 'Retry'}</button>}
-                {canConfirmWorthless && <button onClick={() => onRequestWorthlessConfirmation(trade)} className="tap-target rounded-lg px-3 text-xs" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Confirm Worthless</button>}
-                {canSetExpirationClose && <button onClick={() => onManualExpirationClose(trade)} className="tap-target rounded-lg px-3 text-xs" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Set close</button>}
-                <button onClick={() => onEdit(trade)} className="tap-target ml-auto flex items-center justify-center rounded-lg px-3" aria-label={`Edit ${trade.ticker} trade`} style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }}><Edit2 className="h-4 w-4" /></button>
-                <button onClick={() => onDelete(trade.id)} className="tap-target flex items-center justify-center rounded-lg px-3" aria-label={`Delete ${trade.ticker} trade`} style={{ color: 'var(--red)', backgroundColor: 'rgba(239,68,68,0.1)' }}><Trash2 className="h-4 w-4" /></button>
+              <div className="mt-3 border-t pt-2" style={{ borderColor: 'var(--border)' }}>
+                {pending && <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => onRetryResolve(trade)} disabled={resolving} className="tap-target rounded-lg px-3 text-xs disabled:opacity-50" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>{resolving ? 'Resolving...' : 'Retry Resolve'}</button>
+                  {canConfirmWorthless && <button type="button" onClick={() => onRequestWorthlessConfirmation(trade)} className="tap-target rounded-lg px-3 text-xs" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Confirm Worthless</button>}
+                  {canEnterExpirationPrice && <button type="button" onClick={() => onManualExpirationClose(trade)} className="tap-target rounded-lg px-3 text-xs" title="Enter the underlying price at expiration" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Enter Exp. Price</button>}
+                </div>}
+                <div className={`${pending ? 'mt-2' : ''} flex items-center justify-end gap-2`}>
+                  {canCorrectExpirationClose && <button type="button" onClick={() => onManualExpirationClose(trade)} className="tap-target flex items-center justify-center rounded-lg px-3" aria-label={`Correct Price @ Exp. for ${trade.ticker}`} title="Correct Price @ Exp." style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }}><Wrench className="h-4 w-4" /></button>}
+                  <button type="button" onClick={() => onEdit(trade)} className="tap-target flex items-center justify-center rounded-lg px-3" aria-label={`Edit ${trade.ticker} trade`} style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }}><Edit2 className="h-4 w-4" /></button>
+                  <button type="button" onClick={() => onDelete(trade.id)} className="tap-target flex items-center justify-center rounded-lg px-3" aria-label={`Delete ${trade.ticker} trade`} style={{ color: 'var(--red)', backgroundColor: 'rgba(239,68,68,0.1)' }}><Trash2 className="h-4 w-4" /></button>
+                </div>
               </div>
             </article>
           );
@@ -2643,7 +2653,7 @@ function ArchiveHistorySection({
           </Fragment>;
         })}
       </div>
-      <div className="hidden rounded-lg overflow-hidden md:block" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <div className={`${desktopHistoryClass} rounded-lg overflow-hidden`} style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
         <div className="overflow-x-auto max-w-full overscroll-contain">
           <table className="portfolio-history-table financial-table min-w-max w-full text-[12px] leading-none">
             <thead>
@@ -2686,7 +2696,8 @@ function ArchiveHistorySection({
                 )}
                 {(groupMode === 'none' || !collapsed) && group.trades.map((trade, index) => {
                 const pending = trade.status === 'expired_price_pending' || trade.resolutionType === 'expired_price_pending';
-                const canSetExpirationClose = trade.status === 'expired' || trade.status === 'expired_price_pending';
+                const canEnterExpirationPrice = pending;
+                const canCorrectExpirationClose = trade.status === 'expired' && !pending;
                 const canConfirmWorthless = isManualWorthlessConfirmationEligible(trade);
                 const resolving = resolvingIds.has(trade.id);
                 const realizedPnl = getArchivedRealizedPnl(trade);
@@ -2717,20 +2728,23 @@ function ArchiveHistorySection({
                       {trade.resolutionWarning && <div className="mt-1 max-w-[260px] truncate text-[10px]" style={{ color: 'var(--text-dim)' }}>{trade.resolutionWarning}</div>}
                     </td>
                     <td className="px-2 py-1 whitespace-nowrap">
-                      <div className="flex items-center gap-1">
+                      <div className="portfolio-history-actions flex items-center gap-1">
                         {pending && (
-                          <button onClick={() => onRetryResolve(trade)} disabled={resolving} className="px-2 py-1.5 rounded text-[11px] disabled:opacity-50" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>
+                          <button type="button" onClick={() => onRetryResolve(trade)} disabled={resolving} className="px-2 py-1.5 rounded text-[11px] disabled:opacity-50" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>
                             {resolving ? 'Resolving...' : 'Retry Resolve'}
                           </button>
                         )}
                         {canConfirmWorthless && (
-                          <button onClick={() => onRequestWorthlessConfirmation(trade)} className="px-2 py-1.5 rounded text-[11px]" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Confirm Worthless</button>
+                          <button type="button" onClick={() => onRequestWorthlessConfirmation(trade)} className="px-2 py-1.5 rounded text-[11px]" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Confirm Worthless</button>
                         )}
-                        {canSetExpirationClose && (
-                          <button onClick={() => onManualExpirationClose(trade)} className="px-2 py-1.5 rounded text-[11px]" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Set Expiration Close</button>
+                        {canEnterExpirationPrice && (
+                          <button type="button" onClick={() => onManualExpirationClose(trade)} className="px-2 py-1.5 rounded text-[11px]" title="Enter the underlying price at expiration" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Enter Exp. Price</button>
                         )}
-                        <button onClick={() => onEdit(trade)} className="p-1.5 rounded" title="Edit" style={{ color: 'var(--text-muted)' }}><Edit2 className="w-3.5 h-3.5" /></button>
-                        <button onClick={() => onDelete(trade.id)} className="p-1.5 rounded" title="Delete" style={{ color: 'var(--red)' }}><Trash2 className="w-3.5 h-3.5" /></button>
+                        {canCorrectExpirationClose && (
+                          <button type="button" onClick={() => onManualExpirationClose(trade)} className="icon-button h-8 w-8 rounded-md" aria-label={`Correct Price @ Exp. for ${trade.ticker}`} title="Correct Price @ Exp." style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }}><Wrench className="h-3.5 w-3.5" /></button>
+                        )}
+                        <button type="button" onClick={() => onEdit(trade)} className="icon-button h-8 w-8 rounded-md" aria-label={`Edit ${trade.ticker} trade`} title="Edit" style={{ color: 'var(--text-muted)' }}><Edit2 className="w-3.5 h-3.5" /></button>
+                        <button type="button" onClick={() => onDelete(trade.id)} className="icon-button h-8 w-8 rounded-md" aria-label={`Delete ${trade.ticker} trade`} title="Delete" style={{ color: 'var(--red)' }}><Trash2 className="w-3.5 h-3.5" /></button>
                       </div>
                     </td>
                   </tr>

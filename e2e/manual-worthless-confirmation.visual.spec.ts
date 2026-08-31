@@ -36,21 +36,31 @@ test('manual worthless confirmation resolves History without market requests or 
   await expect(page.getByRole('heading', { name: 'Portfolio', exact: true })).toBeVisible();
   const pendingRow = page.getByRole('row').filter({ hasText: 'SOXL' }).last();
   await expect(pendingRow).toContainText('Expiration Price Pending');
+  await expect(pendingRow.getByRole('button', { name: 'Retry Resolve' })).toBeVisible();
   await expect(pendingRow.getByRole('button', { name: 'Confirm Worthless' })).toBeVisible();
+  await expect(pendingRow.getByRole('button', { name: 'Enter Exp. Price' })).toBeVisible();
   const requestsBeforeConfirmation = marketRequests.length;
 
   await pendingRow.getByRole('button', { name: 'Confirm Worthless' }).click();
   const dialog = page.getByRole('dialog', { name: 'Confirm expired worthless?' });
   await expect(dialog).toContainText('record final option value as $0 and keep Price @ Exp. unavailable');
-  await dialog.getByRole('button', { name: 'Confirm Expired Worthless', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.getByRole('row').filter({ hasText: 'SOXL' }).last()).toContainText('Expiration Price Pending');
+  await expect(page.getByRole('row').filter({ hasText: 'SOXL' }).last().getByRole('button', { name: 'Confirm Worthless' })).toBeVisible();
+
+  await page.getByRole('row').filter({ hasText: 'SOXL' }).last().getByRole('button', { name: 'Confirm Worthless' }).click();
+  await expect(page.getByRole('dialog', { name: 'Confirm expired worthless?' })).toBeVisible();
+  await page.getByRole('dialog', { name: 'Confirm expired worthless?' }).getByRole('button', { name: 'Confirm Expired Worthless', exact: true }).click();
 
   const resolvedRow = page.getByRole('row').filter({ hasText: 'SOXL' }).last();
   await expect(resolvedRow).toContainText('Expired Worthless');
   await expect(resolvedRow).toContainText('$246.90');
   await expect(resolvedRow).toContainText('100.00%');
   await expect(resolvedRow.locator('td').nth(10)).toHaveText('—');
-  await expect(resolvedRow.getByRole('button', { name: 'Set Expiration Close' })).toBeVisible();
+  await expect(resolvedRow.getByRole('button', { name: /Set Expiration Close/ })).toHaveCount(0);
+  await expect(resolvedRow.getByRole('button', { name: /Correct Price @ Exp\./ })).toBeVisible();
   await expect(resolvedRow.getByRole('button', { name: 'Confirm Worthless' })).toHaveCount(0);
+  await expect(resolvedRow.getByRole('button', { name: 'Enter Exp. Price' })).toHaveCount(0);
   await expect.poll(() => {
     const row = cloud.rows.find(candidate => candidate.namespace === 'portfolio');
     return (row?.payload.data as Array<Record<string, unknown>>)[0]?.resolutionSource;
