@@ -7,6 +7,7 @@ export default function MobilePositionRow({
   captured,
   mark,
   entryDelta,
+  showEntryDelta = true,
   currentDelta,
   freshness,
   distance,
@@ -23,6 +24,7 @@ export default function MobilePositionRow({
   captured: string;
   mark: string;
   entryDelta: string;
+  showEntryDelta?: boolean;
   currentDelta: string;
   freshness: string;
   distance: string;
@@ -43,7 +45,7 @@ export default function MobilePositionRow({
           <div><div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>P&amp;L</div><div className="font-mono text-[17px] font-semibold tabular-nums" style={{ color: pnl.startsWith('-') ? 'var(--red)' : 'var(--green)' }}>{pnl}</div></div>
           <div className="text-right"><div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Captured</div><div className="font-mono text-[15px] font-semibold tabular-nums" style={{ color: captured.startsWith('-') ? 'var(--red)' : 'var(--green)' }}>{captured}</div></div>
         </div>
-        <div className="mt-2 grid grid-cols-[1fr_1fr_1fr_auto] items-center gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}><span>Mark <b className="font-mono" style={{ color: 'var(--text)' }}>{mark}</b></span><span>Entry Δ <b className="font-mono" style={{ color: 'var(--text)' }}>{entryDelta}</b><br />Current Δ <b className="font-mono" style={{ color: 'var(--text)' }}>{currentDelta}</b></span><span className="truncate"><b className="font-mono" style={{ color: 'var(--text)' }}>{distance}</b> OTM<br />{freshness}</span><button type="button" onClick={event => { event.stopPropagation(); onEdit(); }} className="pointer-events-auto relative z-20 flex min-h-11 items-center px-2 font-semibold" style={{ color: 'var(--accent-light)' }}>Edit</button></div>
+        <div className="mt-2 grid grid-cols-[1fr_1fr_1fr_auto] items-center gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}><span>Mark <b className="font-mono" style={{ color: 'var(--text)' }}>{mark}</b></span><span>{showEntryDelta && <>Entry {'\u0394'} <b className="font-mono" style={{ color: 'var(--text)' }}>{entryDelta}</b><br /></>}Current {'\u0394'} <b className="font-mono" style={{ color: 'var(--text)' }}>{currentDelta}</b></span><span className="truncate"><b className="font-mono" style={{ color: 'var(--text)' }}>{distance}</b> OTM<br />{freshness}</span><button type="button" onClick={event => { event.stopPropagation(); onEdit(); }} className="pointer-events-auto relative z-20 flex min-h-11 items-center px-2 font-semibold" style={{ color: 'var(--accent-light)' }}>Edit</button></div>
       </div>
     </article>
   );

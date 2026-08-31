@@ -70,6 +70,7 @@ import {
   historyEntryNominalYield,
   historyEntryVix,
   historyFinalValue,
+  historyGrossRisk,
   historyPremium,
   historyPriceAtExpiration,
   historyRealizedIrr,
@@ -629,9 +630,9 @@ function MarkBasisToggle({ markBasis, onChange }: { markBasis: MarkBasis; onChan
   );
 }
 
-function DisplayToggle({ checked, onChange, label }: { checked: boolean; onChange: (checked: boolean) => void; label: string }) {
+function DisplayToggle({ checked, onChange, label, className = '' }: { checked: boolean; onChange: (checked: boolean) => void; label: string; className?: string }) {
   return (
-    <label className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] whitespace-nowrap cursor-pointer" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+    <label className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] whitespace-nowrap cursor-pointer ${className}`} style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
       <input type="checkbox" checked={checked} onChange={event => onChange(event.target.checked)} className="h-3.5 w-3.5" />
       {label}
     </label>
@@ -1304,6 +1305,7 @@ export default function PortfolioPage() {
   const [drawerSelection, setDrawerSelection] = useState<DrawerSelection | null>(null);
   const [markBasis, setMarkBasis] = useState<MarkBasis>(readPortfolioMarkBasis);
   const [showNominalYield, setShowNominalYield] = useState(readShowNominalYield);
+  const [showEntryDeltas, setShowEntryDeltas] = useState(false);
   const [showNotesErrors, setShowNotesErrors] = useState(false);
   const [showOpenInterestVolume, setShowOpenInterestVolume] = useState(false);
   const [sortField, setSortField] = useState<PortfolioScheduleSortField>('expiration');
@@ -1863,11 +1865,11 @@ export default function PortfolioPage() {
     });
   }, []);
 
-  const sortButton = (field: PortfolioScheduleSortField, label: string, align = 'text-right', title?: string) => {
+  const sortButton = (field: PortfolioScheduleSortField, label: string, align = 'text-right', title?: string, columnClass = '') => {
     const active = sortField === field;
     const nextDirection = active && sortDir === 'asc' ? 'descending' : 'ascending';
     return (
-    <th scope="col" aria-sort={active ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} className={`px-2 py-2 text-[11px] font-medium whitespace-nowrap ${align}`} style={{ color: 'var(--text-muted)' }}>
+    <th scope="col" aria-sort={active ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} className={`px-2 py-2 text-[11px] font-medium whitespace-nowrap ${align} ${columnClass}`} style={{ color: 'var(--text-muted)' }}>
       <button type="button" title={title} aria-label={`${label}, ${active ? `sorted ${sortDir === 'asc' ? 'ascending' : 'descending'}` : 'not sorted'}. Activate to sort ${nextDirection}.`} onClick={() => {
         if (sortField === field) setSortDir(dir => dir === 'asc' ? 'desc' : 'asc');
         else {
@@ -1881,7 +1883,7 @@ export default function PortfolioPage() {
     );
   };
 
-  const renderMobileScheduleTrade = (trade: PortfolioTrade) => <MobilePositionRow key={trade.id} ticker={trade.ticker} strike={formatCurrency(trade.strike)} contracts={trade.contracts} expiration={formatDteValue(calculateRemainingDte(trade))} pnl={formatCurrency(calculateTotalGainLoss(trade, markBasis), 0)} captured={formatPctValue(calculatePercentCaptured(trade, markBasis))} mark={formatOptionPrice(calculateCurrentOptionMark(trade, markBasis))} entryDelta={formatDelta(trade.entryDelta)} currentDelta={formatDelta(trade.latestMarketData?.delta)} freshness={getPortfolioQuoteFreshness(trade).label} distance={formatPctValue(calculateDistanceToStrike(trade))} entryVix={isFiniteNumber(trade.entryVixClose) ? trade.entryVixClose.toFixed(2) : DASH} health={getPositionHealth(trade)} onOpen={() => openDrawer(trade)} onEdit={() => setEditingTrade(trade)} />;
+  const renderMobileScheduleTrade = (trade: PortfolioTrade) => <MobilePositionRow key={trade.id} ticker={trade.ticker} strike={formatCurrency(trade.strike)} contracts={trade.contracts} expiration={formatDteValue(calculateRemainingDte(trade))} pnl={formatCurrency(calculateTotalGainLoss(trade, markBasis), 0)} captured={formatPctValue(calculatePercentCaptured(trade, markBasis))} mark={formatOptionPrice(calculateCurrentOptionMark(trade, markBasis))} entryDelta={formatDelta(trade.entryDelta)} showEntryDelta={showEntryDeltas} currentDelta={formatDelta(trade.latestMarketData?.delta)} freshness={getPortfolioQuoteFreshness(trade).label} distance={formatPctValue(calculateDistanceToStrike(trade))} entryVix={isFiniteNumber(trade.entryVixClose) ? trade.entryVixClose.toFixed(2) : DASH} health={getPositionHealth(trade)} onOpen={() => openDrawer(trade)} onEdit={() => setEditingTrade(trade)} />;
 
   if (isPhone) {
     return (
@@ -1920,6 +1922,9 @@ export default function PortfolioPage() {
                 </select>
                 <button type="button" onClick={() => setSortDir(direction => direction === 'asc' ? 'desc' : 'asc')} className="pressable mobile-control-button min-w-11 px-3" aria-label={`Sort ${sortDir === 'asc' ? 'ascending; activate for descending' : 'descending; activate for ascending'}`} title={sortDir === 'asc' ? 'Ascending' : 'Descending'}>{sortDir === 'asc' ? '↑' : '↓'}</button>
               </div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <DisplayToggle checked={showEntryDeltas} onChange={setShowEntryDeltas} label="Show Entry Deltas" className="min-h-11" />
+              </div>
             </div>
             {openTrades.length === 0 ? <div className="px-4 py-10 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No open positions.</div> : groupMode === 'none' ? <div className="space-y-2 px-2 py-2">{flatScheduleTrades.map(renderMobileScheduleTrade)}</div> : <div className="space-y-2 px-2 py-2">{scheduleGroups.map(group => {
               const key = scheduleGroupKey(group);
@@ -1949,7 +1954,6 @@ export default function PortfolioPage() {
       <div className="page-frame page-frame--wide portfolio-page__frame">
         <PageHeader
           title="Portfolio"
-          description="Sold-put positions, capital exposure, and lifecycle analytics."
           meta={<DataFreshness updatedAt={lastRefreshed} status={refreshing ? 'updating' : refreshWarning ? 'failed' : lastRefreshed ? 'cached' : 'stale'} label="Portfolio market marks" />}
           actions={<div className="portfolio-actions flex flex-wrap lg:flex-nowrap items-center justify-start lg:justify-end gap-2 lg:shrink-0">
             {trades.length > 0 && <MarkBasisToggle markBasis={markBasis} onChange={setMarkBasis} />}
@@ -2097,6 +2101,7 @@ export default function PortfolioPage() {
                   ))}
                 </div>
                 <DisplayToggle checked={showNominalYield} onChange={handleShowNominalYieldChange} label="Show Nominal Yield" />
+                <DisplayToggle checked={showEntryDeltas} onChange={setShowEntryDeltas} label="Show Entry Deltas" />
                 <DisplayToggle checked={showOpenInterestVolume} onChange={setShowOpenInterestVolume} label="Show OI / Volume" />
                 <DisplayToggle checked={showNotesErrors} onChange={setShowNotesErrors} label="Show Notes / Errors" />
                 {scheduleGroups.length > 0 && <button onClick={toggleAllScheduleGroups} className="rounded-lg px-2 py-1.5 text-[11px] whitespace-nowrap" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
@@ -2197,7 +2202,7 @@ export default function PortfolioPage() {
                       {sortButton('currentValue', 'Current Value')}
                       {sortButton('pnl', 'Total Gain/Loss')}
                       {sortButton('percentCaptured', '% Captured')}
-                      {sortButton('delta', 'Entry / Current Delta', 'text-right', 'Displays both values; sorting uses Current Delta.')}
+                      {sortButton('delta', showEntryDeltas ? 'Entry / Current Delta' : 'Current Delta', 'text-right', showEntryDeltas ? 'Displays both values; sorting uses Current Delta.' : 'Current option-chain Delta; sorting uses Current Delta.', showEntryDeltas ? 'min-w-[112px]' : 'min-w-[76px]')}
                       {sortButton('breakeven', 'Breakeven')}
                       {sortButton('underlying', 'Underlying')}
                       {sortButton('distanceToStrike', 'Distance to Strike')}
@@ -2289,7 +2294,7 @@ export default function PortfolioPage() {
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(currentValue, 0)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(totalGainLoss) }}>{formatCurrency(totalGainLoss, 0)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(calculatePercentCaptured(trade, markBasis)) }}>{formatPctValue(calculatePercentCaptured(trade, markBasis))}</td>
-                          <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap" title={getPortfolioQuoteFreshness(trade).reason}><span style={{ color: 'var(--text-muted)' }}>Entry {isValidEntryDelta(trade.entryDelta) ? <HoverTooltip content={<EntryDeltaTooltipContent trade={trade} />} ariaLabel={`${trade.ticker} Entry Delta details`}>{formatDelta(trade.entryDelta)}</HoverTooltip> : DASH}</span><br /><span style={{ color: pnlColor(delta) }}>Current {formatDelta(delta)}</span><br /><span className="text-[9px]" style={{ color: getPortfolioQuoteFreshness(trade).state === 'stale' || getPortfolioQuoteFreshness(trade).state === 'unavailable' ? 'var(--yellow)' : 'var(--text-dim)' }}>{getPortfolioQuoteFreshness(trade).label}</span></td>
+                          <td className={`px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap ${showEntryDeltas ? 'min-w-[112px]' : 'min-w-[76px]'}`} title={getPortfolioQuoteFreshness(trade).reason}>{showEntryDeltas ? <><span style={{ color: 'var(--text-muted)' }}>Entry {isValidEntryDelta(trade.entryDelta) ? <HoverTooltip content={<EntryDeltaTooltipContent trade={trade} />} ariaLabel={`${trade.ticker} Entry Delta details`}>{formatDelta(trade.entryDelta)}</HoverTooltip> : DASH}</span><br /><span style={{ color: pnlColor(delta) }}>Current {formatDelta(delta)}</span><br /></> : <span className="font-semibold" style={{ color: pnlColor(delta) }}>{formatDelta(delta)}<br /></span>}<span className="text-[9px]" style={{ color: getPortfolioQuoteFreshness(trade).state === 'stale' || getPortfolioQuoteFreshness(trade).state === 'unavailable' ? 'var(--yellow)' : 'var(--text-dim)' }}>{getPortfolioQuoteFreshness(trade).label}</span></td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(calculateBreakeven(trade))}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(trade.latestMarketData?.underlyingPrice ?? trade.entrySnapshot?.underlyingPrice)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: percentColor(calculateDistanceToStrike(trade)) }}>{formatPctValue(calculateDistanceToStrike(trade))}</td>
@@ -2500,9 +2505,19 @@ function ArchiveHistorySection({
   const visibleGroups = useMemo(() => buildHistoryGroups(visibleTrades, groupMode), [groupMode, visibleTrades]);
   const historyGroupLabel = (group: ReturnType<typeof buildHistoryGroups>[number]) => groupMode === 'expiration' ? formatHistoryDate(group.label) : group.label;
   const historyGroupKey = (group: ReturnType<typeof buildHistoryGroups>[number]) => `${groupMode}:${group.key}`;
+  const allHistoryGroupsCollapsed = groupMode !== 'none' && visibleGroups.length > 0
+    && visibleGroups.every(group => collapsedHistoryGroups[historyGroupKey(group)] === true);
   const toggleHistoryGroup = (group: ReturnType<typeof buildHistoryGroups>[number]) => {
     const key = historyGroupKey(group);
     setCollapsedHistoryGroups(current => ({ ...current, [key]: !current[key] }));
+  };
+  const toggleAllHistoryGroups = () => {
+    if (groupMode === 'none' || visibleGroups.length === 0) return;
+    const nextCollapsed = !allHistoryGroupsCollapsed;
+    setCollapsedHistoryGroups(current => ({
+      ...current,
+      ...Object.fromEntries(visibleGroups.map(group => [historyGroupKey(group), nextCollapsed])),
+    }));
   };
   if (trades.length === 0) return null;
 
@@ -2519,6 +2534,7 @@ function ArchiveHistorySection({
             <span className="shrink-0 px-1.5 text-[9px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Group by</span>
             {HISTORY_GROUP_OPTIONS.map(option => <button type="button" key={option.value} onClick={() => setGroupMode(option.value)} aria-pressed={groupMode === option.value} className="min-h-11 shrink-0 rounded-md px-2 py-1 text-[10px] font-semibold whitespace-nowrap sm:min-h-8" style={{ backgroundColor: groupMode === option.value ? 'var(--accent-bg)' : 'transparent', color: groupMode === option.value ? 'var(--accent-light)' : 'var(--text-muted)', border: `1px solid ${groupMode === option.value ? 'var(--accent-border)' : 'transparent'}` }}>{option.label}</button>)}
           </div>
+          {groupMode !== 'none' && visibleGroups.length > 0 && <button type="button" onClick={toggleAllHistoryGroups} className="min-h-11 shrink-0 rounded-lg px-2 py-1.5 text-[11px] whitespace-nowrap sm:min-h-8" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>{allHistoryGroupsCollapsed ? 'Expand All' : 'Collapse All'}</button>}
         </div>
       </div>
       <div className="portfolio-history-summary-grid grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-1.5 mb-2">
@@ -2542,7 +2558,10 @@ function ArchiveHistorySection({
            {groupMode !== 'none' && (
               <button type="button" className="portfolio-history-mobile-group-header" aria-expanded={!collapsed} onClick={() => toggleHistoryGroup(group)}>
                 <span className="portfolio-history-mobile-group-header__identity"><span className="portfolio-history-group-chevron" aria-hidden="true">{collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</span><span className="min-w-0"><strong>{label}</strong><small>{group.tradeCount} trades</small></span></span>
-                <span className="portfolio-history-mobile-group-header__totals"><span><small>Premium</small><strong>{formatCurrency(group.premium, 0)}</strong></span><span className="portfolio-history-mobile-group-header__pnl"><small>Realized P&amp;L</small><strong style={{ color: pnlColor(group.realizedPnl) }}>{formatCurrency(group.realizedPnl)}</strong></span></span>
+                <span className="portfolio-history-mobile-group-header__totals">
+                  <span className="portfolio-history-mobile-group-header__primary"><span><small>Premium</small><strong>{formatCurrency(group.premium, 0)}</strong></span><span className="portfolio-history-mobile-group-header__pnl"><small>Realized P&amp;L</small><strong style={{ color: pnlColor(group.realizedPnl) }}>{formatCurrency(group.realizedPnl)}</strong></span></span>
+                  <span className="portfolio-history-mobile-group-header__secondary" title="Days, NY, VIX, IRR, capture, and Entry Delta use the canonical group weighted values."><span>Risk {formatCurrency(group.grossRisk, 0)}</span><span>Days {formatAverageDays(group.weightedAverageDaysHeld)} · NY {formatPctValue(group.weightedAverageNy)}</span><span>VIX {isFiniteNumber(group.weightedAverageEntryVix) ? group.weightedAverageEntryVix.toFixed(1) : DASH} · IRR {formatPctValue(group.weightedAverageRealizedIrr)} · {formatPctValue(group.weightedAveragePercentCaptured)} cap · Δ {formatDelta(group.weightedAverageEntryDelta)}</span></span>
+                </span>
               </button>
             )}
           {(groupMode === 'none' || !collapsed) && group.trades.map(trade => {
@@ -2563,6 +2582,7 @@ function ArchiveHistorySection({
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <Metric label="Sold Price" value={formatHistoricalOptionPrice(trade.soldPrice)} />
+                <Metric label="Gross Risk" value={formatCurrency(historyGrossRisk(trade), 0)} />
                 <Metric label="Premium" value={formatCurrency(getArchivedPremium(trade))} color="var(--green)" />
                 <Metric label="Realized P&L" value={formatCurrency(realizedPnl)} color={pnlColor(realizedPnl)} />
                 <Metric label="Captured" value={formatPctValue(percentCaptured)} color={pnlColor(percentCaptured)} />
@@ -2590,7 +2610,7 @@ function ArchiveHistorySection({
           <table className="portfolio-history-table financial-table min-w-max w-full text-[12px] leading-none">
             <thead>
               <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
-                {['Ticker', 'Exp.', 'Strike', 'Contracts', 'Entry', 'Days Held', 'Sold Price', 'NY', 'VIX @ Entry', 'Price @ Exp.', 'Premium', 'Realized P&L', 'Realized IRR', '% Captured', 'Entry Delta', 'Outcome', 'Actions'].map((label, index) => (
+                {['Ticker', 'Exp.', 'Strike', 'Contracts', 'Gross Risk', 'Entry', 'Days Held', 'Sold Price', 'NY', 'VIX @ Entry', 'Price @ Exp.', 'Premium', 'Realized P&L', 'Realized IRR', '% Captured', 'Entry Delta', 'Outcome', 'Actions'].map((label, index) => (
                   <th key={label} title={label === 'NY' ? 'Nominal Yield: premium collected ÷ original Net Risk.' : label === 'VIX @ Entry' ? 'Stored VIX close captured at the trade entry date.' : label === 'Realized IRR' ? 'Date-aware money-weighted return across the realized History cash flows; this is not an average IRR.' : undefined} className={`px-2 py-2 text-[11px] font-medium whitespace-nowrap ${index === 0 || label === 'Outcome' || label === 'Actions' ? 'text-left' : 'text-right'}`} style={{ color: 'var(--text-muted)' }}>{label}</th>
                 ))}
               </tr>
@@ -2603,20 +2623,26 @@ function ArchiveHistorySection({
                 {groupMode !== 'none' && (
                   <>
                     <tr className="portfolio-history-group-header">
-                      <td colSpan={17}>
+                      <td colSpan={18}>
                         <button type="button" className="portfolio-history-group-toggle" aria-expanded={!collapsed} onClick={() => toggleHistoryGroup(group)}>
                           {collapsed ? <ChevronRight className="h-4 w-4" aria-hidden="true" /> : <ChevronDown className="h-4 w-4" aria-hidden="true" />}
-                          <span>{label}</span>
+                          <span>{label}</span><small>{group.tradeCount} trades</small>
                         </button>
                       </td>
                     </tr>
                     <tr className="portfolio-history-group-subtotal" aria-label={`${label} subtotal`}>
                       <td className="px-2 py-2 text-left"><span>{label}</span><small>{group.tradeCount} trades</small></td>
                       <td /><td /><td className="px-2 py-2 text-right font-mono tabular-nums">{group.contractCount}</td>
-                      <td /><td /><td /><td /><td /><td />
-                      <td className="px-2 py-2 text-right font-mono tabular-nums">{formatCurrency(group.premium, 0)}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums">{formatCurrency(group.grossRisk, 0)}</td>
+                      <td /><td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. Days Held: Gross-Risk-weighted average of known holding periods.">{formatAverageDays(group.weightedAverageDaysHeld)}</td>
+                      <td /><td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. NY: canonical Entry NY weighted by original Net Risk.">{formatPctValue(group.weightedAverageNy)}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. VIX @ Entry: Gross-Risk-weighted average of known stored entry VIX values.">{isFiniteNumber(group.weightedAverageEntryVix) ? group.weightedAverageEntryVix.toFixed(1) : DASH}</td>
+                      <td /><td className="px-2 py-2 text-right font-mono tabular-nums">{formatCurrency(group.premium, 0)}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums portfolio-history-group-subtotal__pnl" style={{ color: pnlColor(group.realizedPnl) }}>{formatCurrency(group.realizedPnl)}</td>
-                      <td /><td /><td /><td /><td />
+                      <td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. Realized IRR: Gross-Risk-weighted average of individual position Realized IRRs.">{formatPctValue(group.weightedAverageRealizedIrr)}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. % Captured: Premium-weighted average of individual position capture values.">{formatPctValue(group.weightedAveragePercentCaptured)}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. Entry Delta: Gross-Risk-weighted average of known historical Entry Delta values.">{formatDelta(group.weightedAverageEntryDelta)}</td>
+                      <td /><td />
                     </tr>
                   </>
                 )}
@@ -2633,6 +2659,7 @@ function ArchiveHistorySection({
                     <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatHistoryDate(trade.expiration)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatCurrency(trade.strike)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{trade.contracts}</td>
+                    <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatCurrency(historyGrossRisk(trade), 0)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatHistoryDate(trade.soldDate)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{formatDays(getTradeDaysHeld(trade))}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{formatHistoricalOptionPrice(trade.soldPrice)}</td>

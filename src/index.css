@@ -2383,6 +2383,12 @@ td {
   transition: background-color var(--transition-ui), color var(--transition-ui);
 }
 
+.portfolio-history-group-toggle small {
+  color: var(--text-tertiary);
+  font-size: 0.62rem;
+  font-weight: 540;
+}
+
 .portfolio-history-group-toggle:hover,
 .portfolio-history-group-toggle:focus-visible {
   background: var(--bg-elevated);
@@ -2427,7 +2433,7 @@ td {
   display: flex;
   width: 100%;
   min-height: 56px;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 0.75rem;
   padding: 0.55rem 0.7rem;
@@ -2454,6 +2460,8 @@ td {
 }
 
 .portfolio-history-mobile-group-header__identity {
+  flex: 1 1 auto;
+  min-width: 0;
   gap: 0.45rem;
 }
 
@@ -2479,9 +2487,27 @@ td {
 }
 
 .portfolio-history-mobile-group-header__totals {
-  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 68%;
+  flex: 0 1 auto;
   gap: 0.7rem;
   text-align: right;
+}
+
+.portfolio-history-mobile-group-header__primary {
+  display: flex;
+  gap: 0.7rem;
+}
+
+.portfolio-history-mobile-group-header__secondary {
+  display: grid;
+  margin-top: 0.2rem;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  line-height: 1.25;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .portfolio-history-mobile-group-header__totals strong {

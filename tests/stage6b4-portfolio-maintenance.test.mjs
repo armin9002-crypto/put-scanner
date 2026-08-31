@@ -291,8 +291,13 @@ test('Add Trade exposes manual Entry Delta only for historical entry while Edit 
   assert.match(page, /group\.contractCount/, 'History subtotals align additive contract totals under Contracts');
   assert.match(page, /group\.premium/, 'History subtotals align Premium under Premium');
   assert.match(page, /group\.realizedPnl/, 'History subtotals align realized P&L under Realized P&L');
-  assert.doesNotMatch(page, /portfolio-history-group-subtotal[\s\S]{0,600}group\.grossRisk/, 'History subtotals do not introduce a naive notional total');
-  assert.doesNotMatch(page, /group\.realizedIrr|average.*IRR.*group/i, 'History subtotals do not average IRR');
+  assert.match(page, /portfolio-history-group-subtotal[\s\S]{0,900}group\.grossRisk/, 'History subtotals align canonical Gross Risk under Gross Risk');
+  assert.match(page, /group\.weightedAverageRealizedIrr/, 'History subtotals use the canonical weighted individual IRR');
+  assert.match(page, /group\.weightedAverageDaysHeld/, 'History subtotals align weighted Days Held');
+  assert.match(page, /group\.weightedAverageNy/, 'History subtotals align weighted Entry NY');
+  assert.match(page, /group\.weightedAverageEntryVix/, 'History subtotals align weighted Entry VIX');
+  assert.match(page, /group\.weightedAveragePercentCaptured/, 'History subtotals align weighted % Captured');
+  assert.match(page, /group\.weightedAverageEntryDelta/, 'History subtotals align weighted Entry Delta');
   assert.doesNotMatch(page, /trades.*Premium.*P&amp;L/, 'History does not use the detached hanging group-summary sentence');
   const historyAnalytics = await read('src/lib/portfolioHistoryAnalytics.ts');
   assert.doesNotMatch(historyAnalytics, /fetch\(|requestMarketData|fetchOptions/, 'History analytics remain request-free');
@@ -316,7 +321,7 @@ test('historical entry UX keeps outcome states and repeated-entry actions in the
   assert.doesNotMatch(modal, /<option value="expired_price_pending"/);
 });
 
-test('History grouped table keeps its existing additive subtotal presentation before the dedicated UI pass', () => {
+test('History grouped table keeps canonical additive subtotal presentation across grouping modes', () => {
   const first = trade({ id: 'history-a', expiration: '2026-10-16', contracts: 2, status: 'closed', closePrice: 0.05, closeDate: '2026-10-16', entryVixClose: 22 });
   const second = trade({ id: 'history-b', expiration: '2026-12-18', contracts: 1, status: 'expired', resolutionType: 'expired_worthless', expirationClosePrice: 60, expirationCloseDate: '2026-12-18', entryVixClose: undefined });
   const groups = buildHistoryGroups([first, second], 'year');
