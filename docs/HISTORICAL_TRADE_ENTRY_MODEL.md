@@ -26,13 +26,25 @@ Moneyness never implies assignment.
 
 ### Corporate-action safety
 
-The Yahoo chart request also asks for split, dividend, and capital-gain events over the contract life. Automatic expiration math runs only when that provider event set is present and contains no event after entry through expiration.
+The existing bounded Yahoo chart request asks for `div`, `splits`, and `capitalGains`. Put Scanner normalizes only `split`, `dividend`, and `capital_gain`, and checks the interval after the sold date through expiration: `(soldDate, expiration]`. An action before entry or after expiration does not block; an action effective on the sold date is assumed to be reflected in the contract terms available for trading that day.
 
-This is intentionally conservative. OCC adjustments may change strike, deliverable, multiplier, or the underlying itself, while Put Scanner stores a standard 100-share put and does not store an adjusted option symbol or OCC deliverable. If Yahoo reports an in-contract action, or the event basis cannot be validated, the trade saves as internal Expiration Price Pending. The user can review it through Portfolio Maintenance; Put Scanner does not fabricate normalized economics.
+| Provider result during the contract window | Policy |
+|---|---|
+| No normalized action and valid event coverage | Resolve from the unadjusted underlying close. |
+| Forward split or reverse split | Pending. Strike, contract count, multiplier, or deliverable may have changed. |
+| Yahoo `dividend` | Pending. Ordinary dividends normally do not adjust listed options, but Yahoo supplies only date and amount and does not distinguish ordinary, special, liquidation, return-of-capital, or other potentially adjustable cash distributions. |
+| Yahoo `capital_gain` | Pending. OCC generally adjusts fund-share options for qualifying capital-gain distributions even when regularly scheduled. |
+| Missing/invalid event coverage | Pending. |
 
-Successful automatic resolution stores `provider_no_actions` basis provenance and the checked-from entry date. A later economic edit may reuse that close only when the marker covers the contract life. Legacy resolved records without the marker remain displayable; changing only Notes or Entry Delta is request-free, while an edit that changes their realized economics revalidates the expiration basis before reuse.
+This policy knowingly prefers some false-positive pending states over false historical P&L. OCC generally does not adjust options for ordinary cash dividends, but makes non-ordinary and special-distribution decisions case by case. The current Yahoo payload cannot prove that a `dividend` event was ordinary: known ordinary and OCC-adjusting special distributions have the same `{ amount, date }` shape, and an ETF capital-gain distribution may also be aggregated under Yahoo `dividends`. Whitelisting that label would therefore be unsafe.
 
-References: [Yahoo adjusted-close definition](https://help.yahoo.com/kb/adjusted-close-sln28256.html), [Options Industry Council corporate-action guidance](https://www.optionseducation.org/referencelibrary/faq/splits-mergers-spinoffs-bankruptcies).
+The provider taxonomy is not an OCC contract-adjustment record and does not identify every merger, spinoff, rights distribution, liquidation, symbol/security change, or nonstandard deliverable. `provider_no_actions` means no normalized split/dividend/capital-gain event in the checked window; it is not a universal guarantee that no other contract event existed. Put Scanner does not guess an adjusted strike or deliverable.
+
+Successful automatic resolution stores `provider_no_actions` basis provenance and the checked-from entry date. A later economic edit may reuse that close only when the marker covers the contract life. Any surfaced action or unverifiable coverage saves the trade as Expiration Price Pending for explicit Portfolio Maintenance. Existing realized History is never rewritten automatically.
+
+The expiration comparison continues to use Yahoo `indicators.quote[0].close`, not `adjclose`. A standard historical strike is compared with the actual unadjusted underlying close on expiration (or the nearest prior trading close); Yahoo adjusted close deliberately rewrites earlier prices for splits and distributions and is not a substitute for knowing the option contract terms.
+
+References: [Yahoo adjusted-close definition](https://help.yahoo.com/kb/SLN28256.html), [OCC Characteristics and Risks of Standardized Options](https://www.theocc.com/company-information/documents-and-archives/options-disclosure-document), [OCC cash-dividend and distribution guidance](https://www.theocc.com/getmedia/21ed2c99-ab15-472a-aef1-a142f140e2b7/Interpretative-Guidance-on-the-Adjustment-Policy-for-Cash-Dividends-and-Distributions.pdf), [OCC contract-adjustment information memos](https://infomemo.theocc.com/infomemo/search).
 
 ### Closed / Bought Back
 

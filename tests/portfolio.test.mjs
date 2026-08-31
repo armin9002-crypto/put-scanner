@@ -318,17 +318,56 @@ test('historical manual Entry Delta accepts either sign, preserves zero, and sto
   assert.deepEqual([prepared.entryDelta, prepared.entryDeltaSource], [-0.1235, 'manual']);
 });
 
-test('historical expiration failure saves pending and corporate actions fail closed', async () => {
+test('historical expiration corporate-action guard is deterministic across provider events and contract boundaries', async () => {
   const prepared = prepareManualTradeForSave(historicalInput({ ticker: 'SOXL' }), null, { mode: 'historical', historicalOutcome: 'held_to_expiration' });
   const unavailable = await resolvePreparedManualTrade(prepared, { lookup: async () => null });
   assert.equal(unavailable.status, 'expired_price_pending');
   assert.equal(historyRealizedPnl(unavailable), null);
 
-  const actions = [{ type: 'split', timestamp: Date.parse('2025-06-01T00:00:00Z') / 1000, date: '2025-06-01T00:00:00Z', splitRatio: '1:10' }];
-  const basis = assessExpirationCorporateActionBasis(actions, '2025-05-01', '2025-06-20');
-  assert.equal(basis.safe, false);
-  assert.match(basis.warning, /corporate action/);
+  const action = (ticker, type, date, details = {}) => ({
+    ticker,
+    type,
+    timestamp: Date.parse(`${date}T00:00:00Z`) / 1000,
+    date: `${date}T00:00:00Z`,
+    ...details,
+  });
+  const start = '2025-05-01';
+  const expiration = '2025-06-20';
+  const forwardSplit = action('TQQQ', 'split', '2025-06-01', { splitRatio: '2:1', numerator: 2, denominator: 1 });
+  const reverseSplit = action('SOXL', 'split', '2025-06-02', { splitRatio: '1:10', numerator: 1, denominator: 10 });
+  const ordinaryDividend = action('LABU', 'dividend', '2025-06-03', { amount: 0.08 });
+  const capitalGain = action('SSO', 'capital_gain', '2025-06-04', { amount: 1.25 });
+  const specialDividend = action('TQQQ', 'dividend', '2025-06-05', { amount: 15 });
+
   assert.equal(assessExpirationCorporateActionBasis([], '2025-05-01', '2025-06-20').safe, true);
+  for (const fixture of [forwardSplit, reverseSplit, ordinaryDividend, capitalGain, specialDividend]) {
+    const assessment = assessExpirationCorporateActionBasis([fixture], start, expiration);
+    assert.equal(assessment.safe, false, `${fixture.ticker} ${fixture.type} remains fail-closed`);
+    assert.match(assessment.warning, /adjusted option deliverables/);
+  }
+
+  assert.equal(assessExpirationCorporateActionBasis([
+    action('TQQQ', 'split', '2025-04-30', { splitRatio: '2:1' }),
+  ], start, expiration).safe, true, 'an event before entry does not affect the entered contract basis');
+  assert.equal(assessExpirationCorporateActionBasis([
+    action('SOXL', 'split', '2025-05-01', { splitRatio: '1:10' }),
+  ], start, expiration).safe, true, 'an effective event on entry day is already reflected in that day\'s listed contract');
+  assert.equal(assessExpirationCorporateActionBasis([
+    action('LABU', 'dividend', '2025-06-21', { amount: 0.25 }),
+  ], start, expiration).safe, true, 'an event after expiration is irrelevant');
+  assert.equal(assessExpirationCorporateActionBasis([
+    action('SSO', 'capital_gain', '2025-04-15', { amount: 0.5 }),
+    action('SSO', 'dividend', '2025-06-10', { amount: 0.25 }),
+    action('SSO', 'split', '2025-07-01', { splitRatio: '2:1' }),
+  ], start, expiration).safe, false, 'multiple events fail closed when any ambiguous event is in contract');
+  assert.equal(assessExpirationCorporateActionBasis([
+    action('TQQQ', 'split', expiration, { splitRatio: '2:1' }),
+  ], start, expiration).safe, false, 'expiration-date actions are inside the contract window');
+  assert.equal(assessExpirationCorporateActionBasis(null, start, expiration).safe, false);
+  assert.equal(assessExpirationCorporateActionBasis(undefined, start, expiration).safe, false);
+  assert.equal(assessExpirationCorporateActionBasis([], 'invalid', expiration).safe, false);
+
+  const basis = assessExpirationCorporateActionBasis([reverseSplit], start, expiration);
   const blocked = await resolvePreparedManualTrade(prepared, { lookup: async () => { throw new Error(basis.warning); } });
   assert.equal(blocked.status, 'expired_price_pending');
   assert.match(blocked.resolutionWarning, /adjusted option deliverables/);
