@@ -25,6 +25,14 @@ export function isPastExpirationDate(expiration: string, marketDate = usMarketDa
   return /^\d{4}-\d{2}-\d{2}$/.test(expiration) && expiration < marketDate;
 }
 
+/** Automatic Add/Edit mode uses a New York market-date string comparison only. */
+export function inferManualTradeModeFromExpiration(
+  expiration: string,
+  marketDate = usMarketDateIso(),
+): ManualTradeMode {
+  return isPastExpirationDate(expiration, marketDate) ? 'historical' : 'open';
+}
+
 export function inferManualTradeMode(trade: PortfolioTrade | null, marketDate = usMarketDateIso()): ManualTradeMode {
   if (!trade) return 'open';
   return trade.status === 'open' && !isPastExpirationDate(trade.expiration, marketDate) ? 'open' : 'historical';
@@ -98,6 +106,14 @@ export function prepareManualTradeForSave(
       entryDelta: undefined,
       entryDeltaSource: undefined,
       entryDeltaCapturedAt: undefined,
+    };
+  }
+  if (identityChanged && candidate.entryIvSource !== 'manual') {
+    candidate = {
+      ...candidate,
+      entryIv: undefined,
+      entryIvSource: undefined,
+      entryIvCapturedAt: undefined,
     };
   }
   candidate = reconcilePortfolioTradeEconomics(existing, candidate);

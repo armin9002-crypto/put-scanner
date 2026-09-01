@@ -6,7 +6,7 @@ import {
   calculateOriginalNominalYield,
   calculatePremiumCollected,
 } from './portfolioMetrics.ts';
-import { isValidEntryDelta } from './portfolioEntryDelta.ts';
+import { isValidEntryDelta, isValidEntryIv } from './portfolioEntryDelta.ts';
 import {
   canonicalHistoricalDaysHeld,
   canonicalHistoricalFinalOptionValue,
@@ -35,6 +35,8 @@ export interface HistoryGroupAggregates {
   entryVixCoverage: number | null;
   weightedAverageEntryDelta: number | null;
   entryDeltaCoverage: number | null;
+  weightedAverageEntryIv: number | null;
+  entryIvCoverage: number | null;
   weightedAverageRealizedIrr: number | null;
   weightedAveragePercentCaptured: number | null;
 }
@@ -258,6 +260,14 @@ export function calculateHistoryWeightedEntryDelta(trades: PortfolioTrade[]): Hi
   );
 }
 
+export function historyEntryIv(trade: PortfolioTrade): number | null {
+  return isValidEntryIv(trade.entryIv) ? trade.entryIv! : null;
+}
+
+export function calculateHistoryWeightedEntryIv(trades: PortfolioTrade[]): HistoryGrossRiskWeightedMetric {
+  return calculateGrossRiskWeightedHistoryMetric(trades, historyEntryIv);
+}
+
 /**
  * Canonical numeric aggregates for any History group. Group identity never changes
  * the formulas: exposure and yield metrics use Gross Risk,
@@ -267,6 +277,7 @@ export function buildHistoryGroupAggregates(trades: PortfolioTrade[]): HistoryGr
   const realizedPnlValues = trades.map(historyRealizedPnl).filter(isFiniteNumber);
   const entryVix = calculateGrossRiskWeightedHistoryMetric(trades, historyEntryVix);
   const entryDelta = calculateHistoryWeightedEntryDelta(trades);
+  const entryIv = calculateHistoryWeightedEntryIv(trades);
   return {
     tradeCount: trades.length,
     contractCount: trades.reduce((sum, trade) => sum + trade.contracts, 0),
@@ -279,6 +290,8 @@ export function buildHistoryGroupAggregates(trades: PortfolioTrade[]): HistoryGr
     entryVixCoverage: entryVix.coverage,
     weightedAverageEntryDelta: entryDelta.value,
     entryDeltaCoverage: entryDelta.coverage,
+    weightedAverageEntryIv: entryIv.value,
+    entryIvCoverage: entryIv.coverage,
     weightedAverageRealizedIrr: calculateGrossRiskWeightedHistoryMetric(trades, historyRealizedIrr).value,
     weightedAveragePercentCaptured: calculateWeightedHistoryMetric(trades, historyPercentCaptured, historyPremium),
   };
@@ -355,6 +368,7 @@ export function buildHistoryAnalytics(trades: PortfolioTrade[]) {
   const totalOutcomes = Object.values(counts).reduce((sum, value) => sum + value, 0);
   const originalAyItems = resolved.map(item => calculateOriginalAnnualizedYield(item.trade)).filter((value): value is number => value != null);
   const entryDelta = calculateHistoryWeightedEntryDelta(trades);
+  const entryIv = calculateHistoryWeightedEntryIv(trades);
   return {
     resolvedTrades: resolved.length,
     realizedPnl: resolved.length ? realizedPnl : null,
@@ -365,6 +379,8 @@ export function buildHistoryAnalytics(trades: PortfolioTrade[]) {
     totalRealizedIrr: calculateHistoryTotalRealizedIrr(trades),
     weightedAverageEntryDelta: entryDelta.value,
     entryDeltaCoverage: entryDelta.coverage,
+    weightedAverageEntryIv: entryIv.value,
+    entryIvCoverage: entryIv.coverage,
     totalHistoricalNotional: calculateTotalHistoricalNotional(trades),
     counts,
     percentages: Object.fromEntries(Object.entries(counts).map(([key, value]) => [key, totalOutcomes ? value / totalOutcomes : 0])) as Record<keyof typeof counts, number>,
@@ -375,9 +391,8 @@ export function buildMonthlyRealizedPnl(trades: PortfolioTrade[]) {
   const months = new Map<string, { month: string; trades: number; premiumCollected: number; realizedPnl: number }>();
   trades.forEach(trade => {
     const pnl = historyRealizedPnl(trade);
-    const resolvedDate = trade.closeDate ?? trade.resolvedDate ?? (trade.status === 'expired' ? trade.expiration : null);
-    if (pnl == null || !resolvedDate || !/^\d{4}-\d{2}/.test(resolvedDate)) return;
-    const month = resolvedDate.slice(0, 7);
+    if (pnl == null || !isIsoDate(trade.expiration)) return;
+    const month = trade.expiration.slice(0, 7);
     const current = months.get(month) ?? { month, trades: 0, premiumCollected: 0, realizedPnl: 0 };
     current.trades += 1;
     current.premiumCollected += historyPremium(trade) ?? 0;

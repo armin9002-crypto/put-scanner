@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import {
   buildHistoryGroupAggregates,
   buildHistoryGroups,
+  buildHistoryAnalytics,
   calculateHistoryTotalRealizedIrr,
   calculateHistoryWeightedEntryDelta,
+  calculateHistoryWeightedEntryIv,
   historyEntryNominalYield,
   historyGrossRisk,
   historyPercentCaptured,
@@ -88,24 +90,38 @@ test('Wtd. Avg. NY follows canonical Entry NY Gross-Risk weighting and reconcile
   assertClose(aggregates.weightedAverageNy, premium / grossRisk, 'Entry NY reconciliation');
 });
 
-test('VIX and Entry Delta use Gross-Risk weighting, preserve zero, exclude missing values, and report coverage', () => {
+test('VIX, Entry Delta, and Entry IV use Gross-Risk weighting, exclude missing values, and report coverage', () => {
   const items = [
-    trade({ id: 'small-known', strike: 50, entryVixClose: 20, entryDelta: -0.2 }),
-    trade({ id: 'large-known', strike: 50, contracts: 3, entryVixClose: 30, entryDelta: -0.4 }),
+    trade({ id: 'small-known', strike: 50, entryVixClose: 20, entryDelta: -0.2, entryIv: 40 }),
+    trade({ id: 'large-known', strike: 50, contracts: 3, entryVixClose: 30, entryDelta: -0.4, entryIv: 80 }),
     trade({ id: 'missing', strike: 100, entryVixClose: undefined, entryDelta: undefined }),
-    trade({ id: 'zero-known', strike: 50, entryVixClose: 0, entryDelta: 0 }),
+    trade({ id: 'zero-known', strike: 50, entryVixClose: 0, entryDelta: 0, entryIv: 0 }),
   ];
   const aggregates = buildHistoryGroupAggregates(items);
   const establishedDelta = calculateHistoryWeightedEntryDelta(items);
+  const establishedIv = calculateHistoryWeightedEntryIv(items);
 
   assert.equal(aggregates.weightedAverageEntryVix, (20 * 5_000 + 30 * 15_000 + 0 * 5_000) / 25_000);
   assert.equal(aggregates.entryVixCoverage, 25_000 / 35_000);
   assert.equal(aggregates.weightedAverageEntryDelta, (-0.2 * 5_000 + -0.4 * 15_000 + 0 * 5_000) / 25_000);
   assert.equal(aggregates.entryDeltaCoverage, 25_000 / 35_000);
+  assert.equal(aggregates.weightedAverageEntryIv, (40 * 5_000 + 80 * 15_000) / 20_000);
+  assert.equal(aggregates.entryIvCoverage, 20_000 / 35_000, 'missing and zero-invalid IV are excluded from known exposure');
   assert.deepEqual(
     [aggregates.weightedAverageEntryDelta, aggregates.entryDeltaCoverage],
     [establishedDelta.value, establishedDelta.coverage],
     'group Entry Delta reuses the established historical weighting convention',
+  );
+  assert.deepEqual(
+    [aggregates.weightedAverageEntryIv, aggregates.entryIvCoverage],
+    [establishedIv.value, establishedIv.coverage],
+    'group Entry IV reuses the established historical weighting convention',
+  );
+  const headline = buildHistoryAnalytics(items);
+  assert.deepEqual(
+    [headline.weightedAverageEntryIv, headline.entryIvCoverage],
+    [aggregates.weightedAverageEntryIv, aggregates.entryIvCoverage],
+    'headline and every group share the same Entry IV weighting and coverage',
   );
 });
 
@@ -150,8 +166,8 @@ test('Wtd. Avg. % Captured uses Premium weighting and reconciles winners, losses
 
 test('Year, Expiry, and Underlying grouping apply identical aggregate economics to the same rows', () => {
   const rows = [
-    trade({ id: 'group-one', ticker: 'AAA', expiration: '2027-06-18', strike: 50, entryVixClose: 20, entryDelta: -0.2 }),
-    trade({ id: 'group-two', ticker: 'AAA', expiration: '2027-06-18', strike: 100, entryVixClose: 30, entryDelta: -0.4 }),
+    trade({ id: 'group-one', ticker: 'AAA', expiration: '2027-06-18', strike: 50, entryVixClose: 20, entryDelta: -0.2, entryIv: 40 }),
+    trade({ id: 'group-two', ticker: 'AAA', expiration: '2027-06-18', strike: 100, entryVixClose: 30, entryDelta: -0.4, entryIv: 70 }),
   ];
   const aggregateKeys = Object.keys(buildHistoryGroupAggregates(rows));
   const economics = mode => {

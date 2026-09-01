@@ -9,6 +9,7 @@ export type PortfolioExpirationBasisStatus = 'provider_no_actions';
 export type PortfolioAvailabilityStatus = 'live' | 'expired' | 'unavailable' | 'refresh_failed' | 'stale' | 'imported_snapshot';
 export type PortfolioEntryVixSource = 'historical_close' | 'nearest_prior_close';
 export type PortfolioEntryDeltaSource = 'provider' | 'calculated' | 'manual' | 'imported' | 'stored_snapshot';
+export type PortfolioEntryIvSource = 'provider' | 'manual' | 'imported' | 'stored_snapshot';
 
 export interface PortfolioTradeSnapshot {
   underlyingPrice?: number | null;
@@ -87,6 +88,10 @@ export interface PortfolioTrade {
   entryDelta?: number;
   entryDeltaSource?: PortfolioEntryDeltaSource;
   entryDeltaCapturedAt?: string;
+  /** Exact-contract implied volatility at entry, stored in percentage points (for example 65.4 means 65.4%). */
+  entryIv?: number;
+  entryIvSource?: PortfolioEntryIvSource;
+  entryIvCapturedAt?: string;
   resolutionSource?: PortfolioResolutionSource;
   resolutionWarning?: string;
   createdAt: string;
@@ -129,6 +134,7 @@ const VALID_RESOLUTION_TYPES: PortfolioResolutionType[] = ['expired_worthless', 
 const VALID_RESOLUTION_SOURCES: PortfolioResolutionSource[] = ['expiration_close', 'manual_expiration_close', 'manual_worthless_confirmation'];
 const VALID_AVAILABILITY: PortfolioAvailabilityStatus[] = ['live', 'expired', 'unavailable', 'refresh_failed', 'stale', 'imported_snapshot'];
 const VALID_ENTRY_DELTA_SOURCES: PortfolioEntryDeltaSource[] = ['provider', 'calculated', 'manual', 'imported', 'stored_snapshot'];
+const VALID_ENTRY_IV_SOURCES: PortfolioEntryIvSource[] = ['provider', 'manual', 'imported', 'stored_snapshot'];
 
 function getStorage(): StorageLike | null {
   return getAccountStateStorage();
@@ -328,6 +334,13 @@ export function normalizePortfolioTrade(
       : 'imported'
     : undefined;
   const entryDeltaCapturedAt = entryDelta !== undefined ? normalizeIsoTimestamp(raw.entryDeltaCapturedAt) : undefined;
+  const entryIv = positiveNumber(raw.entryIv) ?? undefined;
+  const entryIvSource = entryIv !== undefined
+    ? typeof raw.entryIvSource === 'string' && VALID_ENTRY_IV_SOURCES.includes(raw.entryIvSource as PortfolioEntryIvSource)
+      ? raw.entryIvSource as PortfolioEntryIvSource
+      : 'imported'
+    : undefined;
+  const entryIvCapturedAt = entryIv !== undefined ? normalizeIsoTimestamp(raw.entryIvCapturedAt) : undefined;
   const resolutionType = typeof raw.resolutionType === 'string' && VALID_RESOLUTION_TYPES.includes(raw.resolutionType as PortfolioResolutionType)
     ? raw.resolutionType as PortfolioResolutionType
     : undefined;
@@ -366,6 +379,11 @@ export function normalizePortfolioTrade(
       entryDelta,
       entryDeltaSource,
       ...(entryDeltaCapturedAt ? { entryDeltaCapturedAt } : {}),
+    } : {}),
+    ...(entryIv !== undefined ? {
+      entryIv,
+      entryIvSource,
+      ...(entryIvCapturedAt ? { entryIvCapturedAt } : {}),
     } : {}),
     resolutionSource,
     resolutionWarning: typeof raw.resolutionWarning === 'string' ? raw.resolutionWarning : undefined,
@@ -414,6 +432,11 @@ function invalidPortfolioEnumFields(entry: Record<string, unknown>): boolean {
       && (typeof entry.entryDeltaSource !== 'string' || !VALID_ENTRY_DELTA_SOURCES.includes(entry.entryDeltaSource as PortfolioEntryDeltaSource)))
     || (entry.entryDelta === undefined && (entry.entryDeltaSource !== undefined || entry.entryDeltaCapturedAt !== undefined))
     || (entry.entryDeltaCapturedAt !== undefined && normalizeIsoTimestamp(entry.entryDeltaCapturedAt) === undefined)
+    || (entry.entryIv !== undefined && positiveNumber(entry.entryIv) == null)
+    || (entry.entryIvSource !== undefined
+      && (typeof entry.entryIvSource !== 'string' || !VALID_ENTRY_IV_SOURCES.includes(entry.entryIvSource as PortfolioEntryIvSource)))
+    || (entry.entryIv === undefined && (entry.entryIvSource !== undefined || entry.entryIvCapturedAt !== undefined))
+    || (entry.entryIvCapturedAt !== undefined && normalizeIsoTimestamp(entry.entryIvCapturedAt) === undefined)
     || (entry.expirationBasisStatus !== undefined && entry.expirationBasisStatus !== 'provider_no_actions')
     || (entry.expirationBasisStatus === undefined && entry.expirationBasisCheckedFrom !== undefined)
     || (entry.expirationBasisCheckedFrom !== undefined && normalizeIsoDate(entry.expirationBasisCheckedFrom) === undefined);

@@ -46,6 +46,9 @@ const trade = (id, note, overrides = {}) => ({
   entryDelta: -0.24,
   entryDeltaSource: 'provider',
   entryDeltaCapturedAt: '2026-08-13T15:31:00.000Z',
+  entryIv: 43.8,
+  entryIvSource: 'provider',
+  entryIvCapturedAt: '2026-08-13T15:31:00.000Z',
   createdAt: '2026-08-13T15:30:00.000Z',
   updatedAt: '2026-08-13T15:30:00.000Z',
   ...overrides,
@@ -309,7 +312,7 @@ test('two devices use stale-CAS protection; stale device reloads latest and can 
   assert.equal(backend.state.portfolio.payload.data[0].notes, 'Device B retry');
 });
 
-test('realized Sold Price and Entry Delta edits survive CAS, conflict rollback, and fresh cloud bootstrap', async t => {
+test('realized Sold Price, Entry Delta, and Entry IV edits survive CAS, conflict rollback, and fresh cloud bootstrap', async t => {
   const realized = trade('realized', 'history', {
     status: 'closed', closePrice: 0.5, closeDate: '2026-09-01', premiumCollected: 250, realizedPnl: 150, percentCaptured: 0.6,
   });
@@ -330,11 +333,14 @@ test('realized Sold Price and Entry Delta edits survive CAS, conflict rollback, 
     entryDelta: -0.31,
     entryDeltaSource: 'manual',
     entryDeltaCapturedAt: '2026-08-30T12:00:00.000Z',
+    entryIv: 71.2,
+    entryIvSource: 'manual',
+    entryIvCapturedAt: '2026-08-30T12:00:00.000Z',
   }))).status, 'ok');
   await waitFor(() => backend.state.portfolio.revision === 11);
   assert.deepEqual(
-    [backend.state.portfolio.payload.data[0].soldPrice, backend.state.portfolio.payload.data[0].premiumCollected, backend.state.portfolio.payload.data[0].realizedPnl, backend.state.portfolio.payload.data[0].entryDelta],
-    [2.3456, 469.12, 369.12, -0.31],
+    [backend.state.portfolio.payload.data[0].soldPrice, backend.state.portfolio.payload.data[0].premiumCollected, backend.state.portfolio.payload.data[0].realizedPnl, backend.state.portfolio.payload.data[0].entryDelta, backend.state.portfolio.payload.data[0].entryIv],
+    [2.3456, 469.12, 369.12, -0.31, 71.2],
   );
 
   const staleState = readPortfolioTrades(stale.storage);
@@ -342,8 +348,8 @@ test('realized Sold Price and Entry Delta edits survive CAS, conflict rollback, 
   await waitFor(() => stale.manager.getSnapshot().phase === 'conflict');
   assert.equal(backend.state.portfolio.payload.data[0].soldPrice, 2.3456);
   assert.deepEqual(
-    [readPortfolioTrades(stale.storage).data[0].soldPrice, readPortfolioTrades(stale.storage).data[0].entryDelta],
-    [2.3456, -0.31],
+    [readPortfolioTrades(stale.storage).data[0].soldPrice, readPortfolioTrades(stale.storage).data[0].entryDelta, readPortfolioTrades(stale.storage).data[0].entryIv],
+    [2.3456, -0.31, 71.2],
     'conflict rollback hydrates the authoritative edited economics',
   );
 
@@ -351,7 +357,7 @@ test('realized Sold Price and Entry Delta edits survive CAS, conflict rollback, 
   t.after(() => fresh.manager.destroy());
   await fresh.manager.setAccount(userId, true);
   const bootstrapped = readPortfolioTrades(fresh.storage).data[0];
-  assert.deepEqual([bootstrapped.soldPrice, bootstrapped.premiumCollected, bootstrapped.realizedPnl, bootstrapped.entryDelta], [2.3456, 469.12, 369.12, -0.31]);
+  assert.deepEqual([bootstrapped.soldPrice, bootstrapped.premiumCollected, bootstrapped.realizedPnl, bootstrapped.entryDelta, bootstrapped.entryIv], [2.3456, 469.12, 369.12, -0.31, 71.2]);
 });
 
 test('manual worthless confirmation survives cloud CAS, sign-in bootstrap, backup, and restore without an expiration price', async t => {
@@ -434,6 +440,7 @@ test('signed-in backup is built from canonical cloud rows and explicit restore u
   assert.ok(cloud);
   const backup = createPutScannerBackupFromCloudState(cloud, { now: fixedNow, appVersion: '7.0.0' });
   assert.equal(backup.data.portfolio.data[0].entryDelta, -0.24);
+  assert.equal(backup.data.portfolio.data[0].entryIv, 43.8);
   assert.equal(backup.data.portfolio.revision, 10);
 
   const edited = validatePutScannerBackup(clone(backup));

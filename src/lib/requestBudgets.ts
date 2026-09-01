@@ -65,7 +65,7 @@ export const REQUEST_BUDGET_LEDGER: Record<RequestBudgetWorkflow, RequestBudgetL
     expected: { browserRequests: 0, functionInvocations: 0, providerAcquisitions: 0 },
     ceiling: { browserRequests: 1, functionInvocations: 1, providerAcquisitions: 1 },
     providerHttpAttemptCeiling: 6,
-    fixture: 'one same-market-date exact contract; cached chain costs zero, cold manual/OCR capture costs one bounded chain acquisition',
+    fixture: 'one same-market-date exact contract observation carrying Entry Delta plus Entry IV; a loaded chain costs zero and a cold capture costs one bounded chain acquisition',
   },
   'portfolio-historical-expiration-save': {
     expected: { browserRequests: 0, functionInvocations: 0, providerAcquisitions: 0 },

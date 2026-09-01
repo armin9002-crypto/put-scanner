@@ -306,7 +306,7 @@ test('historical bought-back trades use close economics, including a buyback on 
   assert.ok(Math.abs(historyRealizedPnl(sameDay) - 196.9) < 1e-10);
 });
 
-test('historical manual Entry Delta accepts either sign, preserves zero, and stores canonical manual provenance', () => {
+test('historical manual Entry Delta and percentage-point Entry IV store canonical manual provenance without requests', () => {
   assert.equal(normalizeManualHistoricalEntryDelta(0.2271), -0.2271);
   assert.equal(normalizeManualHistoricalEntryDelta(-0.2271), -0.2271);
   assert.equal(normalizeManualHistoricalEntryDelta(0), 0);
@@ -315,8 +315,11 @@ test('historical manual Entry Delta accepts either sign, preserves zero, and sto
     entryDelta: normalizeManualHistoricalEntryDelta(0.1235),
     entryDeltaSource: 'manual',
     entryDeltaCapturedAt: '2026-08-30T12:00:00Z',
+    entryIv: 65.4,
+    entryIvSource: 'manual',
+    entryIvCapturedAt: '2026-08-30T12:00:00Z',
   }), null, { mode: 'historical', historicalOutcome: 'closed' }).trade;
-  assert.deepEqual([prepared.entryDelta, prepared.entryDeltaSource], [-0.1235, 'manual']);
+  assert.deepEqual([prepared.entryDelta, prepared.entryDeltaSource, prepared.entryIv, prepared.entryIvSource], [-0.1235, 'manual', 65.4, 'manual']);
 });
 
 test('historical expiration corporate-action guard is deterministic across provider events and contract boundaries', async () => {
@@ -525,8 +528,9 @@ test('historical identity edits invalidate dependent snapshots while unrelated e
   const existing = resolveExpiredTradeWithClose(trade({
     id: 'held-edit', ticker: 'TQQQ', expiration: '2025-06-20', soldDate: '2025-05-01', status: 'open',
     entryDelta: -0.25, entryDeltaSource: 'provider', entryDeltaCapturedAt: '2025-05-01T15:00:00Z',
+    entryIv: 48.5, entryIvSource: 'provider', entryIvCapturedAt: '2025-05-01T15:00:00Z',
     entryVixClose: 20, entryVixDate: '2025-05-01', entryVixSource: 'historical_close',
-    entrySnapshot: { underlyingPrice: 70, delta: -0.25 },
+    entrySnapshot: { underlyingPrice: 70, delta: -0.25, iv: 48.5 },
   }), 55, '2025-06-20', 'expiration_close');
   const noteAndManualDelta = prepareManualTradeForSave({
     ...existing, notes: 'corrected', entryDelta: -0.3, entryDeltaSource: 'manual', entryDeltaCapturedAt: '2026-08-30T12:00:00Z',
@@ -541,8 +545,18 @@ test('historical identity edits invalidate dependent snapshots while unrelated e
   assert.equal(identityEdit.trade.entrySnapshot, undefined);
   assert.equal(identityEdit.trade.latestMarketData, undefined);
   assert.equal(identityEdit.trade.entryDelta, undefined, 'automatic contract Delta is invalidated with contract identity');
+  assert.equal(identityEdit.trade.entryIv, undefined, 'automatic contract IV is invalidated with contract identity');
   assert.equal(identityEdit.trade.expirationClosePrice, undefined);
   assert.equal(identityEdit.trade.realizedPnl, undefined);
+
+  const manualIvIdentityEdit = prepareManualTradeForSave({
+    ...existing, ticker: 'SOXL', entryIv: 62.1, entryIvSource: 'manual', entryIvCapturedAt: '2026-08-30T12:00:00Z',
+  }, existing, { mode: 'historical', historicalOutcome: 'held_to_expiration' });
+  assert.deepEqual(
+    [manualIvIdentityEdit.trade.entryIv, manualIvIdentityEdit.trade.entryIvSource],
+    [62.1, 'manual'],
+    'explicit historical IV is retained when the user also changes contract identity',
+  );
 });
 
 test('confirmed assignment preserves established economics and resolution date without inventing stock accounting', () => {

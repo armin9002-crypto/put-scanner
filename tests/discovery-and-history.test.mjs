@@ -66,14 +66,17 @@ test('history analytics excludes pending records and reconciles blended capture 
   assert.equal(filterHistoryTrades([worthless, closed, itm], 'closed').length, 1);
 });
 
-test('history days held excludes missing dates and monthly P&L groups by resolution month', () => {
+test('monthly realized P&L uses expiration YYYY-MM, including early closes, losses, and distinct years', () => {
   const august = trade({ id: 'august' });
-  const september = trade({ id: 'september', status: 'closed', resolutionType: undefined, closeDate: '2026-09-05', closePrice: 1 });
+  const earlySeptember = trade({ id: 'early-september', expiration: '2026-09-18', status: 'closed', resolutionType: undefined, closeDate: '2026-05-01', closePrice: 1 });
+  const priorYearLoss = trade({ id: 'prior-year-loss', expiration: '2025-09-19', soldDate: '2025-01-01', status: 'closed', resolutionType: undefined, closeDate: '2025-05-01', closePrice: 3 });
+  const pending = trade({ id: 'pending', expiration: '2027-09-17', status: 'expired_price_pending', resolutionType: 'expired_price_pending' });
   assert.equal(historyDaysHeld(august), 51, 'held-to-expiration uses the contract expiration, not the later maintenance timestamp');
   assert.equal(historyDaysHeld(trade({ soldDate: '' })), null);
-  const months = buildMonthlyRealizedPnl([august, september]);
-  assert.deepEqual(months.map(month => month.month), ['2026-08', '2026-09']);
-  assert.deepEqual(months.map(month => month.trades), [1, 1]);
+  const months = buildMonthlyRealizedPnl([august, earlySeptember, priorYearLoss, pending, trade({ id: 'invalid-expiry', expiration: 'bad-date' })]);
+  assert.deepEqual(months.map(month => month.month), ['2025-09', '2026-08', '2026-09']);
+  assert.deepEqual(months.map(month => month.trades), [1, 1, 1]);
+  assert.deepEqual(months.map(month => month.realizedPnl), [-100, 200, 100]);
 });
 
 test('realized IRR simply annualizes realized P&L on Gross Risk over actual calendar days', () => {

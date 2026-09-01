@@ -67,6 +67,7 @@ import {
   filterHistoryTrades,
   historyDaysHeld,
   historyEntryNominalYield,
+  historyEntryIv,
   historyEntryVix,
   historyFinalValue,
   historyGrossRisk,
@@ -103,7 +104,17 @@ import { OPTION_QUOTE_TABLE_DISPLAY_ORDER, orderedOptionQuoteEntries } from '../
 import { persistPortfolioMarkBasis, readPortfolioMarkBasis } from '../lib/portfolioMarkPreference';
 import { persistShowNominalYield, readShowNominalYield } from '../lib/optionTablePreferences';
 import { buildCloseCandidates, buildNeedsAttention, getRedeployBadges, type CloseCandidate } from '../lib/portfolioPolicies';
-import { backfillStoredEntryDeltas, buildEntryDeltaEditPatch, entryDeltaFromExactChain, isContemporaneousPortfolioEntry, isValidEntryDelta, normalizeManualHistoricalEntryDelta, usMarketDateIso } from '../lib/portfolioEntryDelta';
+import {
+  backfillStoredEntrySnapshots,
+  buildEntryDeltaEditPatch,
+  buildEntryIvEditPatch,
+  enrichCurrentTradeEntrySnapshot,
+  isContemporaneousPortfolioEntry,
+  isValidEntryDelta,
+  isValidEntryIv,
+  normalizeManualHistoricalEntryDelta,
+  usMarketDateIso,
+} from '../lib/portfolioEntryDelta';
 import { assessPortfolioMaintenance } from '../lib/portfolioMaintenance';
 import { getPortfolioQuoteFreshness, isPortfolioQuoteDecisionEligible, summarizePortfolioQuoteFreshness } from '../lib/portfolioQuoteFreshness';
 import { resolvePortfolioEntryVix } from '../lib/portfolioEntryVix';
@@ -111,6 +122,7 @@ import { confirmPortfolioTradeExpiredWorthless, isManualWorthlessConfirmationEli
 import {
   inferHistoricalTradeOutcome,
   inferManualTradeMode,
+  inferManualTradeModeFromExpiration,
   isPastExpirationDate,
   prepareManualTradeForSave,
   resolvePreparedManualTrade,
@@ -927,6 +939,11 @@ function formatEntryDeltaInput(value: number | null | undefined): string {
   return value.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
 }
 
+function formatEntryIvInput(value: number | null | undefined): string {
+  if (!isValidEntryIv(value)) return '';
+  return value.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
+}
+
 function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
   const marketDate = usMarketDateIso();
   const [ticker, setTicker] = useState(trade?.ticker ?? '');
@@ -943,6 +960,8 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
   const [entryDelta, setEntryDelta] = useState(formatEntryDeltaInput(trade?.entryDelta));
   const [entryDeltaValue, setEntryDeltaValue] = useState<number | null>(trade?.entryDelta ?? null);
   const [entryDeltaDirty, setEntryDeltaDirty] = useState(false);
+  const [entryIv, setEntryIv] = useState(formatEntryIvInput(trade?.entryIv));
+  const [entryIvDirty, setEntryIvDirty] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
@@ -984,6 +1003,7 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
     soldPrice: parseNumber(soldPrice),
     closePrice: parseNumber(closePrice),
     entryDelta: parseNumber(entryDelta),
+    entryIv: parseNumber(entryIv),
   };
 
   const normalizedEntryDelta = entryDelta.trim() === ''
@@ -1007,13 +1027,20 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
     entryDelta: entryDelta.trim() === '' || (tradeMode === 'historical'
       ? parsed.entryDelta != null && Math.abs(parsed.entryDelta) <= 1
       : isValidEntryDelta(parsed.entryDelta)),
+    entryIv: entryIv.trim() === '' || isValidEntryIv(parsed.entryIv),
   };
   const isValid = Object.values(validation).every(Boolean);
-  const showEntryDelta = trade != null || tradeMode === 'historical';
-  const entryDeltaFields = showEntryDelta && validation.entryDelta
+  const showEntrySnapshots = trade != null || tradeMode === 'historical';
+  const entryDeltaFields = showEntrySnapshots && validation.entryDelta
     ? buildEntryDeltaEditPatch(
       trade ?? { entryDelta: undefined, entryDeltaSource: undefined, entryDeltaCapturedAt: undefined },
       entryDeltaDirty ? normalizedEntryDelta : trade?.entryDelta ?? normalizedEntryDelta,
+    )
+    : {};
+  const entryIvFields = showEntrySnapshots && validation.entryIv
+    ? buildEntryIvEditPatch(
+      trade ?? { entryIv: undefined, entryIvSource: undefined, entryIvCapturedAt: undefined },
+      entryIvDirty ? parsed.entryIv : trade?.entryIv ?? parsed.entryIv,
     )
     : {};
   const saveIntent: ManualTradeSaveIntent = {
@@ -1036,6 +1063,7 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
     entryVixDate: trade?.soldDate === soldDate ? trade.entryVixDate : undefined,
     entryVixSource: trade?.soldDate === soldDate ? trade.entryVixSource : undefined,
     ...entryDeltaFields,
+    ...entryIvFields,
     entrySnapshot: trade?.entrySnapshot,
     latestMarketData: trade?.latestMarketData,
     importedSnapshot: trade?.importedSnapshot,
@@ -1091,6 +1119,8 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
     setEntryDelta('');
     setEntryDeltaValue(null);
     setEntryDeltaDirty(false);
+    setEntryIv('');
+    setEntryIvDirty(false);
     // Historical entry is the repeated workflow; start each next row at its
     // normal Held to Expiration outcome while retaining the selected mode.
     setHistoricalOutcome('held_to_expiration');
@@ -1149,7 +1179,7 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
             })}
           </div>
           {modeGuidance && <p role="status" className="mt-2 text-[11px] leading-4" style={{ color: 'var(--yellow)' }}>{modeGuidance}</p>}
-          {!trade && tradeMode === 'open' && <p className="mt-2 text-[11px]" style={{ color: 'var(--text-dim)' }}>Entry Delta is captured automatically when available.</p>}
+          {!trade && tradeMode === 'open' && <p className="mt-2 text-[11px]" style={{ color: 'var(--text-dim)' }}>Entry Delta and Entry IV are captured together from exact-contract data when available.</p>}
         </fieldset>
 
         <div className="trade-modal-fields grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-2.5">
@@ -1163,9 +1193,12 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
             <input type="date" value={expiration} onChange={event => {
               const value = event.target.value;
               setExpiration(value);
-              if (!trade && isPastExpirationDate(value, marketDate)) {
-                setTradeMode('historical');
-                setHistoricalOutcome('held_to_expiration');
+              if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+                const nextMode = inferManualTradeModeFromExpiration(value, marketDate);
+                setTradeMode(currentMode => {
+                  if (nextMode === 'historical' && currentMode !== 'historical') setHistoricalOutcome('held_to_expiration');
+                  return nextMode;
+                });
               }
               setSaveError('');
             }} className={inputClass} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
@@ -1191,13 +1224,21 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
             <input type="date" value={soldDate} onChange={event => setSoldDate(event.target.value)} className={inputClass} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
             {errorText(validation.soldDate, 'Sold date is required.')}
           </label>
-          {showEntryDelta && (
-            <label className="sm:col-span-2">
+          {showEntrySnapshots && (
+            <>
+            <label>
               <span className="mb-1 block text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Entry Delta (optional)</span>
               <input aria-label="Entry Delta (optional)" value={entryDelta} inputMode="decimal" placeholder={tradeMode === 'historical' ? '0.1235 or -0.1235' : '-0.20'} onChange={event => handleEntryDeltaChange(event.target.value)} onBlur={handleEntryDeltaBlur} className={`${inputClass} font-mono`} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
               <p className="mt-1 text-[11px]" style={{ color: 'var(--text-dim)' }}>{tradeMode === 'historical' ? 'Historical put Delta. Enter 0.1235 or -0.1235; it is stored as the canonical put Delta.' : 'Stored historical Delta at entry. Edit to replace it, or clear it when unavailable.'}</p>
               {errorText(validation.entryDelta, tradeMode === 'historical' ? 'Entry Delta magnitude must be between 0 and 1.' : 'Entry Delta must be between -1 and 0.')}
             </label>
+            <label>
+              <span className="mb-1 block text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Entry IV (%) (optional)</span>
+              <input aria-label="Entry IV (%)" value={entryIv} inputMode="decimal" placeholder="65.4" onChange={event => { setEntryIv(event.target.value); setEntryIvDirty(true); setSaveError(''); }} onBlur={() => { const value = parseNumber(entryIv); if (isValidEntryIv(value)) setEntryIv(formatEntryIvInput(value)); }} className={`${inputClass} font-mono`} style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+              <p className="mt-1 text-[11px]" style={{ color: 'var(--text-dim)' }}>Enter percentage units: 65.4 means 65.4%. Current IV never replaces this historical value.</p>
+              {errorText(validation.entryIv, 'Entry IV must be greater than 0%.')}
+            </label>
+            </>
           )}
           {tradeMode === 'historical' && (
             <fieldset className="trade-modal-outcome sm:col-span-2 rounded-lg border p-2" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
@@ -1289,7 +1330,7 @@ export default function PortfolioPage() {
   const [showImportModal, setShowImportModal] = useState(false);
   const [showDataBackup, setShowDataBackup] = useState(false);
   const [showMaintenance, setShowMaintenance] = useState(false);
-  const [maintenanceBusy, setMaintenanceBusy] = useState<'lifecycle' | 'entry-vix' | 'entry-delta' | null>(null);
+  const [maintenanceBusy, setMaintenanceBusy] = useState<'lifecycle' | 'entry-vix' | 'entry-snapshot' | null>(null);
   const [maintenanceMessage, setMaintenanceMessage] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [refreshWarning, setRefreshWarning] = useState(false);
@@ -1460,33 +1501,37 @@ export default function PortfolioPage() {
     persistShowNominalYield(value);
   }, []);
 
-  const captureEntryDeltaForTrade = useCallback(async (inspected: PortfolioTrade) => {
-    if (isValidEntryDelta(inspected.entryDelta) || !isContemporaneousPortfolioEntry(inspected)) return;
-    const expirationTimestamp = isoToUnixSeconds(inspected.expiration);
-    if (expirationTimestamp == null) return;
-    try {
-      const chain = await fetchOptions(inspected.ticker, expirationTimestamp, {
-        source: 'Portfolio:entryDeltaCapture',
+  const captureEntrySnapshotForImportedTrade = useCallback(async (inspected: PortfolioTrade) => {
+    if ((isValidEntryDelta(inspected.entryDelta) && isValidEntryIv(inspected.entryIv)) || !isContemporaneousPortfolioEntry(inspected)) return;
+    const result = await enrichCurrentTradeEntrySnapshot(
+      inspected,
+      (ticker, expirationTimestamp) => fetchOptions(ticker, expirationTimestamp, {
+        source: 'Portfolio:entrySnapshotCapture',
         refreshMode: 'cache-first',
-      });
-      const result = entryDeltaFromExactChain(inspected, chain);
-      if (result.status !== 'captured' || !result.capture) return;
-      const latest = loadPortfolioTrades();
-      let applied = false;
-      const next = latest.map(current => {
-        if (current.id !== inspected.id
-          || current.updatedAt !== inspected.updatedAt
-          || current.ticker !== inspected.ticker
-          || current.expiration !== inspected.expiration
-          || current.strike !== inspected.strike
-          || isValidEntryDelta(current.entryDelta)) return current;
-        applied = true;
-        return { ...current, ...result.capture, updatedAt: new Date().toISOString() };
-      });
-      if (applied && persistTrades(next)) setDurableActivityNotice('Entry Delta captured from contemporaneous exact-contract data.');
-    } catch {
-      // Trade creation remains successful when the optional market enrichment fails.
-    }
+      }),
+    );
+    if (result.status !== 'captured') return;
+    const latest = loadPortfolioTrades();
+    let applied = false;
+    const next = latest.map(current => {
+      if (current.id !== inspected.id
+        || current.updatedAt !== inspected.updatedAt
+        || current.ticker !== inspected.ticker
+        || current.expiration !== inspected.expiration
+        || current.strike !== inspected.strike) return current;
+      const addDelta = !isValidEntryDelta(current.entryDelta) && isValidEntryDelta(result.trade.entryDelta);
+      const addIv = !isValidEntryIv(current.entryIv) && isValidEntryIv(result.trade.entryIv);
+      if (!addDelta && !addIv) return current;
+      applied = true;
+      return {
+        ...current,
+        entrySnapshot: result.trade.entrySnapshot,
+        ...(addDelta ? { entryDelta: result.trade.entryDelta, entryDeltaSource: result.trade.entryDeltaSource, entryDeltaCapturedAt: result.trade.entryDeltaCapturedAt } : {}),
+        ...(addIv ? { entryIv: result.trade.entryIv, entryIvSource: result.trade.entryIvSource, entryIvCapturedAt: result.trade.entryIvCapturedAt } : {}),
+        updatedAt: new Date().toISOString(),
+      };
+    });
+    if (applied && persistTrades(next)) setDurableActivityNotice('Entry snapshot captured from contemporaneous exact-contract data.');
   }, [persistTrades]);
 
   const handleSaveTrade = useCallback(async (input: PortfolioTradeInput, intent: ManualTradeSaveIntent, id?: string, options?: { keepOpen?: boolean }): Promise<boolean> => {
@@ -1498,6 +1543,16 @@ export default function PortfolioPage() {
     }
     const prepared = prepareManualTradeForSave(input, existing, intent);
     const resolved = await resolvePreparedManualTrade(prepared);
+    const snapshotResult = !id && intent.mode === 'open'
+      ? await enrichCurrentTradeEntrySnapshot(
+        resolved,
+        (ticker, expirationTimestamp) => fetchOptions(ticker, expirationTimestamp, {
+          source: 'Portfolio:entrySnapshotCapture',
+          refreshMode: 'cache-first',
+        }),
+      )
+      : null;
+    const finalTrade = snapshotResult?.trade ?? resolved;
     if (id) {
       const latest = loadPortfolioTrades();
       const current = latest.find(trade => trade.id === id);
@@ -1507,7 +1562,7 @@ export default function PortfolioPage() {
         return false;
       }
     }
-    const next = id ? updatePortfolioTrade(id, resolved) : addPortfolioTrade(resolved);
+    const next = id ? updatePortfolioTrade(id, finalTrade) : addPortfolioTrade(finalTrade);
     const persistedMutation = id
       ? JSON.stringify(next.find(trade => trade.id === id)) !== JSON.stringify(before.find(trade => trade.id === id))
       : next.length > before.length;
@@ -1520,16 +1575,15 @@ export default function PortfolioPage() {
       setShowAddModal(false);
       setEditingTrade(null);
     }
-    if (resolved.status === 'expired_price_pending') {
-      setDurableActivityNotice(resolved.resolutionWarning ?? 'Historical trade saved; expiration price remains pending for Portfolio Maintenance.');
-    }
-    if (!id && intent.mode === 'open') {
-      const beforeIds = new Set(before.map(trade => trade.id));
-      const added = next.find(trade => !beforeIds.has(trade.id));
-      if (added) void captureEntryDeltaForTrade(added);
+    if (finalTrade.status === 'expired_price_pending') {
+      setDurableActivityNotice(finalTrade.resolutionWarning ?? 'Historical trade saved; expiration price remains pending for Portfolio Maintenance.');
+    } else if (snapshotResult?.status === 'captured') {
+      setDurableActivityNotice('Trade and exact-contract Entry Delta/IV snapshot saved together.');
+    } else if (snapshotResult?.status === 'unavailable') {
+      setDurableActivityNotice('Trade saved. Exact-contract Entry Delta/IV was unavailable.');
     }
     return true;
-  }, [captureEntryDeltaForTrade]);
+  }, []);
 
   const handleBackupImported = useCallback(() => {
     setTrades(loadPortfolioTrades());
@@ -1592,21 +1646,21 @@ export default function PortfolioPage() {
     }
   }, [persistTrades]);
 
-  const handleRecoverStoredEntryDeltas = useCallback(() => {
-    setMaintenanceBusy('entry-delta');
+  const handleRecoverStoredEntrySnapshots = useCallback(() => {
+    setMaintenanceBusy('entry-snapshot');
     setMaintenanceMessage('');
     try {
       const latest = loadPortfolioTrades();
-      const recovered = backfillStoredEntryDeltas(latest);
+      const recovered = backfillStoredEntrySnapshots(latest);
       if (!recovered.changed) {
         setTrades(latest);
-        setMaintenanceMessage('No stored historical Entry Delta snapshots were available to recover.');
+        setMaintenanceMessage('No stored historical Entry Delta/IV snapshots were available to recover.');
         return;
       }
       if (persistTrades(recovered.trades)) {
-        setMaintenanceMessage(`${recovered.resolved} stored Entry Delta ${recovered.resolved === 1 ? 'snapshot was' : 'snapshots were'} recovered with zero market requests.`);
+        setMaintenanceMessage(`${recovered.resolvedDeltas} Entry Delta and ${recovered.resolvedIvs} Entry IV stored snapshot values were recovered with zero market requests.`);
       } else {
-        setMaintenanceMessage('Could not save recovered Entry Delta snapshots to your account.');
+        setMaintenanceMessage('Could not save recovered Entry Delta/IV snapshots to your account.');
       }
     } finally {
       setMaintenanceBusy(null);
@@ -1618,8 +1672,8 @@ export default function PortfolioPage() {
     if (!persistTrades(nextTrades)) return;
     setShowImportModal(false);
     const newlyImported = nextTrades.filter(trade => !previousIds.has(trade.id) && isContemporaneousPortfolioEntry(trade));
-    if (newlyImported.length > 0) void Promise.allSettled(newlyImported.map(captureEntryDeltaForTrade));
-  }, [captureEntryDeltaForTrade, persistTrades]);
+    if (newlyImported.length > 0) void Promise.allSettled(newlyImported.map(captureEntrySnapshotForImportedTrade));
+  }, [captureEntrySnapshotForImportedTrade, persistTrades]);
 
   const handleDeleteTrade = useCallback((id: string) => {
     const before = loadPortfolioTrades();
@@ -1959,7 +2013,7 @@ export default function PortfolioPage() {
         {drawerSelection && <ErrorBoundary title="Option sheet unavailable" message="Close it and try again."><Suspense fallback={null}><OptionDetailDrawer option={drawerSelection.option} ticker={drawerSelection.ticker} expirationLabel={drawerSelection.expirationLabel} dte={drawerSelection.dte} underlyingPrice={drawerSelection.underlyingPrice} onClose={() => setDrawerSelection(null)} /></Suspense></ErrorBoundary>}
         {showImportModal && <Suspense fallback={null}><PortfolioScreenshotImportModal trades={trades} onClose={() => setShowImportModal(false)} onApply={handleScreenshotImported} /></Suspense>}
         {showDataBackup && <Suspense fallback={null}><DataBackupModal onClose={() => setShowDataBackup(false)} onImported={handleBackupImported} /></Suspense>}
-        {showMaintenance && <Suspense fallback={null}><PortfolioMaintenanceModal assessment={maintenanceAssessment} busy={maintenanceBusy} message={maintenanceMessage} onResolveLifecycle={() => { void handleResolveLifecycleMaintenance(); }} onResolveEntryVix={() => { void handleResolveEntryVixMaintenance(); }} onRecoverEntryDelta={handleRecoverStoredEntryDeltas} onClose={() => setShowMaintenance(false)} /></Suspense>}
+        {showMaintenance && <Suspense fallback={null}><PortfolioMaintenanceModal assessment={maintenanceAssessment} busy={maintenanceBusy} message={maintenanceMessage} onResolveLifecycle={() => { void handleResolveLifecycleMaintenance(); }} onResolveEntryVix={() => { void handleResolveEntryVixMaintenance(); }} onRecoverEntrySnapshots={handleRecoverStoredEntrySnapshots} onClose={() => setShowMaintenance(false)} /></Suspense>}
       </div>
     );
   }
@@ -2174,6 +2228,8 @@ export default function PortfolioPage() {
                     <Metric label="% Captured" value={formatPctValue(calculatePercentCaptured(trade, markBasis))} color={pnlColor(calculatePercentCaptured(trade, markBasis))} />
                     <Metric label="Entry Delta" value={formatDelta(trade.entryDelta)} />
                     <Metric label="Current Delta" value={formatDelta(trade.latestMarketData?.delta)} color={pnlColor(trade.latestMarketData?.delta)} />
+                    <Metric label="Entry IV" value={formatPercentPoints(trade.entryIv, 1)} />
+                    <Metric label="Current IV" value={formatPercentPoints(trade.latestMarketData?.iv, 1)} />
                     <Metric label="Entry AY" value={formatPctValue(calculateOriginalAnnualizedYield(trade))} />
                     <Metric label="Current AY" value={formatPctValue(calculateCurrentAnnualizedYield(trade, markBasis))} />
                   </div>
@@ -2313,7 +2369,7 @@ export default function PortfolioPage() {
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(calculateBreakeven(trade))}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(trade.latestMarketData?.underlyingPrice ?? trade.entrySnapshot?.underlyingPrice)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: percentColor(calculateDistanceToStrike(trade)) }}>{formatPctValue(calculateDistanceToStrike(trade))}</td>
-                          <td className="px-2 py-1 text-right font-mono tabular-nums">{formatPercentPoints(trade.latestMarketData?.iv, 1)}</td>
+                          <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap"><span style={{ color: 'var(--text-muted)' }}>Entry {formatPercentPoints(trade.entryIv, 1)}</span><br /><span>Current {formatPercentPoints(trade.latestMarketData?.iv, 1)}</span></td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">
                             {isFiniteNumber(trade.entryVixClose) ? <HoverTooltip content={<VixEntryTooltipContent trade={trade} />} ariaLabel={`${trade.ticker} VIX at entry details`}>{trade.entryVixClose.toFixed(2)}</HoverTooltip> : DASH}
                           </td>
@@ -2447,7 +2503,7 @@ export default function PortfolioPage() {
       )}
       {showMaintenance && (
         <Suspense fallback={null}>
-          <PortfolioMaintenanceModal assessment={maintenanceAssessment} busy={maintenanceBusy} message={maintenanceMessage} onResolveLifecycle={() => { void handleResolveLifecycleMaintenance(); }} onResolveEntryVix={() => { void handleResolveEntryVixMaintenance(); }} onRecoverEntryDelta={handleRecoverStoredEntryDeltas} onClose={() => setShowMaintenance(false)} />
+          <PortfolioMaintenanceModal assessment={maintenanceAssessment} busy={maintenanceBusy} message={maintenanceMessage} onResolveLifecycle={() => { void handleResolveLifecycleMaintenance(); }} onResolveEntryVix={() => { void handleResolveEntryVixMaintenance(); }} onRecoverEntrySnapshots={handleRecoverStoredEntrySnapshots} onClose={() => setShowMaintenance(false)} />
         </Suspense>
       )}
       {worthlessConfirmationTrade && (
@@ -2491,7 +2547,7 @@ function MonthlyRealizedChart({ trades }: { trades: PortfolioTrade[] }) {
   const max = Math.max(...months.map(month => Math.abs(month.realizedPnl)), 1);
   return (
     <section className="mb-2 rounded-lg p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-      <div className="mb-2 flex items-center justify-between gap-2"><h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Realized P&amp;L by Month</h3><span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>{months.length} months</span></div>
+      <div className="mb-2 flex items-center justify-between gap-2"><h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Realized P&amp;L by Expiration Month</h3><span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>{months.length} months</span></div>
       <div className="flex h-28 items-end gap-1 overflow-x-auto pb-1">
         {months.map(month => {
           const captured = month.premiumCollected > 0 ? month.realizedPnl / month.premiumCollected : null;
@@ -2604,10 +2660,11 @@ function ArchiveHistorySection({
           {groupMode !== 'none' && visibleGroups.length > 0 && <button type="button" onClick={toggleAllHistoryGroups} className="min-h-11 shrink-0 rounded-lg px-2 py-1.5 text-[11px] whitespace-nowrap sm:min-h-8" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>{allHistoryGroupsCollapsed ? 'Expand All' : 'Collapse All'}</button>}
         </div>
       </div>
-      <div className="portfolio-history-summary-grid grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-1.5 mb-2">
+      <div className="portfolio-history-summary-grid grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-1.5 mb-2">
         <SummaryCard label="Total Realized IRR" value={formatPctValue(visibleSummary.totalRealizedIrr)} color={pnlColor(visibleSummary.totalRealizedIrr)} detail="Gross-Risk-weighted average of valid position Realized IRRs. Each position uses simple annualization of realized P&L over actual days held." />
         <SummaryCard label="Avg Days Held" value={formatAverageDays(visibleSummary.averageDaysHeld)} />
         <SummaryCard label="Wtd. Avg. Entry Delta" value={formatDelta(visibleSummary.weightedAverageEntryDelta)} detail={visibleSummary.entryDeltaCoverage == null ? 'Entry Delta coverage is unavailable.' : `Based on ${(visibleSummary.entryDeltaCoverage * 100).toFixed(1)}% of historical Gross Risk with known Entry Delta.`} />
+        <SummaryCard label="Wtd. Avg. Entry IV" value={formatPercentPoints(visibleSummary.weightedAverageEntryIv, 1)} detail={visibleSummary.entryIvCoverage == null ? 'Entry IV coverage is unavailable.' : `Based on ${(visibleSummary.entryIvCoverage * 100).toFixed(1)}% of historical Gross Risk with known Entry IV.`} />
         <SummaryCard label="Total Historical Notional" value={formatCurrency(summary.totalHistoricalNotional, 0)} detail="Cumulative canonical Gross Risk across all closed and historical positions." />
         <SummaryCard label="Resolved Trades" value={String(visibleSummary.resolvedTrades)} />
         <SummaryCard label="Realized P&L" value={formatCurrency(visibleSummary.realizedPnl)} color={pnlColor(visibleSummary.realizedPnl)} />
@@ -2627,7 +2684,7 @@ function ArchiveHistorySection({
                 <span className="portfolio-history-mobile-group-header__identity"><span className="portfolio-history-group-chevron" aria-hidden="true">{collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</span><span className="min-w-0"><strong>{label}</strong><small>{group.tradeCount} trades</small></span></span>
                 <span className="portfolio-history-mobile-group-header__totals">
                   <span className="portfolio-history-mobile-group-header__primary"><span><small>Premium</small><strong>{formatCurrency(group.premium, 0)}</strong></span><span className="portfolio-history-mobile-group-header__pnl"><small>Realized P&amp;L</small><strong style={{ color: pnlColor(group.realizedPnl) }}>{formatCurrency(group.realizedPnl)}</strong></span></span>
-                  <span className="portfolio-history-mobile-group-header__secondary" title="Days, NY, VIX, IRR, capture, and Entry Delta use the canonical group weighted values."><span>Risk {formatCurrency(group.grossRisk, 0)}</span><span>Days {formatAverageDays(group.weightedAverageDaysHeld)} · NY {formatPctValue(group.weightedAverageNy)}</span><span>VIX {isFiniteNumber(group.weightedAverageEntryVix) ? group.weightedAverageEntryVix.toFixed(1) : DASH} · IRR {formatPctValue(group.weightedAverageRealizedIrr)} · {formatPctValue(group.weightedAveragePercentCaptured)} cap · Δ {formatDelta(group.weightedAverageEntryDelta)}</span></span>
+                  <span className="portfolio-history-mobile-group-header__secondary" title="Days, NY, VIX, IV, IRR, capture, and Entry Delta use the canonical group weighted values."><span>Risk {formatCurrency(group.grossRisk, 0)}</span><span>Days {formatAverageDays(group.weightedAverageDaysHeld)} · NY {formatPctValue(group.weightedAverageNy)}</span><span>VIX {isFiniteNumber(group.weightedAverageEntryVix) ? group.weightedAverageEntryVix.toFixed(1) : DASH} · IV {formatPercentPoints(group.weightedAverageEntryIv, 1)} · IRR {formatPctValue(group.weightedAverageRealizedIrr)} · {formatPctValue(group.weightedAveragePercentCaptured)} cap · Δ {formatDelta(group.weightedAverageEntryDelta)}</span></span>
                 </span>
               </button>
             )}
@@ -2658,6 +2715,7 @@ function ArchiveHistorySection({
                 <Metric label="Realized IRR" value={formatPctValue(realizedIrr)} color={pnlColor(realizedIrr)} />
                 <Metric label="NY" value={formatPctValue(historyEntryNominalYield(trade))} detail="Entry Nominal Yield: net sold price ÷ strike, equivalent to Premium ÷ Gross Risk." />
                 <Metric label="VIX @ Entry" value={isFiniteNumber(historyEntryVix(trade)) ? historyEntryVix(trade)!.toFixed(2) : DASH} detail="Stored VIX close captured at the trade entry date." />
+                <Metric label="Entry IV" value={formatPercentPoints(historyEntryIv(trade), 1)} detail="Stored contract implied volatility observed at entry." />
                 <Metric label="Price @ Exp." value={formatCurrency(historyPriceAtExpiration(trade))} detail="Underlying closing price on expiration, or the nearest prior trading close used by lifecycle resolution. It remains unavailable for a manually confirmed worthless outcome." />
                 <Metric label="Entry Delta" value={formatDelta(trade.entryDelta)} />
               </div>
@@ -2697,7 +2755,7 @@ function ArchiveHistorySection({
                 {groupMode !== 'none' && (
                   <>
                     <tr className="portfolio-history-group-header">
-                      <td colSpan={18}>
+                      <td colSpan={19}>
                         <button type="button" className="portfolio-history-group-toggle" aria-expanded={!collapsed} onClick={() => toggleHistoryGroup(group)}>
                           {collapsed ? <ChevronRight className="h-4 w-4" aria-hidden="true" /> : <ChevronDown className="h-4 w-4" aria-hidden="true" />}
                           <span>{label}</span><small>{group.tradeCount} trades</small>
@@ -2711,6 +2769,7 @@ function ArchiveHistorySection({
                       <td /><td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. Days Held: Gross-Risk-weighted average of known holding periods.">{formatAverageDays(group.weightedAverageDaysHeld)}</td>
                       <td /><td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. NY: canonical Entry NY weighted by Gross Risk; reconciles to group Premium ÷ group Gross Risk.">{formatPctValue(group.weightedAverageNy)}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. VIX @ Entry: Gross-Risk-weighted average of known stored entry VIX values.">{isFiniteNumber(group.weightedAverageEntryVix) ? group.weightedAverageEntryVix.toFixed(1) : DASH}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. Entry IV: Gross-Risk-weighted average of known stored contract Entry IV values.">{formatPercentPoints(group.weightedAverageEntryIv, 1)}</td>
                       <td /><td className="px-2 py-2 text-right font-mono tabular-nums">{formatCurrency(group.premium, 0)}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums portfolio-history-group-subtotal__pnl" style={{ color: pnlColor(group.realizedPnl) }}>{formatCurrency(group.realizedPnl)}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. Realized IRR: Gross-Risk-weighted average of individual position Realized IRRs.">{formatPctValue(group.weightedAverageRealizedIrr)}</td>
@@ -2730,7 +2789,7 @@ function ArchiveHistorySection({
                 const percentCaptured = getArchivedPercentCaptured(trade);
                 const realizedIrr = historyRealizedIrr(trade);
                 return (
-                  <tr key={trade.id} title={`${trade.ticker} ${formatCurrency(trade.strike)} Put\nEntry: ${formatHistoryDate(trade.soldDate)}\nResolved: ${formatHistoryDate(trade.closeDate ?? trade.resolvedDate ?? trade.expiration)}\nDays held: ${formatDays(historyDaysHeld(trade))}\nSold: ${formatHistoricalOptionPrice(trade.soldPrice)}\nClose: ${formatOptionPrice(trade.closePrice)}\nPrice @ Exp.: ${formatCurrency(historyPriceAtExpiration(trade))}\nPremium: ${formatCurrency(getArchivedPremium(trade))}\nRealized P&L: ${formatCurrency(realizedPnl)}\nRealized IRR: ${formatPctValue(realizedIrr)}\nCaptured: ${formatPctValue(percentCaptured)}\nNY: ${formatPctValue(historyEntryNominalYield(trade))}\nVIX @ Entry: ${isFiniteNumber(historyEntryVix(trade)) ? historyEntryVix(trade)!.toFixed(2) : DASH}\nOutcome: ${getArchiveOutcomeLabel(trade)}`} style={{ borderBottom: '1px solid var(--border)', backgroundColor: index % 2 ? 'var(--row-alt)' : 'transparent' }}>
+                  <tr key={trade.id} title={`${trade.ticker} ${formatCurrency(trade.strike)} Put\nEntry: ${formatHistoryDate(trade.soldDate)}\nResolved: ${formatHistoryDate(trade.closeDate ?? trade.resolvedDate ?? trade.expiration)}\nDays held: ${formatDays(historyDaysHeld(trade))}\nSold: ${formatHistoricalOptionPrice(trade.soldPrice)}\nClose: ${formatOptionPrice(trade.closePrice)}\nPrice @ Exp.: ${formatCurrency(historyPriceAtExpiration(trade))}\nPremium: ${formatCurrency(getArchivedPremium(trade))}\nRealized P&L: ${formatCurrency(realizedPnl)}\nRealized IRR: ${formatPctValue(realizedIrr)}\nCaptured: ${formatPctValue(percentCaptured)}\nNY: ${formatPctValue(historyEntryNominalYield(trade))}\nVIX @ Entry: ${isFiniteNumber(historyEntryVix(trade)) ? historyEntryVix(trade)!.toFixed(2) : DASH}\nEntry IV: ${formatPercentPoints(historyEntryIv(trade), 1)}\nOutcome: ${getArchiveOutcomeLabel(trade)}`} style={{ borderBottom: '1px solid var(--border)', backgroundColor: index % 2 ? 'var(--row-alt)' : 'transparent' }}>
                     <td className="px-2 py-1 text-left font-mono font-bold whitespace-nowrap" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatHistoryDate(trade.expiration)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatCurrency(trade.strike)}</td>
@@ -2741,6 +2800,7 @@ function ArchiveHistorySection({
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{formatHistoricalOptionPrice(trade.soldPrice)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{formatPctValue(historyEntryNominalYield(trade))}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{isFiniteNumber(historyEntryVix(trade)) ? historyEntryVix(trade)!.toFixed(2) : DASH}</td>
+                    <td className="px-2 py-1 text-right font-mono tabular-nums">{formatPercentPoints(historyEntryIv(trade), 1)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums" title="Underlying closing price on expiration, or the nearest prior trading close used by lifecycle resolution. It remains unavailable for a manually confirmed worthless outcome.">{formatCurrency(historyPriceAtExpiration(trade))}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(getArchivedPremium(trade))}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(realizedPnl) }}>{formatCurrency(realizedPnl)}</td>

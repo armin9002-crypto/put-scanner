@@ -3,11 +3,11 @@ import type { PortfolioMaintenanceAssessment } from '../lib/portfolioMaintenance
 
 interface PortfolioMaintenanceModalProps {
   assessment: PortfolioMaintenanceAssessment;
-  busy: 'lifecycle' | 'entry-vix' | 'entry-delta' | null;
+  busy: 'lifecycle' | 'entry-vix' | 'entry-snapshot' | null;
   message: string;
   onResolveLifecycle: () => void;
   onResolveEntryVix: () => void;
-  onRecoverEntryDelta: () => void;
+  onRecoverEntrySnapshots: () => void;
   onClose: () => void;
 }
 
@@ -29,13 +29,19 @@ export default function PortfolioMaintenanceModal({
   message,
   onResolveLifecycle,
   onResolveEntryVix,
-  onRecoverEntryDelta,
+  onRecoverEntrySnapshots,
   onClose,
 }: PortfolioMaintenanceModalProps) {
   const lifecycleCount = assessment.expiredLifecycleReview.length;
   const entryVixCount = assessment.missingEntryVix.length;
   const recoverableDeltaCount = assessment.recoverableEntryDelta.length;
   const unavailableDeltaCount = assessment.historicalEntryDeltaUnavailable.length;
+  const recoverableIvCount = assessment.recoverableEntryIv.length;
+  const unavailableIvCount = assessment.historicalEntryIvUnavailable.length;
+  const recoverableSnapshotCount = new Set([
+    ...assessment.recoverableEntryDelta.map(trade => trade.id),
+    ...assessment.recoverableEntryIv.map(trade => trade.id),
+  ]).size;
   return (
     <div className="fixed inset-0 z-[85]">
       <button type="button" aria-label="Close Portfolio Maintenance" onClick={onClose} className="absolute inset-0 bg-black/55" />
@@ -54,6 +60,8 @@ export default function PortfolioMaintenanceModal({
           <CountRow label="Missing Entry VIX" count={entryVixCount} actionable detail="Historical closes can be fetched explicitly by entry-date range." />
           <CountRow label="Recoverable Entry Delta" count={recoverableDeltaCount} actionable detail="A real Delta already exists in the durable entry snapshot; no market request is needed." />
           <CountRow label="Entry Delta unavailable" count={unavailableDeltaCount} detail="No trustworthy historical source exists. These blanks are retained without warning churn." />
+          <CountRow label="Recoverable Entry IV" count={recoverableIvCount} actionable detail="A valid IV already exists in the durable entry snapshot; no market request is needed." />
+          <CountRow label="Entry IV unavailable" count={unavailableIvCount} detail="No trustworthy historical source exists. These blanks remain optional." />
           {assessment.expirationPricePending.length > 0 && <CountRow label="Expiration close pending" count={assessment.expirationPricePending.length} actionable detail="Use the existing history actions to retry or enter a verified close." />}
         </div>
 
@@ -62,7 +70,7 @@ export default function PortfolioMaintenanceModal({
         <div className="mt-4 grid gap-2 sm:grid-cols-3">
           <button type="button" onClick={onResolveLifecycle} disabled={busy != null || lifecycleCount === 0} className="min-h-11 rounded-lg px-3 text-xs font-semibold disabled:opacity-40" style={{ color: 'var(--text)', backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}><History className="mr-1.5 inline h-3.5 w-3.5" />{busy === 'lifecycle' ? 'Reviewing...' : 'Resolve Lifecycle'}</button>
           <button type="button" onClick={onResolveEntryVix} disabled={busy != null || entryVixCount === 0} className="min-h-11 rounded-lg px-3 text-xs font-semibold disabled:opacity-40" style={{ color: 'var(--text)', backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>{busy === 'entry-vix' ? 'Fetching...' : 'Backfill Entry VIX'}</button>
-          <button type="button" onClick={onRecoverEntryDelta} disabled={busy != null || recoverableDeltaCount === 0} className="min-h-11 rounded-lg px-3 text-xs font-semibold disabled:opacity-40" style={{ color: 'var(--text)', backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>{busy === 'entry-delta' ? 'Recovering...' : 'Recover Stored Delta'}</button>
+          <button type="button" onClick={onRecoverEntrySnapshots} disabled={busy != null || recoverableSnapshotCount === 0} className="min-h-11 rounded-lg px-3 text-xs font-semibold disabled:opacity-40" style={{ color: 'var(--text)', backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>{busy === 'entry-snapshot' ? 'Recovering...' : 'Recover Stored Snapshots'}</button>
         </div>
         <p className="mt-3 text-[11px]" style={{ color: 'var(--text-dim)' }}>Maintenance never substitutes today's Delta, IV, or underlying price for missing historical entry data.</p>
       </section>

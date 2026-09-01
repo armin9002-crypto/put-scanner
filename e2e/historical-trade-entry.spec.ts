@@ -20,6 +20,7 @@ test('Add Sold Put keeps Open compact and makes Historical entry explicit', asyn
   const dialog = page.getByRole('dialog', { name: 'Add Sold Put' });
   await expect(dialog.getByRole('radio', { name: /Open/ })).toHaveAttribute('aria-checked', 'true');
   await expect(dialog.getByLabel('Entry Delta (optional)')).toHaveCount(0);
+  await expect(dialog.getByLabel('Entry IV (%)')).toHaveCount(0);
 
   await dialog.getByRole('radio', { name: /Historical \/ Realized/ }).click();
   await dialog.getByLabel('Ticker').fill('TQQQ');
@@ -33,11 +34,24 @@ test('Add Sold Put keeps Open compact and makes Historical entry explicit', asyn
   await delta.fill('0.1235');
   await delta.blur();
   await expect(delta).toHaveValue('-0.1235');
+  const entryIv = dialog.getByLabel('Entry IV (%)');
+  await expect(entryIv).toBeVisible();
+  await entryIv.fill('65.4');
+  await entryIv.blur();
+  await expect(entryIv).toHaveValue('65.4');
   await expect(dialog.getByText('$246.90', { exact: true })).toBeVisible();
   await expect(dialog.getByText('$10,000', { exact: true })).toBeVisible();
   await expect(dialog.getByRole('radio', { name: /Held to Expiration/ })).toHaveAttribute('aria-checked', 'true');
   await expect(dialog.getByRole('button', { name: 'Save & Add Another', exact: true })).toBeVisible();
   await expect(dialog.getByText(/Expiration price will be resolved through Portfolio Maintenance/i)).toBeVisible();
+
+  await dialog.getByLabel('Expiration').fill('2026-09-18');
+  await expect(dialog.getByRole('radio', { name: /Open/ })).toHaveAttribute('aria-checked', 'true');
+  await expect(dialog.getByLabel('Entry Delta (optional)')).toHaveCount(0);
+  await expect(dialog.getByLabel('Entry IV (%)')).toHaveCount(0);
+  await dialog.getByLabel('Expiration').fill('2026-06-20');
+  await expect(dialog.getByRole('radio', { name: /Historical \/ Realized/ })).toHaveAttribute('aria-checked', 'true');
+  await expect(dialog.getByLabel('Entry IV (%)')).toBeVisible();
 
   await dialog.getByRole('radio', { name: /Closed \/ Bought Back/ }).click();
   await expect(dialog.getByLabel('Close Date')).toBeVisible();

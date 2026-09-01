@@ -1,8 +1,8 @@
-# Stage 6B.4 - Portfolio Maintenance, Quote Freshness, and Entry Delta
+# Portfolio Maintenance, Quote Freshness, and Durable Entry Snapshots
 
 > **Historical persistence note.** Entry Delta, freshness, and explicit maintenance semantics remain current. The local-first sync, fingerprint, winner-selection, and browser-durable references were superseded by [Stage 7A cloud-authoritative account state](./PRODUCT_STAGE7A_CLOUD_AUTHORITATIVE_STATE.md).
 >
-> **Entry lifecycle refinement.** Add Trade no longer accepts manual Entry Delta. Automatic creation-time capture, Edit-only override/clear behavior, and History weighting are defined in [Portfolio History Semantics and Entry Delta Lifecycle](./PORTFOLIO_HISTORY_SEMANTICS_REFINEMENT.md).
+> **Entry lifecycle refinement.** Current-trade creation captures Entry Delta and Entry IV together before the initial durable save. Historical Add and Edit accept optional manual values. History weighting is defined in [Portfolio History Semantics and Entry Delta Lifecycle](./PORTFOLIO_HISTORY_SEMANTICS_REFINEMENT.md).
 
 Implementation date: 2026-08-28
 
@@ -23,8 +23,8 @@ Portfolio work is now separated into three classes:
 | Class | Examples | Durable revision |
 |---|---|---|
 | Transient market refresh | Underlying, Bid, Ask, Last, Current Delta, IV, OI, Volume, observation time | No; stored only in device-local `localMarketData` |
-| Durable user edit | Add/edit/delete, notes, Edit-only manual Entry Delta, explicit close/archive, import/restore | Yes, after successful validation and storage |
-| Durable maintenance | Expiration resolution, historical Entry VIX, recovery of an actually stored entry-snapshot Delta | Yes, only after an explicit maintenance action |
+| Durable user edit | Add/edit/delete, notes, manual historical Entry Delta/IV, explicit close/archive, import/restore | Yes, after successful validation and storage |
+| Durable maintenance | Expiration resolution, historical Entry VIX, recovery of actually stored entry-snapshot Delta/IV | Yes, only after an explicit maintenance action |
 
 Portfolio mount, route navigation, Maintenance panel open, hover, intervals, Refresh Open Trades, and backup import completion perform no automatic maintenance request or maintenance write. The Fidelity import review can still apply lifecycle statuses the user explicitly selects in that review.
 
@@ -37,14 +37,18 @@ The existing Portfolio action area now opens a compact **Portfolio Maintenance**
 - positions missing Entry VIX;
 - missing Entry Delta values recoverable from a durable `entrySnapshot.delta`;
 - historical Entry Delta blanks with no trustworthy source.
+- missing Entry IV values recoverable from a durable `entrySnapshot.iv`;
+- historical Entry IV blanks with no trustworthy source.
 
 Explicit actions are:
 
 - **Resolve Lifecycle**: obtains cached or bounded historical expiration closes, applies established worthless/ITM formulas, and uses the existing `updatedAt` conflict guard before writing.
 - **Backfill Entry VIX**: resolves a single historical date range for all missing entry dates when local history is insufficient, then uses the same conflict guard.
-- **Recover Stored Delta**: copies only a valid Delta that already exists in the durable entry snapshot. It performs zero market requests.
+- **Recover Stored Snapshots**: copies only valid Delta and IV values that already exist in the durable entry snapshot. It performs zero market requests.
 
 An unavailable legacy Entry Delta is informational, not an error. The dialog never offers a current-data historical Delta backfill.
+
+An unavailable legacy Entry IV is also optional. Current chains and model reconstruction are prohibited as historical substitutes.
 
 ## Entry Delta durable contract
 
@@ -68,12 +72,18 @@ Provenance meanings:
 
 The optional timestamp records when an automatic/manual value was captured. A stored-snapshot recovery uses the trade creation timestamp because the snapshot was durably created with that trade. Source metadata is omitted entirely when Entry Delta is absent.
 
+## Entry IV durable contract
+
+`PortfolioTrade` also accepts backward-compatible optional `entryIv`, `entryIvSource`, and `entryIvCapturedAt` fields. IV uses the same canonical percentage-point representation as normalized option-chain data: `65.4` means `65.4%`. A valid value is finite and greater than zero. Sources are `provider`, `manual`, `imported`, and `stored_snapshot`.
+
+The Historical/Edit input is explicitly labeled **Entry IV (%)**. Typing `65.4` stores `65.4`; there is no ambiguous decimal-vs-percent conversion. Automatic capture uses the exact put row's normalized `impliedVolatility` and the same observation timestamp as Entry Delta. Current `latestMarketData.iv` remains transient and can never overwrite Entry IV.
+
 ### Capture policy
 
 Automatic capture is eligible only when `soldDate` equals the current U.S. market date in `America/New_York`, the position is open, and exact-contract data is contemporaneous and not a stale fallback.
 
-- Add from an already-loaded option detail: zero additional browser/function/provider requests. The loaded exact chain is reused.
-- Same-day manual Add Trade: save succeeds first. If Entry Delta is still blank, the app performs at most one cache-first exact-chain acquisition; cached data costs zero network requests. Failure leaves the valid trade saved with Entry Delta unavailable.
+- Add from an already-loaded option detail: zero additional browser/function/provider requests. The loaded exact chain is reused for both Delta and IV.
+- Same-day manual Add Trade: one bounded cache-first exact-chain lookup runs before the initial durable mutation. Its exact row supplies both Delta and IV, after which the final trade is written once. Cached data costs zero network requests. Lookup failure still writes the valid Open trade once with both fields unavailable.
 - Same-day Fidelity import: each genuinely new, same-day exact contract is eligible for the same bounded cache-first capture. Shared chain acquisition deduplication is retained.
 - Historical manual/OCR trade: current Delta is ineligible.
 - JSON backup import: preserves a valid Entry Delta if present and performs no lookup if absent.
@@ -84,7 +94,7 @@ Provider Delta is preferred. The calculated fallback requires valid positive und
 
 The audit found one genuinely recoverable class: existing trades with a finite `entrySnapshot.delta` in `[-1, 0]`. That is an actual stored entry-time Delta. It can be recovered only through the explicit zero-request maintenance action.
 
-Entry snapshots may also contain underlying and IV, but no historical risk-free-rate snapshot. Therefore Stage 6B.4 does not claim that all inputs required for a historical recalculation are durably present. Current provider Delta, current IV, and current underlying are prohibited from legacy Entry Delta recovery.
+A valid durable `entrySnapshot.iv` is likewise recoverable as Entry IV with `stored_snapshot` provenance. If no valid stored IV exists, the value remains unavailable. Current provider Delta, current IV, current underlying, and reconstructed historical IV are prohibited substitutes.
 
 ## Compatibility, backup, and cloud
 
@@ -92,7 +102,7 @@ Portfolio durable schema version remains **1** and backup format remains **2**. 
 
 Normalization deliberately omits the fields rather than materializing `null` or `undefined`. Tests prove that reading and rewriting a canonical legacy portfolio produces no storage write, revision change, `updatedAt` change, or fingerprint churn.
 
-New backup/export retains Entry Delta and provenance. Old backups import with the fields absent. Fidelity OCR does not supply Delta and never fabricates it. Entry Delta remains on close/archive and participates automatically in canonical Portfolio serialization, sync fingerprints, cloud push/pull, conflict comparison, Keep This Device, Use Account Copy, and conflict recovery. `latestMarketData` remains device-local and excluded.
+New backup/export retains Entry Delta, Entry IV, and provenance. Old backups import with the fields absent. Fidelity OCR supplies neither and never fabricates them. Both entry values remain on close/archive and participate automatically in canonical Portfolio serialization, Stage 7A cloud validation, fingerprints, revisions, CAS, reload/bootstrap, and conflict recovery. `latestMarketData` remains device-local and excluded.
 
 ## Quote freshness policy
 
@@ -126,7 +136,7 @@ A current observation with an old `lastTradeDate` remains a current observation;
 
 ## Display
 
-Open positions show **Entry Delta** and **Current Delta** distinctly. The desktop schedule uses one compact `Entry / Current Delta` column (sorting still uses Current Delta), including a quiet Fresh/Aging/Stale/Unavailable label. Mobile cards label both values separately. Entry Delta provenance is available in the Entry Delta detail tooltip. Closed/expired history retains and displays Entry Delta while Current Delta is not treated as historical truth.
+Open positions distinguish **Entry** from **Current** Delta and IV. Closed/expired History retains and displays durable Entry Delta and Entry IV; current quote data is never presented as historical truth.
 
 ## Network and observability impact
 
@@ -135,10 +145,11 @@ The Stage 6B.3 request-observation path is reused; no new logger or endpoint exi
 | Workflow | Expected browser/function/acquisition | Cold ceiling | Notes |
 |---|---:|---:|---|
 | Add from loaded detail | `0 / 0 / 0` | zero | Exact chain already loaded |
-| Same-day manual/OCR Entry Delta capture | `0 / 0 / 0` cached | `1 / 1 / 1` | One cache-first exact chain; never historical bulk fetch |
+| Same-day manual Entry Delta + IV capture | `0 / 0 / 0` cached | `1 / 1 / 1` | One shared cache-first exact chain before one durable Add mutation |
+| Historical/Edit manual Delta + IV | `0 / 0 / 0` | zero | Pure user-authored durable values |
 | Explicit Entry VIX maintenance | `1 / 1 / 1` | `1 / 1 / 1` | One date-range chart request; local history may reduce to zero |
 | Explicit lifecycle maintenance, representative one ticker/expiration | `1 / 1 / 1` | `1 / 1 / 1` | Rich local history may reduce to zero |
-| Recover stored Entry Delta | `0 / 0 / 0` | zero | Local durable snapshot only |
+| Recover stored Entry Delta/IV | `0 / 0 / 0` | zero | Local durable snapshot only |
 
 Multi-position lifecycle work remains bounded by unique ticker/expiration history requirements with concurrency three. No historical Entry Delta bulk request exists.
 
@@ -147,5 +158,5 @@ Multi-position lifecycle work remains bounded by unique ticker/expiration histor
 - The current provider path does not expose a normalized Bid/Ask quote timestamp or underlying timestamp, so freshness is observation-based and plainly labeled as such.
 - The weekday-session approximation does not model exchange holidays or exceptional closures.
 - Historical Entry Delta cannot be reconstructed when no actual Delta was stored and complete historical model inputs were not durably captured.
-- A manual/OCR same-day enrichment can require one asynchronous second durable write after the trade itself is safely saved.
+- Same-day screenshot imports retain their existing asynchronous enrichment path; the ordinary Add Sold Put path no longer requires a second durable write.
 - Browser abort cannot guarantee that an already-sent server/provider request stops immediately.

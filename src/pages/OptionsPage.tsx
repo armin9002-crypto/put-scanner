@@ -8,7 +8,7 @@ import type { WatchlistItem } from '../lib/watchlist';
 import { addPortfolioTrade } from '../lib/portfolioStorage';
 import { calculateBidAskSpreadPercent, calculateMoneyness, calculateYieldPercent } from '../lib/optionMetrics';
 import { resolvePutDeltaWithSource, type PutDeltaSource } from '../lib/putDelta';
-import { entryDeltaFromExactChain, usMarketDateIso } from '../lib/portfolioEntryDelta';
+import { entrySnapshotFromExactChain, usMarketDateIso } from '../lib/portfolioEntryDelta';
 import { compareNullableValue } from '../lib/metricValue';
 import { normalizeAnalyzeTicker, resolveTickerDetailInstrument } from '../lib/tickerDetail';
 import { formatOptionLastTradeDate, normalizeTimestampMs } from '../lib/format';
@@ -929,7 +929,7 @@ export default function OptionsPage() {
       const now = new Date();
       const expiration = new Date(selectedExpiration.date * 1000).toISOString().split('T')[0];
       const soldDate = usMarketDateIso(now);
-      const entryDeltaCapture = optionsData ? entryDeltaFromExactChain({ ticker, strike: draft.option.strike, expiration, soldDate, status: 'open' }, optionsData, now).capture : undefined;
+      const entrySnapshotCapture = optionsData ? entrySnapshotFromExactChain({ ticker, strike: draft.option.strike, expiration, soldDate, status: 'open' }, optionsData, now).capture : undefined;
       addPortfolioTrade({
         ticker,
         optionType: 'put',
@@ -940,7 +940,7 @@ export default function OptionsPage() {
         soldDate,
         status: 'open',
         notes: '',
-        entrySnapshot: {
+        entrySnapshot: entrySnapshotCapture?.entrySnapshot ?? {
           underlyingPrice: draft.underlyingPrice,
           bid: draft.option.bid,
           ask: draft.option.ask,
@@ -948,7 +948,7 @@ export default function OptionsPage() {
           iv: draft.option.impliedVolatility,
           delta: draft.option.delta,
         },
-        ...entryDeltaCapture,
+        ...entrySnapshotCapture,
       });
       setSelectedOption(null);
     };
@@ -1612,7 +1612,7 @@ export default function OptionsPage() {
                 const now = new Date();
                 const expiration = new Date(selectedExpiration.date * 1000).toISOString().split('T')[0];
                 const soldDate = usMarketDateIso(now);
-                const entryDeltaCapture = optionsData ? entryDeltaFromExactChain({ ticker, strike: draft.option.strike, expiration, soldDate, status: 'open' }, optionsData, now).capture : undefined;
+                const entrySnapshotCapture = optionsData ? entrySnapshotFromExactChain({ ticker, strike: draft.option.strike, expiration, soldDate, status: 'open' }, optionsData, now).capture : undefined;
                 addPortfolioTrade({
                   ticker,
                   optionType: 'put',
@@ -1623,7 +1623,7 @@ export default function OptionsPage() {
                   soldDate,
                   status: 'open',
                   notes: '',
-                  entrySnapshot: {
+                  entrySnapshot: entrySnapshotCapture?.entrySnapshot ?? {
                     underlyingPrice: draft.underlyingPrice,
                     bid: draft.option.bid,
                     ask: draft.option.ask,
@@ -1631,7 +1631,7 @@ export default function OptionsPage() {
                     iv: draft.option.impliedVolatility,
                     delta: draft.option.delta,
                   },
-                  ...entryDeltaCapture,
+                  ...entrySnapshotCapture,
                 });
                 setSelectedOption(null);
               }}

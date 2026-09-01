@@ -30,7 +30,7 @@ test('History renders canonical Gross Risk and aligned aggregate fields with bul
   const source = await read('src/pages/PortfolioPage.tsx');
   assert.match(source, /historyGrossRisk/);
   assert.match(source, /HISTORY_SORT_OPTIONS\.map\(option => historySortButton/);
-  assert.match(source, /<td colSpan=\{18\}>/);
+  assert.match(source, /<td colSpan=\{19\}>/);
   for (const field of [
     'group.grossRisk',
     'group.weightedAverageDaysHeld',
@@ -39,6 +39,7 @@ test('History renders canonical Gross Risk and aligned aggregate fields with bul
     'group.weightedAverageRealizedIrr',
     'group.weightedAveragePercentCaptured',
     'group.weightedAverageEntryDelta',
+    'group.weightedAverageEntryIv',
   ]) assert.match(source, new RegExp(field.replace('.', '\\.'), 'g'));
   assert.match(source, /allHistoryGroupsCollapsed/);
   assert.match(source, /toggleAllHistoryGroups/);

@@ -3,6 +3,7 @@ import { isFiniteNumber } from './optionMetrics.ts';
 import {
   historyDaysHeld,
   historyEntryNominalYield,
+  historyEntryIv,
   historyEntryVix,
   historyOutcomeLabel,
   historyPercentCaptured,
@@ -26,6 +27,7 @@ export type HistorySortField =
   | 'soldPrice'
   | 'ny'
   | 'entryVix'
+  | 'entryIv'
   | 'priceAtExpiration'
   | 'premium'
   | 'realizedPnl'
@@ -47,6 +49,7 @@ export const HISTORY_SORT_OPTIONS: Array<{ value: HistorySortField; label: strin
   { value: 'soldPrice', label: 'Sold Price' },
   { value: 'ny', label: 'NY' },
   { value: 'entryVix', label: 'VIX @ Entry' },
+  { value: 'entryIv', label: 'Entry IV' },
   { value: 'priceAtExpiration', label: 'Price @ Exp.' },
   { value: 'premium', label: 'Premium' },
   { value: 'realizedPnl', label: 'Realized P&L' },
@@ -84,6 +87,7 @@ export function getHistorySortValue(trade: PortfolioTrade, field: HistorySortFie
     case 'soldPrice': return finite(trade.soldPrice);
     case 'ny': return historyEntryNominalYield(trade);
     case 'entryVix': return historyEntryVix(trade);
+    case 'entryIv': return historyEntryIv(trade);
     case 'priceAtExpiration': return historyPriceAtExpiration(trade);
     case 'premium': return historyPremium(trade);
     case 'realizedPnl': return historyRealizedPnl(trade);
