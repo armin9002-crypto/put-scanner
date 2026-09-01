@@ -66,6 +66,15 @@ test.describe('Scanner density visual review', () => {
     const harness = await installDeterministicMarketApi(page);
     await waitForPopulatedScanner(page);
     const metrics = await measure(page);
+    if (phase === 'final') {
+      if (metrics.viewport.width < 768) {
+        expect(metrics.cardHeight, `${testInfo.project.name} Scanner card should stay compact in portrait`).toBeLessThanOrEqual(90);
+      }
+      if (metrics.viewport.width <= 950 && metrics.viewport.height <= 520) {
+        expect(metrics.cardHeight, `${testInfo.project.name} Scanner card should stay compact in phone landscape`).toBeLessThanOrEqual(100);
+      }
+      expect(metrics.pageOverflow, `${testInfo.project.name} Scanner should not overflow horizontally`).toBe(false);
+    }
     await capture(page, testInfo, 'scanner-default');
 
     await page.goto('/?expiry=2027-01-01', { waitUntil: 'domcontentloaded' });

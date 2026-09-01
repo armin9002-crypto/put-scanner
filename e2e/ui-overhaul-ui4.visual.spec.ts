@@ -7,6 +7,15 @@ const phase = process.env.UI_OVERHAUL_CAPTURE;
 const outputRoot = path.join(process.cwd(), 'e2e-artifacts', 'ui-overhaul', 'ui4', phase || 'disabled');
 const overflows: Array<{ project: string; name: string; url: string; pageOverflow: boolean; rootScrollWidth: number; rootClientWidth: number }> = [];
 
+type PulseDensityMetrics = {
+  viewport: { width: number; height: number };
+  rowHeight: number | null;
+  visibleRows: number;
+  skeletonHeight: number | null;
+  visibleSkeletons: number;
+  pageOverflow: boolean;
+};
+
 async function settle(page: Page, ms = 350) {
   await page.waitForLoadState('domcontentloaded');
   await page.waitForTimeout(ms);
@@ -22,6 +31,33 @@ async function capture(page: Page, testInfo: TestInfo, name: string) {
     rootClientWidth: document.documentElement.clientWidth,
   }));
   overflows.push({ project: testInfo.project.name, name, url: page.url(), ...overflow });
+}
+
+async function measurePulseDensity(page: Page): Promise<PulseDensityMetrics> {
+  return page.evaluate(() => {
+    const visible = (element: HTMLElement) => {
+      const rect = element.getBoundingClientRect();
+      return rect.height > 0 && rect.top < window.innerHeight && rect.bottom > 0;
+    };
+    const rows = Array.from(document.querySelectorAll<HTMLElement>('.mobile-pulse-list-item'));
+    const skeletons = Array.from(document.querySelectorAll<HTMLElement>('.pulse-mobile-skeleton'));
+    const firstRow = rows.find(row => row.getBoundingClientRect().height > 0)?.getBoundingClientRect() ?? null;
+    const firstSkeleton = skeletons.find(skeleton => skeleton.getBoundingClientRect().height > 0)?.getBoundingClientRect() ?? null;
+    return {
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      rowHeight: firstRow?.height ?? null,
+      visibleRows: rows.filter(visible).length,
+      skeletonHeight: firstSkeleton?.height ?? null,
+      visibleSkeletons: skeletons.filter(visible).length,
+      pageOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+    };
+  });
+}
+
+async function writePulseDensityMetrics(page: Page, testInfo: TestInfo, name: string, metrics: PulseDensityMetrics) {
+  const directory = path.join(outputRoot, testInfo.project.name);
+  await mkdir(directory, { recursive: true });
+  await writeFile(path.join(directory, `${name}-metrics.json`), `${JSON.stringify(metrics, null, 2)}\n`, 'utf8');
 }
 
 async function loadScreener(page: Page) {
@@ -165,12 +201,45 @@ async function captureDesktop(page: Page, testInfo: TestInfo) {
 }
 
 async function capturePhone(page: Page, testInfo: TestInfo) {
-  await installDeterministicMarketApi(page);
+  const harness = await installDeterministicMarketApi(page);
   await page.goto('/');
   await expect(page.getByPlaceholder(/Filter \/ Search by Ticker/i).first()).toBeVisible();
   await settle(page);
   await capture(page, testInfo, 'mobile-scanner-shell');
   for (const route of ['/screener', '/pulse', '/watchlist', '/portfolio', '/options/TQQQ']) {
+    if (route === '/pulse') {
+      harness.delays.set('etf-pulse', 800);
+      await page.goto(route);
+      await expect(page.getByText(/ETF Pulse/i).first()).toBeVisible();
+      await page.waitForTimeout(180);
+      await capture(page, testInfo, 'mobile-pulse-loading');
+      const pulseLoadingMetrics = await measurePulseDensity(page);
+      await writePulseDensityMetrics(page, testInfo, 'mobile-pulse-loading', pulseLoadingMetrics);
+      if (pulseLoadingMetrics.skeletonHeight != null) {
+        expect(pulseLoadingMetrics.skeletonHeight, `${testInfo.project.name} ETF Pulse loading skeleton should stay compact`).toBeLessThanOrEqual(60);
+      }
+      expect(pulseLoadingMetrics.pageOverflow, `${testInfo.project.name} ETF Pulse loading should not overflow horizontally`).toBe(false);
+      harness.delays.delete('etf-pulse');
+      await expect(page.locator('.mobile-pulse-list-item').first()).toBeVisible({ timeout: 30_000 });
+      await page.waitForTimeout(250);
+      await capture(page, testInfo, 'mobile-pulse');
+      const pulseMetrics = await measurePulseDensity(page);
+      await writePulseDensityMetrics(page, testInfo, 'mobile-pulse', pulseMetrics);
+      if (pulseMetrics.viewport.width < 768) {
+        expect(pulseMetrics.rowHeight, `${testInfo.project.name} ETF Pulse List row should stay compact`).toBeLessThanOrEqual(90);
+      } else if (pulseMetrics.viewport.width <= 950 && pulseMetrics.viewport.height <= 520) {
+        expect(pulseMetrics.rowHeight, `${testInfo.project.name} ETF Pulse List row should stay compact in phone landscape`).toBeLessThanOrEqual(100);
+      }
+      expect(pulseMetrics.pageOverflow, `${testInfo.project.name} ETF Pulse should not overflow horizontally`).toBe(false);
+
+      for (const visual of ['Heatmap', 'Momentum'] as const) {
+        await page.getByRole('tab', { name: visual, exact: true }).click();
+        await expect(page.getByRole('tab', { name: visual, exact: true })).toHaveAttribute('aria-selected', 'true');
+        await capture(page, testInfo, `mobile-pulse-${visual.toLowerCase()}`);
+      }
+      await page.getByRole('tab', { name: 'List', exact: true }).click();
+      continue;
+    }
     await page.goto(route);
     await settle(page);
     await capture(page, testInfo, `mobile-${route.slice(1).replace('/', '-') || 'scanner'}`);
