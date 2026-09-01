@@ -217,12 +217,6 @@ function ivVsRealizedRangeColor(value: number): string {
   return 'var(--green)';
 }
 
-function getMidPrice(bid: number | null, ask: number | null): number | null {
-  return bid != null && ask != null && Number.isFinite(bid) && Number.isFinite(ask) && bid > 0 && ask > 0
-    ? (bid + ask) / 2
-    : null;
-}
-
 function formatLastTradeDate(value: number | null | undefined): string {
   const timestamp = normalizeTimestampMs(value);
   if (timestamp == null) return '—';
@@ -347,7 +341,7 @@ const PRICE_HEADER_TOP = 56;
 const EXPIRY_ROW_TOP = 144;
 
 export default function OptionsPage() {
-  const { isPhone } = useResponsiveMode();
+  const { isPhone, isPhoneLandscape } = useResponsiveMode();
   const navigate = useNavigate();
   const location = useLocation();
   const { ticker: routeTicker } = useParams<{ ticker: string }>();
@@ -861,7 +855,7 @@ export default function OptionsPage() {
     { field: 'delta', label: 'Delta' },
     { field: 'annYieldBid', label: 'AY Bid' },
     { field: 'iv', label: 'IV' },
-    { field: 'otmItm', label: 'Moneyness' },
+    { field: 'otmItm', label: 'OTM/ITM' },
   ];
 
   // Sparkline data
@@ -880,7 +874,7 @@ export default function OptionsPage() {
     );
   }
 
-  if (isPhone) {
+  if (isPhone && !isPhoneLandscape) {
     const addSelectedToPortfolio = (draft: AddToPortfolioDraft) => {
       if (!ticker || !selectedExpiration) return;
       const now = new Date();
@@ -940,7 +934,6 @@ export default function OptionsPage() {
 
         <div className="flex min-h-[46px] items-center gap-2 border-b px-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
           <span className="mr-auto text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Puts <span className="font-mono font-normal" style={{ color: 'var(--text-muted)' }}>{sortedPuts.length}</span></span>
-          <label className="flex min-h-11 items-center gap-1 text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}><input type="checkbox" checked={showNominalYield} onChange={event => handleShowNominalYieldChange(event.target.checked)} className="rounded" /> NY</label>
           <select value={sortField} onChange={event => setSortField(event.target.value as SortField)} className="min-h-11 rounded-lg px-2 text-[12px] outline-none" aria-label="Sort option chain" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>{mobileSortOptions.map(option => <option key={option.field} value={option.field}>{option.label}</option>)}</select>
           <button type="button" onClick={() => setSortDir(current => current === 'asc' ? 'desc' : 'asc')} className="pressable flex h-11 min-w-11 items-center justify-center rounded-lg text-[11px] font-semibold" aria-label={`Sort ${sortDir === 'asc' ? 'descending' : 'ascending'}`} style={{ color: 'var(--accent-light)' }}>{sortDir === 'asc' ? '↑' : '↓'}</button>
         </div>
@@ -949,11 +942,14 @@ export default function OptionsPage() {
         {instrument.showLeveragedProductWarning && <div className="border-b px-3 py-2 text-[11px] leading-4" style={{ borderColor: 'var(--border)', color: 'var(--yellow)', backgroundColor: 'var(--surface)' }}>Leveraged ETF · daily reset and compounding make longer-period returns path dependent.</div>}
 
         {error ? <OptionsEmptyState type="error" onRefresh={handleRefresh} loading={loading} title={detailErrorCode === 'INVALID_SYMBOL' ? `We couldn't find ${ticker}.` : `We couldn't load options for ${ticker}.`} subtitle={detailErrorCode === 'INVALID_SYMBOL' ? 'Check the ticker and try again.' : 'Market data may be temporarily unavailable. Try again without changing or saving anything.'} /> : hasEmptyOptions ? <OptionsEmptyState type="empty" onRefresh={handleRefresh} loading={loading} title={`No listed puts found for ${ticker}`} subtitle="This ticker may not have listed options, or its option chain may currently be unavailable." /> : (
-          <div className="mobile-financial-list">
-            {loading && enrichedPuts.length === 0 ? Array.from({ length: 6 }).map((_, index) => <div key={index} className="mobile-option-row animate-pulse"><div className="h-4 w-24 rounded" style={{ backgroundColor: 'var(--border)' }} /><div className="mt-4 h-8 w-full rounded" style={{ backgroundColor: 'var(--border)' }} /><div className="mt-3 h-3 w-4/5 rounded" style={{ backgroundColor: 'var(--border)' }} /></div>) : sortedPuts.map(put => {
+          <div className="mobile-financial-list mobile-option-chain-table" role="table" aria-label={`${ticker} put option chain`}>
+            <div role="row" className="mobile-option-chain-header">
+              {['Strike', 'Last Trade', 'OTM/ITM', 'AY Last', 'AY Bid', 'AY Ask'].map(label => <span key={label} role="columnheader">{label}</span>)}
+            </div>
+            {loading && enrichedPuts.length === 0 ? Array.from({ length: 6 }).map((_, index) => <div role="row" key={index} className="mobile-option-chain-row mobile-option-chain-row--skeleton animate-pulse"><span /><span /><span /><span /><span /><span /></div>) : sortedPuts.map(put => {
               const expirationIso = selectedExp ? new Date(selectedExp * 1000).toISOString().split('T')[0] : '';
               const watchlistId = makeWatchlistId(ticker ?? '', expirationIso, put.strike);
-              return <MobileOptionRow key={put.strike} strike={put.strike} bid={put.bid} ask={put.ask} mid={getMidPrice(put.bid, put.ask)} last={put.last} annualYield={put.annYieldBid} nominalYield={put.nomYieldBid} showNominalYield={showNominalYield} delta={put.delta} impliedVolatility={put.impliedVolatility} openInterest={put.openInterest} moneynessLabel={put.otmItmLabel} moneynessColor={put.otmItmColor} staleText={mobileStaleText(put.lastTradeDate)} watched={watchlistIds.has(watchlistId)} onToggleWatchlist={() => toggleWatchlist(put)} onSelect={() => setSelectedOption(put)} />;
+              return <MobileOptionRow key={put.strike} strike={put.strike} last={put.last} lastTradeDate={put.lastTradeDate} bid={put.bid} ask={put.ask} annYieldLast={put.annYieldLast} annYieldBid={put.annYieldBid} annYieldAsk={put.annYieldAsk} moneynessLabel={put.otmItmLabel} moneynessColor={put.otmItmColor} staleText={mobileStaleText(put.lastTradeDate)} watched={watchlistIds.has(watchlistId)} onToggleWatchlist={() => toggleWatchlist(put)} onSelect={() => setSelectedOption(put)} />;
             })}
           </div>
         )}

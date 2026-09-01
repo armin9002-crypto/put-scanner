@@ -639,16 +639,243 @@ table,
   color: inherit;
 }
 
+/* Portrait option chains use a six-column comparison grid; the drawer owns secondary detail. */
+.mobile-option-chain-table {
+  min-width: 0;
+  overflow: hidden;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--surface);
+}
+
+.mobile-option-chain-header,
+.mobile-option-chain-row {
+  display: grid;
+  grid-template-columns: minmax(3.4rem, 0.9fr) minmax(3.65rem, 1fr) minmax(4.1rem, 1.12fr) repeat(3, minmax(3.35rem, 1fr));
+  min-width: 0;
+  align-items: center;
+}
+
+.mobile-option-chain-header {
+  min-height: 30px;
+  padding: 0 0.35rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text-tertiary);
+  font-family: var(--font-data);
+  font-size: 0.53rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  text-align: right;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.mobile-option-chain-header > :first-child,
+.mobile-option-chain-row > :first-child {
+  text-align: left;
+}
+
+.mobile-option-chain-row {
+  position: relative;
+  min-height: 48px;
+  padding: 0.2rem 0.35rem;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface);
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: right;
+}
+
+.mobile-option-chain-row:nth-child(odd) {
+  background: var(--bg-secondary);
+}
+
+.mobile-option-chain-row:focus-visible {
+  z-index: 1;
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.mobile-option-chain-cell {
+  min-width: 0;
+  overflow: hidden;
+  padding-inline: 0.18rem;
+  font-size: 0.62rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-option-chain-cell--strike {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.1rem;
+  overflow: visible;
+  font-size: 0.73rem;
+}
+
+.mobile-option-chain-cell__context {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-family: var(--font-data);
+  font-size: 0.5rem;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-option-chain-cell__status {
+  display: block;
+  overflow: hidden;
+  color: var(--yellow);
+  font-family: var(--font-data);
+  font-size: 0.48rem;
+  font-weight: 650;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-option-chain-row--skeleton {
+  cursor: default;
+}
+
+.mobile-option-chain-row--skeleton span {
+  height: 0.7rem;
+  margin-inline: 0.18rem;
+  border-radius: 0.2rem;
+  background: var(--border);
+}
+
 .mobile-position-row {
   position: relative;
-  min-height: 126px;
-  padding: 0.625rem 0.75rem;
+  min-height: 54px;
+  padding: 0;
   border-bottom: 1px solid var(--border-subtle);
   background: var(--surface);
 }
 
 .mobile-position-row:last-child {
   border-bottom: 0;
+}
+
+.mobile-position-row__summary {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 54px;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.4rem 0.35rem 0.55rem;
+}
+
+.mobile-position-row__summary-button {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 auto;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.25fr) 1.2rem;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 44px;
+  padding: 0;
+  color: var(--text-primary);
+  text-align: left;
+}
+
+.mobile-position-row__identity,
+.mobile-position-row__primary {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.mobile-position-row__identity {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: 0.63rem;
+  white-space: nowrap;
+}
+
+.mobile-position-row__identity strong {
+  color: var(--text-primary);
+  font-size: 0.76rem;
+}
+
+.mobile-position-row__identity span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobile-position-row__primary {
+  justify-content: flex-end;
+  gap: 0.6rem;
+  text-align: right;
+}
+
+.mobile-position-row__primary > span {
+  display: grid;
+  min-width: 0;
+  gap: 0.1rem;
+}
+
+.mobile-position-row__primary small {
+  color: var(--text-tertiary);
+  font-size: 0.52rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.mobile-position-row__primary b {
+  font-size: 0.7rem;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.mobile-position-row__chevron {
+  display: inline-flex;
+  color: var(--text-tertiary);
+}
+
+.mobile-position-row__health {
+  flex: none;
+  font-size: 0.53rem;
+  line-height: 1;
+}
+
+.mobile-position-row__details {
+  border-top: 1px solid var(--border-subtle);
+  padding: 0.45rem 0.55rem 0.55rem;
+  background: var(--bg-secondary);
+}
+
+.mobile-position-row__meta {
+  margin-bottom: 0.4rem;
+  color: var(--text-tertiary);
+  font-size: 0.6rem;
+}
+
+.mobile-position-row__metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.45rem;
+  color: var(--text-tertiary);
+  font-size: 0.58rem;
+  line-height: 1.3;
+}
+
+.mobile-position-row__metrics b {
+  color: var(--text-primary);
+}
+
+.mobile-position-row__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  margin-top: 0.45rem;
 }
 
 .mobile-expiration-group {
@@ -2340,6 +2567,35 @@ td {
   background: color-mix(in srgb, var(--bg-elevated) 88%, var(--accent-bg)) !important;
 }
 
+/* Phone-landscape keeps the workstation table; only the ticker identity is frozen. */
+.portfolio-schedule-surface .financial-table thead th.portfolio-sticky-column,
+.portfolio-schedule-surface .financial-table tbody tr > td:first-child,
+.portfolio-history-table thead th.portfolio-sticky-column,
+.portfolio-history-table tbody tr > td:first-child {
+  position: -webkit-sticky;
+  position: sticky;
+  left: 0;
+  border-right: 1px solid var(--border);
+}
+
+.portfolio-schedule-surface .financial-table thead th.portfolio-sticky-column,
+.portfolio-history-table thead th.portfolio-sticky-column {
+  z-index: 5;
+  background: var(--bg-inset) !important;
+}
+
+.portfolio-schedule-surface .financial-table tbody tr > td:first-child,
+.portfolio-history-table tbody tr > td:first-child {
+  z-index: 2;
+  background: var(--bg-secondary);
+}
+
+.portfolio-schedule-surface .financial-table tbody tr[data-group-key] > td:first-child,
+.portfolio-history-table tbody tr.portfolio-history-group-subtotal > td:first-child {
+  z-index: 3;
+  background: var(--bg-elevated);
+}
+
 .portfolio-paired-metric-cell {
   line-height: 1.12;
 }
@@ -2415,13 +2671,16 @@ td {
 
 .portfolio-history-group-toggle {
   display: flex;
+  box-sizing: border-box;
   width: 100%;
-  min-height: 30px;
+  height: 20px;
+  min-height: 20px;
   align-items: center;
   gap: 0.4rem;
-  padding: 0.22rem 0.5rem;
+  padding: 0 0.5rem;
+  line-height: 1;
   color: var(--text-primary);
-  font-size: 0.74rem;
+  font-size: 0.68rem;
   font-weight: 680;
   text-align: left;
   transition: background-color var(--transition-ui), color var(--transition-ui);
@@ -2446,8 +2705,9 @@ td {
 }
 
 .portfolio-history-group-subtotal td {
-  height: 32px;
+  height: 20px;
   padding-block: 0 !important;
+  line-height: 1 !important;
   color: var(--text-primary);
   font-weight: 620;
 }
@@ -2567,6 +2827,117 @@ td {
   overflow-wrap: anywhere;
 }
 
+.portfolio-history-mobile-group-header[aria-expanded="false"] .portfolio-history-mobile-group-header__secondary {
+  display: none;
+}
+
+.portfolio-history-mobile-row {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+}
+
+.portfolio-history-mobile-row__summary {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.5rem;
+  color: var(--text-primary);
+  text-align: left;
+}
+
+.portfolio-history-mobile-row__summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.portfolio-history-mobile-row__identity,
+.portfolio-history-mobile-row__primary {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.portfolio-history-mobile-row__identity {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: 0.58rem;
+  white-space: nowrap;
+}
+
+.portfolio-history-mobile-row__identity strong {
+  color: var(--accent-light);
+  font-size: 0.72rem;
+}
+
+.portfolio-history-mobile-row__identity > span:not(.portfolio-history-group-chevron) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.portfolio-history-mobile-row__primary {
+  justify-content: flex-end;
+  gap: 0.55rem;
+  text-align: right;
+}
+
+.portfolio-history-mobile-row__primary > span {
+  display: grid;
+  min-width: 0;
+  gap: 0.1rem;
+}
+
+.portfolio-history-mobile-row__primary small {
+  color: var(--text-tertiary);
+  font-size: 0.5rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.portfolio-history-mobile-row__primary b {
+  font-size: 0.66rem;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.portfolio-history-mobile-row__details {
+  border-top: 1px solid var(--border-subtle);
+  padding: 0.45rem 0.5rem 0.5rem;
+  background: var(--bg-inset);
+}
+
+.portfolio-history-mobile-row__meta {
+  margin-bottom: 0.35rem;
+  color: var(--text-tertiary);
+  font-size: 0.58rem;
+}
+
+.portfolio-history-mobile-row__metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+.portfolio-history-mobile-row__metrics > * {
+  min-height: 31px;
+  padding: 0.2rem 0.25rem;
+}
+
+.portfolio-history-mobile-row__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.3rem;
+  margin-top: 0.4rem;
+}
+
 .portfolio-history-mobile-group-header__totals strong {
   font-family: var(--font-mono);
   font-size: 0.72rem;
@@ -2623,6 +2994,16 @@ td {
 
 .portfolio-realized-pnl-chart__value--negative {
   color: var(--negative);
+}
+
+.portfolio-realized-pnl-chart__bar-stack {
+  gap: 0.375rem;
+}
+
+@media (orientation: landscape) and (max-height: 520px) and (max-width: 950px) {
+  .portfolio-realized-pnl-chart__bar-stack {
+    gap: 0.25rem;
+  }
 }
 
 @media (max-width: 767px) {
@@ -2702,6 +3083,34 @@ td {
 
   .watchlist-mobile-card .font-mono.text-lg {
     letter-spacing: -0.025em;
+  }
+}
+
+@media (max-width: 767px) and (orientation: portrait) {
+  .portfolio-priority-rail {
+    display: none;
+  }
+
+  .mobile-expiration-group > button {
+    min-height: 46px;
+    padding: 0.4rem 0.55rem;
+  }
+
+  .mobile-expiration-group > button > span {
+    line-height: 1.1;
+  }
+
+  .mobile-expiration-group > button > span > span:nth-child(2),
+  .mobile-expiration-group > button > span > span:nth-child(3) {
+    font-size: 0.58rem;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 520px) and (max-width: 950px) {
+  /* The responsive mode intentionally routes phone-landscape through the wide table layout. */
+  .portfolio-page .portfolio-schedule-surface.hidden,
+  .portfolio-page .portfolio-history-section > .hidden {
+    display: block !important;
   }
 }
 

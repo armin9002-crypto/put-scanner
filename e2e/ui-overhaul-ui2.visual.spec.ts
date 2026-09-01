@@ -43,6 +43,25 @@ async function capture(page: Page, testInfo: TestInfo, name: string) {
   overflows.push({ project: testInfo.project.name, name, url: page.url(), ...overflow });
 }
 
+async function measureOptionTable(page: Page, testInfo: TestInfo, name: string) {
+  const metrics = await page.evaluate(() => {
+    const visible = (selector: string) => [...document.querySelectorAll(selector)].filter(element => {
+      const box = element.getBoundingClientRect();
+      return box.width > 0 && box.height > 0;
+    });
+    const heights = (selector: string) => visible(selector).map(element => element.getBoundingClientRect().height);
+    return {
+      rowHeights: heights('.mobile-option-chain-row:not(.mobile-option-chain-row--skeleton)'),
+      headerHeight: visible('.mobile-option-chain-header')[0]?.getBoundingClientRect().height ?? null,
+      desktopRows: heights('.option-desktop-chain tbody tr'),
+      pageOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+    };
+  });
+  const directory = path.join(outputRoot, testInfo.project.name);
+  await mkdir(directory, { recursive: true });
+  await writeFile(path.join(directory, `${name}-metrics.json`), `${JSON.stringify(metrics, null, 2)}\n`, 'utf8');
+}
+
 async function seed(page: Page) {
   await page.addInitScript(({ nearExpiration, expiration }) => {
     if (sessionStorage.getItem('put_scanner_ui2_seeded') === 'true') return;
@@ -133,7 +152,11 @@ test.describe('UI-2 discovery workflow visual matrix', () => {
       await capture(page, testInfo, 'scanner-mobile-filters-open');
       await openDetail(page);
       await capture(page, testInfo, 'detail-mobile');
-      await page.locator('article.mobile-option-row').first().getByRole('button', { name: /Open details/ }).click({ force: true });
+      await measureOptionTable(page, testInfo, 'detail-mobile');
+      for (const label of ['Strike', 'Last Trade', 'OTM/ITM', 'AY Last', 'AY Bid', 'AY Ask']) await expect(page.locator('.mobile-option-chain-header')).toContainText(label);
+      await expect(page.locator('.mobile-option-chain-row')).toHaveCount(2);
+      await expect(page.locator('.mobile-option-chain-row').first()).toHaveCSS('min-height', '48px');
+      await page.locator('.mobile-option-chain-row').first().click();
       await expect(page.getByRole('dialog')).toBeVisible();
       await capture(page, testInfo, 'option-drawer-mobile');
     } else if (project === 'landscape-844x390') {
@@ -141,7 +164,9 @@ test.describe('UI-2 discovery workflow visual matrix', () => {
       await capture(page, testInfo, 'scanner-landscape');
       await openDetail(page);
       await capture(page, testInfo, 'detail-landscape');
-      await page.locator('article.mobile-option-row').first().getByRole('button', { name: /Open details/ }).click({ force: true });
+      await measureOptionTable(page, testInfo, 'detail-landscape');
+      await expect(page.locator('.option-desktop-chain')).toBeVisible();
+      await page.getByRole('row').filter({ hasText: '90.00' }).last().click();
       await expect(page.getByRole('dialog')).toBeVisible();
       await capture(page, testInfo, 'option-drawer-landscape');
     } else {

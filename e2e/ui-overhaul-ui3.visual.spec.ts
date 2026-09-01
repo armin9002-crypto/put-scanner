@@ -61,6 +61,7 @@ async function measurePortfolio(page: Page, testInfo: TestInfo, name: string) {
     const historyCards = visible('.portfolio-history-summary-grid > *');
     const chart = firstVisible('.portfolio-realized-pnl-chart');
     const historyTable = firstVisible('.portfolio-history-table');
+    const heights = (selector: string) => visible(selector).map(element => rect(element)?.height ?? null);
     return {
       titleToSchedule: title && schedule ? schedule.getBoundingClientRect().top + window.scrollY - (title.getBoundingClientRect().top + window.scrollY) : null,
       historyTitleToTable: history && historyTable ? historyTable.getBoundingClientRect().top + window.scrollY - (history.getBoundingClientRect().top + window.scrollY) : null,
@@ -68,6 +69,12 @@ async function measurePortfolio(page: Page, testInfo: TestInfo, name: string) {
       priorityHeights: priorityCards.map(element => rect(element)?.height ?? null),
       historyKpiHeights: historyCards.map(element => rect(element)?.height ?? null),
       chart: rect(chart),
+      activeChildRowHeights: heights('.portfolio-schedule-surface tbody tr[data-trade-id]'),
+      activeGroupRowHeights: heights('.portfolio-schedule-surface tbody tr[data-group-key]'),
+      historyChildRowHeights: heights('.portfolio-history-table tbody tr:not(.portfolio-history-group-subtotal)'),
+      historyGroupRowHeights: heights('.portfolio-history-table tbody tr.portfolio-history-group-subtotal'),
+      mobileActiveRowHeights: heights('.mobile-position-row'),
+      mobileHistoryRowHeights: heights('.portfolio-history-mobile-row'),
       chartMonthLabels: visible('[data-chart-month-label]').map(element => element.textContent?.trim() ?? ''),
       chartValueLabels: visible('[data-chart-pnl-label]').map(element => element.textContent?.trim() ?? ''),
     };
@@ -93,7 +100,8 @@ async function assertRenderedPortfolioDensity(page: Page, desktop: boolean) {
     }
   }
   const priorityCards = page.locator('.portfolio-priority-card:visible');
-  await expect(priorityCards).toHaveCount(2);
+  const priorityRailVisible = await page.locator('.portfolio-priority-rail:visible').count();
+  if (priorityRailVisible) await expect(priorityCards).toHaveCount(2);
   if (desktop) {
     const heights = await priorityCards.evaluateAll(elements => elements.map(element => element.getBoundingClientRect().height));
     expect(Math.max(...heights) - Math.min(...heights)).toBeLessThan(1);
@@ -122,6 +130,20 @@ async function assertRenderedHistoryDensity(page: Page) {
   await expect(page.locator('.portfolio-realized-pnl-chart__value--negative:visible')).toHaveCount(2);
   await expect(monthLabels.first()).toHaveCSS('font-size', '10px');
   await expect(valueLabels.first()).toHaveCSS('font-size', '10px');
+  const activeRows = page.locator('.portfolio-schedule-surface tbody tr[data-trade-id]:visible');
+  const historyRows = page.locator('.portfolio-history-table tbody tr:not(.portfolio-history-group-subtotal):visible');
+  if (await activeRows.count() && await historyRows.count()) {
+    const activeHeight = Math.max(...await activeRows.evaluateAll(elements => elements.map(element => element.getBoundingClientRect().height)));
+    const historyHeight = Math.max(...await historyRows.evaluateAll(elements => elements.map(element => element.getBoundingClientRect().height)));
+    expect(historyHeight).toBeLessThanOrEqual(activeHeight);
+  }
+  const activeGroups = page.locator('.portfolio-schedule-surface tbody tr[data-group-key]:visible');
+  const historyGroups = page.locator('.portfolio-history-table tbody tr.portfolio-history-group-subtotal:visible');
+  if (await activeGroups.count() && await historyGroups.count()) {
+    const activeHeight = Math.max(...await activeGroups.evaluateAll(elements => elements.map(element => element.getBoundingClientRect().height)));
+    const historyHeight = Math.max(...await historyGroups.evaluateAll(elements => elements.map(element => element.getBoundingClientRect().height)));
+    expect(historyHeight).toBeLessThanOrEqual(activeHeight + 2);
+  }
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
 }
 
@@ -254,6 +276,12 @@ test.describe('UI-3 portfolio and watchlist visual matrix', () => {
       await openPortfolio(page); await capture(page, testInfo, 'portfolio-mobile-headline');
       await measurePortfolio(page, testInfo, 'portfolio-dashboard');
       await assertRenderedPortfolioDensity(page, false);
+      await expect(page.locator('.portfolio-priority-rail:visible')).toHaveCount(0);
+      await expect(page.locator('.mobile-position-row:visible')).toHaveCount(4);
+      await expect(page.locator('.mobile-position-row__summary').first()).toContainText('Gain/Loss');
+      await expect(page.locator('.mobile-position-row__summary').first()).toContainText('% Captured');
+      await page.locator('.mobile-position-row__summary').first().click();
+      await expect(page.locator('.mobile-position-row__details:visible').first()).toBeVisible();
       const analytics = page.getByRole('button', { name: /Portfolio Analytics/ }).first();
       if (await analytics.count()) { await analytics.click(); await analytics.scrollIntoViewIfNeeded(); await capture(page, testInfo, 'portfolio-mobile-analytics'); }
       const entryDeltaToggle = page.getByRole('checkbox', { name: 'Show Entry Deltas / IV' });
@@ -263,13 +291,18 @@ test.describe('UI-3 portfolio and watchlist visual matrix', () => {
         await entryDeltaToggle.uncheck();
       }
       const history = page.getByRole('button', { name: /History/ }).first();
-      if (await history.count()) { await history.click(); await page.getByText('History', { exact: true }).last().scrollIntoViewIfNeeded(); await capture(page, testInfo, 'portfolio-mobile-history'); }
+      if (await history.count()) { await history.click(); await page.getByText('History', { exact: true }).last().scrollIntoViewIfNeeded(); await capture(page, testInfo, 'portfolio-mobile-history-collapsed'); const expandAll = page.getByRole('button', { name: 'Expand All' }).last(); if (await expandAll.count()) await expandAll.click(); await expect(page.locator('.portfolio-history-mobile-row:visible')).toHaveCount(4); await expect(page.locator('.portfolio-history-mobile-row__summary').first()).toContainText('Realized P&L'); await expect(page.locator('.portfolio-history-mobile-row__summary').first()).toContainText('Realized IRR'); await page.locator('.portfolio-history-mobile-row__summary').first().click(); await expect(page.locator('.portfolio-history-mobile-row__details:visible').first()).toBeVisible(); }
       if (await history.count()) { await measurePortfolio(page, testInfo, 'portfolio-history'); await assertRenderedHistoryDensity(page); }
     } else if (project === 'landscape-844x390' || project === 'landscape-667x375') {
       await openWatchlist(page); await capture(page, testInfo, 'watchlist-landscape');
       await openPortfolio(page); await capture(page, testInfo, 'portfolio-landscape');
       await measurePortfolio(page, testInfo, 'portfolio-dashboard');
       await assertRenderedPortfolioDensity(page, false);
+      await expect(page.locator('.portfolio-schedule-surface .financial-table')).toBeVisible();
+      await expect(page.locator('.portfolio-schedule-surface .financial-table thead th.portfolio-sticky-column')).toHaveCSS('position', 'sticky');
+      await page.locator('.portfolio-history-section').scrollIntoViewIfNeeded();
+      await expect(page.locator('.portfolio-history-table')).toBeVisible();
+      await expect(page.locator('.portfolio-history-table thead th.portfolio-sticky-column')).toHaveCSS('position', 'sticky');
       const analytics = page.getByRole('button', { name: /Portfolio Analytics/ }).first();
       if (await analytics.count()) { await analytics.click(); await analytics.scrollIntoViewIfNeeded(); await capture(page, testInfo, 'portfolio-landscape-analytics'); }
     } else {

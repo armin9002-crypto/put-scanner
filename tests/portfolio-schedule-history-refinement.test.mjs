@@ -22,7 +22,7 @@ test('Schedule Entry Delta / IV display toggle defaults off and keeps paired val
   assert.match(portfolio, /showEntryDeltas && <span className="portfolio-paired-metric__line"><span className="portfolio-paired-metric__label">Entry/);
   assert.match(portfolio, /<span className="portfolio-paired-metric__line">\{showEntryDeltas && <span className="portfolio-paired-metric__label">Current<\/span>\} <span className="font-semibold"[^>]*>\{formatDelta\(delta\)/);
   assert.match(portfolio, /const quoteFreshness = getPortfolioQuoteFreshness\(trade\)/);
-  assert.match(portfolio, /const visibleFreshness = quoteFreshness\.state === 'fresh' \? null : quoteFreshness\.label/);
+  assert.match(portfolio, /const visibleFreshness = quoteFreshness\.state === 'stale' \|\| quoteFreshness\.state === 'unavailable' \? quoteFreshness\.label : null/);
   assert.match(portfolio, /visibleFreshness && <span className="portfolio-paired-metric__status" data-freshness=\{quoteFreshness\.state\}>/);
   assert.doesNotMatch(portfolio, /<br \/><\/span><span className="text-\[9px\]"/);
   assert.match(portfolio, /showEntryDelta=\{showEntryDeltas\}/);
@@ -80,8 +80,8 @@ test('History keeps Schedule parity for density, grouping, semantic values, and 
   assert.match(source, /className="portfolio-history-table financial-table/);
   assert.match(styles, /\.portfolio-history-table thead th \{[\s\S]*height: 34px[\s\S]*background: var\(--bg-inset\)/);
   assert.match(styles, /\.portfolio-history-table tbody td \{[\s\S]*height: 28px[\s\S]*padding-block: 0\.25rem/);
-  assert.match(styles, /\.portfolio-history-group-toggle \{[\s\S]*min-height: 30px/);
-  assert.match(styles, /\.portfolio-history-group-subtotal td \{[\s\S]*height: 32px[\s\S]*color: var\(--text-primary\)/);
+  assert.match(styles, /\.portfolio-history-group-toggle \{[\s\S]*height: 20px[\s\S]*min-height: 20px/);
+  assert.match(styles, /\.portfolio-history-group-subtotal td \{[\s\S]*height: 20px[\s\S]*color: var\(--text-primary\)/);
   assert.match(styles, /\.portfolio-history-group-subtotal__pnl \{[\s\S]*font-weight: 740/);
   assert.match(source, /<HistoryAggregateValue value=\{String\(group\.contractCount\)\}/);
   assert.match(source, /portfolio-history-actions[\s\S]*icon-button h-7 w-7/);

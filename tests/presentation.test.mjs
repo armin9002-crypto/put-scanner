@@ -56,7 +56,10 @@ test('all quote views share deterministic LAST, BID, MID, ASK display order', ()
     assert.match(source, /OPTION_QUOTE_TABLE_DISPLAY_ORDER\.map\(field => quoteColumns\[field\]\)/);
     assert.match(source, /OPTION_QUOTE_TABLE_DISPLAY_ORDER\.map\(field => <td/);
   }
-  assert.match(mobileSource, /orderedOptionQuoteEntries\(\{ last: props\.last, bid: props\.bid, mid, ask: props\.ask \}\)/);
+  assert.match(mobileSource, /data-field="last"/);
+  assert.match(mobileSource, /data-field="ay-last"/);
+  assert.match(mobileSource, /data-field="ay-bid"/);
+  assert.match(mobileSource, /data-field="ay-ask"/);
   assert.match(drawerSource, /orderedOptionQuoteEntries\(\{ last: usableLast, bid, mid, ask \}\)/);
   assert.match(portfolioSource, /orderedOptionQuoteEntries\(\{[\s\S]*?last: trade\.latestMarketData\?\.optionLast,[\s\S]*?bid: trade\.latestMarketData\?\.optionBid,[\s\S]*?mid: getPortfolioMidMark\(trade\),[\s\S]*?ask: trade\.latestMarketData\?\.optionAsk/);
   assert.match(scannerCardSource, /orderedOptionQuoteEntries\(\{ last: snapshot\?\.last, bid: snapshot\?\.bid, mid: snapshot\?\.midpoint, ask: snapshot\?\.ask \}\)/);

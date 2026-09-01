@@ -1351,7 +1351,7 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
 }
 
 export default function PortfolioPage() {
-  const { isPhone } = useResponsiveMode();
+  const { isPhone, isPhoneLandscape } = useResponsiveMode();
   const [trades, setTrades] = useState<PortfolioTrade[]>([]);
   const [editingTrade, setEditingTrade] = useState<PortfolioTrade | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -1966,7 +1966,7 @@ export default function PortfolioPage() {
     const active = sortField === field;
     const nextDirection = active && sortDir === 'asc' ? 'descending' : 'ascending';
     return (
-    <th scope="col" aria-sort={active ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} className={`px-2 py-2 text-[11px] font-medium whitespace-nowrap ${align} ${columnClass}`} style={{ color: 'var(--text-muted)' }}>
+    <th scope="col" aria-sort={active ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} className={`px-2 py-2 text-[11px] font-medium whitespace-nowrap ${align} ${columnClass} ${field === 'ticker' ? 'portfolio-sticky-column portfolio-sticky-column--header' : ''}`} style={{ color: 'var(--text-muted)' }}>
       <button type="button" title={title} aria-label={`${label}, ${active ? `sorted ${sortDir === 'asc' ? 'ascending' : 'descending'}` : 'not sorted'}. Activate to sort ${nextDirection}.`} onClick={() => {
         if (sortField === field) setSortDir(dir => dir === 'asc' ? 'desc' : 'asc');
         else {
@@ -1982,10 +1982,11 @@ export default function PortfolioPage() {
 
   const renderMobileScheduleTrade = (trade: PortfolioTrade) => {
     const freshness = getPortfolioQuoteFreshness(trade);
-    return <MobilePositionRow key={trade.id} ticker={trade.ticker} strike={formatCurrency(trade.strike)} contracts={trade.contracts} expiration={formatDteValue(calculateRemainingDte(trade))} entryDate={formatHistoryDate(trade.soldDate)} pnl={formatCurrency(calculateTotalGainLoss(trade, markBasis), 0)} captured={formatPctValue(calculatePercentCaptured(trade, markBasis))} mark={formatOptionPrice(calculateCurrentOptionMark(trade, markBasis))} entryDelta={formatDelta(trade.entryDelta)} showEntryDelta={showEntryDeltas} currentDelta={formatDelta(trade.latestMarketData?.delta)} entryIv={formatPercentPoints(trade.entryIv, 1)} currentIv={formatPercentPoints(trade.latestMarketData?.iv, 1)} showEntryIv={showEntryDeltas} freshness={freshness.state === 'fresh' ? '' : freshness.label} distance={formatPctValue(calculateDistanceToStrike(trade))} entryVix={isFiniteNumber(trade.entryVixClose) ? trade.entryVixClose.toFixed(2) : DASH} health={getPositionHealth(trade)} onOpen={() => openDrawer(trade)} onEdit={() => setEditingTrade(trade)} />;
+    const visibleFreshness = freshness.state === 'stale' || freshness.state === 'unavailable' ? freshness.label : '';
+    return <MobilePositionRow key={trade.id} ticker={trade.ticker} strike={formatCurrency(trade.strike)} contracts={trade.contracts} expiration={formatDteValue(calculateRemainingDte(trade))} entryDate={formatHistoryDate(trade.soldDate)} pnl={formatCurrency(calculateTotalGainLoss(trade, markBasis), 0)} captured={formatPctValue(calculatePercentCaptured(trade, markBasis))} mark={formatOptionPrice(calculateCurrentOptionMark(trade, markBasis))} entryDelta={formatDelta(trade.entryDelta)} showEntryDelta={showEntryDeltas} currentDelta={formatDelta(trade.latestMarketData?.delta)} entryIv={formatPercentPoints(trade.entryIv, 1)} currentIv={formatPercentPoints(trade.latestMarketData?.iv, 1)} showEntryIv={showEntryDeltas} freshness={visibleFreshness} distance={formatPctValue(calculateDistanceToStrike(trade))} entryVix={isFiniteNumber(trade.entryVixClose) ? trade.entryVixClose.toFixed(2) : DASH} health={getPositionHealth(trade)} onOpen={() => openDrawer(trade)} onEdit={() => setEditingTrade(trade)} />;
   };
 
-  if (isPhone) {
+  if (isPhone && !isPhoneLandscape) {
     return (
       <div className="mobile-route-page portfolio-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
         {trades.length === 0 ? <div className="px-6 py-16 text-center"><Briefcase className="mx-auto mb-3 h-7 w-7" style={{ color: 'var(--text-dim)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No open positions</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Add a trade or import a brokerage screenshot.</p><div className="mx-auto mt-4 grid max-w-xs grid-cols-2 gap-2"><button type="button" onClick={() => setShowAddModal(true)} className="mobile-sheet-action primary"><Plus className="h-4 w-4" /> Add Trade</button><button type="button" onClick={() => setShowImportModal(true)} className="mobile-sheet-action secondary"><FileImage className="h-4 w-4" /> Import</button></div><button type="button" onClick={() => setShowDataBackup(true)} className="pressable mt-3 inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-xs font-semibold" style={{ color: 'var(--text-muted)' }}><Download className="h-4 w-4" /> Data Backup</button></div> : (
@@ -2368,7 +2369,7 @@ export default function PortfolioPage() {
                       const currentMark = calculateCurrentOptionMark(trade, markBasis);
                       const delta = trade.latestMarketData?.delta ?? null;
                       const quoteFreshness = getPortfolioQuoteFreshness(trade);
-                      const visibleFreshness = quoteFreshness.state === 'fresh' ? null : quoteFreshness.label;
+                      const visibleFreshness = quoteFreshness.state === 'stale' || quoteFreshness.state === 'unavailable' ? quoteFreshness.label : null;
                       const redeployBadges = getRedeployBadges(trade, markBasis);
                       const health = getPositionHealth(trade);
                       return (
@@ -2601,13 +2602,13 @@ function MonthlyRealizedChart({ trades }: { trades: PortfolioTrade[] }) {
           const barHeight = Math.max(5, Math.abs(month.realizedPnl) / max * 26);
           return <div key={month.month} className="group/month relative flex h-full min-w-[48px] flex-1 flex-col items-center" title={`${label}\nTrades: ${month.trades}\nPremium: ${formatCurrency(month.premiumCollected, 0)}\nRealized P&L: ${formatCurrency(month.realizedPnl, 0)}\nCaptured: ${formatPctValue(captured)}`}>
             <div className="relative h-1/2 w-full">
-              {month.realizedPnl > 0 && <div className="absolute bottom-0 left-1/2 flex -translate-x-1/2 flex-col items-center gap-0.5">
+              {month.realizedPnl > 0 && <div className="portfolio-realized-pnl-chart__bar-stack absolute bottom-0 left-1/2 flex -translate-x-1/2 flex-col items-center">
                 {valueLabel && <span data-chart-pnl-label className="portfolio-realized-pnl-chart__value portfolio-realized-pnl-chart__value--positive">{valueLabel}</span>}
                 <div className="w-full max-w-10 rounded-t transition-opacity hover:opacity-80 motion-reduce:transition-none" style={{ height: `${barHeight}px`, backgroundColor: 'var(--positive)' }} />
               </div>}
             </div>
             <div className="relative h-1/2 w-full">
-              {month.realizedPnl < 0 && <div className="absolute left-1/2 top-0 flex -translate-x-1/2 flex-col items-center gap-0.5">
+              {month.realizedPnl < 0 && <div className="portfolio-realized-pnl-chart__bar-stack absolute left-1/2 top-0 flex -translate-x-1/2 flex-col items-center">
                 <div className="w-full max-w-10 rounded-b transition-opacity hover:opacity-80 motion-reduce:transition-none" style={{ height: `${barHeight}px`, backgroundColor: 'var(--negative)' }} />
                 {valueLabel && <span data-chart-pnl-label className="portfolio-realized-pnl-chart__value portfolio-realized-pnl-chart__value--negative">{valueLabel}</span>}
               </div>}
@@ -2617,6 +2618,64 @@ function MonthlyRealizedChart({ trades }: { trades: PortfolioTrade[] }) {
         })}
       </div>
     </section>
+  );
+}
+
+function MobileHistoryTradeRow({
+  trade,
+  resolving,
+  onRetryResolve,
+  onManualExpirationClose,
+  onRequestWorthlessConfirmation,
+  onEdit,
+  onDelete,
+}: {
+  trade: PortfolioTrade;
+  resolving: boolean;
+  onRetryResolve: (trade: PortfolioTrade) => void;
+  onManualExpirationClose: (trade: PortfolioTrade) => void;
+  onRequestWorthlessConfirmation: (trade: PortfolioTrade) => void;
+  onEdit: (trade: PortfolioTrade) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const pending = trade.status === 'expired_price_pending' || trade.resolutionType === 'expired_price_pending';
+  const canEnterExpirationPrice = pending;
+  const canCorrectExpirationClose = trade.status === 'expired' && !pending;
+  const canConfirmWorthless = isManualWorthlessConfirmationEligible(trade);
+  const realizedPnl = getArchivedRealizedPnl(trade);
+  const percentCaptured = getArchivedPercentCaptured(trade);
+  const realizedIrr = historyRealizedIrr(trade);
+  return (
+    <article className="portfolio-history-mobile-row" data-expanded={expanded ? 'true' : 'false'}>
+      <button type="button" className="portfolio-history-mobile-row__summary" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>
+        <span className="portfolio-history-mobile-row__identity"><span className="portfolio-history-group-chevron" aria-hidden="true">{expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</span><strong className="font-mono">{trade.ticker}</strong><span>Exp. {formatHistoryDate(trade.expiration)}</span><span className="font-mono">{formatCurrency(trade.strike)}</span></span>
+        <span className="portfolio-history-mobile-row__primary"><span><small>Realized P&amp;L</small><b className="font-mono" style={{ color: pnlColor(realizedPnl) }}>{formatCurrency(realizedPnl)}</b></span><span><small>Realized IRR</small><b className="font-mono" style={{ color: pnlColor(realizedIrr) }}>{formatPctValue(realizedIrr)}</b></span></span>
+      </button>
+      {expanded && <div className="portfolio-history-mobile-row__details">
+        <div className="portfolio-history-mobile-row__meta">Entry {formatHistoryDate(trade.soldDate)} · {formatDays(historyDaysHeld(trade))} held · {getArchiveOutcomeLabel(trade)}</div>
+        <div className="portfolio-history-mobile-row__metrics">
+          <Metric label="Sold Price" value={formatHistoricalOptionPrice(trade.soldPrice)} />
+          <Metric label="Gross Risk" value={formatCurrency(historyGrossRisk(trade), 0)} />
+          <Metric label="Premium" value={formatCurrency(getArchivedPremium(trade))} color="var(--green)" />
+          <Metric label="Captured" value={formatPctValue(percentCaptured)} color={pnlColor(percentCaptured)} />
+          <Metric label="NY" value={formatPctValue(historyEntryNominalYield(trade))} />
+          <Metric label="VIX @ Entry" value={isFiniteNumber(historyEntryVix(trade)) ? historyEntryVix(trade)!.toFixed(2) : DASH} />
+          <Metric label="Entry IV" value={formatPercentPoints(historyEntryIv(trade), 1)} />
+          <Metric label="Price @ Exp." value={formatCurrency(historyPriceAtExpiration(trade))} />
+          <Metric label="Entry Delta" value={formatDelta(trade.entryDelta)} />
+        </div>
+        {trade.resolutionWarning && <p className="mt-2 text-[10px]" style={{ color: 'var(--yellow)' }}>{trade.resolutionWarning}</p>}
+        <div className="portfolio-history-mobile-row__actions">
+          {pending && <button type="button" onClick={() => onRetryResolve(trade)} disabled={resolving} className="tap-target rounded-md px-2 text-[11px] disabled:opacity-50" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>{resolving ? 'Resolving...' : 'Retry Resolve'}</button>}
+          {canConfirmWorthless && <button type="button" onClick={() => onRequestWorthlessConfirmation(trade)} className="tap-target rounded-md px-2 text-[11px]" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Confirm Worthless</button>}
+          {canEnterExpirationPrice && <button type="button" onClick={() => onManualExpirationClose(trade)} className="tap-target rounded-md px-2 text-[11px]" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Enter Exp. Price</button>}
+          {canCorrectExpirationClose && <button type="button" onClick={() => onManualExpirationClose(trade)} className="tap-target flex items-center justify-center rounded-md px-2" aria-label={`Correct Price @ Exp. for ${trade.ticker}`} title="Correct Price @ Exp." style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }}><Wrench className="h-4 w-4" /></button>}
+          <button type="button" onClick={() => onEdit(trade)} className="tap-target flex items-center justify-center rounded-md px-2" aria-label={`Edit ${trade.ticker} trade`} style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }}><Edit2 className="h-4 w-4" /></button>
+          <button type="button" onClick={() => onDelete(trade.id)} className="tap-target flex items-center justify-center rounded-md px-2" aria-label={`Delete ${trade.ticker} trade`} style={{ color: 'var(--red)', backgroundColor: 'rgba(239,68,68,0.1)' }}><Trash2 className="h-4 w-4" /></button>
+        </div>
+      </div>}
+    </article>
   );
 }
 
@@ -2686,7 +2745,7 @@ function ArchiveHistorySection({
     const active = historySortField === field;
     const nextDirection = active && historySortDir === 'asc' ? 'descending' : 'ascending';
     return (
-      <th scope="col" aria-sort={active ? (historySortDir === 'asc' ? 'ascending' : 'descending') : 'none'} className={`px-2 py-2 text-[11px] font-medium whitespace-nowrap ${align}`} style={{ color: 'var(--text-muted)' }}>
+      <th scope="col" aria-sort={active ? (historySortDir === 'asc' ? 'ascending' : 'descending') : 'none'} className={`px-2 py-2 text-[11px] font-medium whitespace-nowrap ${align} ${field === 'ticker' ? 'portfolio-sticky-column portfolio-sticky-column--header' : ''}`} style={{ color: 'var(--text-muted)' }}>
         <button type="button" title={title} aria-label={`${label}, ${active ? `sorted ${historySortDir === 'asc' ? 'ascending' : 'descending'}` : 'not sorted'}. Activate to sort ${nextDirection}.`} onClick={() => activateHistorySort(field)} className={`inline-flex items-center gap-1 hover:opacity-80 ${align === 'text-left' ? '' : 'justify-end'}`}>
           <span>{label}</span><span aria-hidden="true" style={{ color: active ? 'var(--accent)' : 'var(--text-dim)' }}>{active ? (historySortDir === 'asc' ? '↑' : '↓') : '↕'}</span>
         </button>
@@ -2750,16 +2809,10 @@ function ArchiveHistorySection({
               </button>
             )}
           {(groupMode === 'none' || !collapsed) && group.trades.map(trade => {
-          const pending = trade.status === 'expired_price_pending' || trade.resolutionType === 'expired_price_pending';
-          const canEnterExpirationPrice = pending;
-          const canCorrectExpirationClose = trade.status === 'expired' && !pending;
-          const canConfirmWorthless = isManualWorthlessConfirmationEligible(trade);
-          const resolving = resolvingIds.has(trade.id);
-          const realizedPnl = getArchivedRealizedPnl(trade);
-          const percentCaptured = getArchivedPercentCaptured(trade);
-          const realizedIrr = historyRealizedIrr(trade);
           return (
-            <article key={`history-${trade.id}`} className="rounded-lg p-2.5" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+            <>
+            <MobileHistoryTradeRow key={`history-${trade.id}`} trade={trade} resolving={resolvingIds.has(trade.id)} onRetryResolve={onRetryResolve} onManualExpirationClose={onManualExpirationClose} onRequestWorthlessConfirmation={onRequestWorthlessConfirmation} onEdit={onEdit} onDelete={onDelete} />
+            {/*
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="font-mono text-base font-bold"><Link to={`/options/${trade.ticker.trim().toUpperCase()}`} className="underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</Link> {formatCurrency(trade.strike)} Put</div>
@@ -2794,6 +2847,8 @@ function ArchiveHistorySection({
                 </div>
               </div>
             </article>
+            */}
+            </>
           );
           })}
           </Fragment>;
