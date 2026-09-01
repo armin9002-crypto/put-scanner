@@ -650,7 +650,7 @@ table,
 .mobile-option-chain-header,
 .mobile-option-chain-row {
   display: grid;
-  grid-template-columns: minmax(3.4rem, 0.9fr) minmax(3.65rem, 1fr) minmax(4.1rem, 1.12fr) repeat(3, minmax(3.35rem, 1fr));
+  grid-template-columns: minmax(4.6rem, 1.15fr) minmax(3.5rem, 1fr) minmax(3.8rem, 1.12fr) repeat(3, minmax(3.05rem, 1fr));
   min-width: 0;
   align-items: center;
 }
@@ -707,12 +707,42 @@ table,
 }
 
 .mobile-option-chain-cell--strike {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   min-width: 0;
   align-items: center;
   gap: 0.1rem;
   overflow: visible;
   font-size: 0.73rem;
+}
+
+.mobile-option-chain-cell__identity {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: baseline;
+  gap: 0.04rem;
+}
+
+.mobile-option-chain-cell__ticker {
+  grid-column: 1 / -1;
+  min-width: 0;
+  color: var(--accent-light);
+  font-size: 0.5rem;
+  line-height: 1.05;
+}
+
+.mobile-option-chain-cell__strike-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobile-option-chain-cell__expiry {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .mobile-option-chain-cell__context {
@@ -3084,6 +3114,10 @@ td {
   .watchlist-mobile-card .font-mono.text-lg {
     letter-spacing: -0.025em;
   }
+
+  .screener-mobile-state {
+    padding-block: 2rem;
+  }
 }
 
 @media (max-width: 767px) and (orientation: portrait) {
@@ -3108,6 +3142,21 @@ td {
 
 @media (orientation: landscape) and (max-height: 520px) and (max-width: 950px) {
   /* The responsive mode intentionally routes phone-landscape through the wide table layout. */
+  .portfolio-page .portfolio-page__frame {
+    padding-top: 0.45rem;
+  }
+
+  .portfolio-page .page-header {
+    min-height: 0;
+    margin-bottom: 0.35rem;
+    align-items: flex-start;
+  }
+
+  .portfolio-page .page-header__title,
+  .portfolio-page .page-header__description {
+    display: none;
+  }
+
   .portfolio-page .portfolio-schedule-surface.hidden,
   .portfolio-page .portfolio-history-section > .hidden {
     display: block !important;
@@ -3623,6 +3672,31 @@ input[type="number"] {
 }
 
 @media (orientation: landscape) and (max-height: 520px) and (max-width: 950px) {
+  .mobile-option-chain-header,
+  .mobile-option-chain-row {
+    grid-template-columns: minmax(7rem, 1.45fr) minmax(3.5rem, 1fr) minmax(3.8rem, 1.12fr) repeat(3, minmax(3rem, 1fr));
+  }
+
+  .mobile-option-chain-cell__identity {
+    display: flex;
+    align-items: baseline;
+    gap: 0.22rem;
+  }
+
+  .mobile-option-chain-cell__ticker {
+    flex: none;
+    width: auto;
+    font-size: 0.56rem;
+  }
+
+  .mobile-option-chain-cell__expiry {
+    max-width: 4.25rem;
+  }
+
+  .screener-mobile-state {
+    padding-block: 1rem;
+  }
+
   .mobile-etf-row__main,
   .mobile-pulse-list-item__main {
     display: grid;
