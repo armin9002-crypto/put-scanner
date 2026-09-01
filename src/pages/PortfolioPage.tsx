@@ -238,6 +238,10 @@ function formatAverageDays(value: number | null | undefined): string {
   return isFiniteNumber(value) ? value.toFixed(1) : DASH;
 }
 
+function HistoryAggregateValue({ value }: { value: string }) {
+  return <span className={value === DASH ? 'portfolio-history-value--missing' : undefined}>{value}</span>;
+}
+
 function EntryDeltaTooltipContent({ trade }: { trade: PortfolioTrade }) {
   const source = trade.entryDeltaSource === 'provider' ? 'Provider exact-contract Delta'
     : trade.entryDeltaSource === 'calculated' ? 'Canonical contemporaneous calculation'
@@ -1970,7 +1974,10 @@ export default function PortfolioPage() {
     );
   };
 
-  const renderMobileScheduleTrade = (trade: PortfolioTrade) => <MobilePositionRow key={trade.id} ticker={trade.ticker} strike={formatCurrency(trade.strike)} contracts={trade.contracts} expiration={formatDteValue(calculateRemainingDte(trade))} entryDate={formatHistoryDate(trade.soldDate)} pnl={formatCurrency(calculateTotalGainLoss(trade, markBasis), 0)} captured={formatPctValue(calculatePercentCaptured(trade, markBasis))} mark={formatOptionPrice(calculateCurrentOptionMark(trade, markBasis))} entryDelta={formatDelta(trade.entryDelta)} showEntryDelta={showEntryDeltas} currentDelta={formatDelta(trade.latestMarketData?.delta)} entryIv={formatPercentPoints(trade.entryIv, 1)} currentIv={formatPercentPoints(trade.latestMarketData?.iv, 1)} showEntryIv={showEntryDeltas} freshness={getPortfolioQuoteFreshness(trade).label} distance={formatPctValue(calculateDistanceToStrike(trade))} entryVix={isFiniteNumber(trade.entryVixClose) ? trade.entryVixClose.toFixed(2) : DASH} health={getPositionHealth(trade)} onOpen={() => openDrawer(trade)} onEdit={() => setEditingTrade(trade)} />;
+  const renderMobileScheduleTrade = (trade: PortfolioTrade) => {
+    const freshness = getPortfolioQuoteFreshness(trade);
+    return <MobilePositionRow key={trade.id} ticker={trade.ticker} strike={formatCurrency(trade.strike)} contracts={trade.contracts} expiration={formatDteValue(calculateRemainingDte(trade))} entryDate={formatHistoryDate(trade.soldDate)} pnl={formatCurrency(calculateTotalGainLoss(trade, markBasis), 0)} captured={formatPctValue(calculatePercentCaptured(trade, markBasis))} mark={formatOptionPrice(calculateCurrentOptionMark(trade, markBasis))} entryDelta={formatDelta(trade.entryDelta)} showEntryDelta={showEntryDeltas} currentDelta={formatDelta(trade.latestMarketData?.delta)} entryIv={formatPercentPoints(trade.entryIv, 1)} currentIv={formatPercentPoints(trade.latestMarketData?.iv, 1)} showEntryIv={showEntryDeltas} freshness={freshness.state === 'fresh' ? '' : freshness.label} distance={formatPctValue(calculateDistanceToStrike(trade))} entryVix={isFiniteNumber(trade.entryVixClose) ? trade.entryVixClose.toFixed(2) : DASH} health={getPositionHealth(trade)} onOpen={() => openDrawer(trade)} onEdit={() => setEditingTrade(trade)} />;
+  };
 
   if (isPhone) {
     return (
@@ -2354,6 +2361,8 @@ export default function PortfolioPage() {
                       const currentValue = calculateCurrentPositionValue(trade, markBasis);
                       const currentMark = calculateCurrentOptionMark(trade, markBasis);
                       const delta = trade.latestMarketData?.delta ?? null;
+                      const quoteFreshness = getPortfolioQuoteFreshness(trade);
+                      const visibleFreshness = quoteFreshness.state === 'fresh' ? null : quoteFreshness.label;
                       const redeployBadges = getRedeployBadges(trade, markBasis);
                       const health = getPositionHealth(trade);
                       return (
@@ -2386,11 +2395,17 @@ export default function PortfolioPage() {
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(currentValue, 0)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(totalGainLoss) }}>{formatCurrency(totalGainLoss, 0)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(calculatePercentCaptured(trade, markBasis)) }}>{formatPctValue(calculatePercentCaptured(trade, markBasis))}</td>
-                          <td className={`px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap ${showEntryDeltas ? 'min-w-[112px]' : 'min-w-[76px]'}`} title={getPortfolioQuoteFreshness(trade).reason}>{showEntryDeltas ? <><span style={{ color: 'var(--text-muted)' }}>Entry {isValidEntryDelta(trade.entryDelta) ? <HoverTooltip content={<EntryDeltaTooltipContent trade={trade} />} ariaLabel={`${trade.ticker} Entry Delta details`}>{formatDelta(trade.entryDelta)}</HoverTooltip> : DASH}</span><br /><span style={{ color: pnlColor(delta) }}>Current {formatDelta(delta)}</span><br /></> : <span className="font-semibold" style={{ color: pnlColor(delta) }}>{formatDelta(delta)}<br /></span>}<span className="text-[9px]" style={{ color: getPortfolioQuoteFreshness(trade).state === 'stale' || getPortfolioQuoteFreshness(trade).state === 'unavailable' ? 'var(--yellow)' : 'var(--text-dim)' }}>{getPortfolioQuoteFreshness(trade).label}</span></td>
+                          <td className={`portfolio-paired-metric-cell px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap ${showEntryDeltas ? 'min-w-[112px]' : 'min-w-[76px]'}`} title={quoteFreshness.reason}>
+                            {showEntryDeltas && <span className="portfolio-paired-metric__line"><span className="portfolio-paired-metric__label">Entry</span> {isValidEntryDelta(trade.entryDelta) ? <HoverTooltip content={<EntryDeltaTooltipContent trade={trade} />} ariaLabel={`${trade.ticker} Entry Delta details`}>{formatDelta(trade.entryDelta)}</HoverTooltip> : DASH}</span>}
+                            <span className="portfolio-paired-metric__line">{showEntryDeltas && <span className="portfolio-paired-metric__label">Current</span>} <span className="font-semibold" style={{ color: pnlColor(delta) }}>{formatDelta(delta)}</span>{visibleFreshness && <span className="portfolio-paired-metric__status" data-freshness={quoteFreshness.state}> · {visibleFreshness}</span>}</span>
+                          </td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(calculateBreakeven(trade))}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(trade.latestMarketData?.underlyingPrice ?? trade.entrySnapshot?.underlyingPrice)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: percentColor(calculateDistanceToStrike(trade)) }}>{formatPctValue(calculateDistanceToStrike(trade))}</td>
-                          <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{showEntryDeltas ? <><span style={{ color: 'var(--text-muted)' }}>Entry {isValidEntryIv(trade.entryIv) ? <HoverTooltip content={<EntryIvTooltipContent trade={trade} />} ariaLabel={`${trade.ticker} Entry IV details`}>{formatPercentPoints(trade.entryIv, 1)}</HoverTooltip> : DASH}</span><br /><span>Current {formatPercentPoints(trade.latestMarketData?.iv, 1)}</span></> : formatPercentPoints(trade.latestMarketData?.iv, 1)}</td>
+                          <td className="portfolio-paired-metric-cell px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">
+                            {showEntryDeltas && <span className="portfolio-paired-metric__line"><span className="portfolio-paired-metric__label">Entry</span> {isValidEntryIv(trade.entryIv) ? <HoverTooltip content={<EntryIvTooltipContent trade={trade} />} ariaLabel={`${trade.ticker} Entry IV details`}>{formatPercentPoints(trade.entryIv, 1)}</HoverTooltip> : DASH}</span>}
+                            <span className="portfolio-paired-metric__line">{showEntryDeltas && <span className="portfolio-paired-metric__label">Current</span>} {formatPercentPoints(trade.latestMarketData?.iv, 1)}{visibleFreshness && <span className="portfolio-paired-metric__status" data-freshness={quoteFreshness.state}> · {visibleFreshness}</span>}</span>
+                          </td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">
                             {isFiniteNumber(trade.entryVixClose) ? <HoverTooltip content={<VixEntryTooltipContent trade={trade} />} ariaLabel={`${trade.ticker} VIX at entry details`}>{trade.entryVixClose.toFixed(2)}</HoverTooltip> : DASH}
                           </td>
@@ -2724,15 +2739,15 @@ function ArchiveHistorySection({
           const percentCaptured = getArchivedPercentCaptured(trade);
           const realizedIrr = historyRealizedIrr(trade);
           return (
-            <article key={`history-${trade.id}`} className="rounded-xl p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+            <article key={`history-${trade.id}`} className="rounded-lg p-2.5" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="font-mono text-base font-bold" style={{ color: 'var(--accent-light)' }}>{trade.ticker} {formatCurrency(trade.strike)} Put</div>
+                  <div className="font-mono text-base font-bold"><Link to={`/options/${trade.ticker.trim().toUpperCase()}`} className="underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</Link> {formatCurrency(trade.strike)} Put</div>
                   <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Exp. {formatHistoryDate(trade.expiration)} · Entry {formatHistoryDate(trade.soldDate)} · {formatDays(historyDaysHeld(trade))} held</div>
                 </div>
                 <span className="rounded px-1.5 py-1 text-[10px] font-semibold" style={{ color: getArchiveOutcomeColor(trade), backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>{getArchiveOutcomeLabel(trade)}</span>
               </div>
-              <div className="mt-3 grid grid-cols-2 gap-2">
+              <div className="mt-2 grid grid-cols-2 gap-2">
                 <Metric label="Sold Price" value={formatHistoricalOptionPrice(trade.soldPrice)} />
                 <Metric label="Gross Risk" value={formatCurrency(historyGrossRisk(trade), 0)} />
                 <Metric label="Premium" value={formatCurrency(getArchivedPremium(trade))} color="var(--green)" />
@@ -2746,7 +2761,7 @@ function ArchiveHistorySection({
                 <Metric label="Entry Delta" value={formatDelta(trade.entryDelta)} />
               </div>
               {trade.resolutionWarning && <p className="mt-2 text-[11px]" style={{ color: 'var(--yellow)' }}>{trade.resolutionWarning}</p>}
-              <div className="mt-3 border-t pt-2" style={{ borderColor: 'var(--border)' }}>
+              <div className="mt-2 border-t pt-2" style={{ borderColor: 'var(--border)' }}>
                 {pending && <div className="grid grid-cols-2 gap-2">
                   <button type="button" onClick={() => onRetryResolve(trade)} disabled={resolving} className="tap-target rounded-lg px-3 text-xs disabled:opacity-50" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>{resolving ? 'Resolving...' : 'Retry Resolve'}</button>
                   {canConfirmWorthless && <button type="button" onClick={() => onRequestWorthlessConfirmation(trade)} className="tap-target rounded-lg px-3 text-xs" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Confirm Worthless</button>}
@@ -2786,17 +2801,17 @@ function ArchiveHistorySection({
                           <span>{label}</span><small>{group.tradeCount} trades</small>
                         </button>
                       </td>
-                      <td /><td /><td className="px-2 py-2 text-right font-mono tabular-nums">{group.contractCount}</td>
-                      <td className="px-2 py-2 text-right font-mono tabular-nums">{formatCurrency(group.grossRisk, 0)}</td>
-                      <td /><td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. Days Held: Gross-Risk-weighted average of known holding periods.">{formatAverageDays(group.weightedAverageDaysHeld)}</td>
-                      <td /><td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. NY: canonical Entry NY weighted by Gross Risk; reconciles to group Premium ÷ group Gross Risk.">{formatPctValue(group.weightedAverageNy)}</td>
-                      <td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. VIX @ Entry: Gross-Risk-weighted average of known stored entry VIX values.">{isFiniteNumber(group.weightedAverageEntryVix) ? group.weightedAverageEntryVix.toFixed(1) : DASH}</td>
-                      <td className="px-2 py-2 text-right font-mono tabular-nums" title={`Wtd. Avg. Entry IV: Gross-Risk-weighted average of known stored contract Entry IV values. Coverage: ${formatHistoryCoverage(group.entryIvCoverage)}.`}>{formatPercentPoints(group.weightedAverageEntryIv, 1)}</td>
-                      <td /><td className="px-2 py-2 text-right font-mono tabular-nums">{formatCurrency(group.premium, 0)}</td>
-                      <td className="px-2 py-2 text-right font-mono tabular-nums portfolio-history-group-subtotal__pnl" style={{ color: pnlColor(group.realizedPnl) }}>{formatCurrency(group.realizedPnl)}</td>
-                      <td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. Realized IRR: Gross-Risk-weighted average of individual position Realized IRRs.">{formatPctValue(group.weightedAverageRealizedIrr)}</td>
-                      <td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. % Captured: Premium-weighted average of individual position capture values.">{formatPctValue(group.weightedAveragePercentCaptured)}</td>
-                      <td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. Entry Delta: Gross-Risk-weighted average of known historical Entry Delta values.">{formatDelta(group.weightedAverageEntryDelta)}</td>
+                      <td /><td /><td className="px-2 py-2 text-right font-mono tabular-nums"><HistoryAggregateValue value={String(group.contractCount)} /></td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums"><HistoryAggregateValue value={formatCurrency(group.grossRisk, 0)} /></td>
+                      <td /><td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. Days Held: Gross-Risk-weighted average of known holding periods."><HistoryAggregateValue value={formatAverageDays(group.weightedAverageDaysHeld)} /></td>
+                      <td /><td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. NY: canonical Entry NY weighted by Gross Risk; reconciles to group Premium ÷ group Gross Risk."><HistoryAggregateValue value={formatPctValue(group.weightedAverageNy)} /></td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. VIX @ Entry: Gross-Risk-weighted average of known stored entry VIX values."><HistoryAggregateValue value={isFiniteNumber(group.weightedAverageEntryVix) ? group.weightedAverageEntryVix.toFixed(1) : DASH} /></td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums" title={`Wtd. Avg. Entry IV: Gross-Risk-weighted average of known stored contract Entry IV values. Coverage: ${formatHistoryCoverage(group.entryIvCoverage)}.`}><HistoryAggregateValue value={formatPercentPoints(group.weightedAverageEntryIv, 1)} /></td>
+                      <td /><td className="px-2 py-2 text-right font-mono tabular-nums"><HistoryAggregateValue value={formatCurrency(group.premium, 0)} /></td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums portfolio-history-group-subtotal__pnl" style={{ color: pnlColor(group.realizedPnl) }}><HistoryAggregateValue value={formatCurrency(group.realizedPnl)} /></td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. Realized IRR: Gross-Risk-weighted average of individual position Realized IRRs."><HistoryAggregateValue value={formatPctValue(group.weightedAverageRealizedIrr)} /></td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. % Captured: Premium-weighted average of individual position capture values."><HistoryAggregateValue value={formatPctValue(group.weightedAveragePercentCaptured)} /></td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. Entry Delta: Gross-Risk-weighted average of known historical Entry Delta values."><HistoryAggregateValue value={formatDelta(group.weightedAverageEntryDelta)} /></td>
                       <td /><td />
                   </tr>
                 )}
@@ -2811,7 +2826,7 @@ function ArchiveHistorySection({
                 const realizedIrr = historyRealizedIrr(trade);
                 return (
                   <tr key={trade.id} title={`${trade.ticker} ${formatCurrency(trade.strike)} Put\nEntry: ${formatHistoryDate(trade.soldDate)}\nResolved: ${formatHistoryDate(trade.closeDate ?? trade.resolvedDate ?? trade.expiration)}\nDays held: ${formatDays(historyDaysHeld(trade))}\nSold: ${formatHistoricalOptionPrice(trade.soldPrice)}\nClose: ${formatOptionPrice(trade.closePrice)}\nPrice @ Exp.: ${formatCurrency(historyPriceAtExpiration(trade))}\nPremium: ${formatCurrency(getArchivedPremium(trade))}\nRealized P&L: ${formatCurrency(realizedPnl)}\nRealized IRR: ${formatPctValue(realizedIrr)}\nCaptured: ${formatPctValue(percentCaptured)}\nNY: ${formatPctValue(historyEntryNominalYield(trade))}\nVIX @ Entry: ${isFiniteNumber(historyEntryVix(trade)) ? historyEntryVix(trade)!.toFixed(2) : DASH}\nEntry IV: ${formatPercentPoints(historyEntryIv(trade), 1)}\nOutcome: ${getArchiveOutcomeLabel(trade)}`} style={{ borderBottom: '1px solid var(--border)', backgroundColor: index % 2 ? 'var(--row-alt)' : 'transparent' }}>
-                    <td className="px-2 py-1 text-left font-mono font-bold whitespace-nowrap" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</td>
+                    <td className="px-2 py-1 text-left font-mono font-bold whitespace-nowrap"><Link to={`/options/${trade.ticker.trim().toUpperCase()}`} className="underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</Link></td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatHistoryDate(trade.expiration)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatCurrency(trade.strike)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{trade.contracts}</td>
@@ -2832,26 +2847,26 @@ function ArchiveHistorySection({
                       <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold leading-none" title={trade.resolutionWarning ?? getArchiveOutcomeLabel(trade)} style={{ color: getArchiveOutcomeColor(trade), backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
                         {getArchiveOutcomeLabel(trade)}
                       </span>
-                      {trade.resolutionWarning && <div className="mt-1 max-w-[260px] truncate text-[10px]" style={{ color: 'var(--text-dim)' }}>{trade.resolutionWarning}</div>}
+                      {trade.resolutionWarning && <span className="ml-1 inline-block max-w-[260px] truncate align-middle text-[10px]" style={{ color: 'var(--text-dim)' }}>{trade.resolutionWarning}</span>}
                     </td>
                     <td className="px-2 py-1 whitespace-nowrap">
                       <div className="portfolio-history-actions flex items-center gap-1">
                         {pending && (
-                          <button type="button" onClick={() => onRetryResolve(trade)} disabled={resolving} className="px-2 py-1.5 rounded text-[11px] disabled:opacity-50" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>
+                          <button type="button" onClick={() => onRetryResolve(trade)} disabled={resolving} className="h-7 rounded px-2 text-[11px] leading-none disabled:opacity-50" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>
                             {resolving ? 'Resolving...' : 'Retry Resolve'}
                           </button>
                         )}
                         {canConfirmWorthless && (
-                          <button type="button" onClick={() => onRequestWorthlessConfirmation(trade)} className="px-2 py-1.5 rounded text-[11px]" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Confirm Worthless</button>
+                          <button type="button" onClick={() => onRequestWorthlessConfirmation(trade)} className="h-7 rounded px-2 text-[11px] leading-none" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Confirm Worthless</button>
                         )}
                         {canEnterExpirationPrice && (
-                          <button type="button" onClick={() => onManualExpirationClose(trade)} className="px-2 py-1.5 rounded text-[11px]" title="Enter the underlying price at expiration" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Enter Exp. Price</button>
+                          <button type="button" onClick={() => onManualExpirationClose(trade)} className="h-7 rounded px-2 text-[11px] leading-none" title="Enter the underlying price at expiration" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Enter Exp. Price</button>
                         )}
                         {canCorrectExpirationClose && (
-                          <button type="button" onClick={() => onManualExpirationClose(trade)} className="icon-button h-8 w-8 rounded-md" aria-label={`Correct Price @ Exp. for ${trade.ticker}`} title="Correct Price @ Exp." style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }}><Wrench className="h-3.5 w-3.5" /></button>
+                          <button type="button" onClick={() => onManualExpirationClose(trade)} className="icon-button h-7 w-7 rounded-md" aria-label={`Correct Price @ Exp. for ${trade.ticker}`} title="Correct Price @ Exp." style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }}><Wrench className="h-3.5 w-3.5" /></button>
                         )}
-                        <button type="button" onClick={() => onEdit(trade)} className="icon-button h-8 w-8 rounded-md" aria-label={`Edit ${trade.ticker} trade`} title="Edit" style={{ color: 'var(--text-muted)' }}><Edit2 className="w-3.5 h-3.5" /></button>
-                        <button type="button" onClick={() => onDelete(trade.id)} className="icon-button h-8 w-8 rounded-md" aria-label={`Delete ${trade.ticker} trade`} title="Delete" style={{ color: 'var(--red)' }}><Trash2 className="w-3.5 h-3.5" /></button>
+                        <button type="button" onClick={() => onEdit(trade)} className="icon-button h-7 w-7 rounded-md" aria-label={`Edit ${trade.ticker} trade`} title="Edit" style={{ color: 'var(--text-muted)' }}><Edit2 className="w-3.5 h-3.5" /></button>
+                        <button type="button" onClick={() => onDelete(trade.id)} className="icon-button h-7 w-7 rounded-md" aria-label={`Delete ${trade.ticker} trade`} title="Delete" style={{ color: 'var(--red)' }}><Trash2 className="w-3.5 h-3.5" /></button>
                       </div>
                     </td>
                   </tr>

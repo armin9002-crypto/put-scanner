@@ -41,6 +41,8 @@ export default function MobilePositionRow({
   onOpen: () => void;
   onEdit: () => void;
 }) {
+  const freshnessStatus = freshness ? <span className="portfolio-paired-metric__status" data-freshness={freshness.toLowerCase()}> · {freshness}</span> : null;
+
   return (
     <article className="mobile-position-row">
       <button type="button" className="absolute inset-0 z-0 rounded-xl" onClick={onOpen} aria-label={`Open ${ticker} ${strike} put details`} />
@@ -58,9 +60,9 @@ export default function MobilePositionRow({
         </div>
         <div className="mt-2 grid grid-cols-[1fr_1.15fr_1.15fr_1fr_auto] items-center gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
           <span>Mark <b className="font-mono" style={{ color: 'var(--text)' }}>{mark}</b></span>
-          <span>{showEntryDelta && <>Entry &Delta; <b className="font-mono" style={{ color: 'var(--text)' }}>{entryDelta}</b><br /></>}Current &Delta; <b className="font-mono" style={{ color: 'var(--text)' }}>{currentDelta}</b></span>
-          <span>{showEntryIv && <>Entry IV <b className="font-mono" style={{ color: 'var(--text)' }}>{entryIv}</b><br /></>}Current IV <b className="font-mono" style={{ color: 'var(--text)' }}>{currentIv}</b></span>
-          <span className="truncate"><b className="font-mono" style={{ color: 'var(--text)' }}>{distance}</b> OTM<br />{freshness}</span>
+          <span>{showEntryDelta && <>Entry &Delta; <b className="font-mono" style={{ color: 'var(--text)' }}>{entryDelta}</b><br /></>}Current &Delta; <b className="font-mono" style={{ color: 'var(--text)' }}>{currentDelta}</b>{freshnessStatus}</span>
+          <span>{showEntryIv && <>Entry IV <b className="font-mono" style={{ color: 'var(--text)' }}>{entryIv}</b><br /></>}Current IV <b className="font-mono" style={{ color: 'var(--text)' }}>{currentIv}</b>{freshnessStatus}</span>
+          <span className="truncate"><b className="font-mono" style={{ color: 'var(--text)' }}>{distance}</b> OTM</span>
           <button type="button" onClick={event => { event.stopPropagation(); onEdit(); }} className="pointer-events-auto relative z-20 flex min-h-11 items-center px-2 font-semibold" style={{ color: 'var(--accent-light)' }}>Edit</button>
         </div>
       </div>

@@ -7,10 +7,11 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = relative => readFile(path.join(root, relative), 'utf8');
 
-test('Schedule Entry Delta / IV display toggle defaults off and preserves canonical current values', async () => {
-  const [portfolio, mobile] = await Promise.all([
+test('Schedule Entry Delta / IV display toggle defaults off and keeps paired values dense', async () => {
+  const [portfolio, mobile, styles] = await Promise.all([
     read('src/pages/PortfolioPage.tsx'),
     read('src/components/mobile/MobilePositionRow.tsx'),
+    read('src/index.css'),
   ]);
   assert.match(portfolio, /const \[showEntryDeltas, setShowEntryDeltas\] = useState\(false\)/);
   const controls = portfolio.slice(portfolio.indexOf('Show Nominal Yield'), portfolio.indexOf('Show Notes / Errors') + 'Show Notes / Errors'.length);
@@ -18,17 +19,26 @@ test('Schedule Entry Delta / IV display toggle defaults off and preserves canoni
   assert.ok(controls.indexOf('Show Entry Deltas / IV') < controls.indexOf('Show OI / Volume'));
   assert.match(portfolio, /showEntryDeltas \? 'Entry \/ Current Delta' : 'Current Delta'/);
   assert.match(portfolio, /showEntryDeltas \? 'Entry \/ Current IV' : 'IV'/);
-  assert.match(portfolio, /showEntryDeltas \? <><span[^>]*>Entry/);
-  assert.match(portfolio, /showEntryDeltas \? <><span[^>]*>Entry[\s\S]*?: <span className="font-semibold"[^>]*>\{formatDelta\(delta\)/);
+  assert.match(portfolio, /showEntryDeltas && <span className="portfolio-paired-metric__line"><span className="portfolio-paired-metric__label">Entry/);
+  assert.match(portfolio, /<span className="portfolio-paired-metric__line">\{showEntryDeltas && <span className="portfolio-paired-metric__label">Current<\/span>\} <span className="font-semibold"[^>]*>\{formatDelta\(delta\)/);
+  assert.match(portfolio, /const quoteFreshness = getPortfolioQuoteFreshness\(trade\)/);
+  assert.match(portfolio, /const visibleFreshness = quoteFreshness\.state === 'fresh' \? null : quoteFreshness\.label/);
+  assert.match(portfolio, /visibleFreshness && <span className="portfolio-paired-metric__status" data-freshness=\{quoteFreshness\.state\}>/);
+  assert.doesNotMatch(portfolio, /<br \/><\/span><span className="text-\[9px\]"/);
   assert.match(portfolio, /showEntryDelta=\{showEntryDeltas\}/);
   assert.match(portfolio, /showEntryIv=\{showEntryDeltas\}/);
   assert.match(portfolio, /entryDate=\{formatHistoryDate\(trade\.soldDate\)\}/);
   assert.match(portfolio, /sortButton\('entry', 'Entry'\)/);
-  assert.match(portfolio, /showEntryDeltas \? <><span[^>]*>Entry \{isValidEntryIv/);
+  assert.match(portfolio, /showEntryDeltas && <span className="portfolio-paired-metric__line"><span className="portfolio-paired-metric__label">Entry<\/span> \{isValidEntryIv/);
   assert.match(mobile, /showEntryIv &&/);
   assert.match(mobile, /Current IV/);
   assert.match(mobile, /showEntryDelta = true/);
   assert.match(mobile, /showEntryDelta &&/);
+  assert.match(mobile, /const freshnessStatus = freshness \?/);
+  assert.match(mobile, /Current IV[\s\S]*freshnessStatus/);
+  assert.doesNotMatch(mobile, /OTM<br \/>\{freshness\}/);
+  assert.match(styles, /\.portfolio-paired-metric__line \{[\s\S]*display: block/);
+  assert.match(styles, /\.portfolio-paired-metric__status \{/);
   assert.doesNotMatch(portfolio, /persistShowEntryDeltas|SHOW_ENTRY_DELTAS/);
   assert.match(portfolio, /isValidEntryDelta\(trade\.entryDelta\)/);
 });
@@ -58,6 +68,25 @@ test('History renders canonical Gross Risk and aligned aggregate fields with bul
   assert.match(source, /formatCurrency\(historyGrossRisk\(trade\), 0\)/);
   assert.match(source, /group\.entryIvCoverage/);
   assert.doesNotMatch(source, /group\.strike|group\.soldPrice|group\.expirationClosePrice/);
+});
+
+test('History keeps Schedule parity for density, grouping, semantic values, and safe ticker navigation', async () => {
+  const [source, styles, docs] = await Promise.all([
+    read('src/pages/PortfolioPage.tsx'),
+    read('src/index.css'),
+    read('docs/UI_PORTFOLIO_TABLE_PARITY_REFINEMENT.md'),
+  ]);
+  assert.match(source, /<Link to=\{`\/options\/\$\{trade\.ticker\.trim\(\)\.toUpperCase\(\)\}`\}/g);
+  assert.match(source, /className="portfolio-history-table financial-table/);
+  assert.match(styles, /\.portfolio-history-table thead th \{[\s\S]*height: 34px[\s\S]*background: var\(--bg-inset\)/);
+  assert.match(styles, /\.portfolio-history-table tbody td \{[\s\S]*height: 28px[\s\S]*padding-block: 0\.25rem/);
+  assert.match(styles, /\.portfolio-history-group-toggle \{[\s\S]*min-height: 30px/);
+  assert.match(styles, /\.portfolio-history-group-subtotal td \{[\s\S]*height: 32px[\s\S]*color: var\(--text-primary\)/);
+  assert.match(styles, /\.portfolio-history-group-subtotal__pnl \{[\s\S]*font-weight: 740/);
+  assert.match(source, /<HistoryAggregateValue value=\{String\(group\.contractCount\)\}/);
+  assert.match(source, /portfolio-history-actions[\s\S]*icon-button h-7 w-7/);
+  assert.match(docs, /Fresh quote status is visually silent/);
+  assert.match(docs, /safe current\/default `\/options\/TICKER` route/);
 });
 
 test('History defaults grouped views collapsed and keeps the requested headline order', async () => {

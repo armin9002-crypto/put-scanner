@@ -67,6 +67,7 @@ test.describe('History expiration actions visual matrix', () => {
 
     const resolved = surfaceFor(page, 'SPY', mobile);
     await expect(resolved).toContainText('Expired Worthless');
+    await expect(resolved.getByRole('link', { name: 'SPY', exact: true })).toHaveAttribute('href', '/options/SPY');
     await expect(resolved.getByRole('button', { name: /Edit SPY trade/ })).toBeVisible();
     await expect(resolved.getByRole('button', { name: /Delete SPY trade/ })).toBeVisible();
     await expect(resolved.getByRole('button', { name: /Set Expiration Close/ })).toHaveCount(0);

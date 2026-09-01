@@ -2335,6 +2335,31 @@ td {
   background: color-mix(in srgb, var(--bg-elevated) 88%, var(--accent-bg)) !important;
 }
 
+.portfolio-paired-metric-cell {
+  line-height: 1.12;
+}
+
+.portfolio-paired-metric__line {
+  display: block;
+  line-height: 1.12;
+}
+
+.portfolio-paired-metric__label {
+  color: var(--text-tertiary);
+  font-weight: 520;
+}
+
+.portfolio-paired-metric__status {
+  color: var(--yellow);
+  font-size: 0.58rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.portfolio-paired-metric__status[data-freshness="stale"] {
+  color: var(--orange);
+}
+
 .portfolio-history-section {
   border-top: 1px solid var(--border-subtle);
   padding-top: 0.85rem;
@@ -2364,8 +2389,18 @@ td {
   table-layout: auto;
 }
 
+.portfolio-history-table thead th {
+  height: 34px;
+  background: var(--bg-inset);
+}
+
 .portfolio-history-table tbody td {
-  height: 30px;
+  height: 28px;
+  padding-block: 0.25rem !important;
+}
+
+.portfolio-history-table tbody tr:not(.portfolio-history-group-subtotal) td:last-child {
+  padding-block: 0 !important;
 }
 
 .portfolio-history-group-header {
@@ -2376,10 +2411,10 @@ td {
 .portfolio-history-group-toggle {
   display: flex;
   width: 100%;
-  min-height: 36px;
+  min-height: 30px;
   align-items: center;
   gap: 0.4rem;
-  padding: 0.35rem 0.5rem;
+  padding: 0.22rem 0.5rem;
   color: var(--text-primary);
   font-size: 0.74rem;
   font-weight: 680;
@@ -2406,8 +2441,9 @@ td {
 }
 
 .portfolio-history-group-subtotal td {
-  height: 34px;
-  color: var(--text-secondary);
+  height: 32px;
+  padding-block: 0 !important;
+  color: var(--text-primary);
   font-weight: 620;
 }
 
@@ -2416,21 +2452,33 @@ td {
   font-weight: 680;
 }
 
-.portfolio-history-group-subtotal td:first-child span,
-.portfolio-history-group-subtotal td:first-child small {
-  display: block;
+.portfolio-history-group-subtotal td:first-child > button {
+  white-space: nowrap;
 }
 
 .portfolio-history-group-subtotal td:first-child small {
-  margin-top: 0.12rem;
+  margin-left: 0.15rem;
   color: var(--text-tertiary);
   font-size: 0.62rem;
   font-weight: 520;
 }
 
 .portfolio-history-group-subtotal__pnl {
-  font-size: 0.8rem;
-  font-weight: 760 !important;
+  font-weight: 740 !important;
+}
+
+.portfolio-history-value--missing {
+  color: var(--text-tertiary);
+}
+
+.portfolio-history-actions > button:not(.icon-button) {
+  min-height: 28px;
+  padding-block: 0.25rem;
+}
+
+.portfolio-history-actions > .icon-button {
+  width: 1.75rem;
+  height: 1.75rem;
 }
 
 .portfolio-history-mobile-group-header {
