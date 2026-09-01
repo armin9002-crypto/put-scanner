@@ -60,6 +60,16 @@ export function historyOutcome(trade: PortfolioTrade): Exclude<HistoryOutcome, '
   return 'expired_worthless';
 }
 
+export function historyOutcomeLabel(trade: PortfolioTrade): string {
+  switch (historyOutcome(trade)) {
+    case 'closed': return 'Closed Manually';
+    case 'pending': return 'Expiration Price Pending';
+    case 'expired_itm': return 'Expired ITM / Assignment Likely';
+    case 'expired_worthless': return 'Expired Worthless';
+    case 'assigned': return 'Assigned';
+  }
+}
+
 export function historyRealizedPnl(trade: PortfolioTrade): number | null {
   const canonical = canonicalHistoricalRealizedPnl(trade);
   if (canonical != null) return canonical;

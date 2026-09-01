@@ -281,8 +281,9 @@ test('Add Trade exposes manual Entry Delta only for historical entry while Edit 
   assert.match(page, /label="Avg Days Held" value=\{formatAverageDays/, 'History keeps one-decimal average holding periods');
   assert.match(page, /label="Total Historical Notional"/, 'History exposes cumulative historical notional');
   assert.doesNotMatch(page, /label="Premium Collected"/, 'Portfolio-facing summary labels use the concise Premium name');
-  assert.match(page, /\['Ticker', 'Exp\.', 'Strike'.*'VIX @ Entry', 'Price @ Exp\.'/s, 'History table uses compact date and historical market columns');
-  assert.match(page, /formatHistoricalOptionPrice\(trade\.soldPrice\)/, 'History does not visually round precise historical Sold Price back to two decimals');
+  assert.match(page, /HISTORY_SORT_OPTIONS\.map\(option => historySortButton/, 'History table uses compact sortable date and historical market columns');
+  assert.match(page, /formatHistoricalOptionPrice\(trade\.soldPrice\)/, 'History uses the dedicated Sold Price display formatter');
+  assert.match(page, /minimumFractionDigits: 2, maximumFractionDigits: 2/, 'History displays Sold Price to exactly two decimals without changing stored precision');
   assert.doesNotMatch(page, /\['Ticker', 'Expiration'.*'Final Value'/s, 'History table does not display the legacy Final Value column');
   assert.match(page, /function formatHistoryDate/, 'History dates use a deterministic compact formatter');
   assert.match(page, /aria-label="Group history by"/, 'History grouping uses the shared segmented-control interaction language');
@@ -340,13 +341,18 @@ test('History grouped table keeps canonical additive subtotal presentation acros
 });
 
 test('Scanner uses one controlled local filter/direct-submit form and the supplied wordmark', async () => {
-  const page = await read('src/pages/HomePage.tsx');
-  const form = await read('src/components/AnalyzeTickerForm.tsx');
-  const app = await read('src/App.tsx');
+  const [page, form, app, styles] = await Promise.all([
+    read('src/pages/HomePage.tsx'),
+    read('src/components/AnalyzeTickerForm.tsx'),
+    read('src/App.tsx'),
+    read('src/index.css'),
+  ]);
   assert.equal((page.match(/<AnalyzeTickerForm/g) ?? []).length, 2, 'mobile and desktop Scanner render the same unified form');
   assert.doesNotMatch(page, /Filter by ticker or underlying index|Search ETFs|Analyze Ticker/, 'old duplicate search and micro-label copy is gone');
   assert.doesNotMatch(page, /Find high-quality put opportunities across leveraged ETFs|Compare price action, option context, and liquidity before opening the chain\./, 'removed Scanner descriptions are absent');
   assert.match(page, /placeholder="Filter \/ Search by Ticker"/, 'unified placeholder is exact');
+  assert.match(form, /className="analyze-ticker-input[^\"]*uppercase/, 'typed ticker input keeps existing uppercase behavior');
+  assert.match(styles, /\.analyze-ticker-input::placeholder\s*\{\s*text-transform: none;/, 'placeholder casing is corrected at the pseudo-element only');
   assert.match(page, /setSearch\(event\.target\.value\)|onValueChange=\{setSearch\}/, 'typing remains local state-driven');
   assert.match(page, /ticker\.toLowerCase\(\).*underlying|underlying\.toLowerCase\(\).*ticker/s, 'local filter preserves ticker/underlying search semantics');
   assert.match(form, /navigate\(`\/options\//, 'explicit submit preserves direct option-chain navigation');

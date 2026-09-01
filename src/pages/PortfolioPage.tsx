@@ -70,6 +70,7 @@ import {
   historyEntryVix,
   historyFinalValue,
   historyGrossRisk,
+  historyOutcomeLabel,
   historyPremium,
   historyPriceAtExpiration,
   historyRealizedIrr,
@@ -91,6 +92,13 @@ import {
   type PortfolioScheduleSortDirection,
   type PortfolioScheduleSortField,
 } from '../lib/portfolioScheduleSorting';
+import {
+  HISTORY_SORT_OPTIONS,
+  HISTORY_MOBILE_SORT_OPTIONS,
+  sortHistoryGroups,
+  type HistorySortDirection,
+  type HistorySortField,
+} from '../lib/portfolioHistorySorting';
 import { OPTION_QUOTE_TABLE_DISPLAY_ORDER, orderedOptionQuoteEntries } from '../lib/optionQuoteDisplay';
 import { persistPortfolioMarkBasis, readPortfolioMarkBasis } from '../lib/portfolioMarkPreference';
 import { persistShowNominalYield, readShowNominalYield } from '../lib/optionTablePreferences';
@@ -269,7 +277,7 @@ function formatHistoryDate(value: string | number | null | undefined): string {
 }
 
 function formatHistoricalOptionPrice(value: number | null | undefined): string {
-  return isFiniteNumber(value) ? value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 8 }) : DASH;
+  return isFiniteNumber(value) ? value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : DASH;
 }
 
 function calendarDaysSince(value: string | null | undefined, now = new Date()): number | null {
@@ -869,12 +877,7 @@ function groupTooltip(group: PortfolioExposureGroup): string {
 }
 
 function getArchiveOutcomeLabel(trade: PortfolioTrade): string {
-  if (trade.status === 'closed') return 'Closed Manually';
-  if (trade.status === 'expired_price_pending' || trade.resolutionType === 'expired_price_pending') return 'Expiration Price Pending';
-  if (trade.resolutionType === 'expired_itm') return 'Expired ITM / Assignment Likely';
-  if (trade.resolutionType === 'expired_worthless' || trade.status === 'expired') return 'Expired Worthless';
-  if (trade.status === 'assigned') return 'Assigned';
-  return DASH;
+  return historyOutcomeLabel(trade);
 }
 
 function getArchiveOutcomeColor(trade: PortfolioTrade): string {
@@ -882,16 +885,6 @@ function getArchiveOutcomeColor(trade: PortfolioTrade): string {
   if (trade.resolutionType === 'expired_itm') return 'var(--red)';
   if (trade.resolutionType === 'expired_worthless' || trade.status === 'expired') return 'var(--green)';
   return 'var(--text-muted)';
-}
-
-function getTradeDaysHeld(trade: PortfolioTrade): number | null {
-  if (isFiniteNumber(trade.daysHeld)) return trade.daysHeld;
-  const start = parseDateOnly(trade.soldDate);
-  const end = parseDateOnly(trade.closeDate ?? trade.expiration);
-  if (!start || !end) return null;
-  const startMs = Date.UTC(start.getFullYear(), start.getMonth(), start.getDate());
-  const endMs = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());
-  return Math.max(0, Math.round((endMs - startMs) / 86400000));
 }
 
 function getArchivedPremium(trade: PortfolioTrade): number | null {
@@ -2537,9 +2530,12 @@ function ArchiveHistorySection({
   const [outcomeFilter, setOutcomeFilter] = useState<HistoryOutcome>('all');
   const [groupMode, setGroupMode] = useState<HistoryGroupMode>('year');
   const [collapsedHistoryGroups, setCollapsedHistoryGroups] = useState<Record<string, boolean>>({});
+  const [historySortField, setHistorySortField] = useState<HistorySortField | null>(null);
+  const [historySortDir, setHistorySortDir] = useState<HistorySortDirection>('asc');
   const visibleTrades = useMemo(() => filterHistoryTrades(trades, outcomeFilter), [outcomeFilter, trades]);
   const visibleSummary = useMemo(() => outcomeFilter === 'all' ? summary : buildArchiveSummary(visibleTrades), [outcomeFilter, summary, visibleTrades]);
   const visibleGroups = useMemo(() => buildHistoryGroups(visibleTrades, groupMode), [groupMode, visibleTrades]);
+  const sortedHistoryGroups = useMemo(() => sortHistoryGroups(visibleGroups, historySortField, historySortDir), [historySortDir, historySortField, visibleGroups]);
   const historyGroupLabel = (group: ReturnType<typeof buildHistoryGroups>[number]) => groupMode === 'expiration' ? formatHistoryDate(group.label) : group.label;
   const historyGroupKey = (group: ReturnType<typeof buildHistoryGroups>[number]) => `${groupMode}:${group.key}`;
   const allHistoryGroupsCollapsed = groupMode !== 'none' && visibleGroups.length > 0
@@ -2555,6 +2551,30 @@ function ArchiveHistorySection({
       ...current,
       ...Object.fromEntries(visibleGroups.map(group => [historyGroupKey(group), nextCollapsed])),
     }));
+  };
+  const selectHistorySortField = (field: HistorySortField) => {
+    if (historySortField !== field) {
+      setHistorySortField(field);
+      setHistorySortDir('asc');
+    }
+  };
+  const activateHistorySort = (field: HistorySortField) => {
+    if (historySortField === field) setHistorySortDir(current => current === 'asc' ? 'desc' : 'asc');
+    else {
+      setHistorySortField(field);
+      setHistorySortDir('asc');
+    }
+  };
+  const historySortButton = (field: HistorySortField, label: string, align = 'text-right', title?: string) => {
+    const active = historySortField === field;
+    const nextDirection = active && historySortDir === 'asc' ? 'descending' : 'ascending';
+    return (
+      <th scope="col" aria-sort={active ? (historySortDir === 'asc' ? 'ascending' : 'descending') : 'none'} className={`px-2 py-2 text-[11px] font-medium whitespace-nowrap ${align}`} style={{ color: 'var(--text-muted)' }}>
+        <button type="button" title={title} aria-label={`${label}, ${active ? `sorted ${historySortDir === 'asc' ? 'ascending' : 'descending'}` : 'not sorted'}. Activate to sort ${nextDirection}.`} onClick={() => activateHistorySort(field)} className={`inline-flex items-center gap-1 hover:opacity-80 ${align === 'text-left' ? '' : 'justify-end'}`}>
+          <span>{label}</span><span aria-hidden="true" style={{ color: active ? 'var(--accent)' : 'var(--text-dim)' }}>{active ? (historySortDir === 'asc' ? '↑' : '↓') : '↕'}</span>
+        </button>
+      </th>
+    );
   };
   if (trades.length === 0) return null;
   const mobileHistoryClass = mobileLayout ? '' : 'md:hidden';
@@ -2573,6 +2593,14 @@ function ArchiveHistorySection({
             <span className="shrink-0 px-1.5 text-[9px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Group by</span>
             {HISTORY_GROUP_OPTIONS.map(option => <button type="button" key={option.value} onClick={() => setGroupMode(option.value)} aria-pressed={groupMode === option.value} className="min-h-11 shrink-0 rounded-md px-2 py-1 text-[10px] font-semibold whitespace-nowrap sm:min-h-8" style={{ backgroundColor: groupMode === option.value ? 'var(--accent-bg)' : 'transparent', color: groupMode === option.value ? 'var(--accent-light)' : 'var(--text-muted)', border: `1px solid ${groupMode === option.value ? 'var(--accent-border)' : 'transparent'}` }}>{option.label}</button>)}
           </div>
+          {mobileLayout && <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-lg p-1.5" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+            <label htmlFor="mobile-history-sort" className="px-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Sort</label>
+            <select id="mobile-history-sort" value={historySortField ?? ''} onChange={event => { const value = event.target.value as HistorySortField | ''; if (value) selectHistorySortField(value); else { setHistorySortField(null); setHistorySortDir('asc'); } }} className="mobile-control-field min-w-0 text-base">
+              <option value="">Default order</option>
+              {HISTORY_MOBILE_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+            <button type="button" onClick={() => setHistorySortDir(current => current === 'asc' ? 'desc' : 'asc')} disabled={!historySortField} className="pressable mobile-control-button min-w-11 px-3 disabled:opacity-40" aria-label={historySortField ? `Sort ${historySortDir === 'asc' ? 'ascending; activate for descending' : 'descending; activate for ascending'}` : 'Choose a History sort field first'} title={historySortField ? (historySortDir === 'asc' ? 'Ascending' : 'Descending') : 'Choose a sort field first'}>{historySortDir === 'asc' ? '↑' : '↓'}</button>
+          </div>}
           {groupMode !== 'none' && visibleGroups.length > 0 && <button type="button" onClick={toggleAllHistoryGroups} className="min-h-11 shrink-0 rounded-lg px-2 py-1.5 text-[11px] whitespace-nowrap sm:min-h-8" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>{allHistoryGroupsCollapsed ? 'Expand All' : 'Collapse All'}</button>}
         </div>
       </div>
@@ -2590,7 +2618,7 @@ function ArchiveHistorySection({
       </div>
       <MonthlyRealizedChart trades={visibleTrades} />
       <div className={`${mobileHistoryClass} space-y-2`}>
-        {visibleGroups.map(group => {
+        {sortedHistoryGroups.map(group => {
           const collapsed = groupMode !== 'none' && collapsedHistoryGroups[historyGroupKey(group)] === true;
           const label = historyGroupLabel(group);
           return <Fragment key={`mobile-history-group-${group.key}`}>
@@ -2657,13 +2685,12 @@ function ArchiveHistorySection({
           <table className="portfolio-history-table financial-table min-w-max w-full text-[12px] leading-none">
             <thead>
               <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
-                {['Ticker', 'Exp.', 'Strike', 'Contracts', 'Gross Risk', 'Entry', 'Days Held', 'Sold Price', 'NY', 'VIX @ Entry', 'Price @ Exp.', 'Premium', 'Realized P&L', 'Realized IRR', '% Captured', 'Entry Delta', 'Outcome', 'Actions'].map((label, index) => (
-                  <th key={label} title={label === 'NY' ? 'Entry Nominal Yield: net sold price ÷ strike, equivalent to Premium ÷ Gross Risk.' : label === 'VIX @ Entry' ? 'Stored VIX close captured at the trade entry date.' : label === 'Realized IRR' ? 'Realized P&L ÷ Gross Risk × 365 ÷ actual days held. Simple annualization, not textbook XIRR.' : undefined} className={`px-2 py-2 text-[11px] font-medium whitespace-nowrap ${index === 0 || label === 'Outcome' || label === 'Actions' ? 'text-left' : 'text-right'}`} style={{ color: 'var(--text-muted)' }}>{label}</th>
-                ))}
+                {HISTORY_SORT_OPTIONS.map(option => historySortButton(option.value, option.label, option.value === 'ticker' || option.value === 'outcome' ? 'text-left' : 'text-right', option.label === 'NY' ? 'Entry Nominal Yield: net sold price ÷ strike, equivalent to Premium ÷ Gross Risk.' : option.label === 'VIX @ Entry' ? 'Stored VIX close captured at the trade entry date.' : option.label === 'Realized IRR' ? 'Realized P&L ÷ Gross Risk × 365 ÷ actual days held. Simple annualization.' : undefined))}
+                <th scope="col" className="px-2 py-2 text-[11px] font-medium text-left whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {visibleGroups.map(group => {
+              {sortedHistoryGroups.map(group => {
                 const collapsed = groupMode !== 'none' && collapsedHistoryGroups[historyGroupKey(group)] === true;
                 const label = historyGroupLabel(group);
                 return <Fragment key={`desktop-history-group-${group.key}`}>
@@ -2710,7 +2737,7 @@ function ArchiveHistorySection({
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{trade.contracts}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatCurrency(historyGrossRisk(trade), 0)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatHistoryDate(trade.soldDate)}</td>
-                    <td className="px-2 py-1 text-right font-mono tabular-nums">{formatDays(getTradeDaysHeld(trade))}</td>
+                    <td className="px-2 py-1 text-right font-mono tabular-nums">{formatDays(historyDaysHeld(trade))}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{formatHistoricalOptionPrice(trade.soldPrice)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{formatPctValue(historyEntryNominalYield(trade))}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{isFiniteNumber(historyEntryVix(trade)) ? historyEntryVix(trade)!.toFixed(2) : DASH}</td>

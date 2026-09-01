@@ -43,6 +43,13 @@ function surfaceFor(page: Page, ticker: string, mobile: boolean) {
     : page.getByRole('row').filter({ hasText: ticker }).last();
 }
 
+async function historyTickers(page: Page, mobile: boolean) {
+  if (mobile) {
+    return page.locator('.portfolio-history-section article').evaluateAll(elements => elements.map(element => (element.textContent ?? '').trim().split(/\s+/)[0]));
+  }
+  return page.locator('.portfolio-history-section tbody tr[title]').evaluateAll(rows => rows.map(row => row.querySelector('td')?.textContent?.trim() ?? ''));
+}
+
 test.describe('History expiration actions visual matrix', () => {
   test.skip(!(phase === 'before' || phase === 'after') || suite !== 'history', 'Run with UI_OVERHAUL_CAPTURE=before|after and UI_OVERHAUL_SUITE=history.');
 
@@ -80,6 +87,24 @@ test.describe('History expiration actions visual matrix', () => {
     await expect(pending.getByRole('button', { name: 'Confirm Worthless' })).toBeVisible();
     await expect(pending.getByRole('button', { name: 'Enter Exp. Price' })).toBeVisible();
     await expect(pending.getByRole('button', { name: /Delete LABU trade/ })).toBeVisible();
+    await expect(pending).toContainText('1.23');
+    await expect(pending).not.toContainText('1.2345');
+
+    let requestCount = 0;
+    page.on('request', () => { requestCount += 1; });
+    const requestsBeforeSort = requestCount;
+    if (mobile) {
+      await page.locator('#mobile-history-sort').selectOption('soldPrice');
+      await expect.poll(() => historyTickers(page, true)).toEqual(['LABU', 'SPY', 'TQQQ', 'QQQ', 'SOXL']);
+      await page.locator('.portfolio-history-section').getByRole('button', { name: /Sort ascending; activate for descending/ }).click();
+      await expect.poll(() => historyTickers(page, true)).toEqual(['SOXL', 'QQQ', 'TQQQ', 'SPY', 'LABU']);
+    } else {
+      await page.locator('.portfolio-history-section').getByRole('button', { name: /^Sold Price, not sorted/ }).click();
+      await expect.poll(() => historyTickers(page, false)).toEqual(['LABU', 'SPY', 'TQQQ', 'QQQ', 'SOXL']);
+      await page.locator('.portfolio-history-section').getByRole('button', { name: /^Sold Price, sorted ascending/ }).click();
+      await expect.poll(() => historyTickers(page, false)).toEqual(['SOXL', 'QQQ', 'TQQQ', 'SPY', 'LABU']);
+    }
+    expect(requestCount).toBe(requestsBeforeSort);
 
     const historyGrouping = page.getByRole('group', { name: 'Group history by' });
     for (const grouping of ['Year', 'Expiry', 'Underlying', 'None']) {

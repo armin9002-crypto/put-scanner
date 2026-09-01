@@ -1397,6 +1397,10 @@ td {
   width: 100%;
 }
 
+.analyze-ticker-input::placeholder {
+  text-transform: none;
+}
+
 .scanner-market-rail {
   min-width: 0;
   margin: 0;

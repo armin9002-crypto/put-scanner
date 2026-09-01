@@ -29,7 +29,7 @@ test('Schedule Entry Delta display toggle defaults off and preserves the canonic
 test('History renders canonical Gross Risk and aligned aggregate fields with bulk disclosure controls', async () => {
   const source = await read('src/pages/PortfolioPage.tsx');
   assert.match(source, /historyGrossRisk/);
-  assert.match(source, /\['Ticker', 'Exp\.', 'Strike', 'Contracts', 'Gross Risk'/);
+  assert.match(source, /HISTORY_SORT_OPTIONS\.map\(option => historySortButton/);
   assert.match(source, /<td colSpan=\{18\}>/);
   for (const field of [
     'group.grossRisk',
