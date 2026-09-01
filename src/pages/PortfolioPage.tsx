@@ -597,6 +597,12 @@ function SummaryCard({ label, value, color, detail }: { label: string; value: st
   );
 }
 
+function formatMonthlyRealizedPnlLabel(value: number): string {
+  if (value === 0) return '';
+  const formatted = formatCurrency(Math.abs(value), 0);
+  return value < 0 ? `(${formatted})` : formatted;
+}
+
 function PortfolioPriorityStrip({
   trades,
   markBasis,
@@ -2583,16 +2589,30 @@ function MonthlyRealizedChart({ trades }: { trades: PortfolioTrade[] }) {
   if (months.length === 0) return null;
   const max = Math.max(...months.map(month => Math.abs(month.realizedPnl)), 1);
   return (
-    <section className="mb-2 rounded-lg p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+    <section className="portfolio-realized-pnl-chart mb-2 min-w-0 rounded-lg p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
       <div className="mb-2 flex items-center justify-between gap-2"><h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Realized P&amp;L by Expiration Month</h3></div>
-      <div className="flex h-28 items-end gap-1 overflow-x-auto pb-1">
+      <div className="portfolio-realized-pnl-chart__plot relative flex h-28 min-w-0 items-stretch gap-1 overflow-x-auto px-1">
+        <div className="portfolio-realized-pnl-chart__baseline pointer-events-none absolute inset-x-1 top-1/2 border-t" aria-hidden="true" />
         {months.map(month => {
           const captured = month.premiumCollected > 0 ? month.realizedPnl / month.premiumCollected : null;
           const date = new Date(`${month.month}-01T00:00:00Z`);
           const label = `${date.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' })} '${month.month.slice(2, 4)}`;
-          return <div key={month.month} className="group/month relative flex h-full min-w-[42px] flex-1 flex-col items-center justify-end" title={`${label}\nTrades: ${month.trades}\nPremium: ${formatCurrency(month.premiumCollected, 0)}\nRealized P&L: ${formatCurrency(month.realizedPnl, 0)}\nCaptured: ${formatPctValue(captured)}`}>
-            <div className="w-full max-w-10 rounded-t transition-opacity hover:opacity-80 motion-reduce:transition-none" style={{ height: `${Math.max(5, Math.abs(month.realizedPnl) / max * 78)}px`, backgroundColor: month.realizedPnl >= 0 ? 'var(--green)' : 'var(--red)' }} />
-            <span className="mt-1 text-[9px] whitespace-nowrap" style={{ color: 'var(--text-dim)' }}>{label}</span>
+          const valueLabel = formatMonthlyRealizedPnlLabel(month.realizedPnl);
+          const barHeight = Math.max(5, Math.abs(month.realizedPnl) / max * 26);
+          return <div key={month.month} className="group/month relative flex h-full min-w-[48px] flex-1 flex-col items-center" title={`${label}\nTrades: ${month.trades}\nPremium: ${formatCurrency(month.premiumCollected, 0)}\nRealized P&L: ${formatCurrency(month.realizedPnl, 0)}\nCaptured: ${formatPctValue(captured)}`}>
+            <div className="relative h-1/2 w-full">
+              {month.realizedPnl > 0 && <div className="absolute bottom-0 left-1/2 flex -translate-x-1/2 flex-col items-center gap-0.5">
+                {valueLabel && <span data-chart-pnl-label className="portfolio-realized-pnl-chart__value portfolio-realized-pnl-chart__value--positive">{valueLabel}</span>}
+                <div className="w-full max-w-10 rounded-t transition-opacity hover:opacity-80 motion-reduce:transition-none" style={{ height: `${barHeight}px`, backgroundColor: 'var(--positive)' }} />
+              </div>}
+            </div>
+            <div className="relative h-1/2 w-full">
+              {month.realizedPnl < 0 && <div className="absolute left-1/2 top-0 flex -translate-x-1/2 flex-col items-center gap-0.5">
+                <div className="w-full max-w-10 rounded-b transition-opacity hover:opacity-80 motion-reduce:transition-none" style={{ height: `${barHeight}px`, backgroundColor: 'var(--negative)' }} />
+                {valueLabel && <span data-chart-pnl-label className="portfolio-realized-pnl-chart__value portfolio-realized-pnl-chart__value--negative">{valueLabel}</span>}
+              </div>}
+              <span data-chart-month-label className="portfolio-realized-pnl-chart__month absolute bottom-0 left-1/2 -translate-x-1/2 whitespace-nowrap">{label}</span>
+            </div>
           </div>;
         })}
       </div>
@@ -2711,7 +2731,7 @@ function ArchiveHistorySection({
         <SummaryCard label="Wtd. Avg. Entry Delta" value={formatDelta(visibleSummary.weightedAverageEntryDelta)} detail={visibleSummary.entryDeltaCoverage == null ? 'Entry Delta coverage is unavailable.' : `Based on ${(visibleSummary.entryDeltaCoverage * 100).toFixed(1)}% of historical Gross Risk with known Entry Delta.`} />
         <SummaryCard label="Wtd. Avg. Entry IV" value={formatPercentPoints(visibleSummary.weightedAverageEntryIv, 1)} detail={visibleSummary.entryIvCoverage == null ? 'Entry IV coverage is unavailable.' : `Based on ${(visibleSummary.entryIvCoverage * 100).toFixed(1)}% of historical Gross Risk with known Entry IV.`} />
       </div>
-      <div className="mb-2 flex h-2 overflow-hidden rounded-full" style={{ backgroundColor: 'var(--surface-alt)' }} title={`Expired Worthless ${visibleSummary.counts.expired_worthless} · Closed ${visibleSummary.counts.closed} · Expired ITM ${visibleSummary.counts.expired_itm} · Assigned ${visibleSummary.counts.assigned}`}>
+      <div className="portfolio-history-outcome-bar mb-2 flex h-2 overflow-hidden rounded-full" style={{ backgroundColor: 'var(--surface-alt)' }} title={`Expired Worthless ${visibleSummary.counts.expired_worthless} · Closed ${visibleSummary.counts.closed} · Expired ITM ${visibleSummary.counts.expired_itm} · Assigned ${visibleSummary.counts.assigned}`}>
         {(['expired_worthless', 'closed', 'expired_itm', 'assigned'] as const).map((outcome, index) => <div key={outcome} style={{ width: `${visibleSummary.percentages[outcome] * 100}%`, backgroundColor: ['var(--green)', 'var(--accent)', 'var(--red)', 'var(--orange)'][index] }} />)}
       </div>
       <MonthlyRealizedChart trades={visibleTrades} />

@@ -24,6 +24,8 @@ const portfolio = [
   { id: 'ui3-open-qqq', ticker: 'QQQ', optionType: 'put', strike: 88, expiration: '2027-02-19', contracts: 3, soldPrice: 2.25, soldDate: '2026-08-15', status: 'open', notes: 'Second expiry concentration; lower delta.', createdAt: '2026-08-15T12:00:00.000Z', updatedAt: '2026-08-15T12:00:00.000Z', entryVixClose: 19.1, latestMarketData: { underlyingPrice: 101, optionBid: 0.9, optionAsk: 1.1, optionLast: 1, delta: -0.18, iv: 39, openInterest: 1800, volume: 300, refreshedAt: '2026-08-27T12:00:00.000Z', availabilityStatus: 'live' } },
   { id: 'ui3-open-soxl', ticker: 'SOXL', optionType: 'put', strike: 70, expiration: '2026-12-18', contracts: 1, soldPrice: 4.5, soldDate: '2026-08-12', status: 'open', notes: 'Stale quote / review liquidity before adjusting.', createdAt: '2026-08-12T12:00:00.000Z', updatedAt: '2026-08-12T12:00:00.000Z', entryVixClose: 22.4, latestMarketData: { underlyingPrice: 72, optionBid: null, optionAsk: null, optionLast: null, delta: -0.42, iv: 68, openInterest: null, volume: null, refreshedAt: '2026-08-10T12:00:00.000Z', availabilityStatus: 'unavailable' } },
   { id: 'ui3-closed-qqq', ticker: 'QQQ', optionType: 'put', strike: 82, expiration: '2026-08-21', contracts: 1, soldPrice: 2.25, soldDate: '2026-07-15', status: 'closed', closePrice: 0.55, closeDate: '2026-08-12', realizedPnl: 170, percentCaptured: 0.756, notes: 'Closed at target; realized gain.', createdAt: '2026-07-15T12:00:00.000Z', updatedAt: '2026-08-12T12:00:00.000Z', entryVixClose: 19.1 },
+  { id: 'ui3-closed-loss', ticker: 'SOXL', optionType: 'put', strike: 68, expiration: '2026-09-18', contracts: 1, soldPrice: 1, soldDate: '2026-08-01', status: 'closed', closePrice: 2.5, closeDate: '2026-08-28', realizedPnl: -150, percentCaptured: -1.5, notes: 'Closed for a controlled loss.', createdAt: '2026-08-01T12:00:00.000Z', updatedAt: '2026-08-28T12:00:00.000Z', entryVixClose: 24.2 },
+  { id: 'ui3-closed-flat', ticker: 'TQQQ', optionType: 'put', strike: 86, expiration: '2026-10-16', contracts: 1, soldPrice: 1, soldDate: '2026-08-04', status: 'closed', closePrice: 1, closeDate: '2026-08-29', realizedPnl: 0, percentCaptured: 0, notes: 'Closed at breakeven.', createdAt: '2026-08-04T12:00:00.000Z', updatedAt: '2026-08-29T12:00:00.000Z', entryVixClose: 20.4 },
   { id: 'ui3-expired-spy', ticker: 'SPY', optionType: 'put', strike: 90, expiration: '2026-07-17', contracts: 1, soldPrice: 1.8, soldDate: '2026-06-20', status: 'expired', expirationClosePrice: 0, expirationCloseDate: '2026-07-17', finalOptionValue: 0, realizedPnl: 180, percentCaptured: 1, resolutionType: 'expired_worthless', resolvedDate: '2026-07-17', notes: 'Expired worthless.', createdAt: '2026-06-20T12:00:00.000Z', updatedAt: '2026-07-17T12:00:00.000Z' },
 ];
 
@@ -37,6 +39,90 @@ async function capture(page: Page, testInfo: TestInfo, name: string) {
   await page.screenshot({ path: path.join(directory, `${name}.png`), animations: 'disabled', fullPage: false });
   const overflow = await page.evaluate(() => ({ pageOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1, rootScrollWidth: document.documentElement.scrollWidth, rootClientWidth: document.documentElement.clientWidth }));
   overflows.push({ project: testInfo.project.name, name, url: page.url(), ...overflow });
+}
+
+async function measurePortfolio(page: Page, testInfo: TestInfo, name: string) {
+  const metrics = await page.evaluate(() => {
+    const rect = (element: Element | null) => {
+      if (!element) return null;
+      const box = element.getBoundingClientRect();
+      return { top: box.top + window.scrollY, bottom: box.bottom + window.scrollY, height: box.height, width: box.width };
+    };
+    const visible = (selector: string) => [...document.querySelectorAll(selector)].filter(element => {
+      const box = element.getBoundingClientRect();
+      return box.width > 0 && box.height > 0;
+    });
+    const firstVisible = (selector: string) => visible(selector)[0] ?? null;
+    const title = [...document.querySelectorAll('h1')].find(element => element.textContent?.trim() === 'Portfolio') ?? null;
+    const schedule = [...document.querySelectorAll('h2')].find(element => element.textContent?.trim() === 'Schedule of Positions') ?? null;
+    const history = [...document.querySelectorAll('h2')].find(element => element.textContent?.trim() === 'Expired / Closed History') ?? null;
+    const summaryCards = visible('.portfolio-summary-grid > *, .portfolio-summary-mobile .portfolio-summary-card');
+    const priorityCards = visible('.portfolio-priority-card');
+    const historyCards = visible('.portfolio-history-summary-grid > *');
+    const chart = firstVisible('.portfolio-realized-pnl-chart');
+    const historyTable = firstVisible('.portfolio-history-table');
+    return {
+      titleToSchedule: title && schedule ? schedule.getBoundingClientRect().top + window.scrollY - (title.getBoundingClientRect().top + window.scrollY) : null,
+      historyTitleToTable: history && historyTable ? historyTable.getBoundingClientRect().top + window.scrollY - (history.getBoundingClientRect().top + window.scrollY) : null,
+      topKpiHeights: summaryCards.map(element => rect(element)?.height ?? null),
+      priorityHeights: priorityCards.map(element => rect(element)?.height ?? null),
+      historyKpiHeights: historyCards.map(element => rect(element)?.height ?? null),
+      chart: rect(chart),
+      chartMonthLabels: visible('[data-chart-month-label]').map(element => element.textContent?.trim() ?? ''),
+      chartValueLabels: visible('[data-chart-pnl-label]').map(element => element.textContent?.trim() ?? ''),
+    };
+  });
+  const directory = path.join(outputRoot, testInfo.project.name);
+  await mkdir(directory, { recursive: true });
+  await writeFile(path.join(directory, `${name}-metrics.json`), `${JSON.stringify(metrics, null, 2)}\n`, 'utf8');
+}
+
+async function assertRenderedPortfolioDensity(page: Page, desktop: boolean) {
+  const summaryCards = page.locator('.portfolio-summary-grid > *:visible');
+  if (desktop) {
+    await expect(summaryCards).toHaveCount(10);
+    await expect(summaryCards.locator('.portfolio-summary-card__label')).toHaveText(['Open Trades', 'Premium', 'Gross Risk', 'Net Risk', 'Gain/Loss', '% Captured', 'Entry Wtd. Avg. AY', 'Current Wtd. Avg. AY', 'Weighted Avg Delta', 'Weighted Avg DTE']);
+    const heights = await summaryCards.evaluateAll(elements => elements.map(element => element.getBoundingClientRect().height));
+    expect(Math.max(...heights) - Math.min(...heights)).toBeLessThan(1);
+    expect(Math.max(...heights)).toBeLessThan(60);
+  } else {
+    const mobileCards = page.locator('.portfolio-summary-mobile .portfolio-summary-card:visible');
+    if (await mobileCards.count()) {
+      const heights = await mobileCards.evaluateAll(elements => elements.map(element => element.getBoundingClientRect().height));
+      expect(Math.max(...heights)).toBeLessThan(60);
+    }
+  }
+  const priorityCards = page.locator('.portfolio-priority-card:visible');
+  await expect(priorityCards).toHaveCount(2);
+  if (desktop) {
+    const heights = await priorityCards.evaluateAll(elements => elements.map(element => element.getBoundingClientRect().height));
+    expect(Math.max(...heights) - Math.min(...heights)).toBeLessThan(1);
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
+}
+
+async function assertRenderedHistoryDensity(page: Page) {
+  const cards = page.locator('.portfolio-history-summary-grid > *:visible');
+  await expect(cards).toHaveCount(8);
+  await expect(cards.locator('.portfolio-summary-card__label')).toHaveText(['Realized P&L', 'Total Realized IRR', 'Blended Capture', 'Total Historical Notional', 'Resolved Trades', 'Avg. Days Held', 'Wtd. Avg. Entry Delta', 'Wtd. Avg. Entry IV']);
+  const heights = await cards.evaluateAll(elements => elements.map(element => element.getBoundingClientRect().height));
+  expect(Math.max(...heights) - Math.min(...heights)).toBeLessThan(1);
+  await expect(page.getByText('Realized P&L by Expiration Month', { exact: true })).toBeVisible();
+  const monthLabels = page.locator('[data-chart-month-label]:visible');
+  await expect(monthLabels).toHaveCount(4);
+  for (const label of await monthLabels.allTextContents()) expect(label.trim()).toMatch(/^[A-Z][a-z]{2} '\d{2}$/);
+  const valueLabels = page.locator('[data-chart-pnl-label]:visible');
+  await expect(valueLabels).toHaveCount(3);
+  const values = (await valueLabels.allTextContents()).map(value => value.trim());
+  expect(values).toContain('$170');
+  expect(values).toContain('($150)');
+  expect(values).not.toContain('$0');
+  expect(values.every(value => !/\.\d/.test(value))).toBe(true);
+  await expect(page.locator('.portfolio-realized-pnl-chart__value--positive:visible')).toHaveCount(1);
+  await expect(page.locator('.portfolio-realized-pnl-chart__value--negative:visible')).toHaveCount(2);
+  await expect(monthLabels.first()).toHaveCSS('font-size', '10px');
+  await expect(valueLabels.first()).toHaveCSS('font-size', '10px');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
 }
 
 async function seed(page: Page) {
@@ -99,6 +185,8 @@ test.describe('UI-3 portfolio and watchlist visual matrix', () => {
       await page.reload();
       await openPortfolio(page);
       await capture(page, testInfo, 'portfolio-analytics-collapsed');
+      await measurePortfolio(page, testInfo, 'portfolio-dashboard');
+      await assertRenderedPortfolioDensity(page, true);
       const entryDeltaToggle = page.getByRole('checkbox', { name: 'Show Entry Deltas / IV' });
       if (await entryDeltaToggle.count()) {
         await entryDeltaToggle.check();
@@ -126,6 +214,8 @@ test.describe('UI-3 portfolio and watchlist visual matrix', () => {
       if (await history.count()) {
         await history.scrollIntoViewIfNeeded();
         await capture(page, testInfo, 'portfolio-history');
+        await measurePortfolio(page, testInfo, 'portfolio-history');
+        await assertRenderedHistoryDensity(page);
         const historyExpand = page.getByRole('button', { name: 'Expand All' }).last();
         if (await historyExpand.count()) {
           await historyExpand.click();
@@ -147,6 +237,8 @@ test.describe('UI-3 portfolio and watchlist visual matrix', () => {
         await page.reload(); await expect(page.locator('html')).toHaveAttribute('data-theme', theme); await settle(page); await capture(page, testInfo, `theme-${theme}-watchlist`);
         await openPortfolio(page); await capture(page, testInfo, `theme-${theme}-portfolio-collapsed`);
         await page.getByRole('button', { name: 'Expand Portfolio Analytics' }).click(); await capture(page, testInfo, `theme-${theme}-portfolio-expanded`);
+        const themeHistory = page.getByText('Expired / Closed History', { exact: true });
+        if (await themeHistory.count()) { await themeHistory.scrollIntoViewIfNeeded(); await capture(page, testInfo, `theme-${theme}-portfolio-history`); await assertRenderedHistoryDensity(page); }
         const themePosition = page.locator('[data-trade-id]:visible').first();
         const themeStrike = themePosition.locator('button').first();
         if (await themeStrike.count()) { await themeStrike.click(); if (await page.getByRole('complementary').count()) { await capture(page, testInfo, `theme-${theme}-portfolio-drawer`); await page.getByRole('button', { name: 'Close option detail drawer' }).last().click(); } }
@@ -154,10 +246,14 @@ test.describe('UI-3 portfolio and watchlist visual matrix', () => {
     } else if (project === 'tablet-1024x768') {
       await openWatchlist(page); await capture(page, testInfo, 'watchlist-tablet');
       await openPortfolio(page); await capture(page, testInfo, 'portfolio-tablet-collapsed');
+      await measurePortfolio(page, testInfo, 'portfolio-dashboard');
+      await assertRenderedPortfolioDensity(page, false);
       await page.getByRole('button', { name: 'Expand Portfolio Analytics' }).click(); await capture(page, testInfo, 'portfolio-tablet-expanded');
     } else if (project === 'portrait-430x932' || project === 'portrait-390x844' || project === 'portrait-375x667') {
       await openWatchlist(page); await capture(page, testInfo, 'watchlist-mobile');
       await openPortfolio(page); await capture(page, testInfo, 'portfolio-mobile-headline');
+      await measurePortfolio(page, testInfo, 'portfolio-dashboard');
+      await assertRenderedPortfolioDensity(page, false);
       const analytics = page.getByRole('button', { name: /Portfolio Analytics/ }).first();
       if (await analytics.count()) { await analytics.click(); await analytics.scrollIntoViewIfNeeded(); await capture(page, testInfo, 'portfolio-mobile-analytics'); }
       const entryDeltaToggle = page.getByRole('checkbox', { name: 'Show Entry Deltas / IV' });
@@ -168,14 +264,18 @@ test.describe('UI-3 portfolio and watchlist visual matrix', () => {
       }
       const history = page.getByRole('button', { name: /History/ }).first();
       if (await history.count()) { await history.click(); await page.getByText('History', { exact: true }).last().scrollIntoViewIfNeeded(); await capture(page, testInfo, 'portfolio-mobile-history'); }
+      if (await history.count()) { await measurePortfolio(page, testInfo, 'portfolio-history'); await assertRenderedHistoryDensity(page); }
     } else if (project === 'landscape-844x390' || project === 'landscape-667x375') {
       await openWatchlist(page); await capture(page, testInfo, 'watchlist-landscape');
       await openPortfolio(page); await capture(page, testInfo, 'portfolio-landscape');
+      await measurePortfolio(page, testInfo, 'portfolio-dashboard');
+      await assertRenderedPortfolioDensity(page, false);
       const analytics = page.getByRole('button', { name: /Portfolio Analytics/ }).first();
       if (await analytics.count()) { await analytics.click(); await analytics.scrollIntoViewIfNeeded(); await capture(page, testInfo, 'portfolio-landscape-analytics'); }
     } else {
       await openWatchlist(page); await capture(page, testInfo, 'watchlist-responsive');
       await openPortfolio(page); await capture(page, testInfo, 'portfolio-responsive');
+      await measurePortfolio(page, testInfo, 'portfolio-dashboard');
     }
     expect(cloudHarness.requests.some(request => request.startsWith('GET /rest/v1/user_state'))).toBe(true);
     expect(await page.evaluate(() => ({ portfolio: localStorage.getItem('put_scanner_portfolio_trades'), watchlist: localStorage.getItem('put_scanner_watchlist') }))).toEqual({ portfolio: null, watchlist: null });
