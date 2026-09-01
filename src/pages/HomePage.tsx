@@ -39,7 +39,7 @@ import {
 } from '../lib/scannerUpdateState';
 import { passesScannerLiquidityFilter, sortScannerEtfs, type ScannerLiquidityFilter, type ScannerSort } from '../lib/scannerDiscovery';
 import { fetchFundAssets, type FundAssetsData } from '../lib/fundAssets';
-import { parseScannerState, resolveScannerExpiration, serializeScannerState, type ScannerState } from '../lib/scannerState';
+import { DEFAULT_SCANNER_STATE, parseScannerState, resolveScannerExpiration, serializeScannerState, type ScannerState } from '../lib/scannerState';
 import { saveLastScannerUrl, type ScannerNavigationState } from '../lib/scannerNavigation';
 import { buildScannerOptionsPath } from '../lib/optionExpiryNavigation';
 import { useResponsiveMode } from '../lib/responsive';
@@ -369,6 +369,15 @@ export default function HomePage() {
     setExpFilter(value);
   }, []);
 
+  const resetScannerFilters = useCallback(() => {
+    setSearch(DEFAULT_SCANNER_STATE.search);
+    setLeverageFilter(DEFAULT_SCANNER_STATE.leverage);
+    setTypeFilter(DEFAULT_SCANNER_STATE.type);
+    setExpFilter(DEFAULT_SCANNER_STATE.expiration);
+    setScannerSort(DEFAULT_SCANNER_STATE.sort);
+    setLiquidityFilter(DEFAULT_SCANNER_STATE.liquidity);
+  }, []);
+
   const updateVisibleOptionSnapshots = useCallback(async () => {
     if (snapshotUpdateRunningRef.current) return;
     const tickers = [...new Set(filtered.map(etf => etf.ticker.trim().toUpperCase()))]
@@ -427,11 +436,13 @@ export default function HomePage() {
     }
   }, [filtered, optionSnapshots, prices]);
 
-  const mobileActiveFilterCount = [
-    leverageFilter !== 'All',
-    typeFilter !== 'All',
-    liquidityFilter !== 'all',
-    scannerSort !== 'default',
+  const activeControlCount = [
+    search.trim().length > 0,
+    leverageFilter !== DEFAULT_SCANNER_STATE.leverage,
+    typeFilter !== DEFAULT_SCANNER_STATE.type,
+    expFilter !== DEFAULT_SCANNER_STATE.expiration,
+    liquidityFilter !== DEFAULT_SCANNER_STATE.liquidity,
+    scannerSort !== DEFAULT_SCANNER_STATE.sort,
   ].filter(Boolean).length;
 
   if (isPhone) {
@@ -441,13 +452,6 @@ export default function HomePage() {
       { ticker: 'VIX', data: vixData, chartTicker: '^VIX', isVolatility: true },
       { ticker: 'VXN', data: vxnData, chartTicker: '^VXN', isVolatility: true },
     ];
-    const resetMobileFilters = () => {
-      setLeverageFilter('All');
-      setTypeFilter('All');
-      setLiquidityFilter('all');
-      setScannerSort('default');
-    };
-
     return (
       <div className="mobile-route-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
         <div className="mobile-scanner-controls px-3.5 pb-3 pt-3">
@@ -469,7 +473,7 @@ export default function HomePage() {
               </select>
             </label>
             <button type="button" onClick={() => setMobileFiltersOpen(true)} className="pressable mobile-control-button" aria-haspopup="dialog">
-              <SlidersHorizontal className="h-4 w-4" /> Filters{mobileActiveFilterCount > 0 ? ` ${mobileActiveFilterCount}` : ''}
+              <SlidersHorizontal className="h-4 w-4" /> Filters{activeControlCount > 0 ? ` ${activeControlCount}` : ''}
             </button>
           </div>
 
@@ -509,14 +513,14 @@ export default function HomePage() {
           ))}
         </div>
 
-        {filtered.length === 0 && !pricesLoading && <div className="px-6 py-12 text-center"><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No matching ETFs</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Try clearing search or widening your filters.</p><button type="button" onClick={resetMobileFilters} className="tap-target mt-3 rounded-lg px-4 text-xs font-semibold" style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)' }}>Reset filters</button></div>}
+        {filtered.length === 0 && !pricesLoading && <div className="px-6 py-12 text-center"><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No matching ETFs</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Try clearing search or widening your filters.</p><button type="button" onClick={resetScannerFilters} className="tap-target mt-3 rounded-lg px-4 text-xs font-semibold" style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)' }}>Reset Filters</button></div>}
 
         {mobileFiltersOpen && (
           <MobileBottomSheet
             title="Scanner filters"
             description="Refine the ETF opportunity list"
             onClose={() => setMobileFiltersOpen(false)}
-            footer={<div className="grid grid-cols-2 gap-2"><button type="button" onClick={resetMobileFilters} className="mobile-sheet-action secondary">Reset</button><button type="button" onClick={() => setMobileFiltersOpen(false)} className="mobile-sheet-action primary">Apply</button></div>}
+            footer={<div className="grid grid-cols-2 gap-2"><button type="button" onClick={resetScannerFilters} className="mobile-sheet-action secondary">Reset Filters</button><button type="button" onClick={() => setMobileFiltersOpen(false)} className="mobile-sheet-action primary">Apply</button></div>}
           >
             <div className="space-y-5">
               <fieldset>
@@ -557,7 +561,19 @@ export default function HomePage() {
               <div className="scanner-control-plane__eyebrow">Opportunity set</div>
               <div className="scanner-control-plane__title">Set expiry and criteria</div>
             </div>
-            <div className="scanner-control-plane__summary">{mobileActiveFilterCount + (expFilter !== 'all' ? 1 : 0) + (search.trim() ? 1 : 0)} active controls</div>
+            <div className="flex items-center gap-2">
+              <div className="scanner-control-plane__summary">{activeControlCount} active controls</div>
+              <button
+                type="button"
+                onClick={resetScannerFilters}
+                disabled={activeControlCount === 0}
+                className="button-ghost scanner-reset-filters inline-flex h-8 items-center rounded-md px-2 text-[10px] font-medium whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50"
+                aria-label="Reset Filters"
+                title={activeControlCount === 0 ? 'Filters are already at their defaults' : 'Return Scanner filters to their defaults'}
+              >
+                Reset Filters
+              </button>
+            </div>
           </div>
             <div className="scanner-control-plane__toolbar">
               <div className="scanner-control-plane__criteria">
@@ -617,7 +633,7 @@ export default function HomePage() {
           <div className="scanner-empty-state surface-inset">
             <p className="font-semibold" style={{ color: 'var(--text)' }}>No ETFs match your filters.</p>
             <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Try clearing search or widening the opportunity set.</p>
-            <button type="button" className="button-secondary mt-3 rounded-md px-3 py-1.5 text-xs" onClick={() => { setSearch(''); setLeverageFilter('All'); setTypeFilter('All'); setLiquidityFilter('all'); setScannerSort('default'); }}>Reset filters</button>
+            <button type="button" className="button-secondary mt-3 rounded-md px-3 py-1.5 text-xs" onClick={resetScannerFilters}>Reset Filters</button>
           </div>
         )}
         </section>

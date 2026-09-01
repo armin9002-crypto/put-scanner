@@ -125,6 +125,46 @@ test('Scanner filtering and exact-expiry navigation remain request-bounded', asy
   expect(marketHarness.counts.get('ticker-detail') ?? 0).toBeLessThanOrEqual(2);
 });
 
+test('Scanner reset clears local criteria and option rows use drawer-only detail inspection', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop-1440x900', 'one deterministic desktop interaction scenario');
+  test.setTimeout(120_000);
+  await page.goto('/?q=TQQQ&leverage=3x&type=Sector&expiry=2027-01-01&sort=fiveDay&liquidity=mediumPlus');
+  const filter = page.getByPlaceholder(/Filter \/ Search by Ticker/i).first();
+  await expect(filter).toHaveValue('TQQQ');
+  await expect(page.getByText('6 active controls', { exact: true })).toBeVisible();
+  await page.locator('.scanner-reset-filters').click();
+  await expect(filter).toHaveValue('');
+  await expect(page.getByText('0 active controls', { exact: true })).toBeVisible();
+  expect(new URL(page.url()).pathname).toBe('/');
+  expect(new URL(page.url()).search).toBe('');
+
+  await page.goto('/options/TQQQ?expiry=2027-01-01');
+  const row = page.getByRole('row').filter({ hasText: '90.00' }).last();
+  await expect(row).toBeVisible();
+  await row.hover();
+  await expect(page.getByText(/Last Trade Date:/)).toHaveCount(0);
+  await row.focus();
+  await row.press('Enter');
+  await expect(page.getByRole('complementary')).toBeVisible();
+  await page.getByRole('complementary').getByRole('button', { name: /Close option detail/i }).click();
+  await row.getByRole('button', { name: /watchlist/i }).click();
+  await expect(page.getByRole('complementary')).toHaveCount(0);
+});
+
+test('mobile Scanner keeps Reset Filters in the existing filter sheet', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'portrait-390x844', 'one deterministic phone interaction scenario');
+  await page.goto('/?q=TQQQ&leverage=3x&type=Sector&expiry=2027-01-01&sort=fiveDay&liquidity=mediumPlus');
+  const filter = page.getByPlaceholder(/Filter \/ Search by Ticker/i).first();
+  await expect(filter).toHaveValue('TQQQ');
+  await page.locator('.mobile-control-button').click();
+  await expect(page.getByText('Scanner filters', { exact: true })).toBeVisible();
+  await page.getByRole('dialog', { name: 'Scanner filters' }).getByRole('button', { name: 'Reset Filters', exact: true }).click();
+  await expect(filter).toHaveValue('');
+  await expect(page.getByRole('button', { name: 'Filters', exact: true })).toBeVisible();
+  expect(new URL(page.url()).pathname).toBe('/');
+  expect(new URL(page.url()).search).toBe('');
+});
+
 test('detail drawer, transient Pulse cancellation, and Account conflict UI remain bounded', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop-1440x900', 'one consolidated deterministic desktop scenario');
   test.setTimeout(180_000);

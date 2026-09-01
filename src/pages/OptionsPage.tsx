@@ -6,7 +6,7 @@ import type { ExtendedPriceData, TickerDetailAvailability, TickerDetailErrorCode
 import { addToWatchlist, removeFromWatchlist, isInWatchlist, makeWatchlistId } from '../lib/watchlist';
 import type { WatchlistItem } from '../lib/watchlist';
 import { addPortfolioTrade } from '../lib/portfolioStorage';
-import { calculateBidAskSpreadPercent, calculateMoneyness, calculateYieldPercent } from '../lib/optionMetrics';
+import { calculateMoneyness, calculateYieldPercent } from '../lib/optionMetrics';
 import { resolvePutDeltaWithSource, type PutDeltaSource } from '../lib/putDelta';
 import { entrySnapshotFromExactChain, usMarketDateIso } from '../lib/portfolioEntryDelta';
 import { compareNullableValue } from '../lib/metricValue';
@@ -23,7 +23,6 @@ import {
   OPTION_YIELD_DISPLAY_LABELS,
   OPTION_YIELD_DISPLAY_ORDER,
   isNominalYieldField,
-  orderedOptionQuoteEntries,
   type OptionQuoteTableDisplayField,
   type OptionYieldDisplayField,
 } from '../lib/optionQuoteDisplay';
@@ -232,48 +231,6 @@ function formatLastTradeDate(value: number | null | undefined): string {
     day: 'numeric',
     year: 'numeric',
   });
-}
-
-function formatSpreadPercent(bid: number | null, ask: number | null): string {
-  const spread = calculateBidAskSpreadPercent(bid, ask);
-  return spread != null ? `${(spread * 100).toFixed(1)}%` : '—';
-}
-
-function OptionQuickTooltip({ put, ticker, expirationLabel, dte }: { put: EnrichedPut; ticker: string; expirationLabel: string; dte: number | null }) {
-  const stale = getOptionLastTradeFreshness(put.lastTradeDate);
-  const lastTradeDate = formatLastTradeDate(put.lastTradeDate);
-  const quoteText = orderedOptionQuoteEntries({
-    last: put.last,
-    bid: put.bid,
-    mid: getMidPrice(put.bid, put.ask),
-    ask: put.ask,
-  }).map(({ label, value }) => `${label} ${formatPrice(value)}`).join(' · ');
-  return (
-    <div
-      className="pointer-events-none absolute left-0 top-[calc(100%+4px)] z-50 hidden w-[320px] rounded-lg px-3 py-2 text-left text-xs opacity-0 shadow-xl transition-opacity group-hover:block group-hover:opacity-100 group-focus-within:block group-focus-within:opacity-100"
-      style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', boxShadow: 'var(--shadow)' }}
-    >
-      <div className="mb-1 font-semibold" style={{ color: 'var(--text)' }}>
-        {ticker} ${formatPrice(put.strike)} Put · {expirationLabel || '—'} · {dte != null ? `${dte} DTE` : '— DTE'}
-      </div>
-      <div className="font-mono text-[11px] tabular-nums" style={{ color: 'var(--text-secondary)' }}>
-        {quoteText}
-      </div>
-      <div className="mt-1 flex flex-wrap gap-x-1.5 font-mono text-[11px] tabular-nums" style={{ color: stale.color }}>
-        <span>Last Trade Date: {lastTradeDate}</span>
-        {stale.label && <span>· {stale.label}</span>}
-      </div>
-      <div className="mt-1 font-mono text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
-        Δ {put.delta != null ? put.delta.toFixed(2) : '—'} · IV {put.impliedVolatility != null ? `${put.impliedVolatility.toFixed(1)}%` : '—'} · {put.otmItmLabel || '—'}
-      </div>
-      <div className="mt-1 font-mono text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
-        Spread {formatSpreadPercent(put.bid, put.ask)} · AY Bid {put.annYieldBid != null ? formatYield(put.annYieldBid) : '—'} · AY Ask {put.annYieldAsk != null ? formatYield(put.annYieldAsk) : '—'}
-      </div>
-      <div className="mt-1 font-mono text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
-        Vol {formatNumber(put.volume)} · OI {formatNumber(put.openInterest)}
-      </div>
-    </div>
-  );
 }
 
 function MobileStat({ label, value, color }: { label: string; value: string; color?: string }) {
@@ -1498,8 +1455,6 @@ export default function OptionsPage() {
                       const altBg = rowIdx % 2 !== 0 ? 'var(--row-alt)' : 'transparent';
                       const expForId = optionsData?.expirations.find(e => e.date === selectedExp);
                       const expiryIso = expForId ? new Date(expForId.date * 1000).toISOString().split('T')[0] : '';
-                      const quickExpirationLabel = expForId?.label ?? selectedExpiration?.label ?? '';
-                      const quickDte = expForId?.dte ?? selectedExpiration?.dte ?? null;
                       const wlId = makeWatchlistId(ticker ?? '', expiryIso, put.strike);
                       const isWatched = watchlistIds.has(wlId);
                       const isSelected = selectedOption?.strike === put.strike;
@@ -1509,7 +1464,16 @@ export default function OptionsPage() {
                         <tr
                           key={put.strike}
                           onClick={() => setSelectedOption(put)}
-                          className="group transition-colors cursor-pointer"
+                          onKeyDown={event => {
+                            if (event.target !== event.currentTarget) return;
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              setSelectedOption(put);
+                            }
+                          }}
+                          tabIndex={0}
+                          aria-label={`Open ${ticker} ${formatPrice(put.strike)} put details`}
+                          className="transition-colors cursor-pointer"
                           style={{
                             borderBottom: '1px solid var(--border)',
                             backgroundColor: rowBackground,
@@ -1518,11 +1482,13 @@ export default function OptionsPage() {
                         >
                           <td className="px-1.5 sm:px-2 py-1.5 text-center text-xs w-6">
                             <button
+                              type="button"
                               onClick={(event) => {
                                 event.stopPropagation();
                                 toggleWatchlist(put);
                               }}
                               className="transition-opacity hover:opacity-70 min-h-[44px] min-w-[32px] flex items-center justify-center"
+                              aria-label={isWatched ? 'Remove from watchlist' : 'Add to watchlist'}
                               title={isWatched ? 'Remove from watchlist' : 'Add to watchlist'}
                             >
                               <Star
@@ -1531,7 +1497,7 @@ export default function OptionsPage() {
                               />
                             </button>
                           </td>
-                          <td className="sticky-stack left-0 z-[2] px-1.5 sm:px-2 py-1.5 text-left text-xs whitespace-nowrap border-r w-[88px] relative" style={{ borderColor: 'var(--border)', backgroundColor: isSelected ? 'var(--accent-bg)' : bg }}>
+                          <td className="sticky-stack left-0 z-[2] px-1.5 sm:px-2 py-1.5 text-left text-xs whitespace-nowrap border-r w-[88px]" style={{ borderColor: 'var(--border)', backgroundColor: isSelected ? 'var(--accent-bg)' : bg }}>
                             <div className="flex items-center gap-1.5">
                               <span className="font-mono font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{formatPrice(put.strike)}</span>
                               {moneyness === 'itm' && (
@@ -1544,7 +1510,6 @@ export default function OptionsPage() {
                                 <span className="text-[9px] font-bold px-1 py-0.5 rounded" style={{ backgroundColor: 'rgba(234,179,8,0.15)', color: 'var(--yellow)', border: '1px solid rgba(234,179,8,0.2)' }}>ATM</span>
                               )}
                             </div>
-                            <OptionQuickTooltip put={put} ticker={ticker ?? ''} expirationLabel={quickExpirationLabel} dte={quickDte} />
                           </td>
                           <td className="w-20 px-1.5 py-1.5 text-right font-mono text-xs tabular-nums hidden md:table-cell" title={`${formatLastTradeDate(put.lastTradeDate)}${getOptionLastTradeFreshness(put.lastTradeDate).label ? ` · ${getOptionLastTradeFreshness(put.lastTradeDate).label}` : ''}`} style={{ color: getOptionLastTradeFreshness(put.lastTradeDate).color }}>{formatOptionLastTradeDate(put.lastTradeDate)}</td>
                           {OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => <td key={field} className={`px-2 py-1.5 text-right text-xs font-mono tabular-nums w-14 ${field === 'last' ? 'hidden md:table-cell' : ''}`} style={{ color: 'var(--text)' }}>{formatPrice(put[field])}</td>)}

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { formatFundAssets } from '../src/lib/fundAssets.ts';
 import { DEFAULT_SCANNER_STATE, parseScannerState, resolveScannerExpiration, serializeScannerState } from '../src/lib/scannerState.ts';
 
@@ -23,6 +24,29 @@ test('Scanner expiration restoration keeps valid dates and falls back to nearest
   assert.equal(resolveScannerExpiration('date_240', [100, 200, 300]), 'date_200');
   assert.equal(resolveScannerExpiration('date_240', []), 'all');
   assert.equal(resolveScannerExpiration('lte_30dte', [100], false), 'all');
+});
+
+test('Scanner reset returns every criterion and the local query to canonical defaults', () => {
+  const source = readFileSync(new URL('../src/pages/HomePage.tsx', import.meta.url), 'utf8');
+  const resetStart = source.indexOf('const resetScannerFilters = useCallback');
+  assert.notEqual(resetStart, -1, 'Scanner has one shared reset path');
+  const resetBody = source.slice(resetStart, source.indexOf('  const updateVisibleOptionSnapshots', resetStart));
+  for (const [setter, field] of [['Search', 'search'], ['LeverageFilter', 'leverage'], ['TypeFilter', 'type'], ['ExpFilter', 'expiration'], ['ScannerSort', 'sort'], ['LiquidityFilter', 'liquidity']]) {
+    assert.match(resetBody, new RegExp(`set${setter}\\(DEFAULT_SCANNER_STATE\\.${field}\\)`));
+  }
+  assert.doesNotMatch(resetBody, /navigate|fetchOptions|fetchBatchPrices|updateVisibleOptionSnapshots/);
+  assert.match(source, /Reset Filters/);
+  assert.match(source, /activeControlCount/);
+  assert.equal(serializeScannerState(DEFAULT_SCANNER_STATE).toString(), '', 'canonical defaults serialize without stale URL criteria');
+});
+
+test('Option-chain rows keep deliberate selection interactions without rich hover cards', () => {
+  const source = readFileSync(new URL('../src/pages/OptionsPage.tsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /OptionQuickTooltip|group-hover:block|group-focus-within:block/);
+  assert.match(source, /onKeyDown=\{event => \{[\s\S]*?setSelectedOption\(put\)/);
+  assert.match(source, /tabIndex=\{0\}/);
+  assert.match(source, /onClick=\{\(\) => setSelectedOption\(put\)\}/);
+  assert.match(source, /event\.stopPropagation\(\);[\s\S]*?toggleWatchlist\(put\)/);
 });
 
 test('fund Assets formatting is compact and never fabricates missing values', () => {
