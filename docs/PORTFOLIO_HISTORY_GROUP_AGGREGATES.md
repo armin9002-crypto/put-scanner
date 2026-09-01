@@ -40,7 +40,7 @@ Coverage is `null` when total valid Gross Risk is zero. Entry Delta and Entry IV
 
 ## Realized P&L chart buckets
 
-`buildMonthlyRealizedPnl` buckets every resolved row with known canonical Realized P&L by the option expiration `YYYY-MM`, even when the position was closed earlier. The key includes the year, losses participate, and unresolved/pending or invalid-expiration rows do not. The current top-right `N months` label is the count of distinct expiration-month buckets after the active History filter, not a trailing time window; the later Luna pass may remove that label.
+`buildMonthlyRealizedPnl` buckets every resolved row with known canonical Realized P&L by the option expiration `YYYY-MM`, even when the position was closed earlier. The key includes the year, losses participate, and unresolved/pending or invalid-expiration rows do not. The chart uses compact month-plus-year labels such as `Jul '26`; it does not add a redundant month-count label or imply a trailing time window.
 
 ## Deliberately unaggregated fields
 

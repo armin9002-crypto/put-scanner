@@ -379,6 +379,7 @@ test('Add Trade exposes manual Entry Delta and percentage-point IV only for hist
   assert.match(modal, /const showEntrySnapshots = trade != null \|\| tradeMode === 'historical'/);
   assert.match(modal, /Entry IV \(%\) \(optional\)/);
   assert.match(modal, /65\.4 means 65\.4%/);
+  assert.match(modal, /Entry Delta and Entry IV are captured automatically from exact-contract data when available/);
   assert.match(modal, /Historical \/ Realized/);
   assert.match(modal, /Held to Expiration/);
   assert.match(modal, /Closed \/ Bought Back/);
@@ -394,7 +395,7 @@ test('Add Trade exposes manual Entry Delta and percentage-point IV only for hist
   assert.match(page, /label="Total Realized IRR"/, 'History exposes the combined realized money-weighted return');
   assert.match(page, /label="Wtd\. Avg\. Entry Delta"/, 'History exposes the signed weighted Entry Delta summary');
   assert.match(page, /label="Wtd\. Avg\. Entry IV"/, 'History exposes Gross-Risk-weighted Entry IV with coverage');
-  assert.match(page, /label="Avg Days Held" value=\{formatAverageDays/, 'History keeps one-decimal average holding periods');
+  assert.match(page, /label="Avg\. Days Held" value=\{formatAverageDays/, 'History keeps one-decimal average holding periods');
   assert.match(page, /label="Total Historical Notional"/, 'History exposes cumulative historical notional');
   assert.doesNotMatch(page, /label="Premium Collected"/, 'Portfolio-facing summary labels use the concise Premium name');
   assert.match(page, /HISTORY_SORT_OPTIONS\.map\(option => historySortButton/, 'History table uses compact sortable date and historical market columns');

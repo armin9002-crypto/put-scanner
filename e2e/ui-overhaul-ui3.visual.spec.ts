@@ -99,7 +99,7 @@ test.describe('UI-3 portfolio and watchlist visual matrix', () => {
       await page.reload();
       await openPortfolio(page);
       await capture(page, testInfo, 'portfolio-analytics-collapsed');
-      const entryDeltaToggle = page.getByRole('checkbox', { name: 'Show Entry Deltas' });
+      const entryDeltaToggle = page.getByRole('checkbox', { name: 'Show Entry Deltas / IV' });
       if (await entryDeltaToggle.count()) {
         await entryDeltaToggle.check();
         await capture(page, testInfo, 'portfolio-entry-deltas-on');
@@ -126,14 +126,15 @@ test.describe('UI-3 portfolio and watchlist visual matrix', () => {
       if (await history.count()) {
         await history.scrollIntoViewIfNeeded();
         await capture(page, testInfo, 'portfolio-history');
-        const historyCollapse = page.getByRole('button', { name: 'Collapse All' }).last();
-        if (await historyCollapse.count()) {
-          await historyCollapse.click();
-          await capture(page, testInfo, 'portfolio-history-collapsed');
-          const historyExpand = page.getByRole('button', { name: 'Expand All' }).last();
-          if (await historyExpand.count()) {
-            await historyExpand.click();
-            await capture(page, testInfo, 'portfolio-history-expanded');
+        const historyExpand = page.getByRole('button', { name: 'Expand All' }).last();
+        if (await historyExpand.count()) {
+          await historyExpand.click();
+          await capture(page, testInfo, 'portfolio-history-expanded');
+          const historyCollapse = page.getByRole('button', { name: 'Collapse All' }).last();
+          if (await historyCollapse.count()) {
+            await historyCollapse.click();
+            await capture(page, testInfo, 'portfolio-history-collapsed');
+            await page.getByRole('button', { name: 'Expand All' }).last().click();
           }
         }
       }
@@ -159,7 +160,7 @@ test.describe('UI-3 portfolio and watchlist visual matrix', () => {
       await openPortfolio(page); await capture(page, testInfo, 'portfolio-mobile-headline');
       const analytics = page.getByRole('button', { name: /Portfolio Analytics/ }).first();
       if (await analytics.count()) { await analytics.click(); await analytics.scrollIntoViewIfNeeded(); await capture(page, testInfo, 'portfolio-mobile-analytics'); }
-      const entryDeltaToggle = page.getByRole('checkbox', { name: 'Show Entry Deltas' });
+      const entryDeltaToggle = page.getByRole('checkbox', { name: 'Show Entry Deltas / IV' });
       if (await entryDeltaToggle.count()) {
         await entryDeltaToggle.check();
         await capture(page, testInfo, 'portfolio-mobile-entry-deltas-on');

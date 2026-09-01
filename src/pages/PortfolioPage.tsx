@@ -157,6 +157,7 @@ type PortfolioScheduleGroup = PortfolioExpirationScheduleGroup | PortfolioUnderl
 const PORTFOLIO_SCHEDULE_SORT_OPTIONS: Array<{ value: PortfolioScheduleSortField; label: string }> = [
   { value: 'ticker', label: 'Ticker' },
   { value: 'expiration', label: 'Expiry' },
+  { value: 'entry', label: 'Entry' },
   { value: 'dte', label: 'DTE' },
   { value: 'health', label: 'Health' },
   { value: 'strike', label: 'Strike' },
@@ -166,7 +167,7 @@ const PORTFOLIO_SCHEDULE_SORT_OPTIONS: Array<{ value: PortfolioScheduleSortField
   { value: 'grossRisk', label: 'Gross Risk' },
   { value: 'currentMark', label: 'Current Mark' },
   { value: 'currentValue', label: 'Current Value' },
-  { value: 'pnl', label: 'Total Gain/Loss' },
+  { value: 'pnl', label: 'Gain/Loss' },
   { value: 'percentCaptured', label: '% Captured' },
   { value: 'delta', label: 'Delta' },
   { value: 'breakeven', label: 'Breakeven' },
@@ -248,6 +249,19 @@ function EntryDeltaTooltipContent({ trade }: { trade: PortfolioTrade }) {
     { label: 'Value', value: formatDelta(trade.entryDelta) },
     { label: 'Source', value: source },
     { label: 'Captured', value: formatFullDate(trade.entryDeltaCapturedAt) },
+  ]} /></div>;
+}
+
+function EntryIvTooltipContent({ trade }: { trade: PortfolioTrade }) {
+  const source = trade.entryIvSource === 'provider' ? 'Provider exact-contract IV'
+    : trade.entryIvSource === 'stored_snapshot' ? 'Recovered stored entry snapshot'
+      : trade.entryIvSource === 'manual' ? 'User-provided historical value'
+        : trade.entryIvSource === 'imported' ? 'Imported backup value'
+          : DASH;
+  return <div><div className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text)' }}>Entry IV</div><TooltipRows rows={[
+    { label: 'Value', value: formatPercentPoints(trade.entryIv, 1) },
+    { label: 'Source', value: source },
+    { label: 'Captured', value: formatFullDate(trade.entryIvCapturedAt) },
   ]} /></div>;
 }
 
@@ -878,7 +892,7 @@ function groupTooltip(group: PortfolioExposureGroup): string {
     `Gross Risk: ${formatCurrency(group.grossRisk, 0)}`,
     `Net Risk: ${formatCurrency(group.netCapitalAtRisk, 0)}`,
     `Premium: ${formatCurrency(group.premiumCollected, 0)}`,
-    `Total Gain/Loss: ${formatCurrency(group.totalGainLoss, 0)}`,
+    `Gain/Loss: ${formatCurrency(group.totalGainLoss, 0)}`,
     `Delta Exposure: ${formatSignedNumber(group.deltaExposure)}`,
     `Underlying Eq.: ${formatCurrency(group.underlyingEquivalentExposure, 0)}`,
     `Weighted Avg Delta: ${formatDelta(group.weightedAverageDelta)}`,
@@ -923,6 +937,10 @@ function buildArchiveSummary(archivedTrades: PortfolioTrade[]) {
     expiredWorthless: archivedTrades.filter(trade => trade.resolutionType === 'expired_worthless').length,
     expiredItm: archivedTrades.filter(trade => trade.resolutionType === 'expired_itm').length,
   };
+}
+
+function formatHistoryCoverage(value: number | null | undefined): string {
+  return isFiniteNumber(value) ? `${(value * 100).toFixed(1)}%` : 'unavailable';
 }
 
 function parseNumber(value: string): number | null {
@@ -1179,7 +1197,7 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
             })}
           </div>
           {modeGuidance && <p role="status" className="mt-2 text-[11px] leading-4" style={{ color: 'var(--yellow)' }}>{modeGuidance}</p>}
-          {!trade && tradeMode === 'open' && <p className="mt-2 text-[11px]" style={{ color: 'var(--text-dim)' }}>Entry Delta and Entry IV are captured together from exact-contract data when available.</p>}
+          {!trade && tradeMode === 'open' && <p className="mt-2 text-[11px]" style={{ color: 'var(--text-dim)' }}>Entry Delta and Entry IV are captured automatically from exact-contract data when available.</p>}
         </fieldset>
 
         <div className="trade-modal-fields grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-2.5">
@@ -1952,7 +1970,7 @@ export default function PortfolioPage() {
     );
   };
 
-  const renderMobileScheduleTrade = (trade: PortfolioTrade) => <MobilePositionRow key={trade.id} ticker={trade.ticker} strike={formatCurrency(trade.strike)} contracts={trade.contracts} expiration={formatDteValue(calculateRemainingDte(trade))} pnl={formatCurrency(calculateTotalGainLoss(trade, markBasis), 0)} captured={formatPctValue(calculatePercentCaptured(trade, markBasis))} mark={formatOptionPrice(calculateCurrentOptionMark(trade, markBasis))} entryDelta={formatDelta(trade.entryDelta)} showEntryDelta={showEntryDeltas} currentDelta={formatDelta(trade.latestMarketData?.delta)} freshness={getPortfolioQuoteFreshness(trade).label} distance={formatPctValue(calculateDistanceToStrike(trade))} entryVix={isFiniteNumber(trade.entryVixClose) ? trade.entryVixClose.toFixed(2) : DASH} health={getPositionHealth(trade)} onOpen={() => openDrawer(trade)} onEdit={() => setEditingTrade(trade)} />;
+  const renderMobileScheduleTrade = (trade: PortfolioTrade) => <MobilePositionRow key={trade.id} ticker={trade.ticker} strike={formatCurrency(trade.strike)} contracts={trade.contracts} expiration={formatDteValue(calculateRemainingDte(trade))} entryDate={formatHistoryDate(trade.soldDate)} pnl={formatCurrency(calculateTotalGainLoss(trade, markBasis), 0)} captured={formatPctValue(calculatePercentCaptured(trade, markBasis))} mark={formatOptionPrice(calculateCurrentOptionMark(trade, markBasis))} entryDelta={formatDelta(trade.entryDelta)} showEntryDelta={showEntryDeltas} currentDelta={formatDelta(trade.latestMarketData?.delta)} entryIv={formatPercentPoints(trade.entryIv, 1)} currentIv={formatPercentPoints(trade.latestMarketData?.iv, 1)} showEntryIv={showEntryDeltas} freshness={getPortfolioQuoteFreshness(trade).label} distance={formatPctValue(calculateDistanceToStrike(trade))} entryVix={isFiniteNumber(trade.entryVixClose) ? trade.entryVixClose.toFixed(2) : DASH} health={getPositionHealth(trade)} onOpen={() => openDrawer(trade)} onEdit={() => setEditingTrade(trade)} />;
 
   if (isPhone) {
     return (
@@ -1961,7 +1979,7 @@ export default function PortfolioPage() {
           <>
             <section className="mobile-portfolio-hero px-4 pb-3 pt-3" style={{ backgroundColor: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
               <div className="portfolio-mobile-headline flex items-start justify-between gap-3">
-                <div><div className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: 'var(--text-dim)' }}>Total gain / loss</div><div className="mt-0.5 font-mono text-[28px] font-bold tracking-tight tabular-nums" style={{ color: pnlColor(markSummary.totalGainLoss) }}>{formatCurrency(markSummary.totalGainLoss, 0)}</div><div className="font-mono text-[13px] font-semibold" style={{ color: pnlColor(markSummary.percentCaptured) }}>{formatPctValue(markSummary.percentCaptured)} captured</div></div>
+                <div><div className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: 'var(--text-dim)' }}>Gain / Loss</div><div className="mt-0.5 font-mono text-[28px] font-bold tracking-tight tabular-nums" style={{ color: pnlColor(markSummary.totalGainLoss) }}>{formatCurrency(markSummary.totalGainLoss, 0)}</div><div className="font-mono text-[13px] font-semibold" style={{ color: pnlColor(markSummary.percentCaptured) }}>{formatPctValue(markSummary.percentCaptured)} captured</div></div>
                 <button type="button" onClick={() => setMobileActionsOpen(true)} className="pressable flex h-11 w-11 items-center justify-center rounded-full" aria-label="Portfolio actions" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }}><MoreHorizontal className="h-5 w-5" /></button>
               </div>
               <div className="portfolio-mobile-metrics mt-3 grid grid-cols-4 gap-2 border-t pt-3" style={{ borderColor: 'var(--border)' }}>
@@ -1992,7 +2010,7 @@ export default function PortfolioPage() {
                 <button type="button" onClick={() => setSortDir(direction => direction === 'asc' ? 'desc' : 'asc')} className="pressable mobile-control-button min-w-11 px-3" aria-label={`Sort ${sortDir === 'asc' ? 'ascending; activate for descending' : 'descending; activate for ascending'}`} title={sortDir === 'asc' ? 'Ascending' : 'Descending'}>{sortDir === 'asc' ? '↑' : '↓'}</button>
               </div>
               <div className="mt-2 flex flex-wrap gap-1.5">
-                <DisplayToggle checked={showEntryDeltas} onChange={setShowEntryDeltas} label="Show Entry Deltas" className="min-h-11" />
+                <DisplayToggle checked={showEntryDeltas} onChange={setShowEntryDeltas} label="Show Entry Deltas / IV" className="min-h-11" />
               </div>
             </div>
             {openTrades.length === 0 ? <div className="px-4 py-10 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No open positions.</div> : groupMode === 'none' ? <div className="space-y-2 px-2 py-2">{flatScheduleTrades.map(renderMobileScheduleTrade)}</div> : <div className="space-y-2 px-2 py-2">{scheduleGroups.map(group => {
@@ -2077,7 +2095,7 @@ export default function PortfolioPage() {
             <div className="portfolio-summary-mobile mb-3 md:hidden">
               <div className="grid grid-cols-2 gap-1.5">
                 <div className="col-span-2 rounded-xl p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-                  <div className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Total gain / loss</div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Gain / Loss</div>
                   <div className="mt-1 font-mono text-2xl font-bold tabular-nums" style={{ color: pnlColor(markSummary.totalGainLoss) }}>{formatCurrency(markSummary.totalGainLoss, 0)}</div>
                   <div className="mt-1 text-xs font-mono" style={{ color: pnlColor(markSummary.percentCaptured) }}>{formatPctValue(markSummary.percentCaptured)} captured</div>
                 </div>
@@ -2102,7 +2120,7 @@ export default function PortfolioPage() {
               <SummaryCard label="Premium" value={formatCurrency(summary.totalPremiumCollected, 0)} color="var(--green)" />
               <SummaryCard label="Gross Risk" value={formatCurrency(summary.totalEquityAtRisk, 0)} />
               <SummaryCard label="Net Risk" value={formatCurrency(summary.totalNetCapitalAtRisk, 0)} />
-              <SummaryCard label="Total Gain/Loss" value={formatCurrency(markSummary.totalGainLoss, 0)} color={pnlColor(markSummary.totalGainLoss)} />
+              <SummaryCard label="Gain/Loss" value={formatCurrency(markSummary.totalGainLoss, 0)} color={pnlColor(markSummary.totalGainLoss)} />
               <SummaryCard label="% Captured" value={formatPctValue(markSummary.percentCaptured)} color={pnlColor(markSummary.percentCaptured)} />
               <SummaryCard label="Entry Wtd. Avg. AY" value={formatPctValue(markSummary.portfolioOriginalAnnualizedYield)} color="var(--accent-light)" />
               <SummaryCard label="Current Wtd. Avg. AY" value={formatPctValue(markSummary.portfolioCurrentAnnualizedYield)} color="var(--accent-light)" />
@@ -2170,7 +2188,7 @@ export default function PortfolioPage() {
                   ))}
                 </div>
                 <DisplayToggle checked={showNominalYield} onChange={handleShowNominalYieldChange} label="Show Nominal Yield" />
-                <DisplayToggle checked={showEntryDeltas} onChange={setShowEntryDeltas} label="Show Entry Deltas" />
+                <DisplayToggle checked={showEntryDeltas} onChange={setShowEntryDeltas} label="Show Entry Deltas / IV" />
                 <DisplayToggle checked={showOpenInterestVolume} onChange={setShowOpenInterestVolume} label="Show OI / Volume" />
                 <DisplayToggle checked={showNotesErrors} onChange={setShowNotesErrors} label="Show Notes / Errors" />
                 {scheduleGroups.length > 0 && <button onClick={toggleAllScheduleGroups} className="rounded-lg px-2 py-1.5 text-[11px] whitespace-nowrap" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
@@ -2224,7 +2242,7 @@ export default function PortfolioPage() {
                     <Metric label="Premium" value={formatCurrency(calculatePremiumCollected(trade), 0)} color="var(--green)" />
                     <Metric label="Gross Risk" value={formatCurrency(calculateEquityAtRisk(trade), 0)} />
                     <Metric label="Current Mark" value={formatOptionPrice(calculateCurrentOptionMark(trade, markBasis))} />
-                    <Metric label="Total Gain/Loss" value={formatCurrency(calculateTotalGainLoss(trade, markBasis), 0)} color={pnlColor(calculateTotalGainLoss(trade, markBasis))} />
+                    <Metric label="Gain/Loss" value={formatCurrency(calculateTotalGainLoss(trade, markBasis), 0)} color={pnlColor(calculateTotalGainLoss(trade, markBasis))} />
                     <Metric label="% Captured" value={formatPctValue(calculatePercentCaptured(trade, markBasis))} color={pnlColor(calculatePercentCaptured(trade, markBasis))} />
                     <Metric label="Entry Delta" value={formatDelta(trade.entryDelta)} />
                     <Metric label="Current Delta" value={formatDelta(trade.latestMarketData?.delta)} color={pnlColor(trade.latestMarketData?.delta)} />
@@ -2262,6 +2280,7 @@ export default function PortfolioPage() {
                     <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
                       {sortButton('ticker', 'Ticker', 'text-left')}
                       {sortButton('expiration', 'Expiry')}
+                      {sortButton('entry', 'Entry')}
                       {sortButton('dte', 'DTE')}
                       {sortButton('health', 'Health', 'text-left')}
                       {sortButton('strike', 'Strike')}
@@ -2271,13 +2290,13 @@ export default function PortfolioPage() {
                       {sortButton('grossRisk', 'Gross Risk', 'text-right', 'Strike × 100 × contracts.')}
                       {sortButton('currentMark', 'Current Mark')}
                       {sortButton('currentValue', 'Current Value')}
-                      {sortButton('pnl', 'Total Gain/Loss')}
+                      {sortButton('pnl', 'Gain/Loss')}
                       {sortButton('percentCaptured', '% Captured')}
                       {sortButton('delta', showEntryDeltas ? 'Entry / Current Delta' : 'Current Delta', 'text-right', showEntryDeltas ? 'Displays both values; sorting uses Current Delta.' : 'Current option-chain Delta; sorting uses Current Delta.', showEntryDeltas ? 'min-w-[112px]' : 'min-w-[76px]')}
                       {sortButton('breakeven', 'Breakeven')}
                       {sortButton('underlying', 'Underlying')}
                       {sortButton('distanceToStrike', 'Distance to Strike')}
-                      {sortButton('iv', 'IV')}
+                      {sortButton('iv', showEntryDeltas ? 'Entry / Current IV' : 'IV', 'text-right', showEntryDeltas ? 'Displays both Entry IV and current IV.' : 'Current option-chain IV.')}
                       {sortButton('entryVix', 'VIX @ Entry')}
                       {showOpenInterestVolume && sortButton('openInterest', 'OI / Volume', 'text-right', 'Sorts by Open Interest')}
                       {showNominalYield && sortButton('originalNy', 'Entry NY', 'text-right', 'Net sold price ÷ strike (Premium ÷ Gross Risk).')}
@@ -2303,6 +2322,7 @@ export default function PortfolioPage() {
                               <span className="uppercase tracking-wide">{scheduleGroupLabel(group)}</span>
                             </button>
                           </td>
+                          <td className="px-2 py-1.5 text-right font-mono tabular-nums">{DASH}</td>
                           <td className="px-2 py-1.5 text-right font-mono tabular-nums">{DASH}</td>
                           <td className="px-2 py-1.5 text-right font-mono tabular-nums whitespace-nowrap">{scheduleGroupDte(group)}</td>
                           <td className="px-2 py-1.5 text-left whitespace-nowrap">{scheduleGroupMetadata(group)}</td>
@@ -2342,6 +2362,7 @@ export default function PortfolioPage() {
                             <Link to={`/options/${trade.ticker.trim().toUpperCase()}`} className="underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</Link>
                           </td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{expiryLabel(trade.expiration)}</td>
+                          <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatHistoryDate(trade.soldDate)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">
                             <HoverTooltip content={<DteTooltipContent trade={trade} />} ariaLabel={`${trade.ticker} position timing details`}>
                               {formatDteValue(calculateRemainingDte(trade))}
@@ -2369,7 +2390,7 @@ export default function PortfolioPage() {
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(calculateBreakeven(trade))}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(trade.latestMarketData?.underlyingPrice ?? trade.entrySnapshot?.underlyingPrice)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: percentColor(calculateDistanceToStrike(trade)) }}>{formatPctValue(calculateDistanceToStrike(trade))}</td>
-                          <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap"><span style={{ color: 'var(--text-muted)' }}>Entry {formatPercentPoints(trade.entryIv, 1)}</span><br /><span>Current {formatPercentPoints(trade.latestMarketData?.iv, 1)}</span></td>
+                          <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{showEntryDeltas ? <><span style={{ color: 'var(--text-muted)' }}>Entry {isValidEntryIv(trade.entryIv) ? <HoverTooltip content={<EntryIvTooltipContent trade={trade} />} ariaLabel={`${trade.ticker} Entry IV details`}>{formatPercentPoints(trade.entryIv, 1)}</HoverTooltip> : DASH}</span><br /><span>Current {formatPercentPoints(trade.latestMarketData?.iv, 1)}</span></> : formatPercentPoints(trade.latestMarketData?.iv, 1)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">
                             {isFiniteNumber(trade.entryVixClose) ? <HoverTooltip content={<VixEntryTooltipContent trade={trade} />} ariaLabel={`${trade.ticker} VIX at entry details`}>{trade.entryVixClose.toFixed(2)}</HoverTooltip> : DASH}
                           </td>
@@ -2406,6 +2427,7 @@ export default function PortfolioPage() {
                     })}
                     <tr style={{ backgroundColor: 'var(--surface-alt)', borderTop: '2px solid var(--accent-border)', color: 'var(--text)' }}>
                       <td className="px-2 py-2 text-left font-bold uppercase tracking-wider whitespace-nowrap">Totals</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums">{DASH}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums">{DASH}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums">{isFiniteNumber(scheduleTotals.dte) ? `${Math.round(scheduleTotals.dte)} DTE` : DASH}</td>
                       <td className="px-2 py-2 text-left font-mono tabular-nums">{DASH}</td>
@@ -2547,11 +2569,12 @@ function MonthlyRealizedChart({ trades }: { trades: PortfolioTrade[] }) {
   const max = Math.max(...months.map(month => Math.abs(month.realizedPnl)), 1);
   return (
     <section className="mb-2 rounded-lg p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-      <div className="mb-2 flex items-center justify-between gap-2"><h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Realized P&amp;L by Expiration Month</h3><span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>{months.length} months</span></div>
+      <div className="mb-2 flex items-center justify-between gap-2"><h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Realized P&amp;L by Expiration Month</h3></div>
       <div className="flex h-28 items-end gap-1 overflow-x-auto pb-1">
         {months.map(month => {
           const captured = month.premiumCollected > 0 ? month.realizedPnl / month.premiumCollected : null;
-          const label = new Date(`${month.month}-01T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
+          const date = new Date(`${month.month}-01T00:00:00Z`);
+          const label = `${date.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' })} '${month.month.slice(2, 4)}`;
           return <div key={month.month} className="group/month relative flex h-full min-w-[42px] flex-1 flex-col items-center justify-end" title={`${label}\nTrades: ${month.trades}\nPremium: ${formatCurrency(month.premiumCollected, 0)}\nRealized P&L: ${formatCurrency(month.realizedPnl, 0)}\nCaptured: ${formatPctValue(captured)}`}>
             <div className="w-full max-w-10 rounded-t transition-opacity hover:opacity-80 motion-reduce:transition-none" style={{ height: `${Math.max(5, Math.abs(month.realizedPnl) / max * 78)}px`, backgroundColor: month.realizedPnl >= 0 ? 'var(--green)' : 'var(--red)' }} />
             <span className="mt-1 text-[9px] whitespace-nowrap" style={{ color: 'var(--text-dim)' }}>{label}</span>
@@ -2594,11 +2617,14 @@ function ArchiveHistorySection({
   const sortedHistoryGroups = useMemo(() => sortHistoryGroups(visibleGroups, historySortField, historySortDir), [historySortDir, historySortField, visibleGroups]);
   const historyGroupLabel = (group: ReturnType<typeof buildHistoryGroups>[number]) => groupMode === 'expiration' ? formatHistoryDate(group.label) : group.label;
   const historyGroupKey = (group: ReturnType<typeof buildHistoryGroups>[number]) => `${groupMode}:${group.key}`;
+  const isHistoryGroupCollapsed = (group: ReturnType<typeof buildHistoryGroups>[number]) => (
+    groupMode !== 'none' && (collapsedHistoryGroups[historyGroupKey(group)] ?? true)
+  );
   const allHistoryGroupsCollapsed = groupMode !== 'none' && visibleGroups.length > 0
-    && visibleGroups.every(group => collapsedHistoryGroups[historyGroupKey(group)] === true);
+    && visibleGroups.every(isHistoryGroupCollapsed);
   const toggleHistoryGroup = (group: ReturnType<typeof buildHistoryGroups>[number]) => {
     const key = historyGroupKey(group);
-    setCollapsedHistoryGroups(current => ({ ...current, [key]: !current[key] }));
+    setCollapsedHistoryGroups(current => ({ ...current, [key]: !isHistoryGroupCollapsed(group) }));
   };
   const toggleAllHistoryGroups = () => {
     if (groupMode === 'none' || visibleGroups.length === 0) return;
@@ -2661,14 +2687,14 @@ function ArchiveHistorySection({
         </div>
       </div>
       <div className="portfolio-history-summary-grid grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-1.5 mb-2">
+        <SummaryCard label="Realized P&L" value={formatCurrency(visibleSummary.realizedPnl)} color={pnlColor(visibleSummary.realizedPnl)} />
         <SummaryCard label="Total Realized IRR" value={formatPctValue(visibleSummary.totalRealizedIrr)} color={pnlColor(visibleSummary.totalRealizedIrr)} detail="Gross-Risk-weighted average of valid position Realized IRRs. Each position uses simple annualization of realized P&L over actual days held." />
-        <SummaryCard label="Avg Days Held" value={formatAverageDays(visibleSummary.averageDaysHeld)} />
-        <SummaryCard label="Wtd. Avg. Entry Delta" value={formatDelta(visibleSummary.weightedAverageEntryDelta)} detail={visibleSummary.entryDeltaCoverage == null ? 'Entry Delta coverage is unavailable.' : `Based on ${(visibleSummary.entryDeltaCoverage * 100).toFixed(1)}% of historical Gross Risk with known Entry Delta.`} />
-        <SummaryCard label="Wtd. Avg. Entry IV" value={formatPercentPoints(visibleSummary.weightedAverageEntryIv, 1)} detail={visibleSummary.entryIvCoverage == null ? 'Entry IV coverage is unavailable.' : `Based on ${(visibleSummary.entryIvCoverage * 100).toFixed(1)}% of historical Gross Risk with known Entry IV.`} />
+        <SummaryCard label="Blended Capture" value={formatPctValue(visibleSummary.blendedCapture)} color={pnlColor(visibleSummary.blendedCapture)} />
         <SummaryCard label="Total Historical Notional" value={formatCurrency(summary.totalHistoricalNotional, 0)} detail="Cumulative canonical Gross Risk across all closed and historical positions." />
         <SummaryCard label="Resolved Trades" value={String(visibleSummary.resolvedTrades)} />
-        <SummaryCard label="Realized P&L" value={formatCurrency(visibleSummary.realizedPnl)} color={pnlColor(visibleSummary.realizedPnl)} />
-        <SummaryCard label="Blended Capture" value={formatPctValue(visibleSummary.blendedCapture)} color={pnlColor(visibleSummary.blendedCapture)} />
+        <SummaryCard label="Avg. Days Held" value={formatAverageDays(visibleSummary.averageDaysHeld)} />
+        <SummaryCard label="Wtd. Avg. Entry Delta" value={formatDelta(visibleSummary.weightedAverageEntryDelta)} detail={visibleSummary.entryDeltaCoverage == null ? 'Entry Delta coverage is unavailable.' : `Based on ${(visibleSummary.entryDeltaCoverage * 100).toFixed(1)}% of historical Gross Risk with known Entry Delta.`} />
+        <SummaryCard label="Wtd. Avg. Entry IV" value={formatPercentPoints(visibleSummary.weightedAverageEntryIv, 1)} detail={visibleSummary.entryIvCoverage == null ? 'Entry IV coverage is unavailable.' : `Based on ${(visibleSummary.entryIvCoverage * 100).toFixed(1)}% of historical Gross Risk with known Entry IV.`} />
       </div>
       <div className="mb-2 flex h-2 overflow-hidden rounded-full" style={{ backgroundColor: 'var(--surface-alt)' }} title={`Expired Worthless ${visibleSummary.counts.expired_worthless} · Closed ${visibleSummary.counts.closed} · Expired ITM ${visibleSummary.counts.expired_itm} · Assigned ${visibleSummary.counts.assigned}`}>
         {(['expired_worthless', 'closed', 'expired_itm', 'assigned'] as const).map((outcome, index) => <div key={outcome} style={{ width: `${visibleSummary.percentages[outcome] * 100}%`, backgroundColor: ['var(--green)', 'var(--accent)', 'var(--red)', 'var(--orange)'][index] }} />)}
@@ -2676,7 +2702,7 @@ function ArchiveHistorySection({
       <MonthlyRealizedChart trades={visibleTrades} />
       <div className={`${mobileHistoryClass} space-y-2`}>
         {sortedHistoryGroups.map(group => {
-          const collapsed = groupMode !== 'none' && collapsedHistoryGroups[historyGroupKey(group)] === true;
+          const collapsed = isHistoryGroupCollapsed(group);
           const label = historyGroupLabel(group);
           return <Fragment key={`mobile-history-group-${group.key}`}>
            {groupMode !== 'none' && (
@@ -2749,35 +2775,30 @@ function ArchiveHistorySection({
             </thead>
             <tbody>
               {sortedHistoryGroups.map(group => {
-                const collapsed = groupMode !== 'none' && collapsedHistoryGroups[historyGroupKey(group)] === true;
+                const collapsed = isHistoryGroupCollapsed(group);
                 const label = historyGroupLabel(group);
                 return <Fragment key={`desktop-history-group-${group.key}`}>
                 {groupMode !== 'none' && (
-                  <>
-                    <tr className="portfolio-history-group-header">
-                      <td colSpan={19}>
+                  <tr className="portfolio-history-group-subtotal" aria-label={`${label} subtotal`}>
+                      <td className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
                         <button type="button" className="portfolio-history-group-toggle" aria-expanded={!collapsed} onClick={() => toggleHistoryGroup(group)}>
                           {collapsed ? <ChevronRight className="h-4 w-4" aria-hidden="true" /> : <ChevronDown className="h-4 w-4" aria-hidden="true" />}
                           <span>{label}</span><small>{group.tradeCount} trades</small>
                         </button>
                       </td>
-                    </tr>
-                    <tr className="portfolio-history-group-subtotal" aria-label={`${label} subtotal`}>
-                      <td className="px-2 py-2 text-left"><span>{label}</span><small>{group.tradeCount} trades</small></td>
                       <td /><td /><td className="px-2 py-2 text-right font-mono tabular-nums">{group.contractCount}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums">{formatCurrency(group.grossRisk, 0)}</td>
                       <td /><td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. Days Held: Gross-Risk-weighted average of known holding periods.">{formatAverageDays(group.weightedAverageDaysHeld)}</td>
                       <td /><td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. NY: canonical Entry NY weighted by Gross Risk; reconciles to group Premium ÷ group Gross Risk.">{formatPctValue(group.weightedAverageNy)}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. VIX @ Entry: Gross-Risk-weighted average of known stored entry VIX values.">{isFiniteNumber(group.weightedAverageEntryVix) ? group.weightedAverageEntryVix.toFixed(1) : DASH}</td>
-                      <td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. Entry IV: Gross-Risk-weighted average of known stored contract Entry IV values.">{formatPercentPoints(group.weightedAverageEntryIv, 1)}</td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums" title={`Wtd. Avg. Entry IV: Gross-Risk-weighted average of known stored contract Entry IV values. Coverage: ${formatHistoryCoverage(group.entryIvCoverage)}.`}>{formatPercentPoints(group.weightedAverageEntryIv, 1)}</td>
                       <td /><td className="px-2 py-2 text-right font-mono tabular-nums">{formatCurrency(group.premium, 0)}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums portfolio-history-group-subtotal__pnl" style={{ color: pnlColor(group.realizedPnl) }}>{formatCurrency(group.realizedPnl)}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. Realized IRR: Gross-Risk-weighted average of individual position Realized IRRs.">{formatPctValue(group.weightedAverageRealizedIrr)}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. % Captured: Premium-weighted average of individual position capture values.">{formatPctValue(group.weightedAveragePercentCaptured)}</td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. Entry Delta: Gross-Risk-weighted average of known historical Entry Delta values.">{formatDelta(group.weightedAverageEntryDelta)}</td>
                       <td /><td />
-                    </tr>
-                  </>
+                  </tr>
                 )}
                 {(groupMode === 'none' || !collapsed) && group.trades.map((trade, index) => {
                 const pending = trade.status === 'expired_price_pending' || trade.resolutionType === 'expired_price_pending';

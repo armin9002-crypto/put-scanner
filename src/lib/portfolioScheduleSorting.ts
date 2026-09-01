@@ -22,6 +22,7 @@ import type { PortfolioExpirationScheduleGroup, PortfolioUnderlyingScheduleGroup
 export type PortfolioScheduleSortField =
   | 'ticker'
   | 'expiration'
+  | 'entry'
   | 'dte'
   | 'health'
   | 'strike'
@@ -98,6 +99,7 @@ export function getPortfolioScheduleSortValue(
   switch (field) {
     case 'ticker': return trade.ticker.trim() || null;
     case 'expiration': return expirationTimestamp(trade.expiration);
+    case 'entry': return expirationTimestamp(trade.soldDate);
     case 'dte': return finite(calculateRemainingDte(trade));
     case 'health': {
       const level = getPortfolioPositionHealthLevel(trade);

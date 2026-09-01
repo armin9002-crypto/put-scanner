@@ -65,11 +65,11 @@ Delta retains its sign. A valid zero participates. Missing values are excluded f
 
 The automatic Add/Edit mode compares date-only expiration strings with the current `America/New_York` market date. Expiration before that date defaults to Historical; expiration today or later defaults to Open. Every valid expiration change recomputes the mode, including the Save & Add Another historical-to-future regression. 0-DTE remains Open.
 
-The monthly realized chart groups resolved trades by option expiration `YYYY-MM`, not close, resolution, or archive month. Early closes therefore remain in their contract's expiration month, years remain distinct, losses are included, and pending rows are excluded. The existing `N months` label counts distinct displayed expiration-month buckets after filtering; it is not a rolling horizon.
+The monthly realized chart groups resolved trades by option expiration `YYYY-MM`, not close, resolution, or archive month. Early closes therefore remain in their contract's expiration month, years remain distinct, losses are included, and pending rows are excluded. Its compact x-axis labels include the year (for example, `Jul '26`); no redundant month-count label is shown.
 
 ## History grouping and fields
 
-History supports **Year**, **Expiry**, **Underlying**, and **None**, with local component default **Year**. No new durable preference or account state is introduced. Year is the option expiration year, not entry, close, or archive year. It is one aggregate level, not nested expiries. Invalid expiration data maps deterministically to **Unknown**. Every group reuses canonical History realized P&L and reports trade/contract totals.
+History supports **Year**, **Expiry**, **Underlying**, and **None**, with local component default **Year** and grouped groups initially collapsed. No new durable preference or account state is introduced. Year is the option expiration year, not entry, close, or archive year. It is one aggregate level, not nested expiries. Invalid expiration data maps deterministically to **Unknown**. Every group reuses canonical History realized P&L and reports trade/contract totals.
 
 History field semantics are:
 

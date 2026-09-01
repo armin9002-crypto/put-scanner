@@ -95,11 +95,11 @@ test('every meaningful Portfolio Schedule field sorts by its raw value with miss
     latestMarketData: { underlyingPrice: 105, optionBid: 1.5, optionAsk: 2, optionLast: 1.8, delta: -0.3, iv: 0.5, volume: 10, openInterest: 500 },
   });
   const missing = trade({
-    id: 'missing', ticker: ' ', expiration: 'invalid', strike: Number.NaN, contracts: Number.NaN, soldPrice: Number.NaN,
+    id: 'missing', ticker: ' ', expiration: 'invalid', soldDate: 'invalid', strike: Number.NaN, contracts: Number.NaN, soldPrice: Number.NaN,
     entryVixClose: Number.NaN, entrySnapshot: {}, latestMarketData: {},
   });
   const fields = [
-    'ticker', 'expiration', 'dte', 'health', 'strike', 'contracts', 'soldPrice', 'premium', 'grossRisk',
+    'ticker', 'expiration', 'entry', 'dte', 'health', 'strike', 'contracts', 'soldPrice', 'premium', 'grossRisk',
     'netCapitalRisk', 'currentMark', 'currentValue', 'pnl', 'percentCaptured', 'delta', 'breakeven',
     'underlying', 'distanceToStrike', 'iv', 'entryVix', 'openInterest', 'originalNy', 'originalAy',
     'currentNy', 'currentAy',
@@ -115,6 +115,16 @@ test('every meaningful Portfolio Schedule field sorts by its raw value with miss
     assert.equal(descending.at(-1).id, 'missing', `${field} descending null placement`);
     assert.deepEqual(descending.slice(0, 2).map(item => item.id), ascending.slice(0, 2).map(item => item.id).reverse(), `${field} direction`);
   }
+});
+
+test('Entry sorting uses the actual Sold Date chronologically and keeps missing dates last', () => {
+  const rows = [
+    trade({ id: 'missing-entry', soldDate: 'not-a-date' }),
+    trade({ id: 'late-entry', soldDate: '2026-08-10' }),
+    trade({ id: 'early-entry', soldDate: '2026-07-01' }),
+  ];
+  assert.deepEqual(sortFlatPortfolioSchedule(rows, 'entry', 'asc', 'ask').map(item => item.id), ['early-entry', 'late-entry', 'missing-entry']);
+  assert.deepEqual(sortFlatPortfolioSchedule(rows, 'entry', 'desc', 'ask').map(item => item.id), ['late-entry', 'early-entry', 'missing-entry']);
 });
 
 test('Health sorting follows risk severity rather than alphabetical labels', () => {

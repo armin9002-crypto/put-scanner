@@ -57,12 +57,13 @@ test.describe('History expiration actions visual matrix', () => {
     await installDeterministicCloudAccount(page, { portfolio: historyPortfolio, watchlist: [] });
     const mobile = testInfo.project.name.startsWith('portrait-') || testInfo.project.name.startsWith('landscape-');
     await openHistory(page, mobile);
-    const historyAnchor = surfaceFor(page, 'LABU', mobile);
-    await historyAnchor.scrollIntoViewIfNeeded();
+    await page.locator('.portfolio-history-section').last().scrollIntoViewIfNeeded();
     const overflow = await capture(page, testInfo);
     expect(overflow.pageOverflow).toBe(false);
 
     if (phase !== 'after') return;
+
+    await page.getByRole('button', { name: 'Expand All' }).click();
 
     const resolved = surfaceFor(page, 'SPY', mobile);
     await expect(resolved).toContainText('Expired Worthless');
@@ -110,6 +111,8 @@ test.describe('History expiration actions visual matrix', () => {
     for (const grouping of ['Year', 'Expiry', 'Underlying', 'None']) {
       await historyGrouping.getByRole('button', { name: grouping, exact: true }).click();
       if (grouping !== 'None') {
+        const expandInitiallyCollapsed = page.getByRole('button', { name: 'Expand All' });
+        if (await expandInitiallyCollapsed.count()) await expandInitiallyCollapsed.click();
         const collapseAll = page.getByRole('button', { name: 'Collapse All' });
         await expect(collapseAll).toBeVisible();
         await collapseAll.click();
@@ -129,6 +132,7 @@ test.describe('History expiration actions visual matrix', () => {
         localStorage.setItem('theme', value);
       }, theme);
       await openHistory(page, false);
+      await page.getByRole('button', { name: 'Expand All' }).click();
       await surfaceFor(page, 'LABU', false).scrollIntoViewIfNeeded();
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
       await expect(surfaceFor(page, 'LABU', false).getByRole('button', { name: 'Confirm Worthless' })).toBeVisible();

@@ -6,10 +6,10 @@ This focused presentation pass keeps Portfolio economics, lifecycle behavior, du
 
 ## Schedule of Positions
 
-- The new **Show Entry Deltas** checkbox sits between Show Nominal Yield and Show OI / Volume.
+- The **Show Entry Deltas / IV** checkbox sits between Show Nominal Yield and Show OI / Volume; it is local presentation state and defaults unchecked.
 - It is unchecked by default and is session-only, matching the transient presentation behavior of the neighboring OI / Volume and Notes / Errors controls. It does not add an account preference or change durable Portfolio data.
 - When unchecked, the table header is **Current Delta** and each row shows only the canonical current option-chain Delta plus its existing freshness line. The compact column width reclaims the old two-value width.
-- When checked, the pre-existing **Entry / Current Delta** presentation returns, including historical Entry Delta provenance, missing-value handling, and freshness semantics.
+- When checked, the pre-existing **Entry / Current Delta** presentation returns, including historical Entry Delta provenance, missing-value handling, and freshness semantics; the matching **Entry / Current IV** presentation appears alongside it.
 - Phone active-position rows use the same display state. The control remains a 44px touch target; unchecked rows prioritize Current Delta while checked rows restore Entry Delta detail.
 
 ## History groups

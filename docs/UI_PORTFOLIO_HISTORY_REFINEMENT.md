@@ -14,7 +14,7 @@ This pass refines the Portfolio Dashboard and historical trade review surfaces f
 ## History review
 
 - The filter keeps `Expired ITM` and `Assigned` distinct, as established by the lifecycle semantics audit.
-- Headline metrics include Total Realized IRR (combined date-aware money-weighted XIRR), Avg Days Held (one decimal), Wtd. Avg. Entry Delta (signed, with quiet Gross Risk coverage context), and Total Historical Notional (canonical Gross Risk across all History), alongside the existing resolved P&L/capture context.
+- Headline metrics include Total Realized IRR (combined date-aware money-weighted XIRR), Avg. Days Held (one decimal), Wtd. Avg. Entry Delta (signed, with quiet Gross Risk coverage context), and Total Historical Notional (canonical Gross Risk across all History), alongside the existing resolved P&L/capture context.
 - History defaults to Year grouping, based on expiration year. Year, Expiry, Underlying, and None use the same segmented-control language as Schedule of Positions. Group headers prioritize count, Premium, and realized P&L.
 - Desktop table headers now use `Exp.`, `Entry`, and `Price @ Exp.`. Expiration and entry dates are deterministic compact values such as `Aug 21, '26`. NY and VIX @ Entry remain visible with formula/storage tooltips. The displayed Final Value column is removed; its canonical helper and durable data remain intact.
 - The phone representation keeps ticker/strike/expiration, realized P&L, and status prominent, with Premium, NY, Entry Delta, VIX @ Entry, Entry date, and Price @ Exp. available as secondary/tertiary metadata.
