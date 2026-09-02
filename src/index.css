@@ -3030,9 +3030,238 @@ td {
   gap: 0.375rem;
 }
 
+.rolling-historical-analytics {
+  min-width: 0;
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.rolling-historical-analytics__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.rolling-historical-analytics__heading {
+  min-width: 0;
+}
+
+.rolling-historical-analytics__heading h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.rolling-historical-analytics__heading p {
+  max-width: 52rem;
+  margin: 0.25rem 0 0;
+  color: var(--text-tertiary);
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.rolling-historical-analytics__controls {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.rolling-historical-analytics__metric-control {
+  display: grid;
+  gap: 0.18rem;
+  color: var(--text-tertiary);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.rolling-historical-analytics__metric-control select {
+  min-height: 2rem;
+  max-width: 13rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: 0.25rem 1.8rem 0.25rem 0.55rem;
+  color: var(--text);
+  background: var(--surface-alt);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.rolling-historical-analytics__period {
+  display: inline-flex;
+  min-height: 2rem;
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--surface-alt);
+}
+
+.rolling-historical-analytics__period button {
+  min-width: 2.35rem;
+  min-height: 2rem;
+  border: 0;
+  border-right: 1px solid var(--border-default);
+  color: var(--text-tertiary);
+  background: transparent;
+  font-family: var(--font-data);
+  font-size: 0.68rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.rolling-historical-analytics__period button:last-child {
+  border-right: 0;
+}
+
+.rolling-historical-analytics__period button:hover,
+.rolling-historical-analytics__period button:focus-visible,
+.rolling-historical-analytics__period button.is-active {
+  color: var(--text);
+  background: var(--accent-soft);
+}
+
+.rolling-historical-analytics__period button:focus-visible,
+.rolling-historical-analytics__metric-control select:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: 1px;
+}
+
+.rolling-historical-analytics__summary {
+  min-height: 1rem;
+  margin: 0.55rem 0 0;
+  color: var(--text-secondary);
+  font-family: var(--font-data);
+  font-size: 0.66rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.rolling-historical-analytics__plot-wrap {
+  min-width: 0;
+  margin-top: 0.25rem;
+}
+
+.rolling-historical-analytics__plot {
+  position: relative;
+  min-width: 0;
+  min-height: 12rem;
+  overflow: hidden;
+}
+
+.rolling-historical-analytics__svg {
+  display: block;
+  width: 100%;
+  height: 18.25rem;
+  touch-action: pan-y;
+  user-select: none;
+}
+
+.rolling-historical-analytics__grid {
+  stroke: var(--border-subtle);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.rolling-historical-analytics__axis {
+  stroke: var(--border-default);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.rolling-historical-analytics__line {
+  fill: none;
+  stroke: var(--accent-light);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.25;
+  vector-effect: non-scaling-stroke;
+}
+
+.rolling-historical-analytics__crosshair {
+  stroke: var(--text-tertiary);
+  stroke-dasharray: 3 3;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.rolling-historical-analytics__marker {
+  fill: var(--surface);
+  stroke: var(--accent-light);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.rolling-historical-analytics__y-label,
+.rolling-historical-analytics__x-label {
+  fill: var(--text-tertiary);
+  font-family: var(--font-data);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.rolling-historical-analytics__tooltip {
+  position: absolute;
+  z-index: 2;
+  top: 0.25rem;
+  max-width: min(18rem, calc(100% - 0.5rem));
+  transform: translateX(-50%);
+  display: grid;
+  gap: 0.18rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--surface-alt) 94%, transparent);
+  box-shadow: var(--shadow-sm, 0 8px 20px rgba(0, 0, 0, 0.18));
+  font-size: 0.64rem;
+  line-height: 1.25;
+  pointer-events: none;
+}
+
+.rolling-historical-analytics__tooltip strong {
+  color: var(--text);
+  font-family: var(--font-data);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.rolling-historical-analytics__tooltip span {
+  white-space: nowrap;
+}
+
+.rolling-historical-analytics__empty {
+  position: absolute;
+  inset: 44% 0 auto;
+  color: var(--text-tertiary);
+  font-size: 0.72rem;
+  text-align: center;
+}
+
 @media (orientation: landscape) and (max-height: 520px) and (max-width: 950px) {
   .portfolio-realized-pnl-chart__bar-stack {
     gap: 0.25rem;
+  }
+
+  .rolling-historical-analytics {
+    margin-top: 0.5rem;
+    padding: 0.55rem;
+  }
+
+  .rolling-historical-analytics__heading p,
+  .rolling-historical-analytics__summary {
+    display: none;
+  }
+
+  .rolling-historical-analytics__svg {
+    height: 10.75rem;
   }
 }
 
@@ -3117,6 +3346,48 @@ td {
 
   .screener-mobile-state {
     padding-block: 2rem;
+  }
+
+  .rolling-historical-analytics {
+    margin-top: 0.6rem;
+    padding: 0.65rem;
+  }
+
+  .rolling-historical-analytics__header {
+    display: grid;
+    gap: 0.55rem;
+  }
+
+  .rolling-historical-analytics__heading p {
+    font-size: 0.63rem;
+  }
+
+  .rolling-historical-analytics__controls {
+    width: 100%;
+    align-items: end;
+  }
+
+  .rolling-historical-analytics__metric-control {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .rolling-historical-analytics__metric-control select {
+    width: 100%;
+    max-width: none;
+  }
+
+  .rolling-historical-analytics__plot {
+    min-height: 12rem;
+  }
+
+  .rolling-historical-analytics__svg {
+    height: 13.25rem;
+  }
+
+  .rolling-historical-analytics__tooltip {
+    max-width: calc(100% - 0.25rem);
+    font-size: 0.6rem;
   }
 }
 

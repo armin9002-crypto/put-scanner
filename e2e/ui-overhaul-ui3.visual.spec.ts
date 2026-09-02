@@ -147,6 +147,43 @@ async function assertRenderedHistoryDensity(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
 }
 
+async function captureRollingAnalyticsStates(page: Page, testInfo: TestInfo) {
+  const chart = page.getByTestId('rolling-historical-analytics');
+  if (!await chart.count()) return;
+  await chart.scrollIntoViewIfNeeded();
+  await expect(chart).toBeVisible();
+  const analytics = chart.getByRole('combobox', { name: 'Analytics' });
+  await expect(analytics.locator('option')).toHaveCount(7);
+  const states = [
+    ['entryAy', '3', 'entry-ay-3m'],
+    ['entryAy', '6', 'entry-ay-6m'],
+    ['entryIv', '6', 'entry-iv-6m'],
+    ['entryDelta', '12', 'entry-delta-12m'],
+    ['realizedIrr', '6', 'realized-irr-6m'],
+    ['premiumRunRate', '3', 'premium-3m'],
+    ['grossRiskDeployed', '12', 'gross-risk-12m'],
+    ['originalDte', '6', 'original-dte-6m'],
+  ] as const;
+  const domain = await chart.evaluate(element => ({ start: element.getAttribute('data-rolling-domain-start'), end: element.getAttribute('data-rolling-domain-end') }));
+  for (const [metric, period, name] of states) {
+    await analytics.selectOption(metric);
+    await chart.getByRole('button', { name: `${period}M`, exact: true }).click();
+    await expect(chart).toHaveAttribute('data-rolling-domain-start', domain.start ?? '');
+    await expect(chart).toHaveAttribute('data-rolling-domain-end', domain.end ?? '');
+    await capture(page, testInfo, `portfolio-rolling-${name}`);
+  }
+  await analytics.selectOption('entryIv');
+  await chart.getByRole('button', { name: '6M', exact: true }).click();
+  const plot = chart.getByTestId('rolling-historical-analytics-plot');
+  if (await chart.locator('.rolling-historical-analytics__line').count()) {
+    await plot.locator('svg').hover({ position: { x: 72, y: 82 } });
+    await expect(chart.locator('.rolling-historical-analytics__tooltip')).toBeVisible();
+    await capture(page, testInfo, 'portfolio-rolling-entry-iv-6m-tooltip');
+  } else {
+    await capture(page, testInfo, 'portfolio-rolling-entry-iv-6m-no-full-window');
+  }
+}
+
 async function seed(page: Page) {
   await page.addInitScript(() => {
     if (sessionStorage.getItem('put_scanner_ui3_seeded') === 'true') return;
@@ -249,6 +286,7 @@ test.describe('UI-3 portfolio and watchlist visual matrix', () => {
             await page.getByRole('button', { name: 'Expand All' }).last().click();
           }
         }
+        await captureRollingAnalyticsStates(page, testInfo);
       }
       const firstPosition = page.locator('[data-trade-id]:visible').first();
       const strikeButton = firstPosition.locator('button').first();
@@ -271,6 +309,7 @@ test.describe('UI-3 portfolio and watchlist visual matrix', () => {
       await measurePortfolio(page, testInfo, 'portfolio-dashboard');
       await assertRenderedPortfolioDensity(page, false);
       await page.getByRole('button', { name: 'Expand Portfolio Analytics' }).click(); await capture(page, testInfo, 'portfolio-tablet-expanded');
+      await captureRollingAnalyticsStates(page, testInfo);
     } else if (project === 'portrait-430x932' || project === 'portrait-390x844' || project === 'portrait-375x667') {
       await openWatchlist(page); await capture(page, testInfo, 'watchlist-mobile');
       await openPortfolio(page); await capture(page, testInfo, 'portfolio-mobile-headline');
@@ -292,7 +331,7 @@ test.describe('UI-3 portfolio and watchlist visual matrix', () => {
       }
       const history = page.getByRole('button', { name: /History/ }).first();
       if (await history.count()) { await history.click(); await page.getByText('History', { exact: true }).last().scrollIntoViewIfNeeded(); await capture(page, testInfo, 'portfolio-mobile-history-collapsed'); const expandAll = page.getByRole('button', { name: 'Expand All' }).last(); if (await expandAll.count()) await expandAll.click(); await expect(page.locator('.portfolio-history-mobile-row:visible')).toHaveCount(4); await expect(page.locator('.portfolio-history-mobile-row__summary').first()).toContainText('Realized P&L'); await expect(page.locator('.portfolio-history-mobile-row__summary').first()).toContainText('Realized IRR'); await page.locator('.portfolio-history-mobile-row__summary').first().click(); await expect(page.locator('.portfolio-history-mobile-row__details:visible').first()).toBeVisible(); }
-      if (await history.count()) { await measurePortfolio(page, testInfo, 'portfolio-history'); await assertRenderedHistoryDensity(page); }
+      if (await history.count()) { await measurePortfolio(page, testInfo, 'portfolio-history'); await assertRenderedHistoryDensity(page); await captureRollingAnalyticsStates(page, testInfo); }
     } else if (project === 'landscape-844x390' || project === 'landscape-667x375') {
       await openWatchlist(page); await capture(page, testInfo, 'watchlist-landscape');
       await openPortfolio(page); await capture(page, testInfo, 'portfolio-landscape');
@@ -305,10 +344,13 @@ test.describe('UI-3 portfolio and watchlist visual matrix', () => {
       await expect(page.locator('.portfolio-history-table thead th.portfolio-sticky-column')).toHaveCSS('position', 'sticky');
       const analytics = page.getByRole('button', { name: /Portfolio Analytics/ }).first();
       if (await analytics.count()) { await analytics.click(); await analytics.scrollIntoViewIfNeeded(); await capture(page, testInfo, 'portfolio-landscape-analytics'); }
+      await captureRollingAnalyticsStates(page, testInfo);
     } else {
       await openWatchlist(page); await capture(page, testInfo, 'watchlist-responsive');
       await openPortfolio(page); await capture(page, testInfo, 'portfolio-responsive');
       await measurePortfolio(page, testInfo, 'portfolio-dashboard');
+      const history = page.getByText('Expired / Closed History', { exact: true });
+      if (await history.count()) { await history.scrollIntoViewIfNeeded(); await captureRollingAnalyticsStates(page, testInfo); }
     }
     expect(cloudHarness.requests.some(request => request.startsWith('GET /rest/v1/user_state'))).toBe(true);
     expect(await page.evaluate(() => ({ portfolio: localStorage.getItem('put_scanner_portfolio_trades'), watchlist: localStorage.getItem('put_scanner_watchlist') }))).toEqual({ portfolio: null, watchlist: null });

@@ -119,6 +119,7 @@ import { assessPortfolioMaintenance } from '../lib/portfolioMaintenance';
 import { getPortfolioQuoteFreshness, isPortfolioQuoteDecisionEligible, summarizePortfolioQuoteFreshness } from '../lib/portfolioQuoteFreshness';
 import { resolvePortfolioEntryVix } from '../lib/portfolioEntryVix';
 import { confirmPortfolioTradeExpiredWorthless, isManualWorthlessConfirmationEligible } from '../lib/portfolioRealizedEconomics';
+import RollingHistoricalAnalyticsChart from '../components/RollingHistoricalAnalyticsChart';
 import {
   inferHistoricalTradeOutcome,
   inferManualTradeMode,
@@ -2036,7 +2037,7 @@ export default function PortfolioPage() {
 
             {openTrades.length > 0 && <section className="portfolio-analytics-section border-t px-3.5 py-2" style={{ borderColor: 'var(--border)' }}><button type="button" onClick={() => setAnalyticsExpanded(expanded => !expanded)} aria-expanded={analyticsExpanded} aria-controls="portfolio-analytics-content" className="portfolio-analytics-disclosure pressable flex min-h-11 w-full items-center justify-between text-left"><span><h2 className="text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Portfolio Analytics</h2><span className="portfolio-analytics-disclosure__hint">Concentration, timing, and policy signals</span></span><ChevronDown className={`h-4 w-4 transition-transform ${analyticsExpanded ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} aria-hidden="true" /></button><div id="portfolio-analytics-content">{analyticsExpanded && <div className="portfolio-analytics-content pb-2"><MobileSegmentedControl value={mobileAnalytics} onChange={setMobileAnalytics} label="Portfolio analytics" options={[{ value: 'maturity', label: 'Maturity' }, { value: 'ticker', label: 'Exposure' }, { value: 'attention', label: 'Attention' }, { value: 'close', label: 'Close' }]} /><div className="mt-2">{mobileAnalytics === 'maturity' && <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openTrades, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." onGroupClick={drillToExpiration} />}{mobileAnalytics === 'ticker' && <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openTrades, markBasis)} totalGrossRisk={sumValues(openTrades.map(calculateEquityAtRisk))} maxItems={8} onGroupClick={drillToTicker} />}{mobileAnalytics === 'attention' && <NeedsAttentionList items={buildNeedsAttention(openTrades).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} />}{mobileAnalytics === 'close' && <CloseCandidatesCard candidates={buildCloseCandidates(openTrades, markBasis).slice(0, 5)} onNavigate={drillToTrade} />}</div></div>}</div></section>}
 
-            {archivedTrades.length > 0 && <section className="border-t px-3.5 py-3" style={{ borderColor: 'var(--border)' }}><button type="button" onClick={() => setMobileHistoryOpen(current => !current)} className="pressable flex min-h-11 w-full items-center justify-between text-left" aria-expanded={mobileHistoryOpen}><span><b className="block text-[15px]" style={{ color: 'var(--text)' }}>History</b><span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{archivedTrades.length} resolved · {formatCurrency(archiveSummary.realizedPnl, 0)} realized</span></span><ChevronDown className={`h-4 w-4 transition-transform ${mobileHistoryOpen ? 'rotate-180' : ''}`} /></button>{mobileHistoryOpen && <ArchiveHistorySection mobileLayout trades={archivedTrades} summary={archiveSummary} resolvingIds={resolvingArchiveIds} onRetryResolve={handleRetryResolve} onManualExpirationClose={handleManualExpirationClose} onRequestWorthlessConfirmation={setWorthlessConfirmationTrade} onEdit={setEditingTrade} onDelete={handleDeleteTrade} />}</section>}
+            {archivedTrades.length > 0 && <section className="border-t px-3.5 py-3" style={{ borderColor: 'var(--border)' }}><button type="button" onClick={() => setMobileHistoryOpen(current => !current)} className="pressable flex min-h-11 w-full items-center justify-between text-left" aria-expanded={mobileHistoryOpen}><span><b className="block text-[15px]" style={{ color: 'var(--text)' }}>History</b><span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{archivedTrades.length} resolved · {formatCurrency(archiveSummary.realizedPnl, 0)} realized</span></span><ChevronDown className={`h-4 w-4 transition-transform ${mobileHistoryOpen ? 'rotate-180' : ''}`} /></button>{mobileHistoryOpen && <ArchiveHistorySection mobileLayout rollingTrades={trades} trades={archivedTrades} summary={archiveSummary} resolvingIds={resolvingArchiveIds} onRetryResolve={handleRetryResolve} onManualExpirationClose={handleManualExpirationClose} onRequestWorthlessConfirmation={setWorthlessConfirmationTrade} onEdit={setEditingTrade} onDelete={handleDeleteTrade} />}</section>}
           </>
         )}
 
@@ -2486,6 +2487,7 @@ export default function PortfolioPage() {
             </div>
 
             <ArchiveHistorySection
+              rollingTrades={trades}
               trades={archivedTrades}
               summary={archiveSummary}
               resolvingIds={resolvingArchiveIds}
@@ -2681,6 +2683,7 @@ function MobileHistoryTradeRow({
 
 function ArchiveHistorySection({
   mobileLayout = false,
+  rollingTrades,
   trades,
   summary,
   resolvingIds,
@@ -2691,6 +2694,7 @@ function ArchiveHistorySection({
   onDelete,
 }: {
   mobileLayout?: boolean;
+  rollingTrades: PortfolioTrade[];
   trades: PortfolioTrade[];
   summary: ReturnType<typeof buildArchiveSummary>;
   resolvingIds: Set<string>;
@@ -2953,6 +2957,7 @@ function ArchiveHistorySection({
           </table>
         </div>
       </div>
+      <RollingHistoricalAnalyticsChart trades={rollingTrades} />
     </section>
   );
 }

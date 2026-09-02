@@ -295,3 +295,32 @@ test('the calculation engine remains local, derived, raw-number-only, and free o
     fixture: 'metric, period, hover, and chart-date changes derive rolling series from in-memory Portfolio trades only',
   });
 });
+
+test('Portfolio renders the configured rolling chart below History with local controls and accessible touch inspection', async () => {
+  const chart = await readFile(path.join(root, 'src/components/RollingHistoricalAnalyticsChart.tsx'), 'utf8');
+  const portfolio = await readFile(path.join(root, 'src/pages/PortfolioPage.tsx'), 'utf8');
+  const css = await readFile(path.join(root, 'src/index.css'), 'utf8');
+  const docs = await readFile(path.join(root, 'docs/UI_ROLLING_HISTORICAL_ANALYTICS.md'), 'utf8');
+
+  assert.match(portfolio, /RollingHistoricalAnalyticsChart/);
+  assert.match(portfolio, /rollingTrades=\{trades\}/);
+  assert.match(portfolio, /<RollingHistoricalAnalyticsChart trades=\{rollingTrades\} \/>/);
+  assert.match(chart, /buildRollingHistoricalAnalyticsSeries\(trades, metric, windowMonths\)/);
+  assert.match(chart, /useState<RollingHistoricalMetric>\('entryAy'\)/);
+  assert.match(chart, /useState<RollingWindowMonths>\(6\)/);
+  assert.match(chart, /ROLLING_HISTORICAL_METRIC_CONFIGS\.map/);
+  assert.match(chart, /ROLLING_WINDOW_MONTHS\.map/);
+  assert.match(chart, /getNiceYAxisScale/);
+  assert.match(chart, /onPointerMove/);
+  assert.match(chart, /onPointerDown/);
+  assert.match(chart, /No full-window observation/);
+  assert.match(chart, /data-rolling-domain-start/);
+  assert.match(chart, /aria-label=\{`\$\{config\.title/);
+  assert.match(chart, /sr-only/);
+  assert.doesNotMatch(chart, /fetch\s*\(|localStorage|sessionStorage|supabase|smooth|interpolat/i);
+  assert.match(css, /\.rolling-historical-analytics__svg/);
+  assert.match(css, /touch-action: pan-y/);
+  assert.match(css, /\.rolling-historical-analytics__line/);
+  assert.match(docs, /full strategy-history x-domain/);
+  assert.match(docs, /compare, overlay, or dual-axis/);
+});
