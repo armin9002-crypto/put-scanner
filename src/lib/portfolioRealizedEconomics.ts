@@ -4,9 +4,16 @@ import { usMarketDateIso } from './portfolioEntryDelta.ts';
 import type { PortfolioTrade } from './portfolioStorage.ts';
 
 function calendarDaysBetween(start: string, end: string | undefined): number | undefined {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !end || !/^\d{4}-\d{2}-\d{2}$/.test(end)) return undefined;
+  if (!validIsoDate(start) || !validIsoDate(end)) return undefined;
   const days = Math.round((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86_400_000);
   return Number.isFinite(days) && days >= 0 ? days : undefined;
+}
+
+function validIsoDate(value: string | undefined): value is string {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const timestamp = Date.UTC(year, month - 1, day);
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString().slice(0, 10) === value;
 }
 
 /**
@@ -51,13 +58,27 @@ export function canonicalHistoricalRealizedPnl(trade: PortfolioTrade): number | 
   return null;
 }
 
-export function canonicalHistoricalDaysHeld(trade: PortfolioTrade): number | null {
-  const exitDate = trade.status === 'closed'
+/**
+ * Canonical economic realization date for a resolved historical trade.
+ * Expirations realize on the contract expiration date even when maintenance
+ * records the resolution later; assignments use their explicit resolution date.
+ */
+export function canonicalHistoricalRealizedDate(trade: PortfolioTrade): string | null {
+  const date = trade.status === 'closed'
     ? trade.closeDate
-    : trade.status === 'expired' || trade.status === 'expired_price_pending'
+    : trade.status === 'expired'
       ? trade.expiration
-      : trade.resolvedDate ?? trade.closeDate;
-  return calendarDaysBetween(trade.soldDate, exitDate) ?? null;
+      : trade.status === 'assigned'
+        ? trade.resolvedDate ?? trade.closeDate
+        : undefined;
+  return validIsoDate(date) ? date : null;
+}
+
+export function canonicalHistoricalDaysHeld(trade: PortfolioTrade): number | null {
+  const exitDate = trade.status === 'expired_price_pending'
+    ? trade.expiration
+    : canonicalHistoricalRealizedDate(trade);
+  return calendarDaysBetween(trade.soldDate, exitDate ?? undefined) ?? null;
 }
 
 /**

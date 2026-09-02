@@ -4,6 +4,7 @@ export type RequestBudgetWorkflow =
   | 'screener-full-scan'
   | 'watchlist-refresh'
   | 'portfolio-refresh'
+  | 'portfolio-rolling-historical-analytics'
   | 'portfolio-entry-delta-capture'
   | 'portfolio-historical-expiration-save'
   | 'portfolio-manual-worthless-confirmation'
@@ -60,6 +61,12 @@ export const REQUEST_BUDGET_LEDGER: Record<RequestBudgetWorkflow, RequestBudgetL
     ceiling: { browserRequests: 3, functionInvocations: 3, providerAcquisitions: 3 },
     providerHttpAttemptCeiling: 13,
     fixture: 'two tickers and two unique open-trade option chains; quote-only',
+  },
+  'portfolio-rolling-historical-analytics': {
+    expected: { browserRequests: 0, functionInvocations: 0, providerAcquisitions: 0 },
+    ceiling: { browserRequests: 0, functionInvocations: 0, providerAcquisitions: 0 },
+    providerHttpAttemptCeiling: 0,
+    fixture: 'metric, period, hover, and chart-date changes derive rolling series from in-memory Portfolio trades only',
   },
   'portfolio-entry-delta-capture': {
     expected: { browserRequests: 0, functionInvocations: 0, providerAcquisitions: 0 },
