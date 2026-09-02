@@ -21,6 +21,7 @@
     "visual:ui3": "node scripts/ui-overhaul-ui3-screenshots.mjs",
     "visual:ui4": "node scripts/ui-overhaul-ui4-screenshots.mjs",
     "visual:ui5": "node scripts/ui-overhaul-ui5-screenshots.mjs",
+    "visual:recommendations": "node scripts/recommendations-screenshots.mjs",
     "verify": "npm run typecheck && npm test && npm run selfcheck && npm run responsive:check && npm run build && npm run lint",
     "typecheck": "tsc --noEmit -p tsconfig.app.json"
   },

@@ -1,6 +1,6 @@
 import { Suspense, lazy, useEffect, useState, type CSSProperties } from 'react';
 import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom';
-import { ScanLine, BarChart3, Moon, MoonStar, Sun, BookOpen, Star, Briefcase, Activity } from 'lucide-react';
+import { ScanLine, BarChart3, Moon, MoonStar, Sun, BookOpen, Star, Briefcase, Activity, Target } from 'lucide-react';
 import { ThemeProvider, useTheme } from './lib/theme';
 import { AuthProvider } from './lib/auth';
 import { useResponsiveMode } from './lib/responsive';
@@ -14,6 +14,7 @@ import wordmarkUrl from './assets/put-scanner-wordmark.png';
 const HomePage = lazy(() => import('./pages/HomePage'));
 const OptionsPage = lazy(() => import('./pages/OptionsPage'));
 const ScreenerPage = lazy(() => import('./pages/ScreenerPage'));
+const RecommendationsPage = lazy(() => import('./pages/RecommendationsPage'));
 const WatchlistPage = lazy(() => import('./pages/WatchlistPage'));
 const PortfolioPage = lazy(() => import('./pages/PortfolioPage'));
 const EtfPulsePage = lazy(() => import('./pages/EtfPulsePage'));
@@ -60,6 +61,8 @@ function NavBar() {
 
     const title = location.pathname === '/screener'
       ? 'Screener'
+      : location.pathname === '/recommendations'
+        ? 'Recommendations'
       : location.pathname === '/watchlist'
         ? 'Watchlist'
         : location.pathname === '/portfolio'
@@ -107,6 +110,19 @@ function NavBar() {
           >
             <BarChart3 className="w-3.5 h-3.5" />
             <span className="sm:inline">Screener</span>
+          </NavLink>
+          <NavLink
+            to="/recommendations"
+            className={() =>
+              `app-nav-item flex items-center justify-center gap-1 md:gap-1.5 px-2 md:px-3 py-2 rounded-lg text-[11px] md:text-xs font-medium min-h-[40px] flex-none whitespace-nowrap`
+            }
+            style={({ isActive }) => ({
+              backgroundColor: isActive ? 'var(--accent-bg)' : 'transparent',
+              color: isActive ? 'var(--accent-light)' : 'var(--text-muted)',
+            })}
+          >
+            <Target className="w-3.5 h-3.5" />
+            <span className="sm:inline">Recommendations</span>
           </NavLink>
           <NavLink
             to="/watchlist"
@@ -160,6 +176,7 @@ function NavBar() {
 const mobileTabs = [
   { to: '/', label: 'Scanner', icon: ScanLine, end: true },
   { to: '/screener', label: 'Screener', icon: BarChart3, end: false },
+  { to: '/recommendations', label: 'Recs', icon: Target, end: false },
   { to: '/watchlist', label: 'Watchlist', icon: Star, end: false },
   { to: '/portfolio', label: 'Portfolio', icon: Briefcase, end: false },
   { to: '/pulse', label: 'Pulse', icon: Activity, end: false },
@@ -199,6 +216,7 @@ function AppContent() {
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/screener" element={<ScreenerPage />} />
+            <Route path="/recommendations" element={<RecommendationsPage />} />
             <Route path="/watchlist" element={<WatchlistPage />} />
             <Route path="/portfolio" element={<PortfolioPage />} />
             <Route path="/pulse" element={<EtfPulsePage />} />

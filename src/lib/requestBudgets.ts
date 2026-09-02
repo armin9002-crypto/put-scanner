@@ -13,7 +13,9 @@ export type RequestBudgetWorkflow =
   | 'ticker-detail'
   | 'expiration-change'
   | 'option-drawer'
-  | 'etf-pulse';
+  | 'etf-pulse'
+  | 'recommendations-refresh'
+  | 'recommendations-local-interactions';
 
 export interface RequestBudgetCounts {
   browserRequests: number;
@@ -121,6 +123,18 @@ export const REQUEST_BUDGET_LEDGER: Record<RequestBudgetWorkflow, RequestBudgetL
     ceiling: { browserRequests: 1, functionInvocations: 1, providerAcquisitions: 44 },
     providerHttpAttemptCeiling: 44,
     fixture: 'one aggregate dataset with 44 cold history acquisitions',
+  },
+  'recommendations-refresh': {
+    expected: { browserRequests: 15, functionInvocations: 15, providerAcquisitions: 170 },
+    ceiling: { browserRequests: 15, functionInvocations: 15, providerAcquisitions: 170 },
+    providerHttpAttemptCeiling: 240,
+    fixture: 'one cache-aware 44-symbol Pulse dataset plus the established 42-ETF, two-standard-expiration Screener plan; hard-fails can reduce batches',
+  },
+  'recommendations-local-interactions': {
+    expected: { browserRequests: 0, functionInvocations: 0, providerAcquisitions: 0 },
+    ceiling: { browserRequests: 0, functionInvocations: 0, providerAcquisitions: 0 },
+    providerHttpAttemptCeiling: 0,
+    fixture: 'board sort/expand, recommendation selection, evidence drawer, near misses, hover, and evaluation export use the in-memory run',
   },
 };
 

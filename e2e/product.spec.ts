@@ -105,6 +105,45 @@ test('Screener retries failed batches only and preserves successful rows', async
   expect(consoleErrors.every(error => error.includes('503'))).toBe(true);
 });
 
+test('Recommendations loads with zero market calls, refreshes through the bounded graph, and keeps every audit interaction local', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop-1440x900', 'one deterministic Recommendations request-graph scenario');
+  test.setTimeout(180_000);
+  await page.goto('/recommendations');
+  await expect(page.getByText('Nothing has been analyzed yet.')).toBeVisible();
+  expect([...marketHarness.counts.values()].reduce((sum, count) => sum + count, 0)).toBe(0);
+
+  await page.getByRole('button', { name: 'Refresh Recommendations' }).click();
+  await expect(page.getByText('NO TRADE', { exact: true })).toBeVisible({ timeout: 120_000 });
+  expect(marketHarness.counts.get('etf-pulse')).toBe(1);
+  expect(marketHarness.counts.get('screener-batch')).toBe(14);
+  const afterRefresh = [...marketHarness.counts.values()].reduce((sum, count) => sum + count, 0);
+
+  await page.locator('.recommendations-board-sort select').selectOption('ticker');
+  const firstSummary = page.locator('.recommendations-board-row').first();
+  await firstSummary.locator('.recommendations-expand-button').click();
+  const frontierCandidate = page.locator('.recommendations-frontier-list button').first();
+  if (await frontierCandidate.count()) {
+    await frontierCandidate.hover();
+    await frontierCandidate.click();
+    const evidence = page.getByRole('dialog', { name: /recommendation evidence/i });
+    await expect(evidence).toBeVisible();
+    expect([...marketHarness.counts.values()].reduce((sum, count) => sum + count, 0)).toBe(afterRefresh);
+    await evidence.getByRole('button', { name: /Watch|Watching/ }).click();
+    expect([...marketHarness.counts.values()].reduce((sum, count) => sum + count, 0)).toBe(afterRefresh);
+    await evidence.getByRole('button', { name: 'Open Contract' }).click();
+    await expect(page.getByRole('complementary')).toBeVisible();
+    expect([...marketHarness.counts.values()].reduce((sum, count) => sum + count, 0)).toBe(afterRefresh);
+    await page.getByRole('complementary').getByRole('button', { name: /Close option detail/i }).click();
+  }
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: /Export Evaluation Snapshot/ }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/^put-scanner-recommendations-v1-/);
+  expect([...marketHarness.counts.values()].reduce((sum, count) => sum + count, 0)).toBe(afterRefresh);
+  expect(consoleErrors, consoleErrors.join('\n')).toEqual([]);
+});
+
 test('Scanner filtering and exact-expiry navigation remain request-bounded', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop-1440x900', 'one deterministic desktop request-graph scenario');
   test.setTimeout(120_000);

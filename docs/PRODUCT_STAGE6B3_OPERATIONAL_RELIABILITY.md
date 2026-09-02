@@ -128,8 +128,12 @@ Expected and regression ceiling are equal for the browser, function, and logical
 | Explicit expiry change | 1/1 | 1/1 | 1/1 | 6 |
 | Option Drawer | 0/0 | 0/0 | 0/0 | 0 |
 | ETF Pulse | 1/1 | 1/1 | 44/44 | 44 |
+| Recommendations explicit refresh, cold full universe | 15/15 | 15/15 | 170/170 | 240 |
+| Recommendations board/evidence/export interactions | 0/0 | 0/0 | 0/0 | 0 |
 
 The HTTP maximum is a conservative transport guard for a cold Yahoo option session and one compatible authentication retry. It is not the expected steady-state count. Browser and function ceilings intentionally fail material graph multiplication even when transport fallback is legitimate.
+
+Recommendations composes the existing cache-aware Pulse acquisition (1 browser/function request and 44 histories) with the existing fourteen-chunk Screener standard-expiration plan (14 browser/function requests and 126 logical acquisitions). Hard-failed underlyings can remove chunk work; cache hits can remove provider work. Opening the page, sorting or expanding its Opportunity Board, opening evidence, using near misses/hover, selecting recommendations, and exporting the in-memory snapshot make no market request.
 
 Dynamic Watchlist/Portfolio fixtures use one browser/function price request when `T > 0`, plus `U` unique option-chain requests; logical provider acquisitions are `ceil(T/20) + U`.
 
@@ -161,6 +165,7 @@ Ticker Detail, the main Screener scan, and ETF Pulse already combined AbortContr
 - Watchlist and Portfolio route teardown abort the price batch and every unique option-chain consumer.
 - Ticker Detail and expiry changes continue to abort superseded fetches.
 - ETF Pulse continues to abort superseded/teardown fetches.
+- Recommendations uses the same latest-generation gate: a new explicit refresh aborts and supersedes the prior Pulse/Screener work, and only the current generation may publish its in-memory run.
 - `threeLayerCache`, price/fund/chart helpers, option helpers, API handlers, Yahoo option/history helpers, Screener fan-out, and Pulse fan-out propagate `AbortSignal` where the underlying implementation supports it.
 - The market broker remains consumer-aware: one canceled consumer does not kill shared work needed by another; the underlying request is aborted when no consumers remain.
 - Abort is counted separately and does not increment provider failure state, trigger normal retry UI, use stale failure UI, or publish obsolete state.

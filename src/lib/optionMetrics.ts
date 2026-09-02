@@ -134,6 +134,14 @@ export function calculateAnnualizedYield(optionPrice: number | null | undefined,
   return nominal != null && isFiniteNumber(dte) && dte > 0 ? nominal * (365 / dte) : null;
 }
 
+/** Inverse of the canonical simple annualized-yield contract. */
+export function calculateCreditForAnnualizedYield(annualizedYield: number | null | undefined, strike: number | null | undefined, dte: number | null | undefined): number | null {
+  const validStrike = sanitizePositive(strike);
+  return isFiniteNumber(annualizedYield) && annualizedYield >= 0 && validStrike != null && isFiniteNumber(dte) && dte > 0
+    ? annualizedYield * validStrike * (dte / 365)
+    : null;
+}
+
 export const calculateAnnualizedSecuredCashYield = calculateAnnualizedYield;
 
 export function calculateYieldPercent(optionPrice: number | null | undefined, strike: number | null | undefined, dte: number | null | undefined): YieldMetrics {
