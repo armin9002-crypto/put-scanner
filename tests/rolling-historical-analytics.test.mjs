@@ -311,6 +311,17 @@ test('Portfolio renders the configured rolling chart below History with local co
   assert.match(chart, /ROLLING_HISTORICAL_METRIC_CONFIGS\.map/);
   assert.match(chart, /ROLLING_WINDOW_MONTHS\.map/);
   assert.match(chart, /getNiceYAxisScale/);
+  assert.match(chart, /buildMetricYAxisScale/);
+  assert.match(chart, /preserveAspectRatio="none"/);
+  assert.match(chart, /ResizeObserver/);
+  assert.match(chart, /data-rolling-plot-width/);
+  assert.match(chart, /data-rolling-current-value/);
+  assert.match(chart, /data-rolling-hover-value/);
+  assert.match(chart, /setSelectedIndex\(null\)/);
+  assert.match(chart, /rolling-historical-analytics__current-value/);
+  assert.match(chart, /rolling-historical-analytics__metadata/);
+  assert.match(chart, /rolling-historical-analytics__zero/);
+  assert.match(chart, /buildLabelIndexes/);
   assert.match(chart, /onPointerMove/);
   assert.match(chart, /onPointerDown/);
   assert.match(chart, /No full-window observation/);
@@ -321,6 +332,9 @@ test('Portfolio renders the configured rolling chart below History with local co
   assert.match(css, /\.rolling-historical-analytics__svg/);
   assert.match(css, /touch-action: pan-y/);
   assert.match(css, /\.rolling-historical-analytics__line/);
+  assert.match(css, /\.rolling-historical-analytics__current-value/);
+  assert.match(css, /\.rolling-historical-analytics__zero/);
+  assert.match(css, /overflow-y: hidden/);
   assert.match(docs, /full strategy-history x-domain/);
   assert.match(docs, /compare, overlay, or dual-axis/);
 });

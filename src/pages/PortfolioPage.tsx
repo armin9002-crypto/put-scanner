@@ -62,6 +62,7 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { persistCollapsedExpirationGroups, persistCollapsedUnderlyingGroups, persistPortfolioGroupMode, readCollapsedExpirationGroups, readCollapsedUnderlyingGroups, readPortfolioGroupMode, setAllExpirationGroupsCollapsed, toggleCollapsedExpirationGroup, type PortfolioGroupMode } from '../lib/portfolioSchedulePreferences';
 import {
   buildHistoryAnalytics,
+  buildHistoryGroupAggregates,
   buildHistoryGroups,
   buildMonthlyRealizedPnl,
   filterHistoryTrades,
@@ -2589,12 +2590,28 @@ const HISTORY_GROUP_OPTIONS: Array<{ value: HistoryGroupMode; label: string }> =
 
 function MonthlyRealizedChart({ trades }: { trades: PortfolioTrade[] }) {
   const months = buildMonthlyRealizedPnl(trades);
+  const plotRef = useRef<HTMLDivElement>(null);
+  const [plotWidth, setPlotWidth] = useState(0);
+  useEffect(() => {
+    const element = plotRef.current;
+    if (!element) return undefined;
+    const update = () => setPlotWidth(element.getBoundingClientRect().width);
+    update();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   if (months.length === 0) return null;
   const max = Math.max(...months.map(month => Math.abs(month.realizedPnl)), 1);
+  const availableWidth = plotWidth || 640;
+  const bandWidth = Math.min(180, Math.max(48, availableWidth / months.length));
+  const barWidth = Math.min(72, Math.max(22, bandWidth * 0.62));
+  const labelFontSize = Math.min(11, Math.max(9, 11 - Math.max(0, months.length - 8) * 0.1));
   return (
     <section className="portfolio-realized-pnl-chart mb-2 min-w-0 rounded-lg p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
       <div className="mb-2 flex items-center justify-between gap-2"><h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Realized P&amp;L by Expiration Month</h3></div>
-      <div className="portfolio-realized-pnl-chart__plot relative flex h-28 min-w-0 items-stretch gap-1 overflow-x-auto px-1">
+      <div ref={plotRef} className="portfolio-realized-pnl-chart__plot relative flex h-28 min-w-0 items-stretch gap-1 overflow-x-auto overflow-y-hidden px-1">
         <div className="portfolio-realized-pnl-chart__baseline pointer-events-none absolute inset-x-1 top-1/2 border-t" aria-hidden="true" />
         {months.map(month => {
           const captured = month.premiumCollected > 0 ? month.realizedPnl / month.premiumCollected : null;
@@ -2602,19 +2619,19 @@ function MonthlyRealizedChart({ trades }: { trades: PortfolioTrade[] }) {
           const label = `${date.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' })} '${month.month.slice(2, 4)}`;
           const valueLabel = formatMonthlyRealizedPnlLabel(month.realizedPnl);
           const barHeight = Math.max(5, Math.abs(month.realizedPnl) / max * 26);
-          return <div key={month.month} className="group/month relative flex h-full min-w-[48px] flex-1 flex-col items-center" title={`${label}\nTrades: ${month.trades}\nPremium: ${formatCurrency(month.premiumCollected, 0)}\nRealized P&L: ${formatCurrency(month.realizedPnl, 0)}\nCaptured: ${formatPctValue(captured)}`}>
+          return <div key={month.month} className="group/month relative flex h-full flex-none flex-col items-center" style={{ width: `${bandWidth}px`, minWidth: `${bandWidth}px` }} title={`${label}\nTrades: ${month.trades}\nPremium: ${formatCurrency(month.premiumCollected, 0)}\nRealized P&L: ${formatCurrency(month.realizedPnl, 0)}\nCaptured: ${formatPctValue(captured)}`}>
             <div className="relative h-1/2 w-full">
               {month.realizedPnl > 0 && <div className="portfolio-realized-pnl-chart__bar-stack absolute bottom-0 left-1/2 flex -translate-x-1/2 flex-col items-center">
-                {valueLabel && <span data-chart-pnl-label className="portfolio-realized-pnl-chart__value portfolio-realized-pnl-chart__value--positive">{valueLabel}</span>}
-                <div className="w-full max-w-10 rounded-t transition-opacity hover:opacity-80 motion-reduce:transition-none" style={{ height: `${barHeight}px`, backgroundColor: 'var(--positive)' }} />
+                {valueLabel && <span data-chart-pnl-label className="portfolio-realized-pnl-chart__value portfolio-realized-pnl-chart__value--positive" style={{ fontSize: `${labelFontSize}px` }}>{valueLabel}</span>}
+                <div className="rounded-t transition-opacity hover:opacity-80 motion-reduce:transition-none" style={{ width: `${barWidth}px`, height: `${barHeight}px`, backgroundColor: 'var(--positive)' }} />
               </div>}
             </div>
             <div className="relative h-1/2 w-full">
               {month.realizedPnl < 0 && <div className="portfolio-realized-pnl-chart__bar-stack absolute left-1/2 top-0 flex -translate-x-1/2 flex-col items-center">
-                <div className="w-full max-w-10 rounded-b transition-opacity hover:opacity-80 motion-reduce:transition-none" style={{ height: `${barHeight}px`, backgroundColor: 'var(--negative)' }} />
-                {valueLabel && <span data-chart-pnl-label className="portfolio-realized-pnl-chart__value portfolio-realized-pnl-chart__value--negative">{valueLabel}</span>}
+                <div className="rounded-b transition-opacity hover:opacity-80 motion-reduce:transition-none" style={{ width: `${barWidth}px`, height: `${barHeight}px`, backgroundColor: 'var(--negative)' }} />
+                {valueLabel && <span data-chart-pnl-label className="portfolio-realized-pnl-chart__value portfolio-realized-pnl-chart__value--negative" style={{ fontSize: `${labelFontSize}px` }}>{valueLabel}</span>}
               </div>}
-              <span data-chart-month-label className="portfolio-realized-pnl-chart__month absolute bottom-0 left-1/2 -translate-x-1/2 whitespace-nowrap">{label}</span>
+              <span data-chart-month-label className="portfolio-realized-pnl-chart__month absolute bottom-0 left-1/2 -translate-x-1/2 whitespace-nowrap" style={{ fontSize: `${labelFontSize}px` }}>{label}</span>
             </div>
           </div>;
         })}
@@ -2713,6 +2730,7 @@ function ArchiveHistorySection({
   const visibleSummary = useMemo(() => outcomeFilter === 'all' ? summary : buildArchiveSummary(visibleTrades), [outcomeFilter, summary, visibleTrades]);
   const visibleGroups = useMemo(() => buildHistoryGroups(visibleTrades, groupMode), [groupMode, visibleTrades]);
   const sortedHistoryGroups = useMemo(() => sortHistoryGroups(visibleGroups, historySortField, historySortDir), [historySortDir, historySortField, visibleGroups]);
+  const visibleGrandTotals = useMemo(() => buildHistoryGroupAggregates(visibleTrades), [visibleTrades]);
   const historyGroupLabel = (group: ReturnType<typeof buildHistoryGroups>[number]) => groupMode === 'expiration' ? formatHistoryDate(group.label) : group.label;
   const historyGroupKey = (group: ReturnType<typeof buildHistoryGroups>[number]) => `${groupMode}:${group.key}`;
   const isHistoryGroupCollapsed = (group: ReturnType<typeof buildHistoryGroups>[number]) => (
@@ -2857,6 +2875,13 @@ function ArchiveHistorySection({
           })}
           </Fragment>;
         })}
+        <div className="portfolio-history-mobile-grand-total" aria-label="History totals">
+          <div><strong>Totals</strong><small>{visibleGrandTotals.tradeCount} trades · {visibleGrandTotals.contractCount} contracts</small></div>
+          <div><small>Gross Risk</small><strong>{formatCurrency(visibleGrandTotals.grossRisk, 0)}</strong></div>
+          <div><small>Premium</small><strong>{formatCurrency(visibleGrandTotals.premium, 0)}</strong></div>
+          <div><small>Realized P&amp;L</small><strong style={{ color: pnlColor(visibleGrandTotals.realizedPnl) }}>{formatCurrency(visibleGrandTotals.realizedPnl)}</strong></div>
+          <div className="portfolio-history-mobile-grand-total__secondary" title="Canonical weighted averages across the currently visible trades."><span>AY {formatPctValue(visibleGrandTotals.weightedAverageNy)}</span><span>IRR {formatPctValue(visibleGrandTotals.weightedAverageRealizedIrr)}</span><span>Δ {formatDelta(visibleGrandTotals.weightedAverageEntryDelta)}</span><span>IV {formatPercentPoints(visibleGrandTotals.weightedAverageEntryIv, 1)}</span></div>
+        </div>
       </div>
       <div className={`${desktopHistoryClass} rounded-lg overflow-hidden`} style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
         <div className="overflow-x-auto max-w-full overscroll-contain">
@@ -2952,7 +2977,26 @@ function ArchiveHistorySection({
                 );
                 })}
               </Fragment>;
-              })}
+                })}
+              <tr className="portfolio-history-grand-total" aria-label="History totals">
+                <td className="px-2 py-1.5 text-left font-semibold whitespace-nowrap"><HistoryAggregateValue value="TOTALS" /></td>
+                <td /><td />
+                <td className="px-2 py-1.5 text-right font-mono tabular-nums"><HistoryAggregateValue value={String(visibleGrandTotals.contractCount)} /></td>
+                <td className="px-2 py-1.5 text-right font-mono tabular-nums"><HistoryAggregateValue value={formatCurrency(visibleGrandTotals.grossRisk, 0)} /></td>
+                <td />
+                <td className="px-2 py-1.5 text-right font-mono tabular-nums" title="Gross-Risk-weighted average of known holding periods."><HistoryAggregateValue value={formatAverageDays(visibleGrandTotals.weightedAverageDaysHeld)} /></td>
+                <td />
+                <td className="px-2 py-1.5 text-right font-mono tabular-nums" title="Canonical Entry NY weighted by Gross Risk."><HistoryAggregateValue value={formatPctValue(visibleGrandTotals.weightedAverageNy)} /></td>
+                <td className="px-2 py-1.5 text-right font-mono tabular-nums" title={`Gross-Risk-weighted average of known entry VIX values. Coverage: ${formatHistoryCoverage(visibleGrandTotals.entryVixCoverage)}.`}><HistoryAggregateValue value={isFiniteNumber(visibleGrandTotals.weightedAverageEntryVix) ? visibleGrandTotals.weightedAverageEntryVix.toFixed(1) : DASH} /></td>
+                <td className="px-2 py-1.5 text-right font-mono tabular-nums" title={`Gross-Risk-weighted average of known contract Entry IV values. Coverage: ${formatHistoryCoverage(visibleGrandTotals.entryIvCoverage)}.`}><HistoryAggregateValue value={formatPercentPoints(visibleGrandTotals.weightedAverageEntryIv, 1)} /></td>
+                <td />
+                <td className="px-2 py-1.5 text-right font-mono tabular-nums"><HistoryAggregateValue value={formatCurrency(visibleGrandTotals.premium, 0)} /></td>
+                <td className="px-2 py-1.5 text-right font-mono tabular-nums portfolio-history-grand-total__pnl" style={{ color: pnlColor(visibleGrandTotals.realizedPnl) }}><HistoryAggregateValue value={formatCurrency(visibleGrandTotals.realizedPnl)} /></td>
+                <td className="px-2 py-1.5 text-right font-mono tabular-nums" title="Gross-Risk-weighted average of individual position Realized IRRs."><HistoryAggregateValue value={formatPctValue(visibleGrandTotals.weightedAverageRealizedIrr)} /></td>
+                <td className="px-2 py-1.5 text-right font-mono tabular-nums" title="Premium-weighted average of individual position capture values."><HistoryAggregateValue value={formatPctValue(visibleGrandTotals.weightedAveragePercentCaptured)} /></td>
+                <td className="px-2 py-1.5 text-right font-mono tabular-nums" title={`Gross-Risk-weighted average of known Entry Delta values. Coverage: ${formatHistoryCoverage(visibleGrandTotals.entryDeltaCoverage)}.`}><HistoryAggregateValue value={formatDelta(visibleGrandTotals.weightedAverageEntryDelta)} /></td>
+                <td /><td />
+              </tr>
             </tbody>
           </table>
         </div>

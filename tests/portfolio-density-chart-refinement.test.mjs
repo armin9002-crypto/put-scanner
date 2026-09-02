@@ -38,11 +38,32 @@ test('Realized P&L chart renders canonical month labels and collision-safe seman
   assert.match(source, /data-chart-month-label/);
   assert.match(source, /backgroundColor: 'var\(--positive\)'/);
   assert.match(source, /backgroundColor: 'var\(--negative\)'/);
-  assert.match(source, /overflow-x-auto[\s\S]*min-w-\[48px\]/);
+  assert.match(source, /const bandWidth = Math\.min\(180, Math\.max\(48, availableWidth \/ months\.length\)\)/);
+  assert.match(source, /const barWidth = Math\.min\(72, Math\.max\(22, bandWidth \* 0\.62\)\)/);
+  assert.match(source, /overflow-x-auto overflow-y-hidden/);
+  assert.match(source, /style=\{\{ width: `\$\{bandWidth\}px`, minWidth: `\$\{bandWidth\}px` \}\}/);
+  assert.match(source, /style=\{\{ width: `\$\{barWidth\}px`/);
+  assert.match(source, /style=\{\{ fontSize: `\$\{labelFontSize\}px` \}\}/);
   assert.match(styles, /\.portfolio-realized-pnl-chart__month,[\s\S]*font-size: 0\.625rem/);
   assert.match(styles, /\.portfolio-realized-pnl-chart__value--positive \{[\s\S]*color: var\(--positive\)/);
   assert.match(styles, /\.portfolio-realized-pnl-chart__value--negative \{[\s\S]*color: var\(--negative\)/);
   assert.match(browser, /expect\(values\)\.toContain\('\(\$150\)'\)/);
   assert.ok(browser.includes("expect(values.every(value => !/\\.\\d/.test(value))).toBe(true);"));
   assert.match(browser, /document\.documentElement\.scrollWidth <= document\.documentElement\.clientWidth \+ 1/);
+});
+
+test('History totals are canonical, filter-sensitive, and independent of grouping or sorting', async () => {
+  const source = await read('src/pages/PortfolioPage.tsx');
+  assert.match(source, /buildHistoryGroupAggregates/);
+  assert.match(source, /const visibleGrandTotals = useMemo\(\(\) => buildHistoryGroupAggregates\(visibleTrades\)/);
+  assert.match(source, /className="portfolio-history-grand-total"/);
+  assert.match(source, /className="portfolio-history-mobile-grand-total"/);
+  assert.match(source, /aria-label="History totals"/);
+  assert.match(source, /visibleGrandTotals\.contractCount/);
+  assert.match(source, /visibleGrandTotals\.grossRisk/);
+  assert.match(source, /visibleGrandTotals\.premium/);
+  assert.match(source, /visibleGrandTotals\.realizedPnl/);
+  const styles = await read('src/index.css');
+  assert.match(styles, /\.portfolio-history-grand-total > td[\s\S]*height: 22px/);
+  assert.match(styles, /\.portfolio-history-mobile-grand-total[\s\S]*grid-template-columns/);
 });
