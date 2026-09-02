@@ -342,6 +342,7 @@ const EXPIRY_ROW_TOP = 144;
 
 export default function OptionsPage() {
   const { isPhone, isPhoneLandscape } = useResponsiveMode();
+  const mobileOptionHeaderRef = useRef<HTMLElement | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
   const { ticker: routeTicker } = useParams<{ ticker: string }>();
@@ -862,6 +863,23 @@ export default function OptionsPage() {
   const sparklineData = extendedPrice?.sparkline ?? [];
   const sparklineColor = changePositive ? 'var(--green)' : 'var(--red)';
 
+  useEffect(() => {
+    const header = mobileOptionHeaderRef.current;
+    const route = header?.parentElement;
+    if (!header || !route) return undefined;
+    const updateStickyOffset = () => {
+      route.style.setProperty('--mobile-option-chain-sticky-top', `${Math.ceil(header.getBoundingClientRect().height)}px`);
+    };
+    updateStickyOffset();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(updateStickyOffset);
+    observer.observe(header);
+    return () => {
+      observer.disconnect();
+      route.style.removeProperty('--mobile-option-chain-sticky-top');
+    };
+  }, [isPhone, isPhoneLandscape]);
+
   if (!ticker || !instrument) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--bg)' }}>
@@ -911,8 +929,8 @@ export default function OptionsPage() {
     };
 
     return (
-      <div className="mobile-route-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
-        <header className="mobile-option-header sticky top-0 z-40" style={{ backgroundColor: 'color-mix(in srgb, var(--bg) 95%, transparent)', borderBottom: '1px solid var(--border)' }}>
+      <div className="mobile-route-page mobile-option-route-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
+        <header ref={mobileOptionHeaderRef} className="mobile-option-header sticky top-0 z-40" style={{ backgroundColor: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
           <div className="grid min-h-[58px] grid-cols-[78px_minmax(0,1fr)_132px] items-center px-1.5">
             <button type="button" onClick={handleBackToScanner} className="pressable flex min-h-11 items-center gap-0.5 rounded-lg px-1 text-[13px] font-semibold" style={{ color: 'var(--accent-light)' }} aria-label="Back to Scanner"><ArrowLeft className="h-5 w-5" /> Scanner</button>
             <button type="button" onClick={() => setShowPriceChart(true)} className="pressable min-w-0 text-center" aria-label={`Open ${ticker} price chart`}>

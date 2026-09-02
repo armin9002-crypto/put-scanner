@@ -27,6 +27,22 @@ test('portrait financial surfaces use compact primary fields and preserve drawer
   assert.match(portfolio, /const visibleFreshness = freshness\.state === 'stale' \|\| freshness\.state === 'unavailable'/);
 });
 
+test('portrait Option Chain uses the real header with a measured sticky offset', async () => {
+  const [options, styles] = await Promise.all([
+    read('src/pages/OptionsPage.tsx'),
+    read('src/index.css'),
+  ]);
+  assert.match(options, /mobileOptionHeaderRef/);
+  assert.match(options, /ResizeObserver/);
+  assert.match(options, /--mobile-option-chain-sticky-top/);
+  assert.match(styles, /\.mobile-option-chain-table \{[\s\S]*overflow: visible/);
+  assert.match(styles, /\.mobile-option-chain-header \{[\s\S]*position: -webkit-sticky/);
+  assert.match(styles, /top: var\(--mobile-option-chain-sticky-top/);
+  assert.match(styles, /background: var\(--bg-inset\)/);
+  assert.match(styles, /box-shadow: 0 1px 0 var\(--border-default\)/);
+  assert.match(styles, /\.mobile-option-route-page \{[\s\S]*height: 100dvh[\s\S]*overflow-y: auto/);
+});
+
 test('landscape tables freeze only the Ticker identity and portrait hides priority rail', async () => {
   const [styles, portfolio] = await Promise.all([read('src/index.css'), read('src/pages/PortfolioPage.tsx')]);
   assert.match(styles, /\.portfolio-schedule-surface \.financial-table tbody tr > td:first-child,[\s\S]*position: sticky/);

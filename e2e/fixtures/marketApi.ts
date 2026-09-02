@@ -6,16 +6,35 @@ const EXPIRATION = 1_798_761_600;
 const NEAR_EXPIRATION = 1_789_689_600;
 const SECOND_EXPIRATION = 1_801_180_800;
 
-function optionChain(ticker: string, expiration = EXPIRATION) {
+function optionChain(ticker: string, expiration = EXPIRATION, putCount = 2) {
+  const count = Math.max(2, putCount);
   const expiry = new Date(expiration * 1000);
   const contractDate = `${String(expiry.getUTCFullYear()).slice(-2)}${String(expiry.getUTCMonth() + 1).padStart(2, '0')}${String(expiry.getUTCDate()).padStart(2, '0')}`;
+  const puts = [
+    { contractSymbol: `${ticker}${contractDate}P00090000`, strike: 90, lastPrice: 2.1, lastTradeDate: 1_788_000_000, bid: 2, ask: 2.2, change: 0.1, percentChange: 5, impliedVolatility: 0.48, volume: 120, openInterest: 900, delta: -0.2 },
+    { contractSymbol: `${ticker}${contractDate}P00095000`, strike: 95, lastPrice: 3.4, lastTradeDate: 1_788_000_000, bid: 3.2, ask: 3.6, change: 0.2, percentChange: 6, impliedVolatility: 0.52, volume: 80, openInterest: 700, delta: -0.32 },
+    ...Array.from({ length: Math.max(0, count - 2) }, (_, index) => {
+      const strike = 96 + index;
+      return {
+        contractSymbol: `${ticker}${contractDate}P${String(strike * 1000).padStart(8, '0')}`,
+        strike,
+        lastPrice: 3.6 + index * 0.04,
+        lastTradeDate: 1_788_000_000,
+        bid: 3.4 + index * 0.04,
+        ask: 3.8 + index * 0.04,
+        change: 0.1,
+        percentChange: 3,
+        impliedVolatility: 0.52 + index * 0.001,
+        volume: 70 + index,
+        openInterest: 650 + index * 4,
+        delta: -0.34 - index * 0.004,
+      };
+    }),
+  ].slice(0, count);
   return { optionChain: { result: [{
     quote: { symbol: ticker, regularMarketPrice: 100, regularMarketChange: 1.25, regularMarketChangePercent: 1.27 },
     expirationDates: [NEAR_EXPIRATION, EXPIRATION, SECOND_EXPIRATION],
-    options: [{ expirationDate: expiration, puts: [
-      { contractSymbol: `${ticker}${contractDate}P00090000`, strike: 90, lastPrice: 2.1, lastTradeDate: 1_788_000_000, bid: 2, ask: 2.2, change: 0.1, percentChange: 5, impliedVolatility: 0.48, volume: 120, openInterest: 900, delta: -0.2 },
-      { contractSymbol: `${ticker}${contractDate}P00095000`, strike: 95, lastPrice: 3.4, lastTradeDate: 1_788_000_000, bid: 3.2, ask: 3.6, change: 0.2, percentChange: 6, impliedVolatility: 0.52, volume: 80, openInterest: 700, delta: -0.32 },
-    ] }],
+    options: [{ expirationDate: expiration, puts }],
   }], error: null } };
 }
 
@@ -41,7 +60,7 @@ function json(route: Route, body: unknown, status = 200, extraHeaders: Record<st
   }, body: JSON.stringify(body) });
 }
 
-export async function installDeterministicMarketApi(page: Page, options: { failScreenerChunkOnce?: number } = {}) {
+export async function installDeterministicMarketApi(page: Page, options: { failScreenerChunkOnce?: number; optionCount?: number } = {}) {
   const counts = new Map<string, number>();
   const delays = new Map<string, number>();
   const failNext = new Set<string>();
@@ -71,11 +90,11 @@ export async function installDeterministicMarketApi(page: Page, options: { failS
       return json(route, { error: 'E2E controlled failure' }, 503);
     }
     if (failNext.delete(endpoint)) return json(route, { error: 'E2E controlled failure' }, 503);
-    if (endpoint === 'options') return json(route, optionChain((url.searchParams.get('ticker') || 'TQQQ').toUpperCase(), Number(url.searchParams.get('date')) || EXPIRATION));
+    if (endpoint === 'options') return json(route, optionChain((url.searchParams.get('ticker') || 'TQQQ').toUpperCase(), Number(url.searchParams.get('date')) || EXPIRATION, options.optionCount));
     if (endpoint === 'ticker-detail') {
       const ticker = (url.searchParams.get('ticker') || 'TQQQ').toUpperCase();
       const requestedExpiration = Number(url.searchParams.get('date')) || EXPIRATION;
-      const optionsPayload = optionChain(ticker, unavailableRequestedExpiry.has(ticker) ? NEAR_EXPIRATION : requestedExpiration);
+      const optionsPayload = optionChain(ticker, unavailableRequestedExpiry.has(ticker) ? NEAR_EXPIRATION : requestedExpiration, options.optionCount);
       if (unavailableRequestedExpiry.has(ticker)) optionsPayload.optionChain.result[0].expirationDates = [NEAR_EXPIRATION, SECOND_EXPIRATION];
       return json(route, { availability: ticker === 'AAPL' ? 'no_options' : 'optionable', options: optionsPayload, extendedPrice: { price: 100, change: 1, changePercent: 1, fiveDay: 2, oneMonth: 4, threeMonth: 8, fiftyTwoWeekHighPct: -5, previousClose: 99, sparkline: [98, 99, 100] }, volatilityContext: { currentIV: 48, rangePosition: 52, observationPercent: 55, realizedVolLow: 20, realizedVolHigh: 60, observationCount: 252 } }, 200, { 'X-PutScanner-Upstream-Requests': '3' });
     }

@@ -642,7 +642,7 @@ table,
 /* Portrait option chains use a six-column comparison grid; the drawer owns secondary detail. */
 .mobile-option-chain-table {
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
   border-top: 1px solid var(--border-subtle);
   background: var(--surface);
 }
@@ -656,10 +656,14 @@ table,
 }
 
 .mobile-option-chain-header {
+  position: -webkit-sticky;
+  position: sticky;
+  top: var(--mobile-option-chain-sticky-top, calc(58px + env(safe-area-inset-top)));
+  z-index: 25;
   min-height: 30px;
   padding: 0 0.35rem;
   border-bottom: 1px solid var(--border);
-  background: var(--surface-alt);
+  background: var(--bg-inset);
   color: var(--text-tertiary);
   font-family: var(--font-data);
   font-size: 0.53rem;
@@ -669,6 +673,7 @@ table,
   text-align: right;
   text-transform: uppercase;
   white-space: nowrap;
+  box-shadow: 0 1px 0 var(--border-default), 0 3px 8px color-mix(in srgb, var(--bg-primary) 22%, transparent);
 }
 
 .mobile-option-chain-header > :first-child,
@@ -2019,6 +2024,13 @@ td {
 }
 
 @media (max-width: 767px) {
+  .mobile-option-route-page {
+    height: 100dvh;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
   .option-drawer-mobile .mobile-trade-sheet {
     background: color-mix(in srgb, var(--bg-primary) 96%, var(--bg-inset));
   }
