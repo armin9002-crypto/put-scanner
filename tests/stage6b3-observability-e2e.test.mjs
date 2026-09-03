@@ -135,6 +135,9 @@ test('request budgets reject material request multiplication and failed Screener
   assert.equal(REQUEST_BUDGET_LEDGER['ticker-detail'].expected.browserRequests, 1);
   assert.equal(REQUEST_BUDGET_LEDGER['expiration-change'].expected.providerAcquisitions, 1);
   assert.equal(REQUEST_BUDGET_LEDGER['option-drawer'].ceiling.browserRequests, 0);
+  assert.deepEqual(REQUEST_BUDGET_LEDGER['recommendations-refresh'].ceiling, { browserRequests: 15, functionInvocations: 15, providerAcquisitions: 254 });
+  assert.equal(REQUEST_BUDGET_LEDGER['recommendations-refresh'].providerHttpAttemptCeiling, 324);
+  assert.deepEqual(REQUEST_BUDGET_LEDGER['recommendations-local-interactions'].ceiling, { browserRequests: 0, functionInvocations: 0, providerAcquisitions: 0 });
   assert.deepEqual(failedScreenerRetryBudget(2), { browserRequests: 2, functionInvocations: 2, providerAcquisitions: 18 });
   assert.ok(failedScreenerRetryBudget(2).browserRequests < REQUEST_BUDGET_LEDGER['screener-full-scan'].ceiling.browserRequests);
   assert.deepEqual(uniqueChainRefreshBudget(20, 6), { browserRequests: 7, functionInvocations: 7, providerAcquisitions: 7 });

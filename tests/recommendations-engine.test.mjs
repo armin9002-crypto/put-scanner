@@ -9,7 +9,9 @@ import { runRecommendationEngine } from '../src/lib/recommendations/engine.ts';
 import { discoverContractPricing } from '../src/lib/recommendations/pricing.ts';
 import { assessUnderlying } from '../src/lib/recommendations/underlying.ts';
 import { clearInMemoryRecommendationRunForTests, getInMemoryRecommendationRun, publishInMemoryRecommendationRun, refreshRecommendations } from '../src/lib/recommendations/acquisition.ts';
-import { RECOMMENDATION_ENGINE_VERSION, RECOMMENDATION_POLICY_VERSION } from '../src/lib/recommendations/types.ts';
+import { readOnlyEvaluateAtLeast60Dte, persistOnlyEvaluateAtLeast60Dte } from '../src/lib/recommendationPreferences.ts';
+import { RECOMMENDATION_ENGINE_VERSION, RECOMMENDATION_POLICY_VERSION, recommendationUniverse } from '../src/lib/recommendations/types.ts';
+import { planRepresentativeExpirations } from '../api/_lib/screenerBatch.js';
 
 const AS_OF = '2026-09-02T15:00:00.000Z';
 const AS_OF_MS = Date.parse(AS_OF);
@@ -145,6 +147,60 @@ function snapshot({ pulseRows = [pulse('TQQQ')], chains = [chain('TQQQ', surface
         pulseFetchedAt: AS_OF_MS,
         chainSources: chains.map(data => ({ ticker: data.chainMeta.ticker, expiration: EXPIRATION, source: data.chainMeta.source, fetchedAt: data.chainMeta.fetchedAt })),
       },
+    },
+  };
+}
+
+function chainAt(ticker, puts, expiration, dte) {
+  return {
+    expirations: [{ date: expiration, label: `Fixture ${dte}D`, dte }],
+    puts,
+    currentPrice: 100,
+    chainMeta: {
+      ticker,
+      requestedExpiration: expiration,
+      returnedExpiration: expiration,
+      expirationDate: expiration,
+      fetchedAt: AS_OF_MS,
+      source: 'network',
+      putCount: puts.length,
+    },
+  };
+}
+
+function multiTenorSnapshot(chains, onlyEvaluateAtLeast60Dte = true) {
+  const ticker = chains[0].chainMeta.ticker;
+  const expirations = chains.map(item => item.expirations[0]);
+  const initial = { ...chains[0], expirations };
+  const chainsByKey = new Map(chains.map(item => [canonicalOptionChainKey(ticker, item.chainMeta.expirationDate), item]));
+  const built = buildScreenerRows({
+    initialResults: new Map([[ticker, initial]]),
+    chainsByKey,
+    ivVsRealizedRangeByTicker: new Map([[ticker, 75]]),
+    expirationPlansByTicker: new Map([[ticker, { selectedExpirationDates: expirations.map(item => item.date) }]]),
+  }, 'all');
+  const marketRegime = regime();
+  return {
+    asOf: AS_OF,
+    engineVersion: RECOMMENDATION_ENGINE_VERSION,
+    policyVersion: RECOMMENDATION_POLICY_VERSION,
+    universe: recommendationUniverse(onlyEvaluateAtLeast60Dte),
+    market: { regime: marketRegime, posture: postureFromRegime(marketRegime) },
+    underlyings: [pulse(ticker)],
+    chains: chains.map(data => ({ ticker, expiration: data.chainMeta.expirationDate, data })),
+    screenerRows: built.rows,
+    coverage: {
+      trackedUnderlyings: [ticker],
+      hardFailedBeforeChainAcquisition: [],
+      requestedForOptionScan: [ticker],
+      successfullyAnalyzedUnderlyings: [ticker],
+      failedUnderlyings: [],
+      failedBatches: [],
+      expirationsCovered: [{ ticker, expirationDates: expirations.map(item => item.date) }],
+      expirationPlans: [{ ticker, availableExpirationDates: expirations.map(item => item.date), eligibleExpirationDates: expirations.map(item => item.date), selectedExpirationDates: expirations.map(item => item.date), discoveryExpiration: expirations[0].date }],
+      contractsEvaluated: built.rows.length,
+      pulse: { requested: 1, loaded: 1, failed: 0, stale: false },
+      provenance: { pulseFetchedAt: AS_OF_MS, chainSources: chains.map(data => ({ ticker, expiration: data.chainMeta.expirationDate, source: 'network', fetchedAt: AS_OF_MS })) },
     },
   };
 }
@@ -401,6 +457,9 @@ test('Recommendations acquisition is one explicit cache-aware Pulse pass plus on
         scanCalls += 1;
         assert.equal(options.expFilter, 'all');
         assert.equal(options.selectedTickers.includes('TQQQ'), false);
+        assert.equal(options.recommendationUniverse.minimumDte, 60);
+        assert.equal(options.recommendationUniverse.maximumDte, 365);
+        assert.equal(options.recommendationUniverse.maximumExpirations, 3);
         return {
           initialResults: new Map(), chainsByKey: new Map(), ivVsRealizedRangeByTicker: new Map(), errors: [],
           plannedBatches: 14, completedBatches: 14, failedBatchIds: [],
@@ -415,6 +474,116 @@ test('Recommendations acquisition is one explicit cache-aware Pulse pass plus on
   publishInMemoryRecommendationRun(result.run);
   assert.equal(getInMemoryRecommendationRun(), result.run);
   clearInMemoryRecommendationRunForTests();
+});
+
+test('DTE A and F: the account preference defaults to 60+ DTE and persists explicit opt-out', () => {
+  const values = new Map();
+  const storage = {
+    getItem: key => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value),
+  };
+  assert.equal(readOnlyEvaluateAtLeast60Dte(storage), true);
+  persistOnlyEvaluateAtLeast60Dte(false, storage);
+  assert.equal(readOnlyEvaluateAtLeast60Dte(storage), false);
+  assert.deepEqual(recommendationUniverse(true), {
+    onlyEvaluateAtLeast60Dte: true,
+    minimumDte: 60,
+    maximumDte: 365,
+    maxExpirationsPerUnderlying: 3,
+    expirationPlanner: 'NEAR_MIDDLE_FAR',
+  });
+});
+
+test('DTE E and H: representative-expiration planning is bounded, deterministic, unique, and safe for sparse calendars', () => {
+  const day = Math.floor(Date.parse('2026-09-02T00:00:00.000Z') / 1_000);
+  const atDte = days => day + days * 86_400;
+  const input = [atDte(400), atDte(180), atDte(60), atDte(30), atDte(365), atDte(90), atDte(90)];
+  assert.deepEqual(planRepresentativeExpirations(input, { nowMs: AS_OF_MS, minimumDte: 60, maximumDte: 365 }), {
+    eligible: [atDte(60), atDte(90), atDte(180), atDte(365)],
+    selected: [atDte(60), atDte(90), atDte(365)],
+  });
+  assert.deepEqual(planRepresentativeExpirations([atDte(90)], { nowMs: AS_OF_MS, minimumDte: 60 }), { eligible: [atDte(90)], selected: [atDte(90)] });
+  assert.deepEqual(planRepresentativeExpirations([atDte(30)], { nowMs: AS_OF_MS, minimumDte: 60 }), { eligible: [], selected: [] });
+});
+
+test('DTE B and G: universe filtering is snapshot-bound and excludes short contracts only when enabled', () => {
+  const day = Math.floor(Date.parse('2026-09-02T00:00:00.000Z') / 1_000);
+  const short = chainAt('TQQQ', [put(65, { bid: 1.2, ask: 1.3 })], day + 30 * 86_400, 30);
+  const long = chainAt('TQQQ', [put(65, { bid: 3.2, ask: 3.35 })], day + 90 * 86_400, 90);
+  const filtered = runRecommendationEngine(multiTenorSnapshot([short, long], true));
+  const open = runRecommendationEngine(multiTenorSnapshot([short, long], false));
+  assert.deepEqual(filtered.candidates.map(candidate => candidate.dte), [90]);
+  assert.deepEqual(open.candidates.map(candidate => candidate.dte), [30, 90]);
+  assert.equal(filtered.universe.onlyEvaluateAtLeast60Dte, true);
+  assert.equal(filtered.coverage.expirationPlans[0].selectedExpirationDates.length, 2);
+});
+
+test('DTE C: posture DTE is informational context and never a blocking veto', () => {
+  const day = Math.floor(Date.parse('2026-09-02T00:00:00.000Z') / 1_000);
+  const market = chainAt('TQQQ', [put(65, { bid: 3.4, ask: 3.55, delta: -0.12 })], day + 90 * 86_400, 90);
+  const candidate = runRecommendationEngine(multiTenorSnapshot([market])).candidates[0];
+  const dteCheck = candidate.policyChecks.find(check => check.code === 'DTE_OUTSIDE_POSTURE');
+  assert.ok(dteCheck);
+  assert.equal(dteCheck.passed, false);
+  assert.equal(dteCheck.severity, 'INFORMATIONAL');
+  assert.equal(dteCheck.phase, 'DURATION_CONTEXT');
+  assert.notEqual(candidate.skeptic.code, 'DTE_OUTSIDE_POSTURE');
+});
+
+test('DTE D: cross-tenor comparisons reject uncompensated duration and can prefer defensive longer duration', () => {
+  const day = Math.floor(Date.parse('2026-09-02T00:00:00.000Z') / 1_000);
+  const exp90 = day + 90 * 86_400;
+  const exp180 = day + 180 * 86_400;
+
+  const efficientRun = runRecommendationEngine(multiTenorSnapshot([
+    chainAt('TQQQ', [put(65, { bid: 3.4, ask: 3.55, delta: -0.12 })], exp90, 90),
+    chainAt('TQQQ', [put(65, { bid: 6.5, ask: 6.7, delta: -0.12 })], exp180, 180),
+  ]));
+  const efficientShort = efficientRun.candidates.find(candidate => candidate.dte === 90);
+  const uncompensatedLong = efficientRun.candidates.find(candidate => candidate.dte === 180);
+  assert.ok(efficientShort?.comparisons.some(comparison => comparison.reasonCodes.includes('SHORTER_DURATION_EFFICIENT')));
+  assert.ok(uncompensatedLong?.comparisons.some(comparison => comparison.reasonCodes.includes('DURATION_NOT_COMPENSATED')));
+  assert.ok(uncompensatedLong?.dominatedBy.includes(efficientShort.id));
+
+  const defensiveRun = runRecommendationEngine(multiTenorSnapshot([
+    chainAt('TQQQ', [put(65, { bid: 4, ask: 4.15, delta: -0.14 })], exp90, 90),
+    chainAt('TQQQ', [put(60, { bid: 7, ask: 7.2, delta: -0.06 })], exp180, 180),
+  ]));
+  const defensiveLong = defensiveRun.candidates.find(candidate => candidate.dte === 180);
+  const lessDefensiveShort = defensiveRun.candidates.find(candidate => candidate.dte === 90);
+  assert.ok(defensiveLong?.comparisons.some(comparison => comparison.reasonCodes.includes('LONGER_DURATION_DEFENSIVE_VALUE')));
+  assert.ok(lessDefensiveShort?.dominatedBy.includes(defensiveLong.id));
+});
+
+test('decision trace exposes defined stage counts, distinct surfaced contracts, and overlapping rejection reasons', () => {
+  const weakPremium = chain('TQQQ', [
+    put(60, { bid: 0.08, ask: 0.12, delta: -0.04 }),
+    put(65, { bid: 0.25, ask: 0.35, delta: -0.08 }),
+    put(70, { bid: 0.38, ask: 0.48, delta: -0.13 }),
+  ]);
+  const run = runRecommendationEngine(snapshot({ chains: [weakPremium] }));
+  assert.deepEqual(run.decisionTrace.stages.map(stage => stage.key), [
+    'TRACKED_UNDERLYINGS', 'QUALIFIED_UNDERLYINGS', 'CHAINS_ACQUIRED', 'CONTRACTS_EVALUATED', 'VALID_CONTRACTS',
+    'HURDLE_RISK_SURVIVORS', 'FRONTIER_CONTRACTS', 'SERIOUS_FINALISTS', 'POLICY_SURVIVORS', 'SURFACED_RECOMMENDATIONS',
+  ]);
+  assert.ok(run.decisionTrace.stages.every(stage => Number.isInteger(stage.count) && stage.count >= 0 && stage.definition.length > 0));
+  assert.equal(run.decisionTrace.stages.at(-1).count, new Set(run.recommendations.map(selection => selection.candidateId)).size);
+  assert.ok(run.decisionTrace.topRejectionReasons.length > 0);
+  assert.ok(run.decisionTrace.topRejectionReasons.reduce((sum, reason) => sum + reason.count, 0) >= run.candidates.length);
+});
+
+test('Recommendations V1.1 UI preserves the old run until explicit refresh and exposes the full audit workflow', () => {
+  const source = readFileSync('src/pages/RecommendationsPage.tsx', 'utf8');
+  assert.match(source, /Only evaluate options ≥60 DTE/);
+  assert.match(source, /runPreferenceMismatch/);
+  assert.match(source, /refresh to apply the new setting/i);
+  assert.match(source, /boardRows\.slice\(0, 8\)/);
+  assert.match(source, /How Recommendations Work/);
+  assert.match(source, /Why Only These \/ Near Misses/);
+  assert.match(source, /Full Opportunity Board \/ Audit/);
+  assert.match(source, /Decision Trace/);
+  assert.match(source, /Full Methodology/);
+  assert.doesNotMatch(source, /42 tracked|44 tracked/i);
 });
 
 test('Recommendations domain has no inference client, direct fetch, Portfolio lens, or universal score', () => {

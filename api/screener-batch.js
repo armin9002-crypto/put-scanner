@@ -14,11 +14,22 @@ export default async function handler(req, res) {
   const chunkId = integerQuery(req.query.chunk);
   const rawDate = Array.isArray(req.query.date) ? req.query.date[0] : req.query.date;
   const targetDate = rawDate == null || rawDate === '' ? null : integerQuery(rawDate);
+  const recommendations = (Array.isArray(req.query.recommendations) ? req.query.recommendations[0] : req.query.recommendations) === '1';
+  const minimumDte = integerQuery(req.query.minDte);
+  const maximumDte = integerQuery(req.query.maxDte);
   if (chunkId == null) return res.status(400).json({ error: 'Invalid Screener chunk' });
   if (rawDate != null && rawDate !== '' && (targetDate == null || targetDate <= 0)) return res.status(400).json({ error: 'Invalid expiration date' });
 
   try {
-    const dataset = await buildScreenerBatch({ chunkId, targetDate, signal: observation.signal });
+    const dataset = await buildScreenerBatch({
+      chunkId,
+      targetDate,
+      representativeExpirationPlan: recommendations,
+      minimumDte: minimumDte ?? 0,
+      maximumDte: maximumDte ?? 365,
+      maximumExpirations: 3,
+      signal: observation.signal,
+    });
     observation.setCounts({ tickerCount: dataset.diagnostics.plannedEtfs, expiryCount: targetDate == null ? 0 : 1 });
     const bytes = responseBytes(dataset);
     if (bytes > SCREENER_BATCH_MAX_BYTES) return res.status(502).json({ error: 'Screener batch exceeded the response-size guardrail' });

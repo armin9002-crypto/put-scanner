@@ -44,6 +44,7 @@ export interface ScreenerAcquiredData {
   initialResults: Map<string, OptionsChainData>;
   chainsByKey: Map<string, OptionsChainData>;
   ivVsRealizedRangeByTicker: Map<string, number | null>;
+  expirationPlansByTicker?: Map<string, { selectedExpirationDates: number[] }>;
 }
 
 export interface ScreenerExpirationCandidate { date: number; dte: number }
@@ -186,7 +187,10 @@ export function buildScreenerRows(data: ScreenerAcquiredData, expFilter: string)
     // "Nearest" is a per-ticker property. Selecting from the global union can
     // exclude a ticker whose own first two expirations differ from another
     // ticker's calendar, even though both chains were acquired successfully.
-    const tickerExpirations = getExpsToFetchForFilter(initialData.expirations, expFilter);
+    const plannedDates = data.expirationPlansByTicker?.get(ticker)?.selectedExpirationDates;
+    const tickerExpirations = plannedDates
+      ? initialData.expirations.filter(expiration => plannedDates.includes(expiration.date))
+      : getExpsToFetchForFilter(initialData.expirations, expFilter);
     for (const expiration of tickerExpirations) {
       const chain = data.chainsByKey.get(canonicalOptionChainKey(ticker, expiration.date))
         ?? (expiration.date === initialData.expirations[0]?.date ? initialData : null);

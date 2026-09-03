@@ -5,14 +5,14 @@ import { canonicalOptionChainKey } from '../optionChainRequests.ts';
 import { buildScreenerRows } from '../screenerRows.ts';
 import type { OptionContract, OptionsChainData } from '../types.ts';
 import { runRecommendationEngine } from './engine.ts';
-import { RECOMMENDATION_ENGINE_VERSION, RECOMMENDATION_POLICY_VERSION, type RecommendationRun, type RecommendationSnapshot } from './types.ts';
+import { RECOMMENDATION_ENGINE_VERSION, RECOMMENDATION_POLICY_VERSION, recommendationUniverse, type RecommendationRun, type RecommendationSnapshot } from './types.ts';
 
 export type RecommendationVisualFixture = 'actionable' | 'conditional' | 'no-trade' | 'incomplete';
 
 const AS_OF = '2026-09-02T15:00:00.000Z';
 const FETCHED_AT = Date.parse(AS_OF);
-const EXPIRATION = Math.floor(Date.parse('2026-10-16T00:00:00.000Z') / 1_000);
-const DTE = 44;
+const EXPIRATION = Math.floor(Date.parse('2026-12-18T00:00:00.000Z') / 1_000);
+const DTE = 107;
 
 function option(strike: number, values: Partial<OptionContract>): OptionContract {
   return {
@@ -37,7 +37,7 @@ function chain(ticker: string, candidate: OptionContract, values: Partial<Option
     option(candidate.strike + 5, { bid: Math.max(0.2, (candidate.ask ?? 1.4) * 1.45), ask: Math.max(0.3, (candidate.ask ?? 1.4) * 1.6), delta: candidate.bid === 0 ? -0.24 : -0.17 }),
   ];
   return {
-    expirations: [{ date: EXPIRATION, label: "Oct 16 '26", dte: DTE }],
+    expirations: [{ date: EXPIRATION, label: "Dec 18 '26", dte: DTE }],
     puts,
     currentPrice: 100,
     chainMeta: {
@@ -113,6 +113,7 @@ function snapshot(rows: EtfPulseRow[], chains: OptionsChainData[], incomplete = 
     asOf: AS_OF,
     engineVersion: RECOMMENDATION_ENGINE_VERSION,
     policyVersion: RECOMMENDATION_POLICY_VERSION,
+    universe: recommendationUniverse(true),
     market: { regime, posture: postureFromRegime(regime) },
     underlyings: rows,
     chains: chains.map(data => ({ ticker: data.chainMeta?.ticker ?? '', expiration: EXPIRATION, data })),
@@ -125,6 +126,7 @@ function snapshot(rows: EtfPulseRow[], chains: OptionsChainData[], incomplete = 
       failedUnderlyings: incomplete ? [{ ticker: 'LABU', message: 'Visual fixture batch unavailable.' }] : [],
       failedBatches: incomplete ? [6] : [],
       expirationsCovered: successful.map(ticker => ({ ticker, expirationDates: [EXPIRATION] })),
+      expirationPlans: successful.map(ticker => ({ ticker, availableExpirationDates: [EXPIRATION], eligibleExpirationDates: [EXPIRATION], selectedExpirationDates: [EXPIRATION], discoveryExpiration: EXPIRATION })),
       contractsEvaluated: built.rows.length,
       pulse: { requested: rows.length, loaded: rows.length, failed: 0, stale: false },
       provenance: { pulseFetchedAt: FETCHED_AT, chainSources: successful.map(ticker => ({ ticker, expiration: EXPIRATION, source: 'cache', fetchedAt: FETCHED_AT })) },
@@ -138,7 +140,7 @@ export function buildRecommendationVisualFixture(name: RecommendationVisualFixtu
   const labu = underlying('LABU', { trend: 'Weakening', distance50: -0.04, distance200: 0.08, recentDrawdown30: -0.14 });
   const boil = underlying('BOIL', { trend: 'Downtrend', distance50: -0.18, distance200: -0.12, recentDrawdown30: -0.25, rsi14: 28 });
   const actionable = chain('TQQQ', option(65, { bid: 1.45, ask: 1.56, last: 1.5, delta: -0.11, impliedVolatility: 82 }));
-  const conditional = chain('SOXL', option(60, { bid: 0, ask: 1.35, last: 1.18, delta: -0.1, impliedVolatility: 95 }));
+  const conditional = chain('SOXL', option(60, { bid: 0, ask: 5, last: 4.4, delta: -0.1, impliedVolatility: 95 }));
   const weak = chain('LABU', option(60, { bid: 0.18, ask: 0.28, last: 0.22, delta: -0.08, impliedVolatility: 45 }));
   if (name === 'conditional') return runRecommendationEngine(snapshot([soxl], [conditional]));
   if (name === 'no-trade') return runRecommendationEngine(snapshot([labu, boil], [weak]));

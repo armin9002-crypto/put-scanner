@@ -101,8 +101,8 @@ test('History defaults grouped views collapsed and keeps the requested headline 
     assert.ok(next > previous, `${label} follows the requested order`);
     previous = next;
   }
-  assert.match(source, /Realized P&amp;L by Expiration Month/);
-  assert.match(source, /month\.month\.slice\(2, 4\)/);
+  assert.match(source, /`Realized P&L by Expiration \$\{period === 'month' \? 'Month' : period === 'quarter' \? 'Quarter' : 'Year'\}`/);
+  assert.match(source, /aria-label="Realized P&L period"/);
   assert.doesNotMatch(source, /\{months\.length\} months/);
   assert.match(source, /visibleSummary\.counts\.expired_worthless/);
 });

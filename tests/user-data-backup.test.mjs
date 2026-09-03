@@ -10,6 +10,7 @@ import {
 import { PORTFOLIO_STORAGE_KEY } from '../src/lib/portfolioStorage.ts';
 import { WATCHLIST_STORAGE_KEY } from '../src/lib/watchlist.ts';
 import { SHOW_NOMINAL_YIELD_KEY } from '../src/lib/optionTablePreferences.ts';
+import { RECOMMENDATIONS_MINIMUM_DTE_KEY } from '../src/lib/recommendationPreferences.ts';
 import { PORTFOLIO_MARK_BASIS_KEY } from '../src/lib/portfolioMarkPreference.ts';
 import {
   PORTFOLIO_EXPIRY_GROUPS_KEY,
@@ -95,6 +96,7 @@ function seededStorage() {
     [PORTFOLIO_EXPIRY_GROUPS_KEY]: JSON.stringify({ '2026-10-16': true }),
     [PORTFOLIO_UNDERLYING_GROUPS_KEY]: JSON.stringify({ TQQQ: false }),
     [SHOW_NOMINAL_YIELD_KEY]: 'true',
+    [RECOMMENDATIONS_MINIMUM_DTE_KEY]: 'false',
     price_cache_batch_v5: JSON.stringify({ data: { SECRET_CACHE_SENTINEL: 123 } }),
     scanner_option_snapshots_v2: JSON.stringify({ SECRET_SNAPSHOT_SENTINEL: true }),
     'chart_history_cache:TQQQ:2Y': JSON.stringify({ data: { SECRET_CHART_SENTINEL: true } }),
@@ -120,6 +122,7 @@ test('export creates the versioned format with every durable namespace and no ma
   assert.equal(backup.data.preferences.data.portfolioMarkBasis, 'bid');
   assert.equal(backup.data.preferences.data.portfolioGroupMode, 'underlying');
   assert.equal(backup.data.preferences.data.showNominalYield, true);
+  assert.equal(backup.data.preferences.data.recommendationsOnlyAtLeast60Dte, false);
 
   const serialized = serializePutScannerBackup(backup);
   assert.doesNotMatch(serialized, /SECRET_CACHE_SENTINEL|SECRET_SNAPSHOT_SENTINEL|SECRET_CHART_SENTINEL/);

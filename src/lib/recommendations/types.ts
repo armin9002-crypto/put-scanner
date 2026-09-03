@@ -3,8 +3,8 @@ import type { RegimeAnalysis, TradePosture } from '../marketRead/types.ts';
 import type { ScreenerRow } from '../screenerRows.ts';
 import type { OptionsChainData } from '../types.ts';
 
-export const RECOMMENDATION_ENGINE_VERSION = 1 as const;
-export const RECOMMENDATION_POLICY_VERSION = 1 as const;
+export const RECOMMENDATION_ENGINE_VERSION = 2 as const;
+export const RECOMMENDATION_POLICY_VERSION = 2 as const;
 
 export type RecommendationBand = 'STRONG' | 'GOOD' | 'MIXED' | 'WEAK';
 export type RecommendationEvidenceQuality = 'HIGH' | 'MODERATE' | 'LOW';
@@ -25,6 +25,7 @@ export type RecommendationReasonCode =
   | 'CLEAN_DIRECT_MARKET'
   | 'COHERENT_PRICE_BRACKET'
   | 'DEFENSIVE_TRADEOFF_FAVORABLE'
+  | 'DURATION_NOT_COMPENSATED'
   | 'DOWNSIDE_TAIL_RISK'
   | 'DTE_OUTSIDE_POSTURE'
   | 'EVIDENCE_GAPS'
@@ -34,6 +35,7 @@ export type RecommendationReasonCode =
   | 'INVALID_CONTRACT'
   | 'MARGINAL_COMPENSATION'
   | 'MISSING_DELTA'
+  | 'LONGER_DURATION_DEFENSIVE_VALUE'
   | 'NO_CLEAR_LEADER'
   | 'NO_DIRECT_BID'
   | 'POOR_RELATIVE_VALUE'
@@ -42,6 +44,7 @@ export type RecommendationReasonCode =
   | 'RELATIVE_HURDLE_CLEARED'
   | 'ROBUSTNESS_LOW'
   | 'STALE_EVIDENCE'
+  | 'SHORTER_DURATION_EFFICIENT'
   | 'STRONG_CUSHION'
   | 'SUPPORTIVE_UNDERLYING'
   | 'VOLATILITY_NOT_RICH_ENOUGH'
@@ -57,6 +60,13 @@ export interface RecommendationCoverage {
   failedUnderlyings: Array<{ ticker: string; message: string }>;
   failedBatches: number[];
   expirationsCovered: Array<{ ticker: string; expirationDates: number[] }>;
+  expirationPlans: Array<{
+    ticker: string;
+    availableExpirationDates: number[];
+    eligibleExpirationDates: number[];
+    selectedExpirationDates: number[];
+    discoveryExpiration: number | null;
+  }>;
   contractsEvaluated: number;
   pulse: {
     requested: number;
@@ -80,6 +90,7 @@ export interface RecommendationSnapshot {
   asOf: string;
   engineVersion: typeof RECOMMENDATION_ENGINE_VERSION;
   policyVersion: typeof RECOMMENDATION_POLICY_VERSION;
+  universe: RecommendationUniverse;
   market: {
     regime: RegimeAnalysis;
     posture: TradePosture;
@@ -88,6 +99,24 @@ export interface RecommendationSnapshot {
   chains: RecommendationChainSnapshot[];
   screenerRows: ScreenerRow[];
   coverage: RecommendationCoverage;
+}
+
+export interface RecommendationUniverse {
+  onlyEvaluateAtLeast60Dte: boolean;
+  minimumDte: number;
+  maximumDte: number;
+  maxExpirationsPerUnderlying: number;
+  expirationPlanner: 'NEAR_MIDDLE_FAR';
+}
+
+export function recommendationUniverse(onlyEvaluateAtLeast60Dte: boolean): RecommendationUniverse {
+  return {
+    onlyEvaluateAtLeast60Dte,
+    minimumDte: onlyEvaluateAtLeast60Dte ? 60 : 0,
+    maximumDte: 365,
+    maxExpirationsPerUnderlying: 3,
+    expirationPlanner: 'NEAR_MIDDLE_FAR',
+  };
 }
 
 export interface UnderlyingAssessment {
@@ -185,7 +214,13 @@ export interface RecommendationCandidate {
     actionability: RecommendationBand;
   };
   evidenceQuality: RecommendationEvidenceQuality;
-  policyChecks: Array<{ code: RecommendationReasonCode; passed: boolean; detail: string }>;
+  policyChecks: Array<{
+    code: RecommendationReasonCode;
+    passed: boolean;
+    severity: 'BLOCKING' | 'INFORMATIONAL';
+    phase: 'VALIDITY' | 'RISK' | 'UNDERLYING' | 'DURATION_CONTEXT';
+    detail: string;
+  }>;
   dominatedBy: string[];
   dominates: string[];
   comparisons: CandidateComparison[];
@@ -214,10 +249,37 @@ export interface RecommendationNearMiss {
   text: string;
 }
 
+export type RecommendationDecisionTraceStageKey =
+  | 'TRACKED_UNDERLYINGS'
+  | 'QUALIFIED_UNDERLYINGS'
+  | 'CHAINS_ACQUIRED'
+  | 'CONTRACTS_EVALUATED'
+  | 'VALID_CONTRACTS'
+  | 'HURDLE_RISK_SURVIVORS'
+  | 'FRONTIER_CONTRACTS'
+  | 'SERIOUS_FINALISTS'
+  | 'POLICY_SURVIVORS'
+  | 'SURFACED_RECOMMENDATIONS';
+
+export interface RecommendationDecisionTrace {
+  stages: Array<{
+    key: RecommendationDecisionTraceStageKey;
+    label: string;
+    count: number;
+    definition: string;
+  }>;
+  topRejectionReasons: Array<{
+    code: RecommendationReasonCode;
+    label: string;
+    count: number;
+  }>;
+}
+
 export interface RecommendationRun {
   engineVersion: typeof RECOMMENDATION_ENGINE_VERSION;
   policyVersion: typeof RECOMMENDATION_POLICY_VERSION;
   asOf: string;
+  universe: RecommendationUniverse;
   operationalStatus: RecommendationOperationalStatus;
   runVerdict: RecommendationRunVerdict | null;
   market: RecommendationSnapshot['market'];
@@ -227,5 +289,6 @@ export interface RecommendationRun {
   frontiers: Array<{ ticker: string; candidateIds: string[] }>;
   recommendations: RecommendationSelection[];
   nearMisses: RecommendationNearMiss[];
+  decisionTrace: RecommendationDecisionTrace;
   reasonCodes: RecommendationReasonCode[];
 }

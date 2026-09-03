@@ -6,6 +6,7 @@ import { LEGACY_DURABLE_ACCOUNT_KEYS } from '../src/lib/cloudState/legacyAccount
 import { readPortfolioTrades, writePortfolioTrades, PORTFOLIO_STORAGE_KEY } from '../src/lib/portfolioStorage.ts';
 import { readWatchlist, writeWatchlist, WATCHLIST_STORAGE_KEY } from '../src/lib/watchlist.ts';
 import { THEME_STORAGE_KEY } from '../src/lib/themePreference.ts';
+import { RECOMMENDATIONS_MINIMUM_DTE_KEY } from '../src/lib/recommendationPreferences.ts';
 import { PORTFOLIO_EXPIRY_GROUPS_KEY } from '../src/lib/portfolioSchedulePreferences.ts';
 import { createPutScannerBackupFromCloudState, validatePutScannerBackup } from '../src/lib/userDataBackup.ts';
 import { confirmPortfolioTradeExpiredWorthless } from '../src/lib/portfolioRealizedEconomics.ts';
@@ -72,7 +73,7 @@ function cloudState(portfolio = [trade('cloud-a', 'Portfolio A')], watchlist = [
     userId,
     namespace,
     schemaVersion: 1,
-    payload: { data: namespace === 'portfolio' ? portfolio : namespace === 'watchlist' ? watchlist : { portfolioMarkBasis: 'bid' } },
+    payload: { data: namespace === 'portfolio' ? portfolio : namespace === 'watchlist' ? watchlist : { portfolioMarkBasis: 'bid', recommendationsOnlyAtLeast60Dte: false } },
     revision: revisions[namespace] ?? 10,
     createdAt: fixedNow.toISOString(),
     updatedAt: fixedNow.toISOString(),
@@ -160,6 +161,7 @@ test('legacy local Portfolio B never displays, pushes, merges, or conflicts with
   assert.equal(device.manager.getSnapshot().phase, 'ready');
   assert.equal(backend.updateCalls.length, 0);
   assert.equal(backend.state.portfolio.payload.data[0].notes, 'Portfolio A');
+  assert.equal(device.storage.getItem(RECOMMENDATIONS_MINIMUM_DTE_KEY), 'false');
   assert.equal(legacy.getItem(PORTFOLIO_STORAGE_KEY), null);
   assert.equal(legacy.getItem(THEME_STORAGE_KEY), 'sepia');
   assert.equal(legacy.getItem(PORTFOLIO_EXPIRY_GROUPS_KEY), JSON.stringify({ '2026-10-16': true }));

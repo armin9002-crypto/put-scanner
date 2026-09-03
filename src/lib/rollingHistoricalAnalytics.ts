@@ -17,7 +17,6 @@ export type RollingHistoricalMetric =
   | 'realizedIrr'
   | 'entryAy'
   | 'premiumRunRate'
-  | 'grossRiskDeployed'
   | 'entryDelta'
   | 'entryIv'
   | 'originalDte';
@@ -74,16 +73,6 @@ export const ROLLING_HISTORICAL_METRIC_CONFIGS: readonly RollingHistoricalMetric
     subtitle: windowMonths => `Entry Premium originated during the trailing ${windowMonths} calendar months, annualized by window length.`,
   },
   {
-    key: 'grossRiskDeployed',
-    label: 'Annualized Gross Risk Deployed',
-    eventDateBasis: 'entry',
-    aggregation: 'annualized_flow',
-    formatterCategory: 'currency',
-    tooltipMetadata: ['tradesIncluded', 'grossRiskRepresented', 'flow'],
-    title: windowMonths => `${windowMonths}M Annualized Gross Risk Deployed`,
-    subtitle: windowMonths => `Initial Gross Risk originated during the trailing ${windowMonths} calendar months, annualized by window length.`,
-  },
-  {
     key: 'entryDelta',
     label: 'Entry Delta',
     eventDateBasis: 'entry',
@@ -132,6 +121,11 @@ export interface RollingHistoricalFlowMetadata {
 
 export interface RollingHistoricalAnalyticsPoint {
   date: string;
+  requestedWindowStart: string;
+  effectiveWindowStart: string;
+  requestedWindowMonths: RollingWindowMonths;
+  availableDays: number;
+  /** @deprecated Use requestedWindowStart. Retained for export compatibility. */
   windowStartDate: string;
   value: number | null;
   windowMonths: RollingWindowMonths;
@@ -192,7 +186,7 @@ export function subtractRollingCalendarMonths(date: string, months: RollingWindo
   return dateIso(Date.UTC(targetYear, targetMonth, Math.min(source.getUTCDate(), lastDay)));
 }
 
-/** Friday observations plus a terminal current date when the current date is not Friday. */
+/** Exact strategy start, weekly Fridays, and the terminal current market date, without duplicates. */
 export function buildRollingObservationDates(startDate: string, endDate: string): string[] {
   const start = parseIsoDate(startDate);
   const end = parseIsoDate(endDate);
@@ -200,9 +194,10 @@ export function buildRollingObservationDates(startDate: string, endDate: string)
   const startWeekday = new Date(start).getUTCDay();
   const daysUntilFriday = (5 - startWeekday + 7) % 7;
   const firstFriday = start + daysUntilFriday * DAY_MS;
-  const dates: string[] = [];
+  const dates: string[] = [dateIso(start)];
   for (let timestamp = firstFriday; timestamp <= end; timestamp += 7 * DAY_MS) {
-    dates.push(dateIso(timestamp));
+    const date = dateIso(timestamp);
+    if (dates[dates.length - 1] !== date) dates.push(date);
   }
   const terminal = dateIso(end);
   if (dates[dates.length - 1] !== terminal) dates.push(terminal);
@@ -238,28 +233,49 @@ function recordsInWindow<T extends EntryRecord>(records: readonly T[], startDate
   return records.filter(record => record.date >= startDate && record.date <= endDate);
 }
 
-function incompletePoint(
+interface RollingWindowContext {
+  requestedWindowStart: string;
+  effectiveWindowStart: string;
+  requestedWindowMonths: RollingWindowMonths;
+  availableDays: number;
+  fullWindow: boolean;
+}
+
+function rollingWindowContext(
   date: string,
-  windowStartDate: string,
+  strategyStart: string,
   windowMonths: RollingWindowMonths,
-  metric: RollingHistoricalMetric,
-): RollingHistoricalAnalyticsPoint {
+): RollingWindowContext | null {
+  const requestedWindowStart = subtractRollingCalendarMonths(date, windowMonths);
+  const end = parseIsoDate(date);
+  if (requestedWindowStart == null || end == null) return null;
+  const effectiveWindowStart = strategyStart > requestedWindowStart ? strategyStart : requestedWindowStart;
+  const effective = parseIsoDate(effectiveWindowStart);
+  if (effective == null) return null;
   return {
-    date,
-    windowStartDate,
-    value: null,
-    windowMonths,
-    metric,
-    fullWindow: false,
-    tradesIncluded: 0,
-    grossRiskRepresented: 0,
+    requestedWindowStart,
+    effectiveWindowStart,
+    requestedWindowMonths: windowMonths,
+    availableDays: Math.max(0, Math.round((end - effective) / DAY_MS)),
+    fullWindow: strategyStart <= requestedWindowStart,
+  };
+}
+
+function pointWindowFields(context: RollingWindowContext) {
+  return {
+    requestedWindowStart: context.requestedWindowStart,
+    effectiveWindowStart: context.effectiveWindowStart,
+    requestedWindowMonths: context.requestedWindowMonths,
+    availableDays: context.availableDays,
+    windowStartDate: context.requestedWindowStart,
+    fullWindow: context.fullWindow,
   };
 }
 
 function weightedEntryPoint(
   records: EntryRecord[],
   date: string,
-  windowStartDate: string,
+  context: RollingWindowContext,
   windowMonths: RollingWindowMonths,
   metric: RollingHistoricalMetric,
 ): RollingHistoricalAnalyticsPoint {
@@ -278,11 +294,10 @@ function weightedEntryPoint(
   const value = representedGrossRisk > 0 ? weightedValue / representedGrossRisk : null;
   return {
     date,
-    windowStartDate,
+    ...pointWindowFields(context),
     value,
     windowMonths,
     metric,
-    fullWindow: true,
     tradesIncluded: representedTrades,
     grossRiskRepresented: representedGrossRisk,
     coverage: {
@@ -298,18 +313,17 @@ function weightedEntryPoint(
 function realizedPoint(
   records: RealizedRecord[],
   date: string,
-  windowStartDate: string,
+  context: RollingWindowContext,
   windowMonths: RollingWindowMonths,
 ): RollingHistoricalAnalyticsPoint {
   const grossRiskRepresented = records.reduce((sum, record) => sum + record.grossRisk, 0);
   const weightedValue = records.reduce((sum, record) => sum + record.realizedIrr * record.grossRisk, 0);
   return {
     date,
-    windowStartDate,
+    ...pointWindowFields(context),
     value: grossRiskRepresented > 0 ? weightedValue / grossRiskRepresented : null,
     windowMonths,
     metric: 'realizedIrr',
-    fullWindow: true,
     tradesIncluded: records.length,
     grossRiskRepresented,
   };
@@ -318,15 +332,15 @@ function realizedPoint(
 function flowPoint(
   records: EntryRecord[],
   date: string,
-  windowStartDate: string,
+  context: RollingWindowContext,
   windowMonths: RollingWindowMonths,
-  metric: 'premiumRunRate' | 'grossRiskDeployed',
+  metric: 'premiumRunRate',
 ): RollingHistoricalAnalyticsPoint {
   const annualizationFactor = 12 / windowMonths;
   let trailingValue = 0;
   let valid = true;
   records.forEach(record => {
-    const value = metric === 'premiumRunRate' ? calculatePremiumCollected(record.trade) : record.grossRisk;
+    const value = calculatePremiumCollected(record.trade);
     if (!isFiniteNumber(value) || value < 0) {
       valid = false;
       return;
@@ -338,11 +352,10 @@ function flowPoint(
   const grossRiskRepresented = records.reduce((sum, record) => sum + record.grossRisk, 0);
   return {
     date,
-    windowStartDate,
+    ...pointWindowFields(context),
     value: annualizedValue,
     windowMonths,
     metric,
-    fullWindow: true,
     tradesIncluded: records.length,
     grossRiskRepresented,
     flow: {
@@ -393,18 +406,16 @@ export function buildRollingHistoricalAnalyticsSeries(
     : [];
 
   const points = observationDates.map(date => {
-    const windowStartDate = subtractRollingCalendarMonths(date, windowMonths);
-    if (windowStartDate == null || startDate == null || startDate > windowStartDate) {
-      return incompletePoint(date, windowStartDate ?? date, windowMonths, metric);
-    }
+    const context = startDate == null ? null : rollingWindowContext(date, startDate, windowMonths);
+    if (context == null) throw new Error('Rolling window could not be resolved for a validated observation date.');
     if (metric === 'realizedIrr') {
-      return realizedPoint(recordsInWindow(realizedRecords, windowStartDate, date), date, windowStartDate, windowMonths);
+      return realizedPoint(recordsInWindow(realizedRecords, context.effectiveWindowStart, date), date, context, windowMonths);
     }
-    const entries = recordsInWindow(entryRecords, windowStartDate, date);
-    if (metric === 'premiumRunRate' || metric === 'grossRiskDeployed') {
-      return flowPoint(entries, date, windowStartDate, windowMonths, metric);
+    const entries = recordsInWindow(entryRecords, context.effectiveWindowStart, date);
+    if (metric === 'premiumRunRate') {
+      return flowPoint(entries, date, context, windowMonths, metric);
     }
-    return weightedEntryPoint(entries, date, windowStartDate, windowMonths, metric);
+    return weightedEntryPoint(entries, date, context, windowMonths, metric);
   });
 
   return {

@@ -1,4 +1,5 @@
 import { SHOW_NOMINAL_YIELD_KEY } from './optionTablePreferences.ts';
+import { RECOMMENDATIONS_MINIMUM_DTE_KEY } from './recommendationPreferences.ts';
 import { PORTFOLIO_MARK_BASIS_KEY } from './portfolioMarkPreference.ts';
 import {
   PORTFOLIO_EXPIRY_GROUPS_KEY,
@@ -332,6 +333,7 @@ function importWrites(backup: PutScannerBackup): Array<[string, string]> {
   if (preferences.collapsedExpirationGroups !== undefined) writes.push([PORTFOLIO_EXPIRY_GROUPS_KEY, JSON.stringify(preferences.collapsedExpirationGroups)]);
   if (preferences.collapsedUnderlyingGroups !== undefined) writes.push([PORTFOLIO_UNDERLYING_GROUPS_KEY, JSON.stringify(preferences.collapsedUnderlyingGroups)]);
   if (preferences.showNominalYield !== undefined) writes.push([SHOW_NOMINAL_YIELD_KEY, String(preferences.showNominalYield)]);
+  if (preferences.recommendationsOnlyAtLeast60Dte !== undefined) writes.push([RECOMMENDATIONS_MINIMUM_DTE_KEY, String(preferences.recommendationsOnlyAtLeast60Dte)]);
   return writes;
 }
 
@@ -374,6 +376,7 @@ export function applyPutScannerBackup(storage: BackupStorage, value: unknown): P
     PORTFOLIO_EXPIRY_GROUPS_KEY,
     PORTFOLIO_UNDERLYING_GROUPS_KEY,
     SHOW_NOMINAL_YIELD_KEY,
+    RECOMMENDATIONS_MINIMUM_DTE_KEY,
   ].some(key => changedKeys.has(key))) emitDurableMutation('preferences');
   return backup;
 }

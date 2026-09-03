@@ -17,6 +17,28 @@ import type { PortfolioTrade } from './portfolioStorage';
 
 export type HistoryOutcome = 'all' | 'expired_worthless' | 'closed' | 'expired_itm' | 'assigned';
 export type HistoryGroupMode = 'year' | 'expiration' | 'underlying' | 'none';
+export type RealizedPnlPeriod = 'month' | 'quarter' | 'year';
+
+export interface ExpirationPeriodRealizedPnl {
+  periodKey: string;
+  label: string;
+  startDate: string;
+  endDate: string;
+  tradeCount: number;
+  premium: number;
+  realizedPnl: number;
+  captured: number | null;
+  /** @deprecated Use tradeCount. */
+  trades: number;
+  /** @deprecated Use premium. */
+  premiumCollected: number;
+}
+
+export interface RealizedPnlChartScale {
+  min: number;
+  max: number;
+  zeroRatio: number;
+}
 
 export interface HistoryCashFlow {
   date: string;
@@ -387,17 +409,84 @@ export function buildHistoryAnalytics(trades: PortfolioTrade[]) {
   };
 }
 
-export function buildMonthlyRealizedPnl(trades: PortfolioTrade[]) {
-  const months = new Map<string, { month: string; trades: number; premiumCollected: number; realizedPnl: number }>();
+function finalCalendarDay(year: number, monthIndex: number): number {
+  return new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+}
+
+function expirationPeriodIdentity(expiration: string, period: RealizedPnlPeriod) {
+  const year = Number(expiration.slice(0, 4));
+  const monthIndex = Number(expiration.slice(5, 7)) - 1;
+  if (period === 'year') return {
+    periodKey: String(year),
+    label: String(year),
+    startDate: `${year}-01-01`,
+    endDate: `${year}-12-31`,
+  };
+  if (period === 'quarter') {
+    const quarter = Math.floor(monthIndex / 3) + 1;
+    const startMonth = (quarter - 1) * 3;
+    const endMonth = startMonth + 2;
+    return {
+      periodKey: `${year}-Q${quarter}`,
+      label: `Q${quarter} '${String(year).slice(2)}`,
+      startDate: `${year}-${String(startMonth + 1).padStart(2, '0')}-01`,
+      endDate: `${year}-${String(endMonth + 1).padStart(2, '0')}-${String(finalCalendarDay(year, endMonth)).padStart(2, '0')}`,
+    };
+  }
+  const month = String(monthIndex + 1).padStart(2, '0');
+  const date = new Date(Date.UTC(year, monthIndex, 1));
+  return {
+    periodKey: `${year}-${month}`,
+    label: `${date.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' })} '${String(year).slice(2)}`,
+    startDate: `${year}-${month}-01`,
+    endDate: `${year}-${month}-${String(finalCalendarDay(year, monthIndex)).padStart(2, '0')}`,
+  };
+}
+
+/** Aggregates canonical realized economics strictly by contract expiration period. */
+export function buildExpirationPeriodRealizedPnl(
+  trades: readonly PortfolioTrade[],
+  period: RealizedPnlPeriod,
+): ExpirationPeriodRealizedPnl[] {
+  const buckets = new Map<string, Omit<ExpirationPeriodRealizedPnl, 'captured' | 'trades' | 'premiumCollected'>>();
   trades.forEach(trade => {
     const pnl = historyRealizedPnl(trade);
     if (pnl == null || !isIsoDate(trade.expiration)) return;
-    const month = trade.expiration.slice(0, 7);
-    const current = months.get(month) ?? { month, trades: 0, premiumCollected: 0, realizedPnl: 0 };
-    current.trades += 1;
-    current.premiumCollected += historyPremium(trade) ?? 0;
+    const identity = expirationPeriodIdentity(trade.expiration, period);
+    const current = buckets.get(identity.periodKey) ?? { ...identity, tradeCount: 0, premium: 0, realizedPnl: 0 };
+    current.tradeCount += 1;
+    current.premium += historyPremium(trade) ?? 0;
     current.realizedPnl += pnl;
-    months.set(month, current);
+    buckets.set(identity.periodKey, current);
   });
-  return [...months.values()].sort((a, b) => a.month.localeCompare(b.month));
+  return [...buckets.values()]
+    .sort((left, right) => left.startDate.localeCompare(right.startDate))
+    .map(bucket => ({
+      ...bucket,
+      captured: bucket.premium > 0 ? bucket.realizedPnl / bucket.premium : null,
+      trades: bucket.tradeCount,
+      premiumCollected: bucket.premium,
+    }));
+}
+
+export function buildRealizedPnlChartScale(values: readonly number[]): RealizedPnlChartScale {
+  const finite = values.filter(isFiniteNumber);
+  const rawMin = Math.min(0, ...finite);
+  const rawMax = Math.max(0, ...finite);
+  const rawSpan = rawMax - rawMin;
+  const reference = rawSpan > 0 ? rawSpan : Math.max(Math.abs(rawMax), Math.abs(rawMin), 1);
+  const padding = reference * 0.08;
+  const min = rawMin - padding;
+  const max = rawMax + padding;
+  return { min, max, zeroRatio: (max - 0) / (max - min) };
+}
+
+/** Backward-compatible month view; new callers should use buildExpirationPeriodRealizedPnl. */
+export function buildMonthlyRealizedPnl(trades: PortfolioTrade[]) {
+  return buildExpirationPeriodRealizedPnl(trades, 'month').map(bucket => ({
+    month: bucket.periodKey,
+    trades: bucket.tradeCount,
+    premiumCollected: bucket.premium,
+    realizedPnl: bucket.realizedPnl,
+  }));
 }

@@ -77,7 +77,7 @@ test.describe('Recommendations visual matrix', () => {
       await capture(desktop.page, theme, 'desktop-incomplete-run');
 
       await loadFixture(desktop.page, 'actionable');
-      const board = desktop.page.getByRole('heading', { name: 'Opportunity Board' });
+      const board = desktop.page.getByRole('heading', { name: 'Full Opportunity Board / Audit' });
       await board.scrollIntoViewIfNeeded();
       await desktop.page.locator('.recommendations-expand-button').first().click();
       await capture(desktop.page, theme, 'desktop-mixed-opportunity-board');
@@ -85,13 +85,17 @@ test.describe('Recommendations visual matrix', () => {
       await desktop.page.getByRole('button', { name: 'Evidence', exact: true }).first().click();
       await expect(desktop.page.getByRole('dialog', { name: /recommendation evidence/i })).toBeVisible();
       await capture(desktop.page, theme, 'desktop-evidence-drawer');
+      await desktop.page.getByRole('complementary').getByRole('button', { name: /Close recommendation evidence/i }).click();
+      await desktop.page.getByRole('button', { name: 'Full Methodology' }).click();
+      await expect(desktop.page.getByRole('dialog', { name: 'Full Methodology' })).toBeVisible();
+      await capture(desktop.page, theme, 'desktop-methodology');
       await desktop.context.close();
 
       const mobile = await openThemedPage(browser, theme, 390, 844);
       await loadFixture(mobile.page, 'actionable');
       await capture(mobile.page, theme, 'mobile-recommendations');
 
-      const mobileBoard = mobile.page.getByRole('heading', { name: 'Opportunity Board' });
+      const mobileBoard = mobile.page.getByRole('heading', { name: 'Full Opportunity Board / Audit' });
       await mobileBoard.scrollIntoViewIfNeeded();
       await mobile.page.locator('.recommendations-board-mobile-row__summary').first().click();
       await capture(mobile.page, theme, 'mobile-opportunity-board');

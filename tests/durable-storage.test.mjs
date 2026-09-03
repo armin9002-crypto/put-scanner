@@ -18,6 +18,7 @@ import {
 import { migratePreferencesState, readDurablePreferences } from '../src/lib/durablePreferences.ts';
 import { writeValidatedStorageValue } from '../src/lib/durableStorage.ts';
 import { SHOW_NOMINAL_YIELD_KEY } from '../src/lib/optionTablePreferences.ts';
+import { RECOMMENDATIONS_MINIMUM_DTE_KEY } from '../src/lib/recommendationPreferences.ts';
 import { PORTFOLIO_MARK_BASIS_KEY } from '../src/lib/portfolioMarkPreference.ts';
 import {
   PORTFOLIO_EXPIRY_GROUPS_KEY,
@@ -251,6 +252,7 @@ test('portable preferences read legacy keys strictly and exclude session/debug k
     [PORTFOLIO_EXPIRY_GROUPS_KEY]: JSON.stringify({ '2026-10-16': true }),
     [PORTFOLIO_UNDERLYING_GROUPS_KEY]: JSON.stringify({ TQQQ: false }),
     [SHOW_NOMINAL_YIELD_KEY]: 'true',
+    [RECOMMENDATIONS_MINIMUM_DTE_KEY]: 'false',
     'put_scanner:last_url:v1': '/options/TQQQ',
     'put_scanner_debug:v1': 'true',
   });
@@ -263,6 +265,7 @@ test('portable preferences read legacy keys strictly and exclude session/debug k
     collapsedExpirationGroups: { '2026-10-16': true },
     collapsedUnderlyingGroups: { TQQQ: false },
     showNominalYield: true,
+    recommendationsOnlyAtLeast60Dte: false,
   });
   assert.equal('put_scanner:last_url:v1' in result.data, false);
   assert.equal(migratePreferencesState(1, { theme: 'dark', debug: true }).status, 'error');

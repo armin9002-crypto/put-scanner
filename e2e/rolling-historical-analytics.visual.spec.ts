@@ -34,10 +34,10 @@ test.describe('rolling historical analytics UI', () => {
     expect(domain.end).toMatch(/^2026-0[89]-\d{2}$/);
 
     const analytics = chart.getByRole('combobox', { name: 'Analytics' });
-    await expect(analytics.locator('option')).toHaveCount(7);
+    await expect(analytics.locator('option')).toHaveCount(8);
     const initialCloudRequests = cloudHarness.requests.length;
     const initialMarketCounts = [...marketHarness.counts.entries()];
-    const metrics = ['entryAy', 'entryIv', 'entryDelta', 'realizedIrr', 'premiumRunRate', 'grossRiskDeployed', 'originalDte'] as const;
+    const metrics = ['entryAy', 'entryIv', 'entryDelta', 'realizedIrr', 'premiumRunRate', 'originalDte'] as const;
     const periods = ['3', '6', '12'] as const;
     for (const metric of metrics) {
       await analytics.selectOption(metric);
@@ -50,14 +50,20 @@ test.describe('rolling historical analytics UI', () => {
       }
     }
 
+    for (const metric of ['grossRiskExposure', 'averageRemainingDte'] as const) {
+      await analytics.selectOption(metric);
+      await expect(chart.getByText('Point in time', { exact: true })).toBeVisible();
+      await expect(chart.getByRole('button', { name: '6M', exact: true })).toHaveCount(0);
+    }
+
     await analytics.selectOption('entryIv');
     await chart.getByRole('button', { name: '6M', exact: true }).click();
     const plot = chart.getByTestId('rolling-historical-analytics-plot');
     await plot.hover({ position: { x: 60, y: 90 } });
     const tooltip = chart.locator('.rolling-historical-analytics__tooltip');
     await expect(tooltip).toBeVisible();
-    await expect(tooltip).toContainText(/6M rolling window/);
-    await expect(tooltip).toContainText(/trades represented|No full-window observation/);
+    await expect(tooltip).toContainText(/Partial window|Full trailing 6M window/);
+    await expect(tooltip).toContainText(/trades represented|Gross Risk represented/);
     if (await page.evaluate(() => matchMedia('(pointer: coarse)').matches)) await plot.tap({ position: { x: 120, y: 70 } });
 
     expect(cloudHarness.requests.length).toBe(initialCloudRequests);

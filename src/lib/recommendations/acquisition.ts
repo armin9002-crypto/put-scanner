@@ -10,6 +10,7 @@ import { assessUnderlyingUniverse } from './underlying.ts';
 import {
   RECOMMENDATION_ENGINE_VERSION,
   RECOMMENDATION_POLICY_VERSION,
+  recommendationUniverse,
   type RecommendationChainSnapshot,
   type RecommendationRun,
   type RecommendationSnapshot,
@@ -35,6 +36,7 @@ interface RecommendationAcquisitionDependencies {
     expFilter: string;
     signal?: AbortSignal;
     onProgress?: (completedEtfs: number, totalEtfs: number) => void;
+    recommendationUniverse?: { minimumDte: number; maximumDte: number; maximumExpirations: number };
   }) => Promise<ScreenerScanResult>;
   now: () => number;
 }
@@ -110,12 +112,14 @@ function chainSnapshots(scan: ScreenerScanResult): RecommendationChainSnapshot[]
 
 export async function refreshRecommendations(options: {
   scanId: string;
+  onlyEvaluateAtLeast60Dte?: boolean;
   signal?: AbortSignal;
   onProgress?: (progress: RecommendationRefreshProgress) => void;
   dependencies?: Partial<RecommendationAcquisitionDependencies>;
 }): Promise<RecommendationRefreshResult> {
   const dependencies = { ...defaultDependencies, ...options.dependencies };
   const asOf = new Date(dependencies.now()).toISOString();
+  const universe = recommendationUniverse(options.onlyEvaluateAtLeast60Dte ?? true);
   const pulseResult = await dependencies.loadPulse({
     signal: options.signal,
     onProgress: progress => options.onProgress?.({ stage: 'UNDERLYINGS', completed: progress.loaded, total: progress.total, ticker: progress.ticker }),
@@ -131,6 +135,11 @@ export async function refreshRecommendations(options: {
     scanId: options.scanId,
     selectedTickers: requestedForOptionScan,
     expFilter: 'all',
+    recommendationUniverse: {
+      minimumDte: universe.minimumDte,
+      maximumDte: universe.maximumDte,
+      maximumExpirations: universe.maxExpirationsPerUnderlying,
+    },
     signal: options.signal,
     onProgress: (completed, total) => options.onProgress?.({ stage: 'CONTRACTS', completed, total }),
   });
@@ -138,6 +147,18 @@ export async function refreshRecommendations(options: {
   options.onProgress?.({ stage: 'DECISION', completed: 0, total: 1 });
   const built = buildScreenerRows(scan, 'all');
   const chains = chainSnapshots(scan);
+  const expirationPlansByTicker = scan.expirationPlansByTicker ?? new Map(
+    [...scan.initialResults.entries()].map(([ticker, data]) => {
+      const availableExpirationDates = data.expirations.map(expiration => expiration.date);
+      const selectedExpirationDates = chains.filter(chain => chain.ticker === ticker).map(chain => chain.expiration);
+      return [ticker, {
+        availableExpirationDates,
+        eligibleExpirationDates: selectedExpirationDates,
+        selectedExpirationDates,
+        discoveryExpiration: data.chainMeta?.returnedExpiration ?? data.expirations[0]?.date ?? null,
+      }];
+    }),
+  );
   const successful = [...scan.initialResults.keys()].sort();
   const failedByTicker = new Map<string, string>();
   requestedForOptionScan.filter(ticker => !scan.initialResults.has(ticker)).forEach(ticker => failedByTicker.set(ticker, 'No option-chain dataset returned.'));
@@ -155,6 +176,7 @@ export async function refreshRecommendations(options: {
     asOf,
     engineVersion: RECOMMENDATION_ENGINE_VERSION,
     policyVersion: RECOMMENDATION_POLICY_VERSION,
+    universe,
     market: { regime: marketRegime, posture },
     underlyings,
     chains,
@@ -167,6 +189,9 @@ export async function refreshRecommendations(options: {
       failedUnderlyings: [...failedByTicker.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([ticker, message]) => ({ ticker, message })),
       failedBatches: [...scan.failedBatchIds].sort((left, right) => left - right),
       expirationsCovered,
+      expirationPlans: [...expirationPlansByTicker.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([ticker, plan]) => ({ ticker, ...plan })),
       contractsEvaluated: built.rows.length,
       pulse: {
         requested: pulseResult.total,

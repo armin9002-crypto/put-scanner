@@ -64,7 +64,8 @@ import {
   buildHistoryAnalytics,
   buildHistoryGroupAggregates,
   buildHistoryGroups,
-  buildMonthlyRealizedPnl,
+  buildExpirationPeriodRealizedPnl,
+  buildRealizedPnlChartScale,
   filterHistoryTrades,
   historyDaysHeld,
   historyEntryNominalYield,
@@ -79,6 +80,7 @@ import {
   historyRealizedPnl,
   type HistoryGroupMode,
   type HistoryOutcome,
+  type RealizedPnlPeriod,
 } from '../lib/portfolioHistoryAnalytics';
 import { applyTransientPortfolioMarketData, mergePortfolioLifecycleResults, mergePortfolioMarketRefresh } from '../lib/portfolioMarketRefresh';
 import { useResponsiveMode } from '../lib/responsive';
@@ -2589,7 +2591,8 @@ const HISTORY_GROUP_OPTIONS: Array<{ value: HistoryGroupMode; label: string }> =
 ];
 
 function MonthlyRealizedChart({ trades }: { trades: PortfolioTrade[] }) {
-  const months = buildMonthlyRealizedPnl(trades);
+  const [period, setPeriod] = useState<RealizedPnlPeriod>('month');
+  const buckets = useMemo(() => buildExpirationPeriodRealizedPnl(trades, period), [period, trades]);
   const plotRef = useRef<HTMLDivElement>(null);
   const [plotWidth, setPlotWidth] = useState(0);
   useEffect(() => {
@@ -2602,39 +2605,38 @@ function MonthlyRealizedChart({ trades }: { trades: PortfolioTrade[] }) {
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
-  if (months.length === 0) return null;
-  const max = Math.max(...months.map(month => Math.abs(month.realizedPnl)), 1);
+  if (buckets.length === 0) return null;
   const availableWidth = plotWidth || 640;
-  const bandWidth = Math.min(180, Math.max(48, availableWidth / months.length));
-  const barWidth = Math.min(72, Math.max(22, bandWidth * 0.62));
-  const labelFontSize = Math.min(11, Math.max(9, 11 - Math.max(0, months.length - 8) * 0.1));
+  const scrolls = buckets.length > 30;
+  const bandWidth = scrolls ? Math.max(34, Math.min(64, availableWidth / 16)) : availableWidth / buckets.length;
+  const barWidth = Math.min(58, Math.max(5, bandWidth * 0.62));
+  const labelFontSize = Math.min(12, Math.max(9.5, 12 - Math.max(0, buckets.length - 6) * 0.1));
+  const scale = buildRealizedPnlChartScale(buckets.map(bucket => bucket.realizedPnl));
+  const range = scale.max - scale.min || 1;
+  const zeroTop = scale.zeroRatio * 100;
+  const labelStep = Math.max(1, Math.ceil(buckets.length / Math.max(2, Math.floor(availableWidth / 72))));
+  const chartTitle = `Realized P&L by Expiration ${period === 'month' ? 'Month' : period === 'quarter' ? 'Quarter' : 'Year'}`;
   return (
     <section className="portfolio-realized-pnl-chart mb-2 min-w-0 rounded-lg p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-      <div className="mb-2 flex items-center justify-between gap-2"><h3 className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Realized P&amp;L by Expiration Month</h3></div>
-      <div ref={plotRef} className="portfolio-realized-pnl-chart__plot relative flex h-28 min-w-0 items-stretch gap-1 overflow-x-auto overflow-y-hidden px-1">
-        <div className="portfolio-realized-pnl-chart__baseline pointer-events-none absolute inset-x-1 top-1/2 border-t" aria-hidden="true" />
-        {months.map(month => {
-          const captured = month.premiumCollected > 0 ? month.realizedPnl / month.premiumCollected : null;
-          const date = new Date(`${month.month}-01T00:00:00Z`);
-          const label = `${date.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' })} '${month.month.slice(2, 4)}`;
-          const valueLabel = formatMonthlyRealizedPnlLabel(month.realizedPnl);
-          const barHeight = Math.max(5, Math.abs(month.realizedPnl) / max * 26);
-          return <div key={month.month} className="group/month relative flex h-full flex-none flex-col items-center" style={{ width: `${bandWidth}px`, minWidth: `${bandWidth}px` }} title={`${label}\nTrades: ${month.trades}\nPremium: ${formatCurrency(month.premiumCollected, 0)}\nRealized P&L: ${formatCurrency(month.realizedPnl, 0)}\nCaptured: ${formatPctValue(captured)}`}>
-            <div className="relative h-1/2 w-full">
-              {month.realizedPnl > 0 && <div className="portfolio-realized-pnl-chart__bar-stack absolute bottom-0 left-1/2 flex -translate-x-1/2 flex-col items-center">
-                {valueLabel && <span data-chart-pnl-label className="portfolio-realized-pnl-chart__value portfolio-realized-pnl-chart__value--positive" style={{ fontSize: `${labelFontSize}px` }}>{valueLabel}</span>}
-                <div className="rounded-t transition-opacity hover:opacity-80 motion-reduce:transition-none" style={{ width: `${barWidth}px`, height: `${barHeight}px`, backgroundColor: 'var(--positive)' }} />
-              </div>}
-            </div>
-            <div className="relative h-1/2 w-full">
-              {month.realizedPnl < 0 && <div className="portfolio-realized-pnl-chart__bar-stack absolute left-1/2 top-0 flex -translate-x-1/2 flex-col items-center">
-                <div className="rounded-b transition-opacity hover:opacity-80 motion-reduce:transition-none" style={{ width: `${barWidth}px`, height: `${barHeight}px`, backgroundColor: 'var(--negative)' }} />
-                {valueLabel && <span data-chart-pnl-label className="portfolio-realized-pnl-chart__value portfolio-realized-pnl-chart__value--negative" style={{ fontSize: `${labelFontSize}px` }}>{valueLabel}</span>}
-              </div>}
-              <span data-chart-month-label className="portfolio-realized-pnl-chart__month absolute bottom-0 left-1/2 -translate-x-1/2 whitespace-nowrap" style={{ fontSize: `${labelFontSize}px` }}>{label}</span>
-            </div>
-          </div>;
-        })}
+      <div className="portfolio-realized-pnl-chart__header"><h3>{chartTitle}</h3><label><span>Period</span><select aria-label="Realized P&L period" value={period} onChange={event => setPeriod(event.target.value as RealizedPnlPeriod)}><option value="month">Month</option><option value="quarter">Quarter</option><option value="year">Year</option></select></label></div>
+      <div ref={plotRef} className={`portfolio-realized-pnl-chart__plot ${scrolls ? 'is-scrollable' : ''}`} data-bucket-count={buckets.length} data-scroll-mode={scrolls ? 'contained' : 'fit'}>
+        <div className="portfolio-realized-pnl-chart__canvas" style={{ width: scrolls ? `${bandWidth * buckets.length}px` : '100%', gridTemplateColumns: `repeat(${buckets.length}, minmax(0, 1fr))` }}>
+          <div className="portfolio-realized-pnl-chart__baseline" style={{ top: `${zeroTop}%` }} aria-hidden="true" />
+          {buckets.map((bucket, index) => {
+            const valueTop = (scale.max - bucket.realizedPnl) / range * 100;
+            const top = Math.min(valueTop, zeroTop);
+            const height = Math.max(1.5, Math.abs(valueTop - zeroTop));
+            const valueLabel = formatMonthlyRealizedPnlLabel(bucket.realizedPnl);
+            const showAxisLabel = index === 0 || index === buckets.length - 1 || index % labelStep === 0;
+            const showValue = buckets.length <= 15 || showAxisLabel;
+            const edgeClass = index === 0 ? 'is-first' : index === buckets.length - 1 ? 'is-last' : '';
+            return <div key={bucket.periodKey} className="portfolio-realized-pnl-chart__slot" title={`${bucket.label}\nPeriod: ${bucket.startDate} to ${bucket.endDate}\nTrades: ${bucket.tradeCount}\nPremium: ${formatCurrency(bucket.premium, 0)}\nRealized P&L: ${formatCurrency(bucket.realizedPnl, 0)}\nCaptured: ${formatPctValue(bucket.captured)}`}>
+              {bucket.realizedPnl !== 0 && <div className={`portfolio-realized-pnl-chart__bar ${bucket.realizedPnl > 0 ? 'is-positive' : 'is-negative'}`} style={{ top: `${top}%`, height: `${height}%`, width: `${barWidth}px` }} />}
+              {showValue && valueLabel && <span data-chart-pnl-label className={`portfolio-realized-pnl-chart__value ${edgeClass} ${bucket.realizedPnl >= 0 ? 'portfolio-realized-pnl-chart__value--positive' : 'portfolio-realized-pnl-chart__value--negative'}`} style={{ top: bucket.realizedPnl >= 0 ? `calc(${top}% - 14px)` : `calc(${top + height}% + 3px)`, fontSize: `${labelFontSize}px` }}>{valueLabel}</span>}
+              {showAxisLabel && <span data-chart-period-label className={`portfolio-realized-pnl-chart__month ${edgeClass}`} style={{ fontSize: `${labelFontSize}px` }}>{bucket.label}</span>}
+            </div>;
+          })}
+        </div>
       </div>
     </section>
   );

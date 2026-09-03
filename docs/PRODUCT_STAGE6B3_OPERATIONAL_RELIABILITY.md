@@ -128,12 +128,12 @@ Expected and regression ceiling are equal for the browser, function, and logical
 | Explicit expiry change | 1/1 | 1/1 | 1/1 | 6 |
 | Option Drawer | 0/0 | 0/0 | 0/0 | 0 |
 | ETF Pulse | 1/1 | 1/1 | 44/44 | 44 |
-| Recommendations explicit refresh, cold full universe | 15/15 | 15/15 | 170/170 | 240 |
+| Recommendations explicit refresh, cold full universe (up to three selected tenors plus discovery) | 15/15 | 15/15 | 254/254 | 324 |
 | Recommendations board/evidence/export interactions | 0/0 | 0/0 | 0/0 | 0 |
 
 The HTTP maximum is a conservative transport guard for a cold Yahoo option session and one compatible authentication retry. It is not the expected steady-state count. Browser and function ceilings intentionally fail material graph multiplication even when transport fallback is legitimate.
 
-Recommendations composes the existing cache-aware Pulse acquisition (1 browser/function request and 44 histories) with the existing fourteen-chunk Screener standard-expiration plan (14 browser/function requests and 126 logical acquisitions). Hard-failed underlyings can remove chunk work; cache hits can remove provider work. Opening the page, sorting or expanding its Opportunity Board, opening evidence, using near misses/hover, selecting recommendations, and exporting the in-memory snapshot make no market request.
+Recommendations composes the existing cache-aware Pulse acquisition (1 browser/function request and 44 histories) with the same fourteen Screener batches. Each of up to 42 qualified ETFs performs one metadata/discovery chain, selects at most three bounded near/middle/far expirations, and reuses discovery when it is selected; one volatility-context operation reuses the discovery payload. The 254 count is the cold worst case, not steady state. A compatible warm cache removes provider work, while hard fails, sparse calendars, and discovery reuse reduce it. Opening the page, sorting/expanding/showing the Opportunity Board, opening evidence or Decision Trace/Methodology, using near misses/hover, selecting recommendations, and exporting the in-memory snapshot make no market request.
 
 Dynamic Watchlist/Portfolio fixtures use one browser/function price request when `T > 0`, plus `U` unique option-chain requests; logical provider acquisitions are `ceil(T/20) + U`.
 

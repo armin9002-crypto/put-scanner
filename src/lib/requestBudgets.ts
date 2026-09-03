@@ -68,7 +68,7 @@ export const REQUEST_BUDGET_LEDGER: Record<RequestBudgetWorkflow, RequestBudgetL
     expected: { browserRequests: 0, functionInvocations: 0, providerAcquisitions: 0 },
     ceiling: { browserRequests: 0, functionInvocations: 0, providerAcquisitions: 0 },
     providerHttpAttemptCeiling: 0,
-    fixture: 'metric, period, hover, and chart-date changes derive rolling series from in-memory Portfolio trades only',
+    fixture: 'rolling metric/window, portfolio-state metric, P&L period, hover, and chart-date changes derive from in-memory Portfolio trades only',
   },
   'portfolio-entry-delta-capture': {
     expected: { browserRequests: 0, functionInvocations: 0, providerAcquisitions: 0 },
@@ -125,16 +125,16 @@ export const REQUEST_BUDGET_LEDGER: Record<RequestBudgetWorkflow, RequestBudgetL
     fixture: 'one aggregate dataset with 44 cold history acquisitions',
   },
   'recommendations-refresh': {
-    expected: { browserRequests: 15, functionInvocations: 15, providerAcquisitions: 170 },
-    ceiling: { browserRequests: 15, functionInvocations: 15, providerAcquisitions: 170 },
-    providerHttpAttemptCeiling: 240,
-    fixture: 'one cache-aware 44-symbol Pulse dataset plus the established 42-ETF, two-standard-expiration Screener plan; hard-fails can reduce batches',
+    expected: { browserRequests: 15, functionInvocations: 15, providerAcquisitions: 254 },
+    ceiling: { browserRequests: 15, functionInvocations: 15, providerAcquisitions: 254 },
+    providerHttpAttemptCeiling: 324,
+    fixture: 'cold upper bound: one cache-aware 44-symbol Pulse dataset plus 42 qualified ETFs with one metadata/discovery chain, at most three selected representative chains, and one volatility-context acquisition each; warm cache hits and hard-fails reduce actual work',
   },
   'recommendations-local-interactions': {
     expected: { browserRequests: 0, functionInvocations: 0, providerAcquisitions: 0 },
     ceiling: { browserRequests: 0, functionInvocations: 0, providerAcquisitions: 0 },
     providerHttpAttemptCeiling: 0,
-    fixture: 'board sort/expand, recommendation selection, evidence drawer, near misses, hover, and evaluation export use the in-memory run',
+    fixture: 'board sort/expand/show-all, recommendation selection, evidence, Decision Trace, methodology, near misses, hover, and evaluation export use the in-memory run',
   },
 };
 

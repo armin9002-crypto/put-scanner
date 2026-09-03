@@ -137,9 +137,11 @@ test('Recommendations loads with zero market calls, refreshes through the bounde
   }
 
   const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Full Methodology' }).click();
+  await expect(page.getByRole('dialog', { name: 'Full Methodology' })).toBeVisible();
   await page.getByRole('button', { name: /Export Evaluation Snapshot/ }).click();
   const download = await downloadPromise;
-  expect(download.suggestedFilename()).toMatch(/^put-scanner-recommendations-v1-/);
+  expect(download.suggestedFilename()).toMatch(/^put-scanner-recommendations-v2-/);
   expect([...marketHarness.counts.values()].reduce((sum, count) => sum + count, 0)).toBe(afterRefresh);
   expect(consoleErrors, consoleErrors.join('\n')).toEqual([]);
 });

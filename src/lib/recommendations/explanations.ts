@@ -7,6 +7,7 @@ const REASON_COPY: Record<RecommendationReasonCode, string> = {
   CLEAN_DIRECT_MARKET: 'A real two-sided market and coherent neighboring strikes support the displayed bid.',
   COHERENT_PRICE_BRACKET: 'Usable same-expiration strikes bracket the contract with coherent market evidence.',
   DEFENSIVE_TRADEOFF_FAVORABLE: 'The additional cushion is material relative to the compensation surrendered.',
+  DURATION_NOT_COMPENSATED: 'The longer commitment does not add enough yield or defensive value.',
   DOWNSIDE_TAIL_RISK: 'A short put retains assignment and gap risk even with substantial current cushion.',
   DTE_OUTSIDE_POSTURE: 'Days to expiration fall outside the current Market Read posture.',
   EVIDENCE_GAPS: 'Important technical or contract evidence is unavailable.',
@@ -16,6 +17,7 @@ const REASON_COPY: Record<RecommendationReasonCode, string> = {
   INVALID_CONTRACT: 'Required contract or quote structure is invalid.',
   MARGINAL_COMPENSATION: 'The additional compensation is too small for the added Delta or lost cushion.',
   MISSING_DELTA: 'Delta is unavailable, so the risk policy cannot be fully verified.',
+  LONGER_DURATION_DEFENSIVE_VALUE: 'The longer tenor earns consideration through materially better Delta or cushion with limited yield give-up.',
   NO_CLEAR_LEADER: 'Finalists are effectively tied or contain unresolved tradeoffs.',
   NO_DIRECT_BID: 'No displayed seller bid is available.',
   POOR_RELATIVE_VALUE: 'A comparable contract is materially better without a critical disadvantage.',
@@ -24,6 +26,7 @@ const REASON_COPY: Record<RecommendationReasonCode, string> = {
   RELATIVE_HURDLE_CLEARED: 'Compensation clears the premium required over a safer comparable contract.',
   ROBUSTNESS_LOW: 'The conclusion changes under small, explicit policy or price perturbations.',
   STALE_EVIDENCE: 'Material market evidence is stale.',
+  SHORTER_DURATION_EFFICIENT: 'The shorter tenor retains comparable economics and risk evidence with less time committed.',
   STRONG_CUSHION: 'Strike and breakeven cushions clear the posture with room to spare.',
   SUPPORTIVE_UNDERLYING: 'Trend, reset, volatility, and regime evidence support the underlying setup.',
   VOLATILITY_NOT_RICH_ENOUGH: 'Volatility compensation is not rich enough relative to the available evidence.',
@@ -49,8 +52,11 @@ export function buildCandidateExplanation(candidate: RecommendationCandidate): {
       ? `The ${pct(range.low)}–${pct(range.high)} indicative AY range reaches a ${pct(candidate.minimumAttractiveCredit.requiredAnnualizedYieldPct)} hurdle`
       : 'Pricing evidence does not establish qualifying seller compensation';
   const deltaEvidence = candidate.economics.delta == null ? 'unavailable Delta' : `${Math.abs(candidate.economics.delta).toFixed(2)} absolute Delta`;
-  const why = `${compensation}; ${deltaEvidence} and ${pct(candidate.economics.moneynessPct)} OTM are assessed against a ${candidate.underlying.setup.toLowerCase()} underlying setup.`;
-  const tradeoff = reasonCopy(candidate.skeptic.code);
+  const durationReason = candidate.comparisons.flatMap(comparison => comparison.reasonCodes)
+    .find(code => code === 'LONGER_DURATION_DEFENSIVE_VALUE' || code === 'SHORTER_DURATION_EFFICIENT');
+  const why = `${compensation}; ${deltaEvidence} and ${pct(candidate.economics.moneynessPct)} OTM are assessed against a ${candidate.underlying.setup.toLowerCase()} underlying setup.${durationReason ? ` ${reasonCopy(durationReason)}` : ''}`;
+  const durationTradeoff = candidate.comparisons.flatMap(comparison => comparison.reasonCodes).find(code => code === 'DURATION_NOT_COMPENSATED');
+  const tradeoff = reasonCopy(durationTradeoff ?? candidate.skeptic.code);
   return { why, tradeoff };
 }
 

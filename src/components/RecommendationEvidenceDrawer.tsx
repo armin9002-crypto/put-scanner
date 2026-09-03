@@ -82,7 +82,7 @@ function EvidenceContent({ candidate, run }: { candidate: RecommendationCandidat
         <div className="space-y-1">
           {candidate.policyChecks.map((check, index) => (
             <div key={`${check.code}-${index}`} className="grid grid-cols-[4.5rem_1fr] gap-2 border-b py-1 text-[11px] last:border-0" style={{ borderColor: 'var(--border)' }}>
-              <span style={{ color: check.passed ? 'var(--text-muted)' : 'var(--yellow)' }}>{check.passed ? 'CLEAR' : 'NOT CLEAR'}</span>
+              <span style={{ color: check.severity === 'INFORMATIONAL' || check.passed ? 'var(--text-muted)' : 'var(--yellow)' }}>{check.severity === 'INFORMATIONAL' ? 'CONTEXT' : check.passed ? 'CLEAR' : 'NOT CLEAR'}</span>
               <span style={{ color: 'var(--text-secondary)' }}>{check.detail}</span>
             </div>
           ))}
@@ -94,7 +94,7 @@ function EvidenceContent({ candidate, run }: { candidate: RecommendationCandidat
       </section>
 
       <section className="recommendation-evidence-section">
-        <div className="recommendation-evidence-section__title">Dominance and pairwise evidence</div>
+        <div className="recommendation-evidence-section__title">Dominance, cross-duration, and pairwise evidence</div>
         <div className="grid grid-cols-2 gap-2 text-[11px]">
           <KeyFigure label="Dominates" value={candidate.dominates.length ? candidate.dominates.join(', ') : 'None'} />
           <KeyFigure label="Dominated By" value={candidate.dominatedBy.length ? candidate.dominatedBy.join(', ') : 'None'} />

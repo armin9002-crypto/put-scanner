@@ -1,4 +1,5 @@
 import { SHOW_NOMINAL_YIELD_KEY } from './optionTablePreferences.ts';
+import { RECOMMENDATIONS_MINIMUM_DTE_KEY } from './recommendationPreferences.ts';
 import { PORTFOLIO_MARK_BASIS_KEY, PORTFOLIO_MARK_BASIS_OPTIONS } from './portfolioMarkPreference.ts';
 import {
   PORTFOLIO_EXPIRY_GROUPS_KEY,
@@ -31,6 +32,7 @@ export interface DurablePreferences {
   collapsedExpirationGroups?: Record<string, boolean>;
   collapsedUnderlyingGroups?: Record<string, boolean>;
   showNominalYield?: boolean;
+  recommendationsOnlyAtLeast60Dte?: boolean;
 }
 
 export type DurablePreferencesEnvelopeV1 = DurableStateEnvelope<DurablePreferences, 1>;
@@ -44,6 +46,7 @@ const PORTABLE_FIELDS = new Set([
   'collapsedExpirationGroups',
   'collapsedUnderlyingGroups',
   'showNominalYield',
+  'recommendationsOnlyAtLeast60Dte',
 ]);
 
 function validateBooleanRecord(value: unknown, field: string): Record<string, boolean> {
@@ -93,6 +96,10 @@ export function migratePreferencesState(inputVersion: number, value: unknown): P
       if (typeof value.showNominalYield !== 'boolean') throw new Error('showNominalYield must be boolean.');
       data.showNominalYield = value.showNominalYield;
     }
+    if (value.recommendationsOnlyAtLeast60Dte !== undefined) {
+      if (typeof value.recommendationsOnlyAtLeast60Dte !== 'boolean') throw new Error('recommendationsOnlyAtLeast60Dte must be boolean.');
+      data.recommendationsOnlyAtLeast60Dte = value.recommendationsOnlyAtLeast60Dte;
+    }
     return { status: 'ok', data };
   } catch (error) {
     return { status: 'error', error: error instanceof Error ? error.message : 'Preferences data is invalid.' };
@@ -121,7 +128,8 @@ export function readDurablePreferences(
     const expiryGroups = storage.getItem(PORTFOLIO_EXPIRY_GROUPS_KEY);
     const underlyingGroups = storage.getItem(PORTFOLIO_UNDERLYING_GROUPS_KEY);
     const showNominal = storage.getItem(SHOW_NOMINAL_YIELD_KEY);
-    const hasPortableValue = [themeCurrent, themeLegacy, markBasis, groupMode, expiryGroups, underlyingGroups, showNominal]
+    const recommendationsOnlyAtLeast60Dte = storage.getItem(RECOMMENDATIONS_MINIMUM_DTE_KEY);
+    const hasPortableValue = [themeCurrent, themeLegacy, markBasis, groupMode, expiryGroups, underlyingGroups, showNominal, recommendationsOnlyAtLeast60Dte]
       .some(value => value !== null);
     if (!hasPortableValue) return { status: 'missing' };
 
@@ -151,6 +159,10 @@ export function readDurablePreferences(
     if (showNominal !== null) {
       if (showNominal !== 'true' && showNominal !== 'false') throw new Error(`${SHOW_NOMINAL_YIELD_KEY} is invalid.`);
       data.showNominalYield = showNominal === 'true';
+    }
+    if (recommendationsOnlyAtLeast60Dte !== null) {
+      if (recommendationsOnlyAtLeast60Dte !== 'true' && recommendationsOnlyAtLeast60Dte !== 'false') throw new Error(`${RECOMMENDATIONS_MINIMUM_DTE_KEY} is invalid.`);
+      data.recommendationsOnlyAtLeast60Dte = recommendationsOnlyAtLeast60Dte === 'true';
     }
     return {
       status: 'ok',

@@ -75,7 +75,7 @@ async function measurePortfolio(page: Page, testInfo: TestInfo, name: string) {
       historyGroupRowHeights: heights('.portfolio-history-table tbody tr.portfolio-history-group-subtotal'),
       mobileActiveRowHeights: heights('.mobile-position-row'),
       mobileHistoryRowHeights: heights('.portfolio-history-mobile-row'),
-      chartMonthLabels: visible('[data-chart-month-label]').map(element => element.textContent?.trim() ?? ''),
+      chartPeriodLabels: visible('[data-chart-period-label]').map(element => element.textContent?.trim() ?? ''),
       chartValueLabels: visible('[data-chart-pnl-label]').map(element => element.textContent?.trim() ?? ''),
     };
   });
@@ -116,9 +116,9 @@ async function assertRenderedHistoryDensity(page: Page) {
   const heights = await cards.evaluateAll(elements => elements.map(element => element.getBoundingClientRect().height));
   expect(Math.max(...heights) - Math.min(...heights)).toBeLessThan(1);
   await expect(page.getByText('Realized P&L by Expiration Month', { exact: true })).toBeVisible();
-  const monthLabels = page.locator('[data-chart-month-label]:visible');
-  await expect(monthLabels).toHaveCount(4);
-  for (const label of await monthLabels.allTextContents()) expect(label.trim()).toMatch(/^[A-Z][a-z]{2} '\d{2}$/);
+  const periodLabels = page.locator('[data-chart-period-label]:visible');
+  await expect(periodLabels).toHaveCount(4);
+  for (const label of await periodLabels.allTextContents()) expect(label.trim()).toMatch(/^[A-Z][a-z]{2} '\d{2}$/);
   const valueLabels = page.locator('[data-chart-pnl-label]:visible');
   await expect(valueLabels).toHaveCount(3);
   const values = (await valueLabels.allTextContents()).map(value => value.trim());
@@ -128,8 +128,8 @@ async function assertRenderedHistoryDensity(page: Page) {
   expect(values.every(value => !/\.\d/.test(value))).toBe(true);
   await expect(page.locator('.portfolio-realized-pnl-chart__value--positive:visible')).toHaveCount(1);
   await expect(page.locator('.portfolio-realized-pnl-chart__value--negative:visible')).toHaveCount(2);
-  const chartLabelSizes = await page.locator('[data-chart-month-label]:visible, [data-chart-pnl-label]:visible').evaluateAll(elements => elements.map(element => parseFloat(getComputedStyle(element).fontSize)));
-  expect(chartLabelSizes.every(size => size >= 9 && size <= 11)).toBe(true);
+  const chartLabelSizes = await page.locator('[data-chart-period-label]:visible, [data-chart-pnl-label]:visible').evaluateAll(elements => elements.map(element => parseFloat(getComputedStyle(element).fontSize)));
+  expect(chartLabelSizes.every(size => size >= 9 && size <= 12)).toBe(true);
   const activeRows = page.locator('.portfolio-schedule-surface tbody tr[data-trade-id]:visible');
   const historyRows = page.locator('.portfolio-history-table tbody tr:not(.portfolio-history-group-subtotal):visible');
   if (await activeRows.count() && await historyRows.count()) {
@@ -153,7 +153,7 @@ async function captureRollingAnalyticsStates(page: Page, testInfo: TestInfo) {
   await chart.scrollIntoViewIfNeeded();
   await expect(chart).toBeVisible();
   const analytics = chart.getByRole('combobox', { name: 'Analytics' });
-  await expect(analytics.locator('option')).toHaveCount(7);
+  await expect(analytics.locator('option')).toHaveCount(8);
   const states = [
     ['entryAy', '3', 'entry-ay-3m'],
     ['entryAy', '6', 'entry-ay-6m'],
@@ -161,13 +161,15 @@ async function captureRollingAnalyticsStates(page: Page, testInfo: TestInfo) {
     ['entryDelta', '12', 'entry-delta-12m'],
     ['realizedIrr', '6', 'realized-irr-6m'],
     ['premiumRunRate', '3', 'premium-3m'],
-    ['grossRiskDeployed', '12', 'gross-risk-12m'],
     ['originalDte', '6', 'original-dte-6m'],
+    ['grossRiskExposure', null, 'gross-risk-exposure'],
+    ['averageRemainingDte', null, 'average-remaining-dte'],
   ] as const;
   const domain = await chart.evaluate(element => ({ start: element.getAttribute('data-rolling-domain-start'), end: element.getAttribute('data-rolling-domain-end') }));
   for (const [metric, period, name] of states) {
     await analytics.selectOption(metric);
-    await chart.getByRole('button', { name: `${period}M`, exact: true }).click();
+    if (period) await chart.getByRole('button', { name: `${period}M`, exact: true }).click();
+    else await expect(chart.getByText('Point in time', { exact: true })).toBeVisible();
     await expect(chart).toHaveAttribute('data-rolling-domain-start', domain.start ?? '');
     await expect(chart).toHaveAttribute('data-rolling-domain-end', domain.end ?? '');
     await capture(page, testInfo, `portfolio-rolling-${name}`);

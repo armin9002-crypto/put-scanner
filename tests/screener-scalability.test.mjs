@@ -8,7 +8,7 @@ import {
   SCREENER_SERVER_CONCURRENCY,
   SCREENER_TICKERS,
 } from '../shared/screenerUniverse.js';
-import { buildScreenerBatch, buildScreenerExpirationDataset, responseBytes, SCREENER_BATCH_MAX_BYTES } from '../api/_lib/screenerBatch.js';
+import { buildScreenerBatch, buildScreenerExpirationDataset, planRepresentativeExpirations, responseBytes, SCREENER_BATCH_MAX_BYTES } from '../api/_lib/screenerBatch.js';
 import { calculateIvVsRealizedVolFromCloses, currentAtmIvFromOptionData } from '../api/_lib/ivRank.js';
 import {
   createLatestScreenerScanGate,
@@ -154,6 +154,37 @@ test('server batch reuses initial options for realized-vol context, isolates fai
   assert.equal(dataset.tickers.AGQ.ivVsRealizedRange, 40);
   assert.deepEqual(Object.keys(dataset.tickers.BOIL.additionalChains), []);
   assert.ok(Date.now() - startedAt < 1_000, 'deterministic mocked cold-batch fixture should complete well below one second');
+});
+
+test('Recommendations representative planner measures three selected tenors plus bounded discovery and volatility work', async () => {
+  const nowMs = Date.parse('2026-09-02T15:00:00.000Z');
+  const day = Math.floor(Date.parse('2026-09-02T00:00:00.000Z') / 1_000);
+  const expirations = [30, 60, 90, 180, 365, 400].map(dte => day + dte * 86_400);
+  const optionCalls = [];
+  const dataset = await buildScreenerBatch({
+    chunkId: 0,
+    representativeExpirationPlan: true,
+    minimumDte: 60,
+    maximumDte: 365,
+    maximumExpirations: 3,
+    nowMs,
+    fetchOptions: async (ticker, date, options) => {
+      options.onAttempt?.();
+      optionCalls.push({ ticker, date });
+      return yahooChain(ticker, date ?? expirations[0], expirations);
+    },
+    fetchVolatilityContext: async (_ticker, options) => {
+      options.onAttempt?.();
+      return { currentIV: 80, rangePosition: 40, observationPercent: 50 };
+    },
+  });
+  const planned = planRepresentativeExpirations(expirations, { nowMs, minimumDte: 60, maximumDte: 365, maximumCount: 3 });
+  assert.deepEqual(planned.selected, [expirations[1], expirations[2], expirations[4]]);
+  assert.ok(Object.values(dataset.tickers).every(ticker => ticker.selectedExpirationDates.length === 3));
+  assert.equal(dataset.diagnostics.plannedOptionChains, 12, 'three discovery chains plus nine selected representative chains');
+  assert.equal(optionCalls.length, 12);
+  assert.equal(dataset.diagnostics.upstreamRequests, 15, 'option work plus one reused-input volatility calculation per ETF');
+  assert.equal(dataset.complete, true);
 });
 
 test('expiration discovery consolidates seven browser calls behind one bounded partial-safe dataset', async () => {

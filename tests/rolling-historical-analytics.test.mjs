@@ -8,6 +8,7 @@ import { calculateOriginalAnnualizedYield, calculateOriginalDte } from '../src/l
 import { historyRealizedIrr } from '../src/lib/portfolioHistoryAnalytics.ts';
 import { canonicalHistoricalRealizedDate } from '../src/lib/portfolioRealizedEconomics.ts';
 import { REQUEST_BUDGET_LEDGER } from '../src/lib/requestBudgets.ts';
+import { PORTFOLIO_HISTORICAL_STATE_METRIC_CONFIGS } from '../src/lib/portfolioHistoricalStateAnalytics.ts';
 import {
   ROLLING_HISTORICAL_METRIC_CONFIGS,
   ROLLING_WINDOW_MONTHS,
@@ -38,13 +39,14 @@ const close = (actual, expected, message, tolerance = 1e-12) => {
   assert.ok(Math.abs(actual - expected) <= tolerance, `${message}: expected ${expected}, received ${actual}`);
 };
 
-test('the product surface is exactly seven explicit metrics and three supported windows', () => {
+test('the product surface separates six rolling metrics from two portfolio-state metrics', () => {
   assert.deepEqual(ROLLING_WINDOW_MONTHS, [3, 6, 12]);
   assert.deepEqual(
     ROLLING_HISTORICAL_METRIC_CONFIGS.map(config => config.key),
-    ['realizedIrr', 'entryAy', 'premiumRunRate', 'grossRiskDeployed', 'entryDelta', 'entryIv', 'originalDte'],
+    ['realizedIrr', 'entryAy', 'premiumRunRate', 'entryDelta', 'entryIv', 'originalDte'],
   );
-  assert.equal(new Set(ROLLING_HISTORICAL_METRIC_CONFIGS.map(config => config.key)).size, 7);
+  assert.equal(new Set(ROLLING_HISTORICAL_METRIC_CONFIGS.map(config => config.key)).size, 6);
+  assert.deepEqual(PORTFOLIO_HISTORICAL_STATE_METRIC_CONFIGS.map(config => config.key), ['grossRiskExposure', 'averageRemainingDte']);
   for (const config of ROLLING_HISTORICAL_METRIC_CONFIGS) {
     assert.ok(config.label && config.formatterCategory && config.tooltipMetadata.length > 0);
     assert.match(config.title(6), /6M/);
@@ -61,10 +63,10 @@ test('all metrics and lookbacks share the earliest-entry domain, Friday grid, an
   ];
   const baseline = buildRollingHistoricalAnalyticsSeries(trades, 'entryAy', 3, asOf);
   assert.deepEqual(baseline.domain, { startDate: '2025-01-01', endDate: '2026-08-31' });
-  assert.equal(baseline.observationDates[0], '2025-01-03');
+  assert.equal(baseline.observationDates[0], '2025-01-01');
   assert.equal(baseline.observationDates.at(-1), '2026-08-31');
   assert.equal(new Date(`${baseline.observationDates.at(-2)}T00:00:00Z`).getUTCDay(), 5);
-  baseline.observationDates.slice(0, -1).forEach(date => assert.equal(new Date(`${date}T00:00:00Z`).getUTCDay(), 5));
+  baseline.observationDates.slice(1, -1).forEach(date => assert.equal(new Date(`${date}T00:00:00Z`).getUTCDay(), 5));
 
   for (const config of ROLLING_HISTORICAL_METRIC_CONFIGS) {
     for (const months of ROLLING_WINDOW_MONTHS) {
@@ -78,12 +80,12 @@ test('all metrics and lookbacks share the earliest-entry domain, Friday grid, an
 });
 
 test('observation dates are deterministic when the domain has no Friday and do not duplicate a Friday terminal', () => {
-  assert.deepEqual(buildRollingObservationDates('2026-08-29', '2026-08-31'), ['2026-08-31']);
+  assert.deepEqual(buildRollingObservationDates('2026-08-29', '2026-08-31'), ['2026-08-29', '2026-08-31']);
   assert.deepEqual(buildRollingObservationDates('2026-08-28', '2026-08-28'), ['2026-08-28']);
   assert.deepEqual(buildRollingObservationDates('bad', '2026-08-28'), []);
 });
 
-test('calendar lookbacks clamp month ends, use inclusive boundaries, and suppress every partial window', () => {
+test('calendar lookbacks clamp month ends, use inclusive boundaries, and calculate valid partial windows', () => {
   assert.equal(subtractRollingCalendarMonths('2026-05-31', 3), '2026-02-28');
   assert.equal(subtractRollingCalendarMonths('2024-05-31', 3), '2024-02-29');
   assert.equal(subtractRollingCalendarMonths('2026-08-31', 6), '2026-02-28');
@@ -92,11 +94,12 @@ test('calendar lookbacks clamp month ends, use inclusive boundaries, and suppres
   const earliest = trade({ id: 'origin', soldDate: '2026-01-01', expiration: '2026-02-01', entryIv: 30 });
   for (const months of ROLLING_WINDOW_MONTHS) {
     const series = buildRollingHistoricalAnalyticsSeries([earliest], 'entryIv', months, asOf);
-    const incomplete = series.points.find(point => point.windowStartDate < '2026-01-01');
-    assert.equal(incomplete?.fullWindow, false);
-    assert.equal(incomplete?.value, null);
-    assert.equal(incomplete?.tradesIncluded, 0);
-    assert.equal(incomplete?.grossRiskRepresented, 0);
+    const partial = series.points.find(point => point.requestedWindowStart < '2026-01-01');
+    assert.equal(partial?.fullWindow, false);
+    assert.equal(partial?.value, 30);
+    assert.equal(partial?.effectiveWindowStart, '2026-01-01');
+    assert.equal(partial?.requestedWindowMonths, months);
+    assert.ok(partial?.availableDays >= 0);
   }
 
   const rows = [
@@ -213,7 +216,7 @@ test('Realized IRR uses actual close, expiration, and assignment resolution date
   assert.ok(historyRealizedIrr(assignedLoss) < 0, 'negative realized returns remain signed');
 });
 
-test('flow metrics include open and resolved originations, annualize 3/6/12 months, and use zero for a quiet full window', () => {
+test('premium flow includes open and resolved originations, preserves 3/6/12 factors, and uses zero for a quiet full window', () => {
   const origin = trade({ id: 'origin', soldDate: '2024-01-01' });
   const open = trade({ id: 'open', soldDate: '2026-05-31', strike: 50, soldPrice: 1 });
   const resolved = trade({
@@ -222,7 +225,6 @@ test('flow metrics include open and resolved originations, annualize 3/6/12 mont
   });
   const rows = [origin, open, resolved];
   const premiumRaw = 500;
-  const riskRaw = 25_000;
   for (const months of ROLLING_WINDOW_MONTHS) {
     const factor = 12 / months;
     const premium = terminalPoint(buildRollingHistoricalAnalyticsSeries(rows, 'premiumRunRate', months, asOf));
@@ -233,11 +235,6 @@ test('flow metrics include open and resolved originations, annualize 3/6/12 mont
       annualizationFactor: factor,
       annualizedValue: premiumRaw * factor,
     });
-    const grossRisk = terminalPoint(buildRollingHistoricalAnalyticsSeries(rows, 'grossRiskDeployed', months, asOf));
-    assert.equal(grossRisk.value, riskRaw * factor);
-    assert.equal(grossRisk.flow.trailingValue, riskRaw);
-    assert.equal(grossRisk.flow.annualizationFactor, factor);
-    assert.equal(grossRisk.grossRiskRepresented, riskRaw);
   }
 
   const quiet = terminalPoint(buildRollingHistoricalAnalyticsSeries([origin], 'premiumRunRate', 3, asOf));
@@ -250,7 +247,7 @@ test('flow metrics include open and resolved originations, annualize 3/6/12 mont
   });
 });
 
-test('all seven terminal calculations reconcile to manual fixture economics', () => {
+test('all six rolling terminal calculations reconcile to manual fixture economics', () => {
   const origin = trade({ id: 'origin', soldDate: '2025-01-01' });
   const entry = trade({
     id: 'entry', soldDate: '2026-06-01', expiration: '2026-07-01', strike: 50,
@@ -269,7 +266,6 @@ test('all seven terminal calculations reconcile to manual fixture economics', ()
     realizedIrr: historyRealizedIrr(realized),
     entryAy: (calculateOriginalAnnualizedYield(entry) * riskOne + calculateOriginalAnnualizedYield(realized) * riskTwo) / totalRisk,
     premiumRunRate: (300 + 400) * 4,
-    grossRiskDeployed: totalRisk * 4,
     entryDelta: (-0.25 * riskOne + -0.5 * riskTwo) / totalRisk,
     entryIv: (55 * riskOne + 75 * riskTwo) / totalRisk,
     originalDte: 30,
@@ -292,7 +288,7 @@ test('the calculation engine remains local, derived, raw-number-only, and free o
     expected: { browserRequests: 0, functionInvocations: 0, providerAcquisitions: 0 },
     ceiling: { browserRequests: 0, functionInvocations: 0, providerAcquisitions: 0 },
     providerHttpAttemptCeiling: 0,
-    fixture: 'metric, period, hover, and chart-date changes derive rolling series from in-memory Portfolio trades only',
+    fixture: 'rolling metric/window, portfolio-state metric, P&L period, hover, and chart-date changes derive from in-memory Portfolio trades only',
   });
 });
 
@@ -306,7 +302,7 @@ test('Portfolio renders the configured rolling chart below History with local co
   assert.match(portfolio, /rollingTrades=\{trades\}/);
   assert.match(portfolio, /<RollingHistoricalAnalyticsChart trades=\{rollingTrades\} \/>/);
   assert.match(chart, /buildRollingHistoricalAnalyticsSeries\(trades, metric, windowMonths\)/);
-  assert.match(chart, /useState<RollingHistoricalMetric>\('entryAy'\)/);
+  assert.match(chart, /useState<HistoricalMetric>\('entryAy'\)/);
   assert.match(chart, /useState<RollingWindowMonths>\(6\)/);
   assert.match(chart, /ROLLING_HISTORICAL_METRIC_CONFIGS\.map/);
   assert.match(chart, /ROLLING_WINDOW_MONTHS\.map/);
@@ -322,11 +318,14 @@ test('Portfolio renders the configured rolling chart below History with local co
   assert.match(chart, /rolling-historical-analytics__metadata/);
   assert.match(chart, /rolling-historical-analytics__zero/);
   assert.match(chart, /buildLabelIndexes/);
+  assert.match(chart, /buildValueLabelIndexes/);
+  assert.match(chart, /temporalAnchors/);
+  assert.match(chart, /isFiniteValue\(point\.value\) \? \[\{ point, index \}\] : \[\]/);
   assert.match(chart, /onPointerMove/);
   assert.match(chart, /onPointerDown/);
-  assert.match(chart, /No full-window observation/);
+  assert.match(chart, /Valid partial rolling windows are dotted/i);
   assert.match(chart, /data-rolling-domain-start/);
-  assert.match(chart, /aria-label=\{`\$\{config\.title/);
+  assert.match(chart, /aria-label=\{`\$\{series\.config\.title/);
   assert.match(chart, /sr-only/);
   assert.doesNotMatch(chart, /fetch\s*\(|localStorage|sessionStorage|supabase|smooth|interpolat/i);
   assert.match(css, /\.rolling-historical-analytics__svg/);
@@ -334,6 +333,7 @@ test('Portfolio renders the configured rolling chart below History with local co
   assert.match(css, /\.rolling-historical-analytics__line/);
   assert.match(css, /\.rolling-historical-analytics__current-value/);
   assert.match(css, /\.rolling-historical-analytics__zero/);
+  assert.match(css, /\.rolling-historical-analytics__value-label/);
   assert.match(css, /overflow-y: hidden/);
   assert.match(docs, /full strategy-history x-domain/);
   assert.match(docs, /compare, overlay, or dual-axis/);

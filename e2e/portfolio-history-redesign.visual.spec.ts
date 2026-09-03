@@ -29,15 +29,21 @@ const baseHistory = [
   trade('redesign-2026-positive-late', { soldDate: '2026-07-10', expiration: '2026-09-18', closeDate: '2026-08-01', realizedPnl: 210, ticker: 'SPY', entryIv: 70 }),
 ];
 const basePortfolio = [anchor, ...baseHistory];
-const fewPortfolio = [anchor, ...baseHistory.slice(0, 3)];
-const mediumPortfolio = [anchor, ...baseHistory.slice(0, 6)];
-const longHistory = Array.from({ length: 24 }, (_, index) => trade(`redesign-long-${index}`, {
-  soldDate: `${2024 + Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, '0')}-15`,
-  expiration: `${2024 + Math.floor(index / 12)}-${String((index % 12) + 3 > 12 ? (index % 12) - 9 : (index % 12) + 3).padStart(2, '0')}-21`,
-  closeDate: `${2024 + Math.floor(index / 12)}-${String((index % 12) + 2 > 12 ? (index % 12) - 10 : (index % 12) + 2).padStart(2, '0')}-01`,
-  realizedPnl: index % 4 === 0 ? -100 : 120 + index * 3,
-  ticker: ['SPY', 'QQQ', 'TQQQ', 'SOXL'][index % 4],
-}));
+const iso = (timestamp: number) => new Date(timestamp).toISOString().slice(0, 10);
+const monthlyHistory = (count: number) => Array.from({ length: count }, (_, index) => {
+  const expiration = Date.UTC(2024, index, 21);
+  return trade(`redesign-period-${count}-${index}`, {
+    soldDate: iso(expiration - 55 * 86_400_000),
+    expiration: iso(expiration),
+    closeDate: iso(expiration - 12 * 86_400_000),
+    realizedPnl: index % 4 === 0 ? -100 : 120 + index * 3,
+    ticker: ['SPY', 'QQQ', 'TQQQ', 'SOXL'][index % 4],
+  });
+});
+const fewPortfolio = [anchor, ...monthlyHistory(8)];
+const balancedPortfolio = [anchor, ...monthlyHistory(15).map((item, index) => ({ ...item, realizedPnl: index % 2 === 0 ? 180 : -180 }))];
+const mediumPortfolio = [anchor, ...monthlyHistory(28)];
+const longHistory = [anchor, ...monthlyHistory(35)];
 
 async function settle(page: Page) { await page.waitForLoadState('domcontentloaded'); await page.waitForTimeout(350); }
 async function openPortfolio(page: Page, cloud?: { requests: string[] }) {
@@ -66,11 +72,16 @@ async function captureRollingStates(page: Page, testInfo: TestInfo) {
   const analytics = chart.getByRole('combobox', { name: 'Analytics' });
   for (const [metric, period, name] of [
     ['entryAy', '6', 'entry-ay-6m'], ['originalDte', '12', 'original-dte-12m'], ['entryIv', '6', 'entry-iv-6m'],
-    ['entryDelta', '12', 'entry-delta-12m'], ['realizedIrr', '6', 'realized-irr-6m'], ['premiumRunRate', '3', 'premium-3m'], ['grossRiskDeployed', '12', 'gross-risk-12m'],
+    ['entryDelta', '12', 'entry-delta-12m'], ['realizedIrr', '6', 'realized-irr-6m'], ['premiumRunRate', '3', 'premium-3m'],
   ] as const) {
     await analytics.selectOption(metric);
     await chart.getByRole('button', { name: `${period}M`, exact: true }).click();
     await capture(page, testInfo, `rolling-${name}`);
+  }
+  for (const [metric, name] of [['grossRiskExposure', 'gross-risk-exposure'], ['averageRemainingDte', 'average-remaining-dte']] as const) {
+    await analytics.selectOption(metric);
+    await expect(chart.getByText('Point in time', { exact: true })).toBeVisible();
+    await capture(page, testInfo, `state-${name}`);
   }
   await analytics.selectOption('entryAy');
   await chart.getByRole('button', { name: '6M', exact: true }).click();
@@ -109,7 +120,7 @@ test.describe('Portfolio history redesign visual matrix', () => {
     await openPortfolio(page, cloud); await ensureHistoryOpen(page); await captureRollingStates(page, testInfo);
     await capture(page, testInfo, `viewport-${project}-history`);
 
-    for (const [name, dataset] of [['few-months', fewPortfolio], ['medium-months', mediumPortfolio], ['long-multi-year', longHistory]] as const) {
+    for (const [name, dataset] of [['few-months', fewPortfolio], ['balanced-15-months', balancedPortfolio], ['medium-months', mediumPortfolio], ['long-multi-year', longHistory]] as const) {
       cloud.setNamespaceData('portfolio', dataset);
       await page.reload(); await openPortfolio(page, cloud); await ensureHistoryOpen(page);
       const realized = page.getByText('Realized P&L by Expiration Month', { exact: true });
@@ -118,11 +129,30 @@ test.describe('Portfolio history redesign visual matrix', () => {
       const realizedPlot = page.locator('.portfolio-realized-pnl-chart__plot');
       await expect(realizedPlot).toHaveCSS('overflow-y', 'hidden');
       const chartMetrics = await realizedPlot.evaluate(element => ({
-        widths: [...element.querySelectorAll('[data-chart-month-label]')].map(label => label.parentElement?.parentElement?.getBoundingClientRect().width ?? 0),
+        mode: element.getAttribute('data-scroll-mode'),
+        widths: [...element.querySelectorAll('[data-chart-period-label]')].map(label => label.parentElement?.getBoundingClientRect().width ?? 0),
+        horizontalOverflow: element.scrollWidth - element.clientWidth,
         verticalOverflow: element.scrollHeight - element.clientHeight,
       }));
-      expect(chartMetrics.widths.every(width => width >= 48)).toBe(true);
+      expect(chartMetrics.widths.every(width => width > 0)).toBe(true);
+      if (name === 'long-multi-year') {
+        expect(chartMetrics.mode).toBe('contained');
+        expect(chartMetrics.horizontalOverflow).toBeGreaterThan(0);
+      } else {
+        expect(chartMetrics.mode).toBe('fit');
+        expect(chartMetrics.horizontalOverflow).toBeLessThanOrEqual(2);
+      }
       expect(chartMetrics.verticalOverflow).toBeLessThanOrEqual(3);
+      if (name === 'few-months') {
+        const period = page.getByRole('combobox', { name: 'Realized P&L period' });
+        await period.selectOption('quarter');
+        await expect(page.getByText('Realized P&L by Expiration Quarter', { exact: true })).toBeVisible();
+        await capture(page, testInfo, 'realized-quarter');
+        await period.selectOption('year');
+        await expect(page.getByText('Realized P&L by Expiration Year', { exact: true })).toBeVisible();
+        await capture(page, testInfo, 'realized-year');
+        await period.selectOption('month');
+      }
     }
 
     cloud.setNamespaceData('portfolio', basePortfolio);

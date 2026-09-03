@@ -11,6 +11,7 @@ import {
   serializePortfolioStorageEnvelope,
 } from '../portfolioStorage.ts';
 import { SHOW_NOMINAL_YIELD_KEY } from '../optionTablePreferences.ts';
+import { RECOMMENDATIONS_MINIMUM_DTE_KEY } from '../recommendationPreferences.ts';
 import type { PutScannerBackup } from '../userDataBackup.ts';
 import {
   createWatchlistStorageEnvelope,
@@ -78,6 +79,7 @@ function preferenceEntries(preferences: DurablePreferences): Array<readonly [str
   if (preferences.portfolioMarkBasis !== undefined) entries.push([PORTFOLIO_MARK_BASIS_KEY, preferences.portfolioMarkBasis]);
   if (preferences.portfolioGroupMode !== undefined) entries.push([PORTFOLIO_GROUP_MODE_KEY, preferences.portfolioGroupMode]);
   if (preferences.showNominalYield !== undefined) entries.push([SHOW_NOMINAL_YIELD_KEY, String(preferences.showNominalYield)]);
+  if (preferences.recommendationsOnlyAtLeast60Dte !== undefined) entries.push([RECOMMENDATIONS_MINIMUM_DTE_KEY, String(preferences.recommendationsOnlyAtLeast60Dte)]);
   return entries;
 }
 
@@ -101,7 +103,7 @@ function namespaceDocument(
     schemaVersion: PREFERENCES_DURABLE_SCHEMA_VERSION,
     payload: {
       // Retain historical device-presentation fields already in the cloud row,
-      // but only the three account preferences below are read by current UI.
+      // while current UI reads only explicitly supported account preferences.
       data: {
         ...canonical.preferences.payload.data,
         ...read.document.payload.data,

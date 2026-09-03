@@ -87,6 +87,7 @@ Portable preferences are:
 - `collapsedExpirationGroups`
 - `collapsedUnderlyingGroups`
 - `showNominalYield`
+- `recommendationsOnlyAtLeast60Dte` (defaults true; changing it affects the next explicit Recommendations refresh)
 
 Stage 1 found no persisted Show OI / Volume choice, so Stage 1.5 does not invent one.
 

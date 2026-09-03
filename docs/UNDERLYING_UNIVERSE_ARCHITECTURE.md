@@ -152,10 +152,10 @@ Keep current fixed chunks for the legacy 42 while they remain cache-efficient. A
 Recommended first caps:
 
 - no more than 50 symbols per user action;
-- no more than two chain expirations per symbol;
+- no more than three representative chain expirations per symbol;
 - client runs at most two batch functions concurrently;
 - server runs at most three Yahoo operations concurrently;
-- batch payload retains the 750 KB guard;
+- batch payload retains the bounded 1.1 MB guard required by the three-tenor Recommendations plan;
 - explicit confirmation and cost estimate over 20 symbols;
 - partial results remain usable and retry targets only failures.
 

@@ -9,7 +9,7 @@ import { fetchYahooOptions, normalizeTimestampSeconds } from './yahoo.js';
 
 export const SCREENER_BATCH_VERSION = 2;
 export const SCREENER_BATCH_TIMEOUT_MS = 6_000;
-export const SCREENER_BATCH_MAX_BYTES = 750_000;
+export const SCREENER_BATCH_MAX_BYTES = 1_100_000;
 
 function compactContract(contract) {
   return {
@@ -59,6 +59,33 @@ function errorMessage(error) {
   return error instanceof Error ? error.message : 'Yahoo acquisition failed';
 }
 
+function utcDaySeconds(nowMs) {
+  const date = new Date(nowMs);
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) / 1_000;
+}
+
+/** Selects at most three representative contracts tenors without crawling every chain. */
+export function planRepresentativeExpirations(expirationDates, options = {}) {
+  const today = utcDaySeconds(options.nowMs ?? Date.now());
+  const minimumDte = Number.isInteger(options.minimumDte) ? Math.max(0, options.minimumDte) : 0;
+  const maximumDte = Number.isInteger(options.maximumDte) ? Math.max(minimumDte, options.maximumDte) : 365;
+  const maximumCount = Math.max(1, Math.min(3, Number.isInteger(options.maximumCount) ? options.maximumCount : 3));
+  const eligible = [...new Set(expirationDates)]
+    .filter(date => Number.isInteger(date) && date > 0)
+    .sort((left, right) => left - right)
+    .filter(date => {
+      const dte = Math.max(0, Math.round((date - today) / 86_400));
+      return dte >= minimumDte && dte <= maximumDte;
+    });
+  if (eligible.length <= maximumCount) return { eligible, selected: eligible };
+  const indexes = maximumCount === 1
+    ? [0]
+    : maximumCount === 2
+      ? [0, eligible.length - 1]
+      : [0, Math.floor((eligible.length - 1) / 2), eligible.length - 1];
+  return { eligible, selected: [...new Set(indexes.map(index => eligible[index]))] };
+}
+
 export async function buildScreenerBatch(options = {}) {
   const chunk = SCREENER_CHUNKS.find(candidate => candidate.id === options.chunkId);
   if (!chunk) throw new RangeError('Invalid Screener chunk');
@@ -96,6 +123,8 @@ export async function buildScreenerBatch(options = {}) {
       initialExpiration: metadata.returnedExpiration,
       initial: compactYahooOptionData(data),
       additionalChains: {},
+      eligibleExpirationDates: [],
+      selectedExpirationDates: [],
       ivVsRealizedRange: null,
     };
   });
@@ -104,9 +133,19 @@ export async function buildScreenerBatch(options = {}) {
   for (const [ticker, data] of initialRaw) {
     const metadata = optionMetadata(data);
     phaseTwoTasks.push({ kind: 'volatility-context', ticker, data });
+    const representativePlan = options.representativeExpirationPlan
+      ? planRepresentativeExpirations(metadata.expirationDates, {
+        minimumDte: options.minimumDte,
+        maximumDte: options.maximumDte,
+        maximumCount: options.maximumExpirations,
+        nowMs: options.nowMs,
+      })
+      : null;
     const targets = options.targetDate != null
       ? (metadata.expirationDates.includes(options.targetDate) ? [options.targetDate] : [])
-      : metadata.expirationDates.slice(0, 2);
+      : representativePlan?.selected ?? metadata.expirationDates.slice(0, 2);
+    tickerResults[ticker].eligibleExpirationDates = representativePlan?.eligible ?? targets;
+    tickerResults[ticker].selectedExpirationDates = targets;
     [...new Set(targets)].filter(date => date !== metadata.returnedExpiration).forEach(date => {
       phaseTwoTasks.push({ kind: 'chain', ticker, date });
     });

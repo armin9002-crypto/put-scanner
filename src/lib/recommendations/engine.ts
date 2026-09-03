@@ -14,6 +14,7 @@ import { buildCandidateExplanation, buildNearMissText, reasonCopy } from './expl
 import {
   RECOMMENDATION_ENGINE_VERSION,
   RECOMMENDATION_POLICY_VERSION,
+  recommendationUniverse,
   type Actionability,
   type CandidateComparison,
   type CandidateVerdict,
@@ -155,14 +156,22 @@ function initialPolicyChecks(input: {
 }): RecommendationCandidate['policyChecks'] {
   const strikeCushion = input.row.moneynessPct / 100;
   const checks: RecommendationCandidate['policyChecks'] = [
-    { code: 'INVALID_CONTRACT', passed: input.valid, detail: input.valid ? 'Required contract fields and quote ordering are valid.' : 'Required contract fields or quote ordering are invalid.' },
-    { code: 'DTE_OUTSIDE_POSTURE', passed: input.row.dte >= input.posture.dteMin && input.row.dte <= input.posture.dteMax, detail: `${input.row.dte} DTE versus ${input.posture.dteMin}–${input.posture.dteMax}.` },
-    { code: input.row.delta == null ? 'MISSING_DELTA' : 'INSUFFICIENT_CUSHION', passed: input.row.delta != null && Math.abs(input.row.delta) <= input.posture.maxDelta, detail: input.row.delta == null ? 'Delta unavailable.' : `${Math.abs(input.row.delta).toFixed(3)} absolute Delta versus ${input.posture.maxDelta.toFixed(2)} maximum.` },
-    { code: 'INSUFFICIENT_CUSHION', passed: strikeCushion >= input.posture.minDistanceToStrike, detail: `${(strikeCushion * 100).toFixed(1)}% strike cushion versus ${(input.posture.minDistanceToStrike * 100).toFixed(0)}% minimum.` },
-    { code: 'INSUFFICIENT_CUSHION', passed: input.breakevenCushion != null && input.breakevenCushion >= input.posture.minDistanceToBreakeven, detail: input.breakevenCushion == null ? 'Breakeven cushion unavailable.' : `${(input.breakevenCushion * 100).toFixed(1)}% breakeven cushion versus ${(input.posture.minDistanceToBreakeven * 100).toFixed(0)}% minimum.` },
-    { code: input.underlying.qualification === 'HARD_FAIL' ? 'BROKEN_TREND' : 'SUPPORTIVE_UNDERLYING', passed: input.underlying.qualification === 'ELIGIBLE', detail: `${input.underlying.setup} setup; ${input.underlying.qualification}.` },
+    { code: 'INVALID_CONTRACT', passed: input.valid, severity: 'BLOCKING', phase: 'VALIDITY', detail: input.valid ? 'Required contract fields and quote ordering are valid.' : 'Required contract fields or quote ordering are invalid.' },
+    { code: 'DTE_OUTSIDE_POSTURE', passed: input.row.dte >= input.posture.dteMin && input.row.dte <= input.posture.dteMax, severity: 'INFORMATIONAL', phase: 'DURATION_CONTEXT', detail: `${input.row.dte} DTE versus the contextual ${input.posture.dteMin}–${input.posture.dteMax} posture range; this is not a hard veto.` },
+    { code: input.row.delta == null ? 'MISSING_DELTA' : 'INSUFFICIENT_CUSHION', passed: input.row.delta != null && Math.abs(input.row.delta) <= input.posture.maxDelta, severity: 'BLOCKING', phase: 'RISK', detail: input.row.delta == null ? 'Delta unavailable.' : `${Math.abs(input.row.delta).toFixed(3)} absolute Delta versus ${input.posture.maxDelta.toFixed(2)} maximum.` },
+    { code: 'INSUFFICIENT_CUSHION', passed: strikeCushion >= input.posture.minDistanceToStrike, severity: 'BLOCKING', phase: 'RISK', detail: `${(strikeCushion * 100).toFixed(1)}% strike cushion versus ${(input.posture.minDistanceToStrike * 100).toFixed(0)}% minimum.` },
+    { code: 'INSUFFICIENT_CUSHION', passed: input.breakevenCushion != null && input.breakevenCushion >= input.posture.minDistanceToBreakeven, severity: 'BLOCKING', phase: 'RISK', detail: input.breakevenCushion == null ? 'Breakeven cushion unavailable.' : `${(input.breakevenCushion * 100).toFixed(1)}% breakeven cushion versus ${(input.posture.minDistanceToBreakeven * 100).toFixed(0)}% minimum.` },
+    { code: input.underlying.qualification === 'HARD_FAIL' ? 'BROKEN_TREND' : 'SUPPORTIVE_UNDERLYING', passed: input.underlying.qualification === 'ELIGIBLE', severity: 'BLOCKING', phase: 'UNDERLYING', detail: `${input.underlying.setup} setup; ${input.underlying.qualification}.` },
   ];
   return checks;
+}
+
+function blockingPolicyChecksPass(candidate: RecommendationCandidate): boolean {
+  return candidate.policyChecks.filter(check => check.severity === 'BLOCKING').every(check => check.passed);
+}
+
+function validityCheckPasses(candidate: RecommendationCandidate): boolean {
+  return candidate.policyChecks.some(check => check.phase === 'VALIDITY' && check.passed);
 }
 
 function buildCandidate(
@@ -267,7 +276,7 @@ function comparable(left: RecommendationCandidate, right: RecommendationCandidat
 
 function materialDominates(left: RecommendationCandidate, right: RecommendationCandidate, policy: RecommendationPolicyV1): boolean {
   if (!comparable(left, right, policy)) return false;
-  if (!left.policyChecks.slice(0, 5).every(check => check.passed)) return false;
+  if (!blockingPolicyChecksPass(left)) return false;
   const leftAy = candidateAnnualizedYieldPct(left);
   const rightAy = candidateAnnualizedYieldPct(right);
   const leftDelta = left.economics.delta == null ? null : Math.abs(left.economics.delta);
@@ -301,7 +310,7 @@ function applyDominanceAndRelativeHurdles(candidates: RecommendationCandidate[],
     const candidateCushion = candidate.economics.breakevenCushionAtBasis;
     const safer = candidates.filter(other => {
       if (other.id === candidate.id || !comparable(candidate, other, policy)) return false;
-      if (!other.policyChecks.slice(0, 5).every(check => check.passed)) return false;
+      if (!blockingPolicyChecksPass(other)) return false;
       const otherAy = candidateAnnualizedYieldPct(other);
       const otherDelta = other.economics.delta == null ? null : Math.abs(other.economics.delta);
       const otherCushion = other.economics.breakevenCushionAtBasis;
@@ -331,9 +340,7 @@ function riskPolicyClears(candidate: RecommendationCandidate, posture: TradePost
   const strikeCushion = candidate.economics.moneynessPct / 100;
   const breakevenCushion = candidate.economics.breakevenCushionAtBasis;
   return candidate.underlying.qualification === 'ELIGIBLE'
-    && candidate.policyChecks[0]?.passed === true
-    && candidate.dte >= posture.dteMin
-    && candidate.dte <= posture.dteMax
+    && validityCheckPasses(candidate)
     && delta != null
     && delta <= posture.maxDelta + deltaTolerance
     && strikeCushion >= posture.minDistanceToStrike + cushionTolerance
@@ -405,14 +412,18 @@ function selectSkeptic(candidate: RecommendationCandidate, snapshot: Recommendat
   if (candidate.underlying.qualification === 'HARD_FAIL' || candidate.underlying.setup === 'WEAK') {
     code = candidate.lenses.compensation === 'STRONG' ? 'YIELD_TRAP' : 'BROKEN_TREND';
     veto = true;
-  } else if (!candidate.policyChecks[0]?.passed) {
+  } else if (!validityCheckPasses(candidate)) {
     code = 'INVALID_CONTRACT';
     veto = true;
   } else if (!allRiskChecks) {
-    code = candidate.economics.delta == null ? 'MISSING_DELTA' : candidate.dte < snapshot.market.posture.dteMin || candidate.dte > snapshot.market.posture.dteMax ? 'DTE_OUTSIDE_POSTURE' : 'INSUFFICIENT_CUSHION';
+    code = candidate.economics.delta == null ? 'MISSING_DELTA' : 'INSUFFICIENT_CUSHION';
     veto = true;
   } else if (candidate.dominatedBy.length > 0) {
-    code = 'POOR_RELATIVE_VALUE';
+    code = candidate.comparisons.some(comparison => comparison.reasonCodes.includes('DURATION_NOT_COMPENSATED'))
+      ? 'DURATION_NOT_COMPENSATED'
+      : candidate.comparisons.some(comparison => comparison.reasonCodes.includes('LONGER_DURATION_DEFENSIVE_VALUE'))
+        ? 'LONGER_DURATION_DEFENSIVE_VALUE'
+        : 'POOR_RELATIVE_VALUE';
     veto = true;
   } else if (candidate.pricing.confidence === 'LOW') {
     code = 'PRICING_UNCERTAINTY';
@@ -436,7 +447,7 @@ function assignVerdict(candidate: RecommendationCandidate, snapshot: Recommendat
   const indicativeReaches = hurdle != null && candidate.pricing.indicativeRange != null && candidate.pricing.indicativeRange.high >= hurdle;
   const askReaches = hurdle != null && candidate.pricing.directAsk != null && candidate.pricing.directAsk >= hurdle;
   const permitsIndicativeConditional = snapshot.market.regime.label !== 'Risk-Off' && snapshot.market.regime.label !== 'Oversold Panic';
-  if (candidate.underlying.qualification === 'HARD_FAIL' || !candidate.policyChecks[0]?.passed) return 'PASS';
+  if (candidate.underlying.qualification === 'HARD_FAIL' || !validityCheckPasses(candidate)) return 'PASS';
   if (candidate.dominatedBy.length > 0) return 'WATCH';
   if (directMeets
     && riskClear
@@ -527,6 +538,50 @@ function applyOutranking(candidates: RecommendationCandidate[], snapshot: Recomm
       const leftFacts = dimensionFacts(left, right, policy);
       const rightFacts = { advantages: [...leftFacts.disadvantages], disadvantages: [...leftFacts.advantages] };
       const materiallyDifferentDte = Math.abs(left.dte - right.dte) > policy.comparison.similarDteDays;
+      const crossDurationPair = left.ticker === right.ticker
+        && Math.abs(left.dte - right.dte) >= policy.comparison.crossDurationMinimumDifferenceDays;
+      if (crossDurationPair) {
+        const shorter = left.dte < right.dte ? left : right;
+        const longer = shorter.id === left.id ? right : left;
+        const shorterFacts = shorter.id === left.id ? leftFacts : rightFacts;
+        const longerFacts = longer.id === left.id ? leftFacts : rightFacts;
+        const shorterAy = candidateAnnualizedYieldPct(shorter);
+        const longerAy = candidateAnnualizedYieldPct(longer);
+        const shorterDelta = shorter.economics.delta == null ? null : Math.abs(shorter.economics.delta);
+        const longerDelta = longer.economics.delta == null ? null : Math.abs(longer.economics.delta);
+        const shorterCushion = shorter.economics.breakevenCushionAtBasis;
+        const longerCushion = longer.economics.breakevenCushionAtBasis;
+        const defensiveGain = (shorterDelta != null && longerDelta != null && longerDelta <= shorterDelta - policy.comparison.materialDeltaDifference)
+          || (shorterCushion != null && longerCushion != null && longerCushion >= shorterCushion + policy.comparison.materialCushionDifference);
+        const limitedYieldGiveUp = shorterAy != null && longerAy != null
+          && longerAy >= shorterAy - policy.comparison.longerDurationMaximumDefensiveAyGiveUp * 100;
+        const durationCompensatedByYield = shorterAy != null && longerAy != null
+          && longerAy >= shorterAy + policy.comparison.longerDurationMinimumAyPremium * 100;
+        if (defensiveGain && limitedYieldGiveUp) {
+          longerFacts.advantages.push('material defensive value across the longer tenor');
+          shorterFacts.disadvantages.push('less defensive value than the longer tenor');
+          if (!shorter.dominatedBy.includes(longer.id)) shorter.dominatedBy.push(longer.id);
+          if (!longer.dominates.includes(shorter.id)) longer.dominates.push(shorter.id);
+          longer.comparisons.push({ otherCandidateId: shorter.id, relationship: 'OUTRANKS', reasonCodes: ['LONGER_DURATION_DEFENSIVE_VALUE'], ...longerFacts });
+          shorter.comparisons.push({ otherCandidateId: longer.id, relationship: 'OUTRANKED_BY', reasonCodes: ['LONGER_DURATION_DEFENSIVE_VALUE', 'POOR_RELATIVE_VALUE'], ...shorterFacts });
+          continue;
+        }
+        if (!durationCompensatedByYield && !defensiveGain) {
+          shorterFacts.advantages.push(`${longer.dte - shorter.dte} fewer days committed with comparable risk evidence`);
+          longerFacts.disadvantages.push('longer duration is not compensated by yield or defensive value');
+          if (!longer.dominatedBy.includes(shorter.id)) longer.dominatedBy.push(shorter.id);
+          if (!shorter.dominates.includes(longer.id)) shorter.dominates.push(longer.id);
+          shorter.comparisons.push({ otherCandidateId: longer.id, relationship: 'OUTRANKS', reasonCodes: ['SHORTER_DURATION_EFFICIENT'], ...shorterFacts });
+          longer.comparisons.push({ otherCandidateId: shorter.id, relationship: 'OUTRANKED_BY', reasonCodes: ['DURATION_NOT_COMPENSATED', 'POOR_RELATIVE_VALUE'], ...longerFacts });
+          continue;
+        }
+        const durationFact = `${longer.dte - shorter.dte}-day tenor difference carries explicit duration tradeoffs`;
+        shorterFacts.disadvantages.push(durationFact);
+        longerFacts.disadvantages.push(durationFact);
+        shorter.comparisons.push({ otherCandidateId: longer.id, relationship: 'TRADEOFF', reasonCodes: ['MARGINAL_COMPENSATION'], ...shorterFacts });
+        longer.comparisons.push({ otherCandidateId: shorter.id, relationship: 'TRADEOFF', reasonCodes: ['HIGHER_COMPENSATION_JUSTIFIED'], ...longerFacts });
+        continue;
+      }
       if (materiallyDifferentDte) {
         const fact = `${Math.abs(left.dte - right.dte)}-day DTE difference prevents direct outranking`;
         leftFacts.disadvantages.push(fact);
@@ -594,6 +649,49 @@ function selectRecommendations(candidates: RecommendationCandidate[], policy: Re
   return { selections, noClearLeader };
 }
 
+function buildDecisionTrace(
+  snapshot: RecommendationSnapshot,
+  candidates: RecommendationCandidate[],
+  selections: RecommendationSelection[],
+) {
+  const meetsHurdleAndRisk = (candidate: RecommendationCandidate) => {
+    const bestAvailable = candidate.pricing.directBid ?? candidate.pricing.indicativeRange?.high ?? candidate.pricing.directAsk;
+    return riskPolicyClears(candidate, snapshot.market.posture)
+      && bestAvailable != null
+      && candidate.minimumAttractiveCredit.credit != null
+      && bestAvailable >= candidate.minimumAttractiveCredit.credit;
+  };
+  const surfacedCandidateIds = new Set(selections.map(selection => selection.candidateId));
+  const stages = [
+    { key: 'TRACKED_UNDERLYINGS' as const, label: 'Tracked underlyings', count: snapshot.coverage.trackedUnderlyings.length, definition: 'Configured leveraged-ETF opportunity universe.' },
+    { key: 'QUALIFIED_UNDERLYINGS' as const, label: 'Qualified underlyings', count: snapshot.coverage.requestedForOptionScan.length, definition: 'Underlyings not hard-failed before option acquisition.' },
+    { key: 'CHAINS_ACQUIRED' as const, label: 'Chains acquired', count: snapshot.coverage.expirationsCovered.reduce((sum, item) => sum + item.expirationDates.length, 0), definition: 'Selected representative expirations with usable chain responses.' },
+    { key: 'CONTRACTS_EVALUATED' as const, label: 'Contracts evaluated', count: candidates.length, definition: 'Contracts inside the run’s bounded DTE universe.' },
+    { key: 'VALID_CONTRACTS' as const, label: 'Valid contracts', count: candidates.filter(validityCheckPasses).length, definition: 'Contracts with valid identity, DTE, underlying price, and quote ordering.' },
+    { key: 'HURDLE_RISK_SURVIVORS' as const, label: 'Hurdle + risk survivors', count: candidates.filter(meetsHurdleAndRisk).length, definition: 'Contracts clearing absolute compensation and blocking risk policy.' },
+    { key: 'FRONTIER_CONTRACTS' as const, label: 'Frontier contracts', count: candidates.filter(candidate => validityCheckPasses(candidate) && candidate.dominatedBy.length === 0).length, definition: 'Valid contracts not materially dominated by a comparable alternative.' },
+    { key: 'SERIOUS_FINALISTS' as const, label: 'Serious finalists', count: candidates.filter(candidate => isSeriousFinalist(candidate, snapshot)).length, definition: 'Frontier contracts with sufficient pricing, evidence, economics, and risk support.' },
+    { key: 'POLICY_SURVIVORS' as const, label: 'Actionable / conditional', count: candidates.filter(candidate => candidate.verdict === 'ACTIONABLE' || candidate.verdict === 'CONDITIONAL').length, definition: 'Contracts surviving skeptic and robustness checks.' },
+    { key: 'SURFACED_RECOMMENDATIONS' as const, label: 'Surfaced recommendations', count: surfacedCandidateIds.size, definition: 'Distinct contracts selected for the Top Opportunities surface.' },
+  ];
+  const rejectionCounts = new Map<RecommendationReasonCode, number>();
+  candidates.forEach(candidate => {
+    if (candidate.verdict === 'ACTIONABLE' || candidate.verdict === 'CONDITIONAL') return;
+    const reasons = new Set<RecommendationReasonCode>();
+    candidate.policyChecks.filter(check => check.severity === 'BLOCKING' && !check.passed).forEach(check => reasons.add(check.code));
+    candidate.pricing.surface.reasonCodes.forEach(code => reasons.add(code));
+    candidate.comparisons.filter(comparison => comparison.relationship === 'OUTRANKED_BY').forEach(comparison => comparison.reasonCodes.forEach(code => reasons.add(code)));
+    candidate.robustness.reasonCodes.forEach(code => reasons.add(code));
+    reasons.add(candidate.skeptic.code);
+    reasons.forEach(code => rejectionCounts.set(code, (rejectionCounts.get(code) ?? 0) + 1));
+  });
+  const topRejectionReasons = [...rejectionCounts.entries()]
+    .map(([code, count]) => ({ code, count, label: reasonCopy(code) }))
+    .sort((left, right) => right.count - left.count || left.code.localeCompare(right.code))
+    .slice(0, 8);
+  return { stages, topRejectionReasons };
+}
+
 export function runRecommendationEngine(
   snapshot: RecommendationSnapshot,
   policy: RecommendationPolicyV1 = RECOMMENDATION_POLICY_V1,
@@ -602,8 +700,10 @@ export function runRecommendationEngine(
     throw new Error('Unsupported recommendation engine or policy version.');
   }
   const underlyingAssessments = assessUnderlyingUniverse(snapshot.underlyings, snapshot.market.regime, policy);
+  const universe = snapshot.universe ?? recommendationUniverse(false);
   const underlyingByTicker = new Map(underlyingAssessments.map(assessment => [assessment.ticker, assessment]));
   const candidates = [...snapshot.screenerRows]
+    .filter(row => row.dte >= universe.minimumDte && row.dte <= universe.maximumDte)
     .sort((left, right) => left.ticker.localeCompare(right.ticker) || left.expDate - right.expDate || left.strike - right.strike)
     .flatMap(row => {
       const underlying = underlyingByTicker.get(row.ticker);
@@ -679,11 +779,13 @@ export function runRecommendationEngine(
   const reasonCodes: RecommendationReasonCode[] = [];
   if (!hasOpportunities) reasonCodes.push('WEAK_OPPORTUNITY_SET');
   if (selection.noClearLeader) reasonCodes.push('NO_CLEAR_LEADER');
+  const decisionTrace = buildDecisionTrace(snapshot, candidates, selection.selections);
 
   return {
     engineVersion: RECOMMENDATION_ENGINE_VERSION,
     policyVersion: RECOMMENDATION_POLICY_VERSION,
     asOf: snapshot.asOf,
+    universe,
     operationalStatus,
     runVerdict,
     market: snapshot.market,
@@ -693,6 +795,7 @@ export function runRecommendationEngine(
     frontiers,
     recommendations: selection.selections,
     nearMisses,
+    decisionTrace,
     reasonCodes,
   };
 }

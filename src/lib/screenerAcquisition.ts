@@ -29,6 +29,8 @@ interface BatchTickerPayload {
   initialExpiration: number | null;
   initial: unknown;
   additionalChains: Record<string, unknown>;
+  eligibleExpirationDates: number[];
+  selectedExpirationDates: number[];
   ivVsRealizedRange: number | null;
 }
 
@@ -70,6 +72,11 @@ export interface ScreenerBatchPlan {
   selectedTickers: string[];
   targetDate: number | null;
   cacheKey: string;
+  recommendationUniverse?: {
+    minimumDte: number;
+    maximumDte: number;
+    maximumExpirations: number;
+  };
 }
 
 export interface ScreenerBatchFetchResult {
@@ -85,6 +92,12 @@ export interface ScreenerScanResult {
   plannedBatches: number;
   completedBatches: number;
   failedBatchIds: number[];
+  expirationPlansByTicker: Map<string, {
+    availableExpirationDates: number[];
+    eligibleExpirationDates: number[];
+    selectedExpirationDates: number[];
+    discoveryExpiration: number | null;
+  }>;
 }
 
 export interface LatestScreenerScan {
@@ -127,7 +140,11 @@ export function screenerDatasetScopeKey(selectedTickerKey: string, expFilter: st
   return `${selectedTickerKey}::${screenerTargetDate(expFilter) ?? 'standard-expirations'}`;
 }
 
-export function planScreenerBatches(selectedTickers: readonly string[], expFilter: string): ScreenerBatchPlan[] {
+export function planScreenerBatches(
+  selectedTickers: readonly string[],
+  expFilter: string,
+  recommendationUniverse?: ScreenerBatchPlan['recommendationUniverse'],
+): ScreenerBatchPlan[] {
   const selected = new Set(selectedTickers.map(ticker => ticker.trim().toUpperCase()));
   const targetDate = screenerTargetDate(expFilter);
   return (SCREENER_CHUNKS as readonly ScreenerChunk[]).flatMap(chunk => {
@@ -138,7 +155,8 @@ export function planScreenerBatches(selectedTickers: readonly string[], expFilte
       chunkTickers: chunk.tickers,
       selectedTickers: [...selectedInChunk],
       targetDate,
-      cacheKey: `screener_batch_v${SCREENER_DATASET_VERSION}_${chunk.id}_${targetDate ?? 'nearest'}`,
+      cacheKey: `screener_batch_v${SCREENER_DATASET_VERSION}_${chunk.id}_${targetDate ?? (recommendationUniverse ? `representative_${recommendationUniverse.minimumDte}_${recommendationUniverse.maximumDte}_${recommendationUniverse.maximumExpirations}` : 'nearest')}`,
+      recommendationUniverse,
     }];
   });
 }
@@ -191,6 +209,11 @@ export async function fetchScreenerBatch(plan: ScreenerBatchPlan, options: { sig
     fetcher: async signal => {
       const query = new URLSearchParams({ chunk: String(plan.chunkId) });
       if (plan.targetDate != null) query.set('date', String(plan.targetDate));
+      if (plan.recommendationUniverse) {
+        query.set('recommendations', '1');
+        query.set('minDte', String(plan.recommendationUniverse.minimumDte));
+        query.set('maxDte', String(plan.recommendationUniverse.maximumDte));
+      }
       const response = await fetchObservedMarketData('screener-batch', `/api/screener-batch?${query}`, { signal }, 'Screener:batch');
       if (!response.ok) throw responseError(response, `Screener batch ${plan.chunkId + 1} failed (${response.status})`);
       return response.json() as Promise<ScreenerBatchPayload>;
@@ -219,10 +242,11 @@ export async function runScreenerBatchScan(options: {
   expFilter: string;
   signal?: AbortSignal;
   forceRefresh?: boolean;
+  recommendationUniverse?: ScreenerBatchPlan['recommendationUniverse'];
   fetchBatch?: (plan: ScreenerBatchPlan) => Promise<ScreenerBatchFetchResult>;
   onProgress?: (completedEtfs: number, totalEtfs: number) => void;
 }): Promise<ScreenerScanResult> {
-  const plans = planScreenerBatches(options.selectedTickers, options.expFilter);
+  const plans = planScreenerBatches(options.selectedTickers, options.expFilter, options.recommendationUniverse);
   const selected = new Set(options.selectedTickers.map(ticker => ticker.trim().toUpperCase()));
   const fetchBatch = options.fetchBatch ?? (plan => fetchScreenerBatch(plan, { signal: options.signal, forceRefresh: options.forceRefresh }));
   const initialResults = new Map<string, OptionsChainData>();
@@ -232,6 +256,12 @@ export async function runScreenerBatchScan(options: {
   let completedEtfs = 0;
   let rejectedBatchFailures = 0;
   const failedBatchIds = new Set<number>();
+  const expirationPlansByTicker = new Map<string, {
+    availableExpirationDates: number[];
+    eligibleExpirationDates: number[];
+    selectedExpirationDates: number[];
+    discoveryExpiration: number | null;
+  }>();
   beginScreenerScanDiagnostics(options.scanId, selected.size, plans.length);
 
   const settled = await mapWithConcurrency(plans, SCREENER_BROWSER_CONCURRENCY, async plan => {
@@ -278,7 +308,19 @@ export async function runScreenerBatchScan(options: {
       const initial = normalizeBatchChain(tickerPayload.initial, ticker, undefined, meta);
       initialResults.set(ticker, initial);
       primeOptionsChainCache(ticker, undefined, initial);
-      if (tickerPayload.initialExpiration != null) {
+      const selectedExpirations = Array.isArray(tickerPayload.selectedExpirationDates)
+        ? tickerPayload.selectedExpirationDates.filter(date => Number.isInteger(date) && date > 0)
+        : initial.expirations.slice(0, 2).map(expiration => expiration.date);
+      const eligibleExpirations = Array.isArray(tickerPayload.eligibleExpirationDates)
+        ? tickerPayload.eligibleExpirationDates.filter(date => Number.isInteger(date) && date > 0)
+        : selectedExpirations;
+      expirationPlansByTicker.set(ticker, {
+        availableExpirationDates: initial.expirations.map(expiration => expiration.date),
+        eligibleExpirationDates: eligibleExpirations,
+        selectedExpirationDates: selectedExpirations,
+        discoveryExpiration: tickerPayload.initialExpiration,
+      });
+      if (tickerPayload.initialExpiration != null && selectedExpirations.includes(tickerPayload.initialExpiration)) {
         chainsByKey.set(canonicalOptionChainKey(ticker, tickerPayload.initialExpiration), initial);
         primeOptionsChainCache(ticker, tickerPayload.initialExpiration, initial);
       }
@@ -302,6 +344,7 @@ export async function runScreenerBatchScan(options: {
     plannedBatches: plans.length,
     completedBatches: settled.filter(result => result.status === 'fulfilled').length,
     failedBatchIds: [...failedBatchIds].sort((a, b) => a - b),
+    expirationPlansByTicker,
   };
 }
 
@@ -326,6 +369,7 @@ export async function retryFailedScreenerBatches(options: {
     expFilter: options.expFilter,
     signal: options.signal,
     forceRefresh: true,
+    recommendationUniverse: undefined,
     fetchBatch: options.fetchBatch,
     onProgress: options.onProgress,
   });
@@ -337,6 +381,7 @@ export async function retryFailedScreenerBatches(options: {
     plannedBatches: options.previous.plannedBatches,
     completedBatches: Math.max(0, options.previous.plannedBatches - retried.failedBatchIds.length),
     failedBatchIds: retried.failedBatchIds,
+    expirationPlansByTicker: new Map([...options.previous.expirationPlansByTicker, ...retried.expirationPlansByTicker]),
   };
 }
 
