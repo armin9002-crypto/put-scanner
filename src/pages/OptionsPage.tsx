@@ -22,6 +22,8 @@ import {
   OPTION_QUOTE_TABLE_DISPLAY_ORDER,
   OPTION_YIELD_DISPLAY_LABELS,
   OPTION_YIELD_DISPLAY_ORDER,
+  executableOptionPrice,
+  formatOptionQuoteValue,
   isNominalYieldField,
   type OptionQuoteTableDisplayField,
   type OptionYieldDisplayField,
@@ -318,7 +320,7 @@ function MobileOptionCard({
       </div>
 
       <div className="mobile-option-card-grid mt-3 grid grid-cols-3 gap-2">
-        {OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => <MobileStat key={field} label={OPTION_QUOTE_DISPLAY_LABELS[field]} value={formatPrice(put[field])} color={field === 'bid' ? 'var(--green)' : undefined} />)}
+        {OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => <MobileStat key={field} label={OPTION_QUOTE_DISPLAY_LABELS[field]} value={formatOptionQuoteValue(field, put[field], formatPrice)} color={field === 'bid' ? 'var(--green)' : undefined} />)}
       </div>
       <div className={`mobile-secondary-grid mt-2 grid gap-2 ${showNominalYield ? 'grid-cols-4' : 'grid-cols-3'}`}>
         <MobileStat label="Delta" value={put.delta != null ? put.delta.toFixed(2) : '—'} color={deltaColor(put.delta)} />
@@ -594,9 +596,9 @@ export default function OptionsPage() {
         impliedVolatilityPercent: p.impliedVolatility,
       });
 
-      const bidYield = calculateYieldPercent(p.bid, p.strike, dte);
-      const askYield = calculateYieldPercent(p.ask, p.strike, dte);
-      const lastYield = calculateYieldPercent(p.last, p.strike, dte);
+      const bidYield = calculateYieldPercent(executableOptionPrice(p.bid), p.strike, dte);
+      const askYield = calculateYieldPercent(executableOptionPrice(p.ask), p.strike, dte);
+      const lastYield = calculateYieldPercent(executableOptionPrice(p.last), p.strike, dte);
 
       const volOI = (p.volume != null && p.volume > 0 && p.openInterest != null && p.openInterest > 0)
         ? p.volume / p.openInterest : null;
@@ -1526,7 +1528,7 @@ export default function OptionsPage() {
                             </div>
                           </td>
                           <td className="w-20 px-1.5 py-1.5 text-right font-mono text-xs tabular-nums hidden md:table-cell" title={`${formatLastTradeDate(put.lastTradeDate)}${getOptionLastTradeFreshness(put.lastTradeDate).label ? ` · ${getOptionLastTradeFreshness(put.lastTradeDate).label}` : ''}`} style={{ color: getOptionLastTradeFreshness(put.lastTradeDate).color }}>{formatOptionLastTradeDate(put.lastTradeDate)}</td>
-                          {OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => <td key={field} className={`px-2 py-1.5 text-right text-xs font-mono tabular-nums w-14 ${field === 'last' ? 'hidden md:table-cell' : ''}`} style={{ color: 'var(--text)' }}>{formatPrice(put[field])}</td>)}
+                          {OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => <td key={field} className={`px-2 py-1.5 text-right text-xs font-mono tabular-nums w-14 ${field === 'last' ? 'hidden md:table-cell' : ''}`} style={{ color: 'var(--text)' }}>{formatOptionQuoteValue(field, put[field], formatPrice)}</td>)}
                           <td className="px-1.5 py-1.5 text-right text-xs font-mono tabular-nums w-12" style={{ color: deltaColor(put.delta) }}>
                             {put.delta != null ? put.delta.toFixed(2) : '—'}
                           </td>

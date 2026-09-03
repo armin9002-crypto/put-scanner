@@ -6,12 +6,22 @@ const EXPIRATION = 1_798_761_600;
 const NEAR_EXPIRATION = 1_789_689_600;
 const SECOND_EXPIRATION = 1_801_180_800;
 
-function optionChain(ticker: string, expiration = EXPIRATION, putCount = 2) {
+type MarketFixtureOptions = {
+  failScreenerChunkOnce?: number;
+  optionCount?: number;
+  firstOptionBid?: number | null;
+  firstOptionAsk?: number | null;
+  firstOptionLast?: number | null;
+  firstOptionVolume?: number | null;
+  firstOptionOpenInterest?: number | null;
+};
+
+function optionChain(ticker: string, expiration = EXPIRATION, putCount = 2, overrides: MarketFixtureOptions = {}) {
   const count = Math.max(2, putCount);
   const expiry = new Date(expiration * 1000);
   const contractDate = `${String(expiry.getUTCFullYear()).slice(-2)}${String(expiry.getUTCMonth() + 1).padStart(2, '0')}${String(expiry.getUTCDate()).padStart(2, '0')}`;
   const puts = [
-    { contractSymbol: `${ticker}${contractDate}P00090000`, strike: 90, lastPrice: 2.1, lastTradeDate: 1_788_000_000, bid: 2, ask: 2.2, change: 0.1, percentChange: 5, impliedVolatility: 0.48, volume: 120, openInterest: 900, delta: -0.2 },
+    { contractSymbol: `${ticker}${contractDate}P00090000`, strike: 90, lastPrice: overrides.firstOptionLast === undefined ? 2.1 : overrides.firstOptionLast, lastTradeDate: 1_788_000_000, bid: overrides.firstOptionBid === undefined ? 2 : overrides.firstOptionBid, ask: overrides.firstOptionAsk === undefined ? 2.2 : overrides.firstOptionAsk, change: 0.1, percentChange: 5, impliedVolatility: 0.48, volume: overrides.firstOptionVolume === undefined ? 120 : overrides.firstOptionVolume, openInterest: overrides.firstOptionOpenInterest === undefined ? 900 : overrides.firstOptionOpenInterest, delta: -0.2 },
     { contractSymbol: `${ticker}${contractDate}P00095000`, strike: 95, lastPrice: 3.4, lastTradeDate: 1_788_000_000, bid: 3.2, ask: 3.6, change: 0.2, percentChange: 6, impliedVolatility: 0.52, volume: 80, openInterest: 700, delta: -0.32 },
     ...Array.from({ length: Math.max(0, count - 2) }, (_, index) => {
       const strike = 96 + index;
@@ -60,7 +70,7 @@ function json(route: Route, body: unknown, status = 200, extraHeaders: Record<st
   }, body: JSON.stringify(body) });
 }
 
-export async function installDeterministicMarketApi(page: Page, options: { failScreenerChunkOnce?: number; optionCount?: number } = {}) {
+export async function installDeterministicMarketApi(page: Page, options: MarketFixtureOptions = {}) {
   const counts = new Map<string, number>();
   const delays = new Map<string, number>();
   const failNext = new Set<string>();
@@ -90,11 +100,11 @@ export async function installDeterministicMarketApi(page: Page, options: { failS
       return json(route, { error: 'E2E controlled failure' }, 503);
     }
     if (failNext.delete(endpoint)) return json(route, { error: 'E2E controlled failure' }, 503);
-    if (endpoint === 'options') return json(route, optionChain((url.searchParams.get('ticker') || 'TQQQ').toUpperCase(), Number(url.searchParams.get('date')) || EXPIRATION, options.optionCount));
+    if (endpoint === 'options') return json(route, optionChain((url.searchParams.get('ticker') || 'TQQQ').toUpperCase(), Number(url.searchParams.get('date')) || EXPIRATION, options.optionCount, options));
     if (endpoint === 'ticker-detail') {
       const ticker = (url.searchParams.get('ticker') || 'TQQQ').toUpperCase();
       const requestedExpiration = Number(url.searchParams.get('date')) || EXPIRATION;
-      const optionsPayload = optionChain(ticker, unavailableRequestedExpiry.has(ticker) ? NEAR_EXPIRATION : requestedExpiration, options.optionCount);
+      const optionsPayload = optionChain(ticker, unavailableRequestedExpiry.has(ticker) ? NEAR_EXPIRATION : requestedExpiration, options.optionCount, options);
       if (unavailableRequestedExpiry.has(ticker)) optionsPayload.optionChain.result[0].expirationDates = [NEAR_EXPIRATION, SECOND_EXPIRATION];
       return json(route, { availability: ticker === 'AAPL' ? 'no_options' : 'optionable', options: optionsPayload, extendedPrice: { price: 100, change: 1, changePercent: 1, fiveDay: 2, oneMonth: 4, threeMonth: 8, fiftyTwoWeekHighPct: -5, previousClose: 99, sparkline: [98, 99, 100] }, volatilityContext: { currentIV: 48, rangePosition: 52, observationPercent: 55, realizedVolLow: 20, realizedVolHigh: 60, observationCount: 252 } }, 200, { 'X-PutScanner-Upstream-Requests': '3' });
     }
@@ -118,7 +128,7 @@ export async function installDeterministicMarketApi(page: Page, options: { failS
       const attempt = (counts.get(attemptKey) ?? 0) + 1;
       counts.set(attemptKey, attempt);
       if (options.failScreenerChunkOnce === chunkId && attempt === 1) return json(route, { error: 'E2E temporary batch failure' }, 503);
-      const tickers = Object.fromEntries(chunk.tickers.map(ticker => [ticker, { ticker, expirationDates: [NEAR_EXPIRATION, EXPIRATION, SECOND_EXPIRATION], initialExpiration: NEAR_EXPIRATION, initial: optionChain(ticker, NEAR_EXPIRATION), additionalChains: { [EXPIRATION]: optionChain(ticker, EXPIRATION), [SECOND_EXPIRATION]: optionChain(ticker, SECOND_EXPIRATION) }, ivVsRealizedRange: 50 }]));
+      const tickers = Object.fromEntries(chunk.tickers.map(ticker => [ticker, { ticker, expirationDates: [NEAR_EXPIRATION, EXPIRATION, SECOND_EXPIRATION], initialExpiration: NEAR_EXPIRATION, initial: optionChain(ticker, NEAR_EXPIRATION, options.optionCount, options), additionalChains: { [EXPIRATION]: optionChain(ticker, EXPIRATION, options.optionCount, options), [SECOND_EXPIRATION]: optionChain(ticker, SECOND_EXPIRATION, options.optionCount, options) }, ivVsRealizedRange: 50 }]));
       return json(route, { datasetVersion: 2, chunkId, targetDate: null, fetchedAt: 1_798_000_000_000, complete: true, tickers, errors: [], diagnostics: { plannedEtfs: 3, plannedOptionChains: 9, uniqueChains: 9, upstreamRequests: 9, maxObservedConcurrency: 3, circuitBreakerRejections: 0, elapsedMs: 5 } }, 200, { 'X-PutScanner-Upstream-Requests': '9' });
     }
     if (endpoint === 'etf-pulse') {

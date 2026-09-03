@@ -77,7 +77,7 @@ async function loadScreener(page: Page) {
   await page.getByRole('button', { name: /Load|Run Screener/i }).first().click();
   const confirm = page.getByRole('button', { name: /Run scan|Confirm/i });
   if (await confirm.count()) await confirm.first().click();
-  await expect(page.getByText(/visible after local filters|Showing \d+ results/).first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/visible after local filters|Showing \d+(?: results| after local filters)/).first()).toBeVisible({ timeout: 30_000 });
 }
 
 async function openDetail(page: Page, ticker: string) {
@@ -174,12 +174,115 @@ test.describe('UI-5 complete deterministic visual review', () => {
       await captureCoreRoutes(page, testInfo);
       if (project === 'portrait-390x844' || project === 'landscape-844x390') {
         await openDetail(page, 'TQQQ');
-        const option = page.locator('article.mobile-option-row').first().getByRole('button', { name: /Open details/ });
+        const option = page.locator('article.mobile-option-chain-row').first();
         if (await option.count()) { await option.click({ force: true }); await expect(page.getByRole('dialog')).toBeVisible(); await capture(page, testInfo, 'option-drawer'); }
         await page.goto('/?account-ui-fixture=synced'); await expect(page.getByRole('dialog')).toBeVisible(); await capture(page, testInfo, 'account');
       }
     }
     await mkdir(outputRoot, { recursive: true });
     await writeFile(path.join(outputRoot, `layout-report-${project}.json`), `${JSON.stringify(layouts.filter(entry => entry.project === project), null, 2)}\n`, 'utf8');
+  });
+
+  test('verify portrait Portfolio actions and no-bid option fallback', async ({ page }, testInfo) => {
+    test.skip(phase !== 'final' || testInfo.project.name !== 'portrait-390x844', 'Focused final-state mobile behavior check.');
+    test.setTimeout(90_000);
+    const positiveTrade = {
+      id: 'ui5-large-positive', ticker: 'TQQQ', optionType: 'put', strike: 90, expiration: '2027-01-01', contracts: 20,
+      soldPrice: 3, soldDate: '2026-08-20', status: 'open', notes: 'Six-figure gross-risk fixture.',
+      createdAt: '2026-08-20T12:00:00.000Z', updatedAt: '2026-08-20T12:00:00.000Z', entryVixClose: 17.8,
+      entrySnapshot: { underlyingPrice: 100, bid: 2, ask: 2.2, last: 2.1, delta: -0.2, iv: 48, dte: 134, capturedAt: '2026-08-20T12:00:00.000Z' },
+    };
+    const harness = await installDeterministicMarketApi(page, { firstOptionBid: 0, firstOptionVolume: 0, firstOptionOpenInterest: 0 });
+    const cloud = await installDeterministicCloudAccount(page, { portfolio: [positiveTrade], watchlist, preferences: { portfolioMarkBasis: 'ask' } });
+
+    await openPortfolio(page);
+    const hero = page.locator('.mobile-portfolio-hero');
+    await expect(hero.locator('.portfolio-mobile-metric-label')).toHaveText(['Premium', 'Gross Risk', 'Gain/Loss', 'Captured', 'Entry AY', 'Current AY', 'Avg Delta', 'Avg DTE']);
+    await expect(hero).not.toContainText('Net Risk');
+    await expect(hero).toContainText('$180,000');
+    const refresh = page.getByRole('button', { name: 'Refresh open trades' });
+    await expect(refresh).toBeEnabled();
+    harness.delays.set('options', 900);
+    await refresh.click();
+    await expect(refresh).toBeDisabled();
+    await expect(refresh.locator('svg')).toHaveClass(/animate-spin/);
+    await expect(page.locator('.portfolio-mobile-freshness')).toContainText('Updating');
+    await capture(page, testInfo, 'portfolio-refresh-loading');
+    await expect(refresh).toBeEnabled({ timeout: 15_000 });
+    expect(harness.counts.get('prices')).toBe(1);
+    expect(harness.counts.get('options')).toBe(1);
+    await expect(page.locator('.portfolio-mobile-freshness')).toContainText('Updated');
+    await capture(page, testInfo, 'portfolio-positive-large');
+
+    await page.getByRole('button', { name: 'Portfolio actions' }).click();
+    const actions = page.getByRole('dialog', { name: 'Portfolio actions' });
+    await expect(actions).toBeVisible();
+    await expect(actions).not.toContainText('Refresh Open Trades');
+    await expect(actions).toContainText('Add Trade');
+    await actions.getByRole('button', { name: 'Close Portfolio actions' }).click();
+
+    await page.getByRole('button', { name: 'Position display and sort' }).click();
+    const controls = page.getByRole('dialog', { name: 'Position display & sort' });
+    await expect(controls).toContainText('Show Entry Deltas / IV');
+    const requestsBeforeLocalControls = new Map(harness.counts);
+    await controls.getByRole('tab', { name: 'Descending', exact: true }).click();
+    await controls.getByRole('checkbox', { name: 'Show Entry Deltas / IV' }).check();
+    await controls.getByRole('button', { name: 'Done', exact: true }).click();
+    await page.locator('.mobile-position-row__summary').first().click();
+    await expect(page.locator('.mobile-position-row__details:visible').first()).toContainText('Entry Δ');
+    await page.getByRole('tab', { name: 'Last', exact: true }).first().click();
+    expect([...harness.counts.entries()]).toEqual([...requestsBeforeLocalControls.entries()]);
+
+    cloud.setNamespaceData('portfolio', [{ ...positiveTrade, id: 'ui5-large-negative', soldPrice: 1 }]);
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'Refresh open trades' })).toBeEnabled();
+    await page.getByRole('button', { name: 'Refresh open trades' }).click();
+    await expect(page.getByRole('button', { name: 'Refresh open trades' })).toBeEnabled({ timeout: 15_000 });
+    await expect(hero.locator('.portfolio-mobile-metric').filter({ hasText: 'Gain/Loss' })).toContainText('-$');
+    await capture(page, testInfo, 'portfolio-negative-large');
+
+    cloud.setNamespaceData('portfolio', [{ ...positiveTrade, id: 'ui5-closed-only', status: 'closed', closePrice: 1, closeDate: '2026-08-27', realizedPnl: 4_000, percentCaptured: 2 / 3 }]);
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'Refresh open trades' })).toBeDisabled();
+    await capture(page, testInfo, 'portfolio-empty-refresh-disabled');
+
+    await openDetail(page, 'TQQQ');
+    await page.locator('article.mobile-option-chain-row').first().click();
+    const drawer = page.getByRole('dialog', { name: /TQQQ.*put details/i });
+    await expect(drawer).toBeVisible();
+    await expect(drawer.getByRole('button', { name: 'Bid', exact: true })).toBeDisabled();
+    await expect(drawer).toContainText('Selected price · Last');
+    await expect(drawer).not.toContainText('Selected price $0.00');
+    await expect(drawer).toContainText('No Bid');
+    await expect(drawer.locator('.option-detail-mobile-metric-grid--market')).toContainText(/Vol\s*0/);
+    await expect(drawer.locator('.option-detail-mobile-metric-grid--market')).toContainText(/OI\s*0/);
+    await capture(page, testInfo, 'option-drawer-no-bid-zero-liquidity');
+    await drawer.getByRole('button', { name: 'Close option details' }).click();
+
+    await page.goto('/watchlist');
+    await expect(page.locator('article.mobile-option-chain-row').first()).toBeVisible({ timeout: 20_000 });
+    await page.locator('article.mobile-option-chain-row').first().click();
+    await expect(page.getByRole('dialog', { name: /put details/i })).toBeVisible();
+    await page.getByRole('dialog', { name: /put details/i }).getByRole('button', { name: 'Close option details' }).click();
+
+    await page.goto('/screener');
+    await loadScreener(page);
+    await page.locator('article.mobile-option-chain-row').first().click();
+    await expect(page.getByRole('dialog', { name: /put details/i })).toBeVisible();
+    await page.getByRole('dialog', { name: /put details/i }).getByRole('button', { name: 'Close option details' }).click();
+
+    cloud.setNamespaceData('portfolio', [positiveTrade]);
+    for (const theme of ['dark', 'dark-blue', 'light', 'sepia']) {
+      await page.evaluate(value => localStorage.setItem('put_scanner_theme', value), theme);
+      await openPortfolio(page);
+      await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+      await capture(page, testInfo, `theme-${theme}-portfolio-mobile`);
+      await openDetail(page, 'TQQQ');
+      await page.locator('article.mobile-option-chain-row').first().click();
+      await expect(page.getByRole('dialog', { name: /put details/i })).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)).toBe(false);
+      await capture(page, testInfo, `theme-${theme}-option-drawer-mobile`);
+      await page.getByRole('dialog', { name: /put details/i }).getByRole('button', { name: 'Close option details' }).click();
+    }
   });
 });

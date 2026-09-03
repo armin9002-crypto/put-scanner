@@ -19,7 +19,7 @@ import type { OptionDetail } from '../components/OptionDetailDrawer';
 import { Star, RefreshCw, Loader2, ChevronUp, ChevronDown, AlertTriangle } from 'lucide-react';
 import { useResponsiveMode } from '../lib/responsive';
 import MobileOptionRow from '../components/mobile/MobileOptionRow';
-import { OPTION_QUOTE_DISPLAY_LABELS, OPTION_QUOTE_TABLE_DISPLAY_ORDER, OPTION_YIELD_DISPLAY_LABELS, OPTION_YIELD_DISPLAY_ORDER, isNominalYieldField, type OptionQuoteTableDisplayField, type OptionYieldDisplayField } from '../lib/optionQuoteDisplay';
+import { OPTION_QUOTE_DISPLAY_LABELS, OPTION_QUOTE_TABLE_DISPLAY_ORDER, OPTION_YIELD_DISPLAY_LABELS, OPTION_YIELD_DISPLAY_ORDER, executableOptionPrice, formatOptionQuoteValue, isNominalYieldField, type OptionQuoteTableDisplayField, type OptionYieldDisplayField } from '../lib/optionQuoteDisplay';
 import { acquireOptionChains, canonicalOptionChainKey } from '../lib/optionChainRequests';
 import { resolvePutDelta } from '../lib/putDelta';
 import { compareNullableValue } from '../lib/metricValue';
@@ -123,9 +123,9 @@ function buildRow(item: WatchlistItem): LiveRow {
   const bid = snapshot.bid ?? null;
   const ask = snapshot.ask ?? null;
   const last = snapshot.last ?? null;
-  const bidYield = calculateYieldPercent(bid, item.strike, dte);
-  const askYield = calculateYieldPercent(ask, item.strike, dte);
-  const lastYield = calculateYieldPercent(last, item.strike, dte);
+  const bidYield = calculateYieldPercent(executableOptionPrice(bid), item.strike, dte);
+  const askYield = calculateYieldPercent(executableOptionPrice(ask), item.strike, dte);
+  const lastYield = calculateYieldPercent(executableOptionPrice(last), item.strike, dte);
   const moneyness = calculateMoneyness(currentPrice, item.strike);
   const status = expired ? 'expired' : item.status ?? 'stale';
 
@@ -218,8 +218,8 @@ function mergeLiveItem(item: WatchlistItem, optData: OptionsChainData | null, cu
     impliedVolatilityPercent: iv,
   });
 
-  const bidYield = calculateYieldPercent(put.bid, item.strike, dte);
-  const askYield = calculateYieldPercent(put.ask, item.strike, dte);
+  const bidYield = calculateYieldPercent(executableOptionPrice(put.bid), item.strike, dte);
+  const askYield = calculateYieldPercent(executableOptionPrice(put.ask), item.strike, dte);
   const moneyness = calculateMoneyness(underlyingPrice, item.strike);
 
   return {
@@ -561,7 +561,7 @@ export default function WatchlistPage() {
                       </div>
                       <div>
                         <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Last / Bid / Ask</div>
-                        <div className="font-mono" style={{ color: 'var(--text)' }}>{formatMoney(row.last)} / {formatMoney(row.bid)} / {formatMoney(row.ask)}</div>
+                        <div className="font-mono" style={{ color: 'var(--text)' }}>{formatOptionQuoteValue('last', row.last, formatMoney)} / {formatOptionQuoteValue('bid', row.bid, formatMoney)} / {formatOptionQuoteValue('ask', row.ask, formatMoney)}</div>
                       </div>
                       <div className="text-right">
                         <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Ann Yld Bid</div>
@@ -692,7 +692,7 @@ export default function WatchlistPage() {
                         <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={mutedStyle}>
                           {row.expiryFormatted} {isFiniteNumber(row.dte) ? `(${row.dte} DTE)` : ''}
                         </td>
-                        {OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => <td key={field} className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={mutedStyle} title={OPTION_QUOTE_DISPLAY_LABELS[field]}>{formatMoney(row[field])}</td>)}
+                        {OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => <td key={field} className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={mutedStyle} title={OPTION_QUOTE_DISPLAY_LABELS[field]}>{formatOptionQuoteValue(field, row[field], formatMoney)}</td>)}
                         <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={{ ...mutedStyle, color: deltaColor(row.delta) }}>{isFiniteNumber(row.delta) ? row.delta.toFixed(2) : '—'}</td>
                         <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={{ ...mutedStyle, color: row.moneynessColor }}>{row.moneynessLabel}</td>
                         <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={{ ...mutedStyle, color: ivColor(row.iv) }}>{isFiniteNumber(row.iv) ? row.iv.toFixed(1) + '%' : '—'}</td>

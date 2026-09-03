@@ -15,7 +15,7 @@ import { Search, X, ChevronUp, ChevronDown, Loader2, AlertTriangle, RefreshCw, S
 import { useResponsiveMode } from '../lib/responsive';
 import MobileBottomSheet from '../components/mobile/MobileBottomSheet';
 import MobileOptionRow from '../components/mobile/MobileOptionRow';
-import { OPTION_QUOTE_TABLE_DISPLAY_ORDER, OPTION_YIELD_DISPLAY_LABELS, OPTION_YIELD_DISPLAY_ORDER, isNominalYieldField, type OptionQuoteTableDisplayField, type OptionYieldDisplayField } from '../lib/optionQuoteDisplay';
+import { OPTION_QUOTE_TABLE_DISPLAY_ORDER, OPTION_YIELD_DISPLAY_LABELS, OPTION_YIELD_DISPLAY_ORDER, formatOptionQuoteValue, isNominalYieldField, type OptionQuoteTableDisplayField, type OptionYieldDisplayField } from '../lib/optionQuoteDisplay';
 import { compareNullableValue } from '../lib/metricValue';
 import { PageHeader } from '../components/ui/PageHeader';
 
@@ -1019,9 +1019,9 @@ export default function ScreenerPage() {
               </div>
               <div className="mt-2 grid grid-cols-4 gap-1.5 border-t pt-2" style={{ borderColor: 'var(--border)' }}>
                 {[
-                  ['Last', `$${formatPrice(row.last)}`, 'var(--text)'],
-                  ['Bid', `$${formatPrice(row.bid)}`, 'var(--green)'],
-                  ['Ask', `$${formatPrice(row.ask)}`, 'var(--text)'],
+                  ['Last', formatOptionQuoteValue('last', row.last, value => `$${formatPrice(value)}`), 'var(--text)'],
+                  ['Bid', formatOptionQuoteValue('bid', row.bid, value => `$${formatPrice(value)}`), 'var(--green)'],
+                  ['Ask', formatOptionQuoteValue('ask', row.ask, value => `$${formatPrice(value)}`), 'var(--text)'],
                   ['AY Bid', row.annYieldBid != null ? `${row.annYieldBid.toFixed(1)}%` : '—', annYieldColor(row.annYieldBid)],
                 ].map(([label, value, color]) => (
                   <div key={label} className="min-w-0 rounded-lg p-2 text-center" style={{ backgroundColor: 'var(--surface-alt)' }}>
@@ -1137,7 +1137,7 @@ export default function ScreenerPage() {
                       <td className="px-2 py-1 text-right font-mono" style={{ color: deltaColor(row.delta) }}>
                         {row.delta != null ? row.delta.toFixed(2) : '—'}
                       </td>
-                      {OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => <td key={field} className={`px-2 py-1 text-right font-mono ${field === 'bid' ? '' : 'hidden md:table-cell'}`} style={{ color: 'var(--text)' }}>{formatPrice(row[field])}</td>)}
+                      {OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => <td key={field} className={`px-2 py-1 text-right font-mono ${field === 'bid' ? '' : 'hidden md:table-cell'}`} style={{ color: 'var(--text)' }}>{formatOptionQuoteValue(field, row[field], formatPrice)}</td>)}
                       <td className="px-2 py-1 text-right font-mono hidden md:table-cell" style={{ color: ivColor(row.iv) }}>
                         {row.iv != null ? row.iv.toFixed(1) + '%' : '—'}
                       </td>

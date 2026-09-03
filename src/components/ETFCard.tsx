@@ -12,7 +12,7 @@ import {
   type SnapshotConfidence,
 } from '../lib/scannerOptionSnapshot';
 import { formatScannerDailyChangePercent } from '../lib/scannerPresentation';
-import { orderedOptionQuoteEntries } from '../lib/optionQuoteDisplay';
+import { formatOptionQuoteValue, orderedOptionQuoteEntries } from '../lib/optionQuoteDisplay';
 
 interface ETFCardProps {
   etf: ETFInfo;
@@ -186,7 +186,7 @@ function ScannerSnapshotTooltip({
       <SnapshotMetric label="Target" value="30% OTM put" />
       <SnapshotMetric label="Used" value={snapshot?.liquidityStrike != null && snapshot.actualOtmPercent != null && Number.isFinite(snapshot.actualOtmPercent) ? `${formatSnapshotMoney(snapshot.liquidityStrike)} · ${snapshot.actualOtmPercent.toFixed(1)}% OTM` : '—'} />
       <SnapshotMetric label="Selection tier" value={snapshot?.liquiditySelectionTier ? snapshot.liquiditySelectionTier.replace('_', ' ') : '—'} />
-      {orderedOptionQuoteEntries({ last: snapshot?.last, bid: snapshot?.bid, mid: snapshot?.midpoint, ask: snapshot?.ask }).map(({ field, label, value }) => <SnapshotMetric key={field} label={label} value={formatSnapshotMoney(value)} />)}
+      {orderedOptionQuoteEntries({ last: snapshot?.last, bid: snapshot?.bid, mid: snapshot?.midpoint, ask: snapshot?.ask }).map(({ field, label, value }) => <SnapshotMetric key={field} label={label} value={formatOptionQuoteValue(field, value, formatSnapshotMoney)} />)}
       <SnapshotMetric label="Last Trade" value={formatSnapshotDate(snapshot?.lastTradeDate)} />
       <SnapshotMetric label="Open Interest" value={formatSnapshotNumber(snapshot?.openInterest)} />
       <SnapshotMetric label="Volume" value={formatSnapshotNumber(snapshot?.volume)} />

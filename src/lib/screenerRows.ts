@@ -1,6 +1,7 @@
 import { resolvePutDelta } from './putDelta.ts';
 import { canonicalOptionChainKey } from './optionChainRequests.ts';
 import { calculateMoneyness, calculateYieldPercent } from './optionMetrics.ts';
+import { executableOptionPrice } from './optionQuoteDisplay.ts';
 import type { OptionsChainData } from './types.ts';
 
 export interface ScreenerRow {
@@ -211,9 +212,9 @@ export function buildScreenerRows(data: ScreenerAcquiredData, expFilter: string)
         const moneyness = calculateMoneyness(price, put.strike);
         const moneynessPct = moneyness.pct ?? 0;
         const moneynessLabel = moneyness.label === '—' ? '—' : moneyness.label.replace(/(\d+\.\d)%/, match => `${Number.parseFloat(match).toFixed(2)}%`);
-        const bidYield = calculateYieldPercent(put.bid, put.strike, dte);
-        const askYield = calculateYieldPercent(put.ask, put.strike, dte);
-        const lastYield = calculateYieldPercent(put.last, put.strike, dte);
+        const bidYield = calculateYieldPercent(executableOptionPrice(put.bid), put.strike, dte);
+        const askYield = calculateYieldPercent(executableOptionPrice(put.ask), put.strike, dte);
+        const lastYield = calculateYieldPercent(executableOptionPrice(put.last), put.strike, dte);
         const volOI = put.volume != null && put.volume > 0 && put.openInterest != null && put.openInterest > 0 ? put.volume / put.openInterest : null;
 
         rows.push({

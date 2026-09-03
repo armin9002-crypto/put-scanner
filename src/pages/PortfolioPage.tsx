@@ -1,5 +1,5 @@
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { AlertTriangle, Briefcase, ChevronDown, ChevronRight, Download, Edit2, FileImage, Loader2, MoreHorizontal, Plus, RefreshCw, Trash2, Wrench } from 'lucide-react';
+import { AlertTriangle, Briefcase, ChevronDown, ChevronRight, Download, Edit2, FileImage, Loader2, MoreHorizontal, Plus, RefreshCw, SlidersHorizontal, Trash2, Wrench } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { fetchBatchPricesResult, fetchOptions } from '../lib/api';
 import { resolvePutDelta } from '../lib/putDelta';
@@ -103,7 +103,7 @@ import {
   type HistorySortDirection,
   type HistorySortField,
 } from '../lib/portfolioHistorySorting';
-import { OPTION_QUOTE_TABLE_DISPLAY_ORDER, orderedOptionQuoteEntries } from '../lib/optionQuoteDisplay';
+import { OPTION_QUOTE_TABLE_DISPLAY_ORDER, executableOptionPrice, formatOptionQuoteValue, orderedOptionQuoteEntries } from '../lib/optionQuoteDisplay';
 import { persistPortfolioMarkBasis, readPortfolioMarkBasis } from '../lib/portfolioMarkPreference';
 import { persistShowNominalYield, readShowNominalYield } from '../lib/optionTablePreferences';
 import { buildCloseCandidates, buildNeedsAttention, getRedeployBadges, type CloseCandidate } from '../lib/portfolioPolicies';
@@ -338,11 +338,11 @@ function formatMarkBasis(value: MarkBasis): string {
 }
 
 function getPortfolioMidMark(trade: PortfolioTrade): number | null {
-  const explicitMid = trade.latestMarketData?.optionMid;
-  if (isFiniteNumber(explicitMid)) return explicitMid;
-  const bid = trade.latestMarketData?.optionBid;
-  const ask = trade.latestMarketData?.optionAsk;
-  return isFiniteNumber(bid) && isFiniteNumber(ask) && ask >= bid ? (bid + ask) / 2 : null;
+  const explicitMid = executableOptionPrice(trade.latestMarketData?.optionMid);
+  if (explicitMid != null) return explicitMid;
+  const bid = executableOptionPrice(trade.latestMarketData?.optionBid);
+  const ask = executableOptionPrice(trade.latestMarketData?.optionAsk);
+  return bid != null && ask != null && ask >= bid ? (bid + ask) / 2 : null;
 }
 
 function getLastTradeStaleness(value: string | number | null | undefined): { label: string | null; color: string } {
@@ -428,7 +428,7 @@ function CurrentMarkTooltipContent({ trade, markBasis }: { trade: PortfolioTrade
           bid: trade.latestMarketData?.optionBid,
           mid: getPortfolioMidMark(trade),
           ask: trade.latestMarketData?.optionAsk,
-        }).map(({ label, value }) => ({ label, value: formatOptionPrice(value) })),
+        }).map(({ field, label, value }) => ({ label, value: formatOptionQuoteValue(field, value, formatOptionPrice) })),
         {
           label: 'Last Trade Date',
           value: `${formatFullDate(trade.latestMarketData?.lastTradeDate)}${stale.label ? ` · ${stale.label}` : ''}`,
@@ -1387,6 +1387,7 @@ export default function PortfolioPage() {
   const [mobileAnalytics, setMobileAnalytics] = useState<'maturity' | 'ticker' | 'attention' | 'close'>('maturity');
   const [analyticsExpanded, setAnalyticsExpanded] = useState(false);
   const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
+  const [mobilePositionControlsOpen, setMobilePositionControlsOpen] = useState(false);
   const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false);
   const scheduleRef = useRef<HTMLDivElement | null>(null);
   const highlightTimerRef = useRef<number | null>(null);
@@ -1934,9 +1935,9 @@ export default function PortfolioPage() {
     const bid = trade.latestMarketData?.optionBid ?? trade.entrySnapshot?.bid ?? null;
     const ask = trade.latestMarketData?.optionAsk ?? trade.entrySnapshot?.ask ?? null;
     const last = trade.latestMarketData?.optionLast ?? trade.entrySnapshot?.last ?? null;
-    const bidYield = calculateYieldPercent(bid, trade.strike, dte);
-    const askYield = calculateYieldPercent(ask, trade.strike, dte);
-    const lastYield = calculateYieldPercent(last, trade.strike, dte);
+    const bidYield = calculateYieldPercent(executableOptionPrice(bid), trade.strike, dte);
+    const askYield = calculateYieldPercent(executableOptionPrice(ask), trade.strike, dte);
+    const lastYield = calculateYieldPercent(executableOptionPrice(last), trade.strike, dte);
     setDrawerSelection({
       ticker: trade.ticker,
       expirationLabel: expiryLabel(trade.expiration),
@@ -1997,39 +1998,36 @@ export default function PortfolioPage() {
           <>
             <section className="mobile-portfolio-hero px-4 pb-3 pt-3" style={{ backgroundColor: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
               <div className="portfolio-mobile-headline flex items-start justify-between gap-3">
-                <div><div className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: 'var(--text-dim)' }}>Gain / Loss</div><div className="mt-0.5 font-mono text-[28px] font-bold tracking-tight tabular-nums" style={{ color: pnlColor(markSummary.totalGainLoss) }}>{formatCurrency(markSummary.totalGainLoss, 0)}</div><div className="font-mono text-[13px] font-semibold" style={{ color: pnlColor(markSummary.percentCaptured) }}>{formatPctValue(markSummary.percentCaptured)} captured</div></div>
-                <button type="button" onClick={() => setMobileActionsOpen(true)} className="pressable flex h-11 w-11 items-center justify-center rounded-full" aria-label="Portfolio actions" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }}><MoreHorizontal className="h-5 w-5" /></button>
+                <div className="min-w-0"><div className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: 'var(--text-muted)' }}>Open trade book</div><div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-dim)' }}>{openTrades.length} {openTrades.length === 1 ? 'position' : 'positions'} · {markBasis.charAt(0).toUpperCase() + markBasis.slice(1)} marks</div></div>
+                <button type="button" onClick={() => void handleRefreshOpenTrades()} disabled={refreshing || openTrades.length === 0} className="pressable portfolio-mobile-refresh flex h-11 w-11 flex-none items-center justify-center rounded-full disabled:cursor-not-allowed disabled:opacity-40" aria-label="Refresh open trades" title="Refresh open trades" style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)' }}><RefreshCw className={`h-5 w-5 ${refreshing ? 'animate-spin' : ''}`} /></button>
               </div>
-              <div className="portfolio-mobile-metrics mt-3 grid grid-cols-4 gap-2 border-t pt-3" style={{ borderColor: 'var(--border)' }}>
+              <div className="portfolio-mobile-metrics mt-2 grid grid-cols-4 border-y" style={{ borderColor: 'var(--border)' }}>
                 {[
-                  ['Gross Risk', formatCurrency(summary.totalEquityAtRisk, 0)],
-                  ['Net Risk', formatCurrency(summary.totalNetCapitalAtRisk, 0)],
-                  ['Current AY', formatPctValue(markSummary.portfolioCurrentAnnualizedYield)],
-                  ['Weighted Δ', formatDelta(markSummary.weightedAverageDelta)],
-                ].map(([label, value]) => <div key={label} className="min-w-0"><div className="portfolio-mobile-metric-label text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>{label}</div><div className="font-mono text-[12px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{value}</div></div>)}
+                  ['Premium', formatCurrency(summary.totalPremiumCollected, 0), 'var(--text)'],
+                  ['Gross Risk', formatCurrency(summary.totalEquityAtRisk, 0), 'var(--text)'],
+                  ['Gain/Loss', formatCurrency(markSummary.totalGainLoss, 0), pnlColor(markSummary.totalGainLoss)],
+                  ['Captured', formatPctValue(markSummary.percentCaptured), pnlColor(markSummary.percentCaptured)],
+                  ['Entry AY', formatPctValue(markSummary.portfolioOriginalAnnualizedYield), 'var(--text)'],
+                  ['Current AY', formatPctValue(markSummary.portfolioCurrentAnnualizedYield), 'var(--text)'],
+                  ['Avg Delta', formatDelta(markSummary.weightedAverageDelta), 'var(--text)'],
+                  ['Avg DTE', isFiniteNumber(summary.weightedAverageRemainingDte) ? `${Math.round(summary.weightedAverageRemainingDte)} DTE` : DASH, 'var(--text)'],
+                ].map(([label, value, color], index) => <div key={label} className="portfolio-mobile-metric min-w-0" data-primary={index < 4 ? 'true' : 'false'}><div className="portfolio-mobile-metric-label uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>{label}</div><div className="portfolio-mobile-metric-value font-mono font-semibold tabular-nums" style={{ color }}>{value}</div></div>)}
               </div>
-              <div className="portfolio-mobile-mark-control mt-3 flex items-center gap-3"><span className="flex-none text-[12px] font-semibold" style={{ color: 'var(--text-muted)' }}>Mark at</span><div className="min-w-0 flex-1"><MobileSegmentedControl value={markBasis} onChange={setMarkBasis} label="Portfolio mark basis" options={MARK_BASIS_OPTIONS.map(value => ({ value, label: value.charAt(0).toUpperCase() + value.slice(1) }))} /></div></div>
+              <div className="portfolio-mobile-mark-control mt-2 flex items-center gap-3"><span className="portfolio-mobile-mark-label flex-none"><b>Mark basis</b><small>Revalues P&amp;L + Current AY</small></span><div className="min-w-0 flex-1"><MobileSegmentedControl value={markBasis} onChange={setMarkBasis} label="Portfolio mark basis" options={MARK_BASIS_OPTIONS.map(value => ({ value, label: value.charAt(0).toUpperCase() + value.slice(1) }))} /></div></div>
               <DataFreshness className="portfolio-mobile-freshness" updatedAt={lastRefreshed} status={refreshing ? 'updating' : refreshWarning ? 'failed' : lastRefreshed ? 'cached' : 'stale'} label="Portfolio marks" />
               {positionsNeedingFreshData > 0 && <p className="mt-1 text-[11px]" style={{ color: 'var(--yellow)' }}>{positionsNeedingFreshData} {positionsNeedingFreshData === 1 ? 'position needs' : 'positions need'} fresh market data.</p>}
-              {markSummary.totalGainLoss == null && <p className="portfolio-partial-mark" role="status">Partial marks · one or more open quotes are unavailable; aggregate P&amp;L stays — until refreshed.</p>}
+              {openTrades.length > 0 && markSummary.totalGainLoss == null && <p className="portfolio-partial-mark" role="status">Partial marks · one or more open quotes are unavailable; aggregate P&amp;L stays — until refreshed.</p>}
               {durableActivityNotice && <p role="status" className="mt-2 text-[11px] leading-4" style={{ color: 'var(--yellow)' }}>{durableActivityNotice}</p>}
             </section>
 
             {!analyticsExpanded && <PortfolioPriorityStrip trades={openTrades} markBasis={markBasis} onOpenTrade={openDrawer} />}
 
             <div ref={scheduleRef} className="border-b px-3.5 py-2" style={{ borderColor: 'var(--border)' }}>
-              <div className="mb-2 flex items-center justify-between"><h2 className="text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Open Positions</h2><span className="font-mono text-[11px]" style={{ color: 'var(--text-muted)' }}>{openTrades.length} trades</span></div>
+              <div className="mb-2 flex min-h-11 items-center justify-between gap-2">
+                <h2 className="text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Open Positions</h2>
+                <div className="flex items-center gap-0.5"><span className="mr-1 font-mono text-[11px]" style={{ color: 'var(--text-muted)' }}>{openTrades.length} trades</span><button type="button" onClick={() => setMobilePositionControlsOpen(true)} className="pressable flex h-11 w-11 items-center justify-center rounded-full" aria-label="Position display and sort" title="Position display and sort" style={{ color: 'var(--text-muted)' }}><SlidersHorizontal className="h-4 w-4" /></button><button type="button" onClick={() => setMobileActionsOpen(true)} className="pressable flex h-11 w-11 items-center justify-center rounded-full" aria-label="Portfolio actions" title="Portfolio actions" style={{ color: 'var(--text-muted)' }}><MoreHorizontal className="h-5 w-5" /></button></div>
+              </div>
               <div className="flex items-center gap-2"><span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Group</span><div className="min-w-0 flex-1"><MobileSegmentedControl value={groupMode} onChange={setGroupMode} label="Group portfolio positions" options={[{ value: 'expiration', label: 'Expiry' }, { value: 'underlying', label: 'Underlying' }, { value: 'none', label: 'None' }]} /></div></div>
-              <div className="mt-2 flex items-center gap-2">
-                <label htmlFor="mobile-portfolio-sort" className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Sort</label>
-                <select id="mobile-portfolio-sort" value={sortField} onChange={event => setSortField(event.target.value as PortfolioScheduleSortField)} className="mobile-control-field min-w-0 flex-1">
-                  {PORTFOLIO_SCHEDULE_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
-                <button type="button" onClick={() => setSortDir(direction => direction === 'asc' ? 'desc' : 'asc')} className="pressable mobile-control-button min-w-11 px-3" aria-label={`Sort ${sortDir === 'asc' ? 'ascending; activate for descending' : 'descending; activate for ascending'}`} title={sortDir === 'asc' ? 'Ascending' : 'Descending'}>{sortDir === 'asc' ? '↑' : '↓'}</button>
-              </div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                <DisplayToggle checked={showEntryDeltas} onChange={setShowEntryDeltas} label="Show Entry Deltas / IV" className="min-h-11" />
-              </div>
             </div>
             {openTrades.length === 0 ? <div className="px-4 py-10 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No open positions.</div> : groupMode === 'none' ? <div className="space-y-2 px-2 py-2">{flatScheduleTrades.map(renderMobileScheduleTrade)}</div> : <div className="space-y-2 px-2 py-2">{scheduleGroups.map(group => {
               const key = scheduleGroupKey(group);
@@ -2044,7 +2042,8 @@ export default function PortfolioPage() {
           </>
         )}
 
-        {mobileActionsOpen && <MobileBottomSheet title="Portfolio actions" onClose={() => setMobileActionsOpen(false)}><div className="space-y-2"><button type="button" onClick={() => { setMobileActionsOpen(false); setShowAddModal(true); }} className="mobile-sheet-action primary w-full"><Plus className="h-4 w-4" /> Add Trade</button><button type="button" onClick={() => { setMobileActionsOpen(false); setShowImportModal(true); }} className="mobile-sheet-action secondary w-full"><FileImage className="h-4 w-4" /> Import Screenshot</button><button type="button" onClick={() => { setMobileActionsOpen(false); setShowMaintenance(true); setMaintenanceMessage(''); }} className="mobile-sheet-action secondary w-full"><Wrench className="h-4 w-4" /> Portfolio Maintenance</button><button type="button" onClick={() => { setMobileActionsOpen(false); setShowDataBackup(true); }} className="mobile-sheet-action secondary w-full"><Download className="h-4 w-4" /> Data Backup</button><button type="button" onClick={() => { setMobileActionsOpen(false); void handleRefreshOpenTrades(); }} disabled={refreshing || openTrades.length === 0} className="mobile-sheet-action secondary w-full disabled:opacity-40"><RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} /> Refresh Open Trades</button></div></MobileBottomSheet>}
+        {mobilePositionControlsOpen && <MobileBottomSheet title="Position display & sort" description="Refine the open-position scan without reloading data" onClose={() => setMobilePositionControlsOpen(false)} footer={<button type="button" onClick={() => setMobilePositionControlsOpen(false)} className="mobile-sheet-action primary w-full">Done</button>}><div className="space-y-4"><label htmlFor="mobile-portfolio-sort" className="block"><span className="mobile-sheet-label">Sort positions</span><select id="mobile-portfolio-sort" value={sortField} onChange={event => setSortField(event.target.value as PortfolioScheduleSortField)} className="mobile-control-field w-full">{PORTFOLIO_SCHEDULE_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><div><span className="mobile-sheet-label">Direction</span><MobileSegmentedControl value={sortDir} onChange={setSortDir} label="Position sort direction" options={[{ value: 'asc', label: 'Ascending' }, { value: 'desc', label: 'Descending' }]} /></div><div><span className="mobile-sheet-label">Optional detail</span><DisplayToggle checked={showEntryDeltas} onChange={setShowEntryDeltas} label="Show Entry Deltas / IV" className="min-h-11 w-full" /></div></div></MobileBottomSheet>}
+        {mobileActionsOpen && <MobileBottomSheet title="Portfolio actions" onClose={() => setMobileActionsOpen(false)}><div className="space-y-2"><button type="button" onClick={() => { setMobileActionsOpen(false); setShowAddModal(true); }} className="mobile-sheet-action primary w-full"><Plus className="h-4 w-4" /> Add Trade</button><button type="button" onClick={() => { setMobileActionsOpen(false); setShowImportModal(true); }} className="mobile-sheet-action secondary w-full"><FileImage className="h-4 w-4" /> Import Screenshot</button><button type="button" onClick={() => { setMobileActionsOpen(false); setShowMaintenance(true); setMaintenanceMessage(''); }} className="mobile-sheet-action secondary w-full"><Wrench className="h-4 w-4" /> Portfolio Maintenance</button><button type="button" onClick={() => { setMobileActionsOpen(false); setShowDataBackup(true); }} className="mobile-sheet-action secondary w-full"><Download className="h-4 w-4" /> Data Backup</button></div></MobileBottomSheet>}
         {(showAddModal || editingTrade) && <TradeModal trade={editingTrade} onClose={() => { setShowAddModal(false); setEditingTrade(null); }} onSave={handleSaveTrade} onDelete={handleDeleteTrade} />}
         {drawerSelection && <ErrorBoundary title="Option sheet unavailable" message="Close it and try again."><Suspense fallback={null}><OptionDetailDrawer option={drawerSelection.option} ticker={drawerSelection.ticker} expirationLabel={drawerSelection.expirationLabel} dte={drawerSelection.dte} underlyingPrice={drawerSelection.underlyingPrice} onClose={() => setDrawerSelection(null)} /></Suspense></ErrorBoundary>}
         {showImportModal && <Suspense fallback={null}><PortfolioScreenshotImportModal trades={trades} onClose={() => setShowImportModal(false)} onApply={handleScreenshotImported} /></Suspense>}
@@ -2145,7 +2144,7 @@ export default function PortfolioPage() {
               <SummaryCard label="Weighted Avg Delta" value={formatDelta(markSummary.weightedAverageDelta)} color={pnlColor(markSummary.weightedAverageDelta)} />
               <SummaryCard label="Weighted Avg DTE" value={isFiniteNumber(summary.weightedAverageRemainingDte) ? `${Math.round(summary.weightedAverageRemainingDte)} DTE` : DASH} />
             </div>
-            {markSummary.totalGainLoss == null && <p className="portfolio-partial-mark mb-3" role="status">Partial marks · one or more open quotes are unavailable; aggregate P&amp;L stays — until refreshed.</p>}
+            {openTrades.length > 0 && markSummary.totalGainLoss == null && <p className="portfolio-partial-mark mb-3" role="status">Partial marks · one or more open quotes are unavailable; aggregate P&amp;L stays — until refreshed.</p>}
 
             {!analyticsExpanded && <PortfolioPriorityStrip trades={openTrades} markBasis={markBasis} onOpenTrade={openDrawer} />}
 

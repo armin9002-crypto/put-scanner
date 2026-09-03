@@ -14,6 +14,12 @@ export const OPTION_YIELD_DISPLAY_ORDER = [
 export type OptionQuoteDisplayField = typeof OPTION_QUOTE_DISPLAY_ORDER[number];
 export type OptionQuoteTableDisplayField = typeof OPTION_QUOTE_TABLE_DISPLAY_ORDER[number];
 export type OptionYieldDisplayField = typeof OPTION_YIELD_DISPLAY_ORDER[number];
+export type OptionSoldPriceBasis = OptionQuoteDisplayField | 'manual';
+
+export interface OptionSoldPriceSelection {
+  basis: Exclude<OptionSoldPriceBasis, 'ask' | 'manual'>;
+  value: number;
+}
 
 export const OPTION_QUOTE_DISPLAY_LABELS: Record<OptionQuoteDisplayField, string> = {
   last: 'Last',
@@ -43,4 +49,40 @@ export function orderedOptionQuoteEntries<T>(
     label: OPTION_QUOTE_DISPLAY_LABELS[field],
     value: values[field],
   }));
+}
+
+/** A live option price must be positive to represent an executable selection. */
+export function executableOptionPrice(value: number | null | undefined): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+export function calculateExecutableMidPrice({
+  bid,
+  ask,
+}: Pick<Record<OptionQuoteDisplayField, number | null | undefined>, 'bid' | 'ask'>): number | null {
+  const executableBid = executableOptionPrice(bid);
+  const executableAsk = executableOptionPrice(ask);
+  return executableBid != null && executableAsk != null ? (executableBid + executableAsk) / 2 : null;
+}
+
+/** Preserve the existing Bid -> Mid -> Last default order without selecting a zero quote. */
+export function selectDefaultSoldPrice(
+  quote: Pick<Record<OptionQuoteDisplayField, number | null | undefined>, 'last' | 'bid' | 'ask'>,
+): OptionSoldPriceSelection | null {
+  const bid = executableOptionPrice(quote.bid);
+  if (bid != null) return { basis: 'bid', value: bid };
+  const mid = calculateExecutableMidPrice(quote);
+  if (mid != null) return { basis: 'mid', value: mid };
+  const last = executableOptionPrice(quote.last);
+  return last != null ? { basis: 'last', value: last } : null;
+}
+
+export function formatOptionQuoteValue(
+  field: OptionQuoteDisplayField,
+  value: number | null | undefined,
+  formatter: (price: number) => string,
+): string {
+  const executable = executableOptionPrice(value);
+  if (executable != null) return formatter(executable);
+  return field === 'bid' && value === 0 ? 'No Bid' : '\u2014';
 }

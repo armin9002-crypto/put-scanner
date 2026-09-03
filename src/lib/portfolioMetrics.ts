@@ -97,15 +97,15 @@ export function calculateOriginalAnnualizedYield(trade: PortfolioTrade): number 
 export function calculateCurrentOptionMark(trade: PortfolioTrade, basis: MarkBasis): number | null {
   const md = trade.latestMarketData;
   if (!md) return null;
-  if (basis === 'ask') return positive(md.optionAsk, true);
-  if (basis === 'bid') return positive(md.optionBid, true);
-  if (basis === 'last') return positive(md.optionLast, true);
-  const explicitMid = positive(md.optionMid, true);
+  if (basis === 'ask') return positive(md.optionAsk);
+  if (basis === 'bid') return positive(md.optionBid);
+  if (basis === 'last') return positive(md.optionLast);
+  const explicitMid = positive(md.optionMid);
   if (explicitMid != null) return explicitMid;
-  const bid = positive(md.optionBid, true);
-  const ask = positive(md.optionAsk, true);
+  const bid = positive(md.optionBid);
+  const ask = positive(md.optionAsk);
   if (bid != null && ask != null && ask >= bid) return (bid + ask) / 2;
-  return positive(md.optionLast, true);
+  return positive(md.optionLast);
 }
 
 export function calculateOriginalNominalYield(trade: PortfolioTrade): number | null {
