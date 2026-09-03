@@ -8,7 +8,7 @@ The Analytics selector is grouped into Rolling and Portfolio State families. Rol
 
 Rolling metrics show a 3M / 6M / 12M control, defaulting to 6M. State metrics replace that control with **POINT IN TIME**, making the semantic change explicit. All choices retain the full strategy-history x-domain. The surface intentionally has no compare, overlay, or dual-axis mode.
 
-The header promotes the metric, latest available value, date, and concise coverage context. Hover or touch temporarily inspects an exact observation; leaving the plot restores the latest value. Rolling tooltips distinguish **Partial** from **Full**, show requested and effective starts, available days, represented trades/risk, and the selected Premium factor. State tooltips identify end-of-day state and open-book coverage.
+The header promotes the metric, latest available value, date, and concise coverage context. Hover or touch temporarily inspects an exact observation; leaving the plot restores the latest value. Rolling tooltips distinguish **Partial** from **Full**, show requested and effective starts, available days, represented trades/risk, and whether the Premium factor comes from actual elapsed days or the complete selected window. State tooltips identify end-of-day state and open-book coverage.
 
 ## Line and axis semantics
 

@@ -38,6 +38,13 @@ export function sanitizePositive(value: number | null | undefined, allowZero = f
   return value;
 }
 
+/** Put Scanner's canonical simple 365-calendar-day annualization convention. */
+export function calculateSimpleAnnualizedValue(value: number | null | undefined, calendarDays: number | null | undefined): number | null {
+  if (!isFiniteNumber(value) || !isFiniteNumber(calendarDays) || calendarDays <= 0) return null;
+  const annualized = value * (365 / calendarDays);
+  return isFiniteNumber(annualized) ? annualized : null;
+}
+
 export function calculateDte(expiration: number | string | Date | null | undefined): number | null {
   if (expiration == null) return null;
 
@@ -131,7 +138,7 @@ export const calculateSecuredCashYield = calculateNominalYield;
 
 export function calculateAnnualizedYield(optionPrice: number | null | undefined, strike: number | null | undefined, dte: number | null | undefined): number | null {
   const nominal = calculateNominalYield(optionPrice, strike);
-  return nominal != null && isFiniteNumber(dte) && dte > 0 ? nominal * (365 / dte) : null;
+  return nominal == null ? null : calculateSimpleAnnualizedValue(nominal, dte);
 }
 
 /** Inverse of the canonical simple annualized-yield contract. */
@@ -195,9 +202,7 @@ export function calculatePositionMetrics({
   const returnOnRisk = totalPremium != null && netCapitalAtRisk != null && netCapitalAtRisk > 0
     ? totalPremium / netCapitalAtRisk
     : null;
-  const annualizedReturn = returnOnRisk != null && isFiniteNumber(dte) && dte > 0
-    ? returnOnRisk * (365 / dte)
-    : null;
+  const annualizedReturn = returnOnRisk == null ? null : calculateSimpleAnnualizedValue(returnOnRisk, dte);
 
   return {
     totalPremium,

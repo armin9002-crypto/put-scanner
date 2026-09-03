@@ -185,6 +185,12 @@ function formatAvailableMonths(point: RollingHistoricalAnalyticsPoint): string {
   return `${months.toFixed(1)} of ${point.requestedWindowMonths} months available`;
 }
 
+function flowAnnualizationLabel(point: RollingHistoricalAnalyticsPoint): string {
+  const factor = point.flow?.annualizationFactor;
+  if (factor == null) return 'annualization unavailable at 0 elapsed days';
+  return `×${factor.toFixed(1)} annualized${point.fullWindow ? '' : ' from actual elapsed days'}`;
+}
+
 function rollingMetadata(point: RollingHistoricalAnalyticsPoint): string[] {
   const rows: string[] = [];
   if (point.fullWindow) rows.push(`Full trailing ${point.requestedWindowMonths}M`);
@@ -197,7 +203,7 @@ function rollingMetadata(point: RollingHistoricalAnalyticsPoint): string[] {
     rows.push(`${point.tradesIncluded} resolved trades`);
     rows.push(`${formatCurrency(point.grossRiskRepresented, 0)} Gross Risk represented`);
   }
-  if (point.flow) rows.push(`Trailing ${formatCurrency(point.flow.trailingValue ?? 0, 0)} · ×${point.flow.annualizationFactor.toFixed(1)} annualized`);
+  if (point.flow) rows.push(`Trailing ${formatCurrency(point.flow.trailingValue ?? 0, 0)} · ${flowAnnualizationLabel(point)}`);
   return rows;
 }
 
@@ -212,7 +218,7 @@ function pointMetadata(point: HistoricalPoint | null): string {
     const coverage = isFiniteValue(point.coverage.representedRiskPercent) ? ` · ${(point.coverage.representedRiskPercent * 100).toFixed(0)}% risk coverage` : '';
     return `${prefix} · ${point.coverage.representedTrades}/${point.coverage.totalEligibleTrades} trades · ${formatCurrency(point.coverage.representedGrossRisk, 0)} Gross Risk${coverage}`;
   }
-  if (point.flow) return `${prefix} · ${point.flow.tradesOriginated} trades · trailing ${formatCurrency(point.flow.trailingValue ?? 0, 0)} · ×${point.flow.annualizationFactor.toFixed(1)}`;
+  if (point.flow) return `${prefix} · ${point.flow.tradesOriginated} trades · trailing ${formatCurrency(point.flow.trailingValue ?? 0, 0)} · ${flowAnnualizationLabel(point)}`;
   return `${prefix} · ${point.tradesIncluded} resolved trades · ${formatCurrency(point.grossRiskRepresented, 0)} Gross Risk`;
 }
 

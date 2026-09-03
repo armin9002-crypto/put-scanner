@@ -11,8 +11,12 @@ import {
 import {
   buildExpirationPeriodRealizedPnl,
   buildRealizedPnlChartScale,
+  historyRealizedIrr,
 } from '../src/lib/portfolioHistoryAnalytics.ts';
 import { buildRollingHistoricalAnalyticsSeries } from '../src/lib/rollingHistoricalAnalytics.ts';
+import { calculateSimpleAnnualizedValue } from '../src/lib/optionMetrics.ts';
+import { calculateOriginalAnnualizedYield, calculateOriginalDte } from '../src/lib/portfolioMetrics.ts';
+import { REQUEST_BUDGET_LEDGER } from '../src/lib/requestBudgets.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const now = new Date('2026-01-12T17:00:00.000Z');
@@ -21,6 +25,12 @@ const trade = (overrides = {}) => ({
   soldPrice: 2, soldDate: '2026-01-01', status: 'open', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
   ...overrides,
 });
+const closeTo = (actual, expected, tolerance = 1e-9) => {
+  assert.equal(typeof actual, 'number');
+  assert.equal(typeof expected, 'number');
+  assert.ok(Number.isFinite(actual) && Number.isFinite(expected));
+  assert.ok(Math.abs(actual - expected) <= tolerance, `${actual} != ${expected}`);
+};
 
 test('portfolio-state analytics reconstruct strict EOD lifecycle boundaries and safe coverage', () => {
   const rows = [
@@ -49,23 +59,87 @@ test('portfolio-state analytics reconstruct strict EOD lifecycle boundaries and 
   assert.equal(dte.points.find(point => point.date === '2026-01-10').value, null);
 });
 
-test('rolling prefix windows use effective history, preserve requested metadata, and keep the selected annualization factor', () => {
-  const asOf = new Date('2026-03-01T17:00:00.000Z');
-  const series = buildRollingHistoricalAnalyticsSeries([
-    trade({ id: 'first', soldDate: '2026-01-15', expiration: '2026-06-19', soldPrice: 1 }),
-    trade({ id: 'second', soldDate: '2026-02-01', expiration: '2026-07-17', soldPrice: 2 }),
-  ], 'premiumRunRate', 6, asOf);
-  const first = series.points[0];
-  const latest = series.points.at(-1);
-  assert.equal(first.date, '2026-01-15');
-  assert.equal(first.fullWindow, false);
-  assert.equal(first.requestedWindowStart, '2025-07-15');
-  assert.equal(first.effectiveWindowStart, '2026-01-15');
-  assert.equal(first.availableDays, 0);
-  assert.equal(first.value, 200, 'one $100 premium is annualized by the selected 6M factor of two');
-  assert.equal(latest.fullWindow, false);
-  assert.equal(latest.flow.annualizationFactor, 2);
-  assert.equal(latest.value, 600);
+test('partial 3M, 6M, and 12M Premium Run Rate annualizes the actual available interval', () => {
+  const row = trade({ soldDate: '2026-01-15', expiration: '2027-01-15', soldPrice: 1 });
+  for (const windowMonths of [3, 6, 12]) {
+    const series = buildRollingHistoricalAnalyticsSeries([row], 'premiumRunRate', windowMonths, new Date('2026-02-15T17:00:00.000Z'));
+    const first = series.points[0];
+    const latest = series.points.at(-1);
+    assert.equal(first.date, '2026-01-15');
+    assert.equal(first.fullWindow, false);
+    assert.equal(first.effectiveWindowStart, '2026-01-15');
+    assert.equal(first.availableDays, 0);
+    assert.equal(first.value, null);
+    assert.equal(first.flow.annualizationFactor, null);
+    assert.equal(latest.fullWindow, false);
+    assert.equal(latest.availableDays, 31);
+    closeTo(latest.flow.annualizationFactor, 365 / 31);
+    closeTo(latest.value, 100 * 365 / 31);
+    assert.notEqual(latest.value, 100 * (12 / windowMonths), 'partial history must not use the selected-window factor');
+  }
+});
+
+test('first and one-day Premium observations remain deterministic without NaN or Infinity', () => {
+  const row = trade({ soldDate: '2026-01-15', expiration: '2027-01-15', soldPrice: 1 });
+  const series = buildRollingHistoricalAnalyticsSeries([row], 'premiumRunRate', 6, new Date('2026-01-16T17:00:00.000Z'));
+  assert.equal(calculateSimpleAnnualizedValue(100, 0), null);
+  assert.equal(series.points[0].value, null);
+  assert.equal(series.points[0].flow.annualizationFactor, null);
+  assert.equal(series.points.at(-1).availableDays, 1);
+  assert.equal(series.points.at(-1).value, 36_500);
+  assert.ok(series.points.every(point => point.value == null || Number.isFinite(point.value)));
+  assert.doesNotMatch(JSON.stringify(series), /NaN|Infinity/);
+});
+
+test('full 3M, 6M, and 12M Premium Run Rate preserves the selected ×4, ×2, and ×1 factors', () => {
+  const row = trade({ soldDate: '2026-01-15', expiration: '2028-01-21', soldPrice: 1 });
+  for (const [windowMonths, asOf, expectedFactor] of [
+    [3, '2026-04-15T17:00:00.000Z', 4],
+    [6, '2026-07-15T17:00:00.000Z', 2],
+    [12, '2027-01-15T17:00:00.000Z', 1],
+  ]) {
+    const latest = buildRollingHistoricalAnalyticsSeries([row], 'premiumRunRate', windowMonths, new Date(asOf)).points.at(-1);
+    assert.equal(latest.fullWindow, true);
+    assert.equal(latest.requestedWindowStart, '2026-01-15');
+    assert.equal(latest.flow.annualizationFactor, expectedFactor);
+    assert.equal(latest.value, 100 * expectedFactor);
+  }
+});
+
+test('partial-to-full Premium Run Rate boundary changes only by the documented annualization convention', () => {
+  const row = trade({ soldDate: '2026-01-15', expiration: '2027-01-15', soldPrice: 1 });
+  const build = () => buildRollingHistoricalAnalyticsSeries([row], 'premiumRunRate', 3, new Date('2026-04-15T17:00:00.000Z'));
+  const series = build();
+  const full = series.points.at(-1);
+  const partial = series.points.filter(point => !point.fullWindow && point.value != null).at(-1);
+  assert.equal(partial.flow.trailingValue, full.flow.trailingValue);
+  closeTo(partial.value, 100 * 365 / partial.availableDays);
+  assert.equal(full.value, 400);
+  closeTo(full.value - partial.value, 400 - 100 * 365 / partial.availableDays);
+  assert.deepEqual(build(), series, 'identical dates and trades must produce an identical boundary');
+});
+
+test('the Premium correction leaves every unrelated rolling metric on its canonical calculation', () => {
+  const row = trade({
+    soldDate: '2026-01-15', expiration: '2026-06-19', soldPrice: 1.5, strike: 50,
+    status: 'closed', closeDate: '2026-02-10', closePrice: 0.5, realizedPnl: 100,
+    entryDelta: -0.2, entryIv: 42,
+  });
+  const latest = metric => buildRollingHistoricalAnalyticsSeries([row], metric, 6, new Date('2026-02-15T17:00:00.000Z')).points.at(-1).value;
+  closeTo(latest('entryAy'), calculateOriginalAnnualizedYield(row));
+  assert.equal(latest('entryIv'), 42);
+  assert.equal(latest('entryDelta'), -0.2);
+  assert.equal(latest('originalDte'), calculateOriginalDte(row));
+  closeTo(latest('realizedIrr'), historyRealizedIrr(row));
+});
+
+test('historical analytics retains an exact zero-request ledger', () => {
+  assert.deepEqual(REQUEST_BUDGET_LEDGER['portfolio-rolling-historical-analytics'].expected, {
+    browserRequests: 0,
+    functionInvocations: 0,
+    providerAcquisitions: 0,
+  });
+  assert.equal(REQUEST_BUDGET_LEDGER['portfolio-rolling-historical-analytics'].providerHttpAttemptCeiling, 0);
 });
 
 test('expiration-period P&L uses expiration only and reconciles aggregate premium capture', () => {

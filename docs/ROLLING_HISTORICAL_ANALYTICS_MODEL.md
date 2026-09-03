@@ -13,7 +13,7 @@ The Rolling group contains exactly six metrics:
 | Entry Delta | Sold date | Gross-Risk-weighted signed canonical Entry Delta |
 | Realized IRR | Canonical realization date | Gross-Risk-weighted canonical position Realized IRR |
 | Original DTE | Sold date | Gross-Risk-weighted canonical Original DTE |
-| Annualized Premium Run Rate | Sold date | Canonical Premium originated in the selected window, annualized by the selected period factor |
+| Annualized Premium Run Rate | Sold date | Canonical Premium originated in the effective interval; partial history uses actual elapsed calendar days and complete windows use the selected period factor |
 
 The Portfolio State group contains exactly two metrics:
 
@@ -39,7 +39,7 @@ For a rolling observation:
 
 A valid prefix is calculated rather than suppressed. Weighted metrics apply their normal eligibility and coverage rules to the effective interval. Realized IRR uses canonical realization dates: actual `closeDate` for closed trades, `expiration` for held-to-expiration trades, and established assignment `resolvedDate` with the existing lifecycle fallback. Open and unresolved records have no realized event.
 
-Annualized Premium Run Rate preserves the selected factor even for a partial prefix: 3M uses ×4, 6M uses ×2, and 12M uses ×1. It does not annualize by the shorter available history. A valid window with no originations is economically `0`; malformed premium inputs fail closed.
+Annualized Premium Run Rate uses `Premium in the effective interval × 365 / availableDays` while the dotted prefix is partial. The exact strategy-start observation has zero elapsed days, so its annualized value and factor are `null` rather than fabricated; subsequent positive-duration observations are finite. Once the requested calendar window is complete, the original selected-period convention remains exact: 3M uses ×4, 6M uses ×2, and 12M uses ×1. At the first full-window point, any small factor change is only the mathematically implied difference between the preceding actual-day partial factor and the requested calendar-period factor; the Premium interval and partial/full boundary remain unchanged. A valid positive-duration window with no originations is economically `0`; malformed premium inputs fail closed.
 
 ## Portfolio-state EOD reconstruction
 
@@ -57,6 +57,6 @@ An unsafe terminal record is excluded rather than guessed. Each state point repo
 
 Weighted metrics exclude a missing or invalid metric from both numerator and denominator. Valid zero values remain represented, including signed Delta zero and zero Entry AY; Entry IV zero stays invalid under the canonical validator. Zero represented Gross Risk yields `null`.
 
-Entry metrics expose eligible/represented trade and Gross Risk counts. Realized IRR exposes resolved represented trades and Gross Risk. Premium exposes originations, trailing Premium, the selected annualization factor, and annualized output. All returned values are raw numbers; formatting belongs to the chart.
+Entry metrics expose eligible/represented trade and Gross Risk counts. Realized IRR exposes resolved represented trades and Gross Risk. Premium exposes originations, trailing Premium, the actual-day partial or selected-window full annualization factor, and annualized output. All returned values are raw numbers; formatting belongs to the chart.
 
 `buildRollingHistoricalAnalyticsSeries` returns requested/effective window metadata and prefix/full status. `buildPortfolioHistoricalStateSeries` returns daily point-in-time state and lifecycle coverage. Selector, period, hover, and date changes are client-local: zero browser requests, zero function invocations, zero provider acquisitions, zero Supabase writes, and no Portfolio rewrite or schema migration.

@@ -1,4 +1,4 @@
-import { isFiniteNumber } from './optionMetrics.ts';
+import { calculateSimpleAnnualizedValue, isFiniteNumber } from './optionMetrics.ts';
 import { isValidEntryDelta, isValidEntryIv, usMarketDateIso } from './portfolioEntryDelta.ts';
 import { historyRealizedIrr } from './portfolioHistoryAnalytics.ts';
 import {
@@ -115,7 +115,7 @@ export interface RollingHistoricalCoverage {
 export interface RollingHistoricalFlowMetadata {
   tradesOriginated: number;
   trailingValue: number | null;
-  annualizationFactor: number;
+  annualizationFactor: number | null;
   annualizedValue: number | null;
 }
 
@@ -336,7 +336,9 @@ function flowPoint(
   windowMonths: RollingWindowMonths,
   metric: 'premiumRunRate',
 ): RollingHistoricalAnalyticsPoint {
-  const annualizationFactor = 12 / windowMonths;
+  const annualizationFactor = context.fullWindow
+    ? 12 / windowMonths
+    : calculateSimpleAnnualizedValue(1, context.availableDays);
   let trailingValue = 0;
   let valid = true;
   records.forEach(record => {
@@ -348,7 +350,7 @@ function flowPoint(
     trailingValue += value;
   });
   const rawValue = valid ? trailingValue : null;
-  const annualizedValue = rawValue == null ? null : rawValue * annualizationFactor;
+  const annualizedValue = rawValue == null || annualizationFactor == null ? null : rawValue * annualizationFactor;
   const grossRiskRepresented = records.reduce((sum, record) => sum + record.grossRisk, 0);
   return {
     date,
