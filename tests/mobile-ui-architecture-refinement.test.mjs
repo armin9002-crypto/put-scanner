@@ -57,3 +57,10 @@ test('portrait Portfolio exposes the exact eight-metric headline and one direct 
   const actionsEnd = portrait.indexOf('{(showAddModal', actionsStart);
   assert.doesNotMatch(portrait.slice(actionsStart, actionsEnd), /Refresh Open Trades/);
 });
+
+test('Recommendations retains its legacy shared-drawer contract while other mobile routes use the refined hierarchy', async () => {
+  const source = await readFile(path.join(root, 'src/components/OptionDetailDrawer.tsx'), 'utf8');
+  assert.match(source, /window\.location\.pathname === '\/recommendations'/);
+  assert.match(source, /if \(isPhone && preserveRecommendationContract\)/);
+  assert.match(source, /if \(isPhone\) \{[\s\S]*option-detail-mobile-group/);
+});
