@@ -66,6 +66,7 @@ function accountFixture(state: string, signedOut: boolean): AccountStateContextV
     canWrite: phase === 'ready' || phase === 'saving',
     reload: unavailable,
     restoreBackup: unavailable,
+    commitHistoricalPortfolioImport: unavailable,
   };
 }
 

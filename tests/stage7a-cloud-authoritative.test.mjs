@@ -88,7 +88,9 @@ class SharedCloudBackend {
     this.initializeCalls = [];
     this.updateCalls = [];
     this.fetchError = false;
+    this.fetchErrorAfter = Number.POSITIVE_INFINITY;
     this.updateError = false;
+    this.updateMode = 'normal';
     this.beforeUpdate = null;
   }
 
@@ -96,7 +98,7 @@ class SharedCloudBackend {
     return {
       fetchAllUserState: async () => {
         this.fetchAllCalls += 1;
-        if (this.fetchError) return { ok: false, error: { code: 'network_error', operation: 'fetch_all', message: 'offline' } };
+        if (this.fetchError || this.fetchAllCalls > this.fetchErrorAfter) return { ok: false, error: { code: 'network_error', operation: 'fetch_all', message: 'offline' } };
         return this.state === null
           ? { ok: true, value: { status: 'empty' } }
           : { ok: true, value: { status: 'complete', state: clone(this.state) } };
@@ -125,19 +127,27 @@ class SharedCloudBackend {
         row.schemaVersion = schemaVersion;
         row.revision += 1;
         row.updatedAt = fixedNow.toISOString();
+        if (this.updateMode === 'partial_then_network_error') {
+          row.payload.data = row.payload.data.slice(0, Math.max(1, row.payload.data.length - 1));
+          return { ok: false, error: { code: 'network_error', operation: 'update_namespace', namespace, message: 'lost acknowledgement' } };
+        }
+        if (this.updateMode === 'commit_then_network_error') {
+          return { ok: false, error: { code: 'network_error', operation: 'update_namespace', namespace, message: 'lost acknowledgement' } };
+        }
         return { ok: true, value: clone(row) };
       },
     };
   }
 }
 
-function runtime(backend, legacy = new MemoryStorage()) {
+function runtime(backend, legacy = new MemoryStorage(), options = {}) {
   const storage = new AccountStateMemoryStorage();
   const manager = createCloudAuthoritativeAccountStateManager({
     storage,
     legacyStorage: legacy,
     clientForUser: () => backend.client(),
     now: () => fixedNow,
+    ...options,
   });
   return { storage, manager, legacy };
 }
@@ -467,4 +477,229 @@ test('legacy cleanup is an explicit account-only allowlist', () => {
     'put_scanner_cloud_sync_engine:v1',
     'put_scanner_cloud_device_id:v1',
   ]);
+});
+
+const historicalImportLot = (id, overrides = {}) => ({
+  id,
+  ticker: 'SPXL',
+  optionType: 'put',
+  strike: 30,
+  expiration: '2026-06-19',
+  contracts: 1,
+  soldPrice: 1.5,
+  soldDate: '2026-05-01',
+  status: 'expired',
+  closePrice: 0,
+  closeDate: '2026-06-19',
+  resolvedDate: '2026-06-19',
+  resolutionType: 'expired_worthless',
+  expirationClosePrice: 35,
+  expirationCloseDate: '2026-06-19',
+  finalOptionValue: 0,
+  realizedPnl: 150,
+  percentCaptured: 1,
+  premiumCollected: 150,
+  daysHeld: 49,
+  entryDelta: -0.2,
+  entryDeltaSource: 'imported',
+  entryDeltaCapturedAt: fixedNow.toISOString(),
+  entryIv: 50,
+  entryIvSource: 'imported',
+  entryIvCapturedAt: fixedNow.toISOString(),
+  resolutionSource: 'manual_expiration_close',
+  resolutionWarning: 'Historical underlying expiration price imported from source workbook; not provider-verified.',
+  createdAt: fixedNow.toISOString(),
+  updatedAt: fixedNow.toISOString(),
+  ...overrides,
+});
+
+function historicalImportRequest(device, lots, overrides = {}) {
+  return {
+    reviewPortfolioRevision: device.manager.getSnapshot().cloud?.portfolio.revision ?? 0,
+    trades: lots,
+    acknowledgedExistingDuplicateIds: [],
+    appVersion: '7.0.0',
+    downloadBackup: () => {},
+    ...overrides,
+  };
+}
+
+test('historical bulk import is signed-in/ready-only and pending writes block it', async t => {
+  const backend = new SharedCloudBackend();
+  const device = runtime(backend);
+  t.after(() => device.manager.destroy());
+  await device.manager.setAccount(null, true);
+  assert.equal((await device.manager.commitHistoricalPortfolioImport({
+    reviewPortfolioRevision: 10,
+    trades: [historicalImportLot('import-a')],
+    acknowledgedExistingDuplicateIds: [],
+    appVersion: '7.0.0',
+    downloadBackup: () => {},
+  })).ok, false);
+  assert.equal(backend.updateCalls.length, 0);
+
+  await device.manager.setAccount(userId, false);
+  const unavailable = await device.manager.commitHistoricalPortfolioImport({
+    reviewPortfolioRevision: 10,
+    trades: [historicalImportLot('import-unavailable')],
+    acknowledgedExistingDuplicateIds: [],
+    appVersion: '7.0.0',
+    downloadBackup: () => {},
+  });
+  assert.equal(unavailable.ok, false);
+  assert.equal(backend.updateCalls.length, 0);
+
+  await device.manager.setAccount(userId, true);
+  let release;
+  backend.beforeUpdate = () => new Promise(resolve => { release = resolve; });
+  const current = readPortfolioTrades(device.storage);
+  assert.equal(writePortfolioTrades(device.storage, current.data.map(item => ({ ...item, notes: 'pending' }))).status, 'ok');
+  await waitFor(() => device.manager.getSnapshot().pendingWrites === 1);
+  const blocked = await device.manager.commitHistoricalPortfolioImport(historicalImportRequest(device, [historicalImportLot('import-b')]));
+  assert.equal(blocked.ok, false);
+  assert.equal(backend.updateCalls.length, 1, 'only the already-pending ordinary write reached cloud');
+  release();
+});
+
+test('N historical lots use one Portfolio CAS after latest-state backup and authoritative read-back', async t => {
+  const backend = new SharedCloudBackend();
+  const beforeWatchlist = clone(backend.state.watchlist);
+  const beforePreferences = clone(backend.state.preferences);
+  const beforePortfolio = clone(backend.state.portfolio.payload.data);
+  const device = runtime(backend);
+  t.after(() => device.manager.destroy());
+  await device.manager.setAccount(userId, true);
+  let downloadedBackup = null;
+  const lots = [historicalImportLot('import-a'), historicalImportLot('import-b', { soldDate: '2026-05-02', soldPrice: 1.6 })];
+  const result = await device.manager.commitHistoricalPortfolioImport(historicalImportRequest(device, lots, {
+    downloadBackup: backup => { downloadedBackup = clone(backup); },
+  }));
+  assert.equal(result.ok, true);
+  assert.equal(result.importedCount, 2);
+  assert.match(result.backupFilename, /^pre-historical-import-backup-/);
+  assert.equal(downloadedBackup.data.portfolio.data.length, 1, 'backup contains the pre-import Portfolio');
+  assert.equal(downloadedBackup.data.portfolio.revision, 10);
+  assert.equal(backend.updateCalls.length, 1);
+  assert.deepEqual(
+    [backend.updateCalls[0].namespace, backend.updateCalls[0].expectedRevision, backend.updateCalls[0].schemaVersion],
+    ['portfolio', 10, 1],
+  );
+  assert.deepEqual(backend.updateCalls[0].payload.data.map(item => item.id), ['cloud-a', 'import-a', 'import-b']);
+  assert.equal(backend.fetchAllCalls, 3, 'bootstrap, latest pre-commit state, and authoritative read-back');
+  assert.deepEqual(backend.state.watchlist, beforeWatchlist);
+  assert.deepEqual(backend.state.preferences, beforePreferences);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(backend.state.portfolio.payload.data.slice(0, beforePortfolio.length))),
+    JSON.parse(JSON.stringify(beforePortfolio)),
+  );
+  assert.deepEqual(readPortfolioTrades(device.storage).data.map(item => item.id), ['cloud-a', 'import-a', 'import-b']);
+  assert.equal(device.manager.getSnapshot().phase, 'ready');
+});
+
+test('revision change and final duplicate recheck stop import before backup or mutation', async t => {
+  const backend = new SharedCloudBackend();
+  const device = runtime(backend);
+  t.after(() => device.manager.destroy());
+  await device.manager.setAccount(userId, true);
+  const request = historicalImportRequest(device, [historicalImportLot('import-a')]);
+  let backups = 0;
+  request.downloadBackup = () => { backups += 1; };
+  backend.state.portfolio.revision += 1;
+  const changed = await device.manager.commitHistoricalPortfolioImport(request);
+  assert.equal(changed.code, 'revision_changed');
+  assert.equal(backups, 0);
+  assert.equal(backend.updateCalls.length, 0);
+
+  const duplicateBackend = new SharedCloudBackend(cloudState([historicalImportLot('existing-copy')]));
+  const duplicateDevice = runtime(duplicateBackend);
+  t.after(() => duplicateDevice.manager.destroy());
+  await duplicateDevice.manager.setAccount(userId, true);
+  const duplicate = await duplicateDevice.manager.commitHistoricalPortfolioImport(historicalImportRequest(duplicateDevice, [historicalImportLot('incoming-copy')]));
+  assert.equal(duplicate.code, 'duplicate_state_changed');
+  assert.equal(duplicateBackend.updateCalls.length, 0);
+});
+
+test('backup creation/download failure produces zero cloud mutations', async t => {
+  const backend = new SharedCloudBackend();
+  const device = runtime(backend);
+  t.after(() => device.manager.destroy());
+  await device.manager.setAccount(userId, true);
+  const result = await device.manager.commitHistoricalPortfolioImport(historicalImportRequest(device, [historicalImportLot('import-a')], {
+    downloadBackup: () => { throw new Error('download unavailable'); },
+  }));
+  assert.equal(result.code, 'backup_failed');
+  assert.equal(backend.updateCalls.length, 0);
+  assert.deepEqual(backend.state.portfolio.payload.data.map(item => item.id), ['cloud-a']);
+
+  const invalidBackend = new SharedCloudBackend();
+  const invalidBackupDevice = runtime(invalidBackend, new MemoryStorage(), {
+    createHistoricalImportBackup: () => ({ format: 'not-a-put-scanner-backup' }),
+  });
+  t.after(() => invalidBackupDevice.manager.destroy());
+  await invalidBackupDevice.manager.setAccount(userId, true);
+  const invalidBackup = await invalidBackupDevice.manager.commitHistoricalPortfolioImport(
+    historicalImportRequest(invalidBackupDevice, [historicalImportLot('import-invalid-backup')]),
+  );
+  assert.equal(invalidBackup.code, 'backup_failed');
+  assert.equal(invalidBackend.updateCalls.length, 0);
+});
+
+test('CAS conflict is never retried and latest canonical state is restored', async t => {
+  const backend = new SharedCloudBackend();
+  const device = runtime(backend);
+  t.after(() => device.manager.destroy());
+  await device.manager.setAccount(userId, true);
+  backend.beforeUpdate = async () => { backend.state.portfolio.revision += 1; };
+  const result = await device.manager.commitHistoricalPortfolioImport(historicalImportRequest(device, [historicalImportLot('import-a')]));
+  assert.equal(result.code, 'conflict');
+  assert.equal(backend.updateCalls.length, 1);
+  assert.equal(backend.state.portfolio.payload.data.some(item => item.id === 'import-a'), false);
+  assert.equal(device.manager.getSnapshot().phase, 'conflict');
+});
+
+test('lost acknowledgement is read back and recognized as committed without duplicate retry', async t => {
+  const backend = new SharedCloudBackend();
+  backend.updateMode = 'commit_then_network_error';
+  const device = runtime(backend);
+  t.after(() => device.manager.destroy());
+  await device.manager.setAccount(userId, true);
+  const result = await device.manager.commitHistoricalPortfolioImport(historicalImportRequest(device, [historicalImportLot('import-a')]));
+  assert.equal(result.ok, true);
+  assert.equal(backend.updateCalls.length, 1);
+  assert.equal(backend.state.portfolio.payload.data.filter(item => item.id === 'import-a').length, 1);
+  assert.equal(readPortfolioTrades(device.storage).data.filter(item => item.id === 'import-a').length, 1);
+});
+
+test('ambiguous failure proven uncommitted is safe, while partial or unavailable read-back requires verification', async t => {
+  const notCommitted = new SharedCloudBackend();
+  notCommitted.updateError = true;
+  const safeDevice = runtime(notCommitted);
+  t.after(() => safeDevice.manager.destroy());
+  await safeDevice.manager.setAccount(userId, true);
+  const safe = await safeDevice.manager.commitHistoricalPortfolioImport(historicalImportRequest(safeDevice, [historicalImportLot('import-safe')]));
+  assert.equal(safe.code, 'network_error');
+  assert.equal(notCommitted.updateCalls.length, 1);
+  assert.equal(notCommitted.state.portfolio.payload.data.some(item => item.id === 'import-safe'), false);
+
+  const partial = new SharedCloudBackend();
+  partial.updateMode = 'partial_then_network_error';
+  const partialDevice = runtime(partial);
+  t.after(() => partialDevice.manager.destroy());
+  await partialDevice.manager.setAccount(userId, true);
+  const partialResult = await partialDevice.manager.commitHistoricalPortfolioImport(historicalImportRequest(partialDevice, [
+    historicalImportLot('partial-a'), historicalImportLot('partial-b', { soldPrice: 1.6 }),
+  ]));
+  assert.equal(partialResult.code, 'verification_required');
+  assert.equal(partial.updateCalls.length, 1);
+  assert.equal(partialDevice.manager.getSnapshot().phase, 'error');
+
+  const unavailable = new SharedCloudBackend();
+  const unavailableDevice = runtime(unavailable);
+  t.after(() => unavailableDevice.manager.destroy());
+  await unavailableDevice.manager.setAccount(userId, true);
+  unavailable.fetchErrorAfter = 2;
+  const unavailableResult = await unavailableDevice.manager.commitHistoricalPortfolioImport(historicalImportRequest(unavailableDevice, [historicalImportLot('unavailable-a')]));
+  assert.equal(unavailableResult.code, 'verification_required');
+  assert.equal(unavailable.updateCalls.length, 1);
+  assert.equal(unavailableDevice.manager.getSnapshot().phase, 'error');
 });

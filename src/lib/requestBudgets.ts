@@ -9,6 +9,7 @@ export type RequestBudgetWorkflow =
   | 'portfolio-historical-expiration-save'
   | 'portfolio-manual-worthless-confirmation'
   | 'portfolio-entry-vix-maintenance'
+  | 'portfolio-historical-excel-import'
   | 'portfolio-lifecycle-maintenance'
   | 'ticker-detail'
   | 'expiration-change'
@@ -93,6 +94,12 @@ export const REQUEST_BUDGET_LEDGER: Record<RequestBudgetWorkflow, RequestBudgetL
     ceiling: { browserRequests: 1, functionInvocations: 1, providerAcquisitions: 1 },
     providerHttpAttemptCeiling: 6,
     fixture: 'one explicit historical VIX date-range maintenance request; local history cache can reduce this to zero',
+  },
+  'portfolio-historical-excel-import': {
+    expected: { browserRequests: 1, functionInvocations: 1, providerAcquisitions: 1 },
+    ceiling: { browserRequests: 1, functionInvocations: 1, providerAcquisitions: 1 },
+    providerHttpAttemptCeiling: 6,
+    fixture: 'one staged V5 workbook: zero expiration-price acquisitions and at most one cache-first Entry VIX date-range acquisition for all rows',
   },
   'portfolio-lifecycle-maintenance': {
     expected: { browserRequests: 1, functionInvocations: 1, providerAcquisitions: 1 },

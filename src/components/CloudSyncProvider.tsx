@@ -66,6 +66,7 @@ export default function CloudSyncProvider({ children }: { children: ReactNode })
     canWrite: visibleSnapshot.phase === 'ready' || visibleSnapshot.phase === 'saving',
     reload: () => manager.reload(),
     restoreBackup: backup => manager.restoreBackup(backup),
+    commitHistoricalPortfolioImport: request => manager.commitHistoricalPortfolioImport(request),
   }), [manager, visibleSnapshot]);
 
   const requiresGate = visibleSnapshot.phase === 'resolving_auth'

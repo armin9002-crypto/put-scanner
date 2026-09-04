@@ -1,5 +1,5 @@
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { AlertTriangle, Briefcase, ChevronDown, ChevronRight, Download, Edit2, FileImage, Loader2, MoreHorizontal, Plus, RefreshCw, SlidersHorizontal, Trash2, Wrench } from 'lucide-react';
+import { AlertTriangle, Briefcase, ChevronDown, ChevronRight, Download, Edit2, FileImage, FileSpreadsheet, Loader2, MoreHorizontal, Plus, RefreshCw, SlidersHorizontal, Trash2, Wrench } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { fetchBatchPricesResult, fetchOptions } from '../lib/api';
 import { resolvePutDelta } from '../lib/putDelta';
@@ -141,9 +141,11 @@ import {
   isPortfolioContractPosition,
   type PortfolioContractPosition,
 } from '../lib/portfolioContractPositions';
+import { useAccountState } from '../lib/cloudState/accountStateContext';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 const PortfolioScreenshotImportModal = lazy(() => import('../components/PortfolioScreenshotImportModal'));
+const PortfolioHistoricalExcelImportModal = lazy(() => import('../components/PortfolioHistoricalExcelImportModal'));
 const DataBackupModal = lazy(() => import('../components/DataBackupModal'));
 const PortfolioMaintenanceModal = lazy(() => import('../components/PortfolioMaintenanceModal'));
 const DASH = '\u2014';
@@ -1448,12 +1450,14 @@ function ContractPositionEditor({
 
 export default function PortfolioPage() {
   const { isPhone, isPhoneLandscape } = useResponsiveMode();
+  const account = useAccountState();
   const [trades, setTrades] = useState<PortfolioTrade[]>([]);
   const [editingTrade, setEditingTrade] = useState<PortfolioTrade | null>(null);
   const [editingPosition, setEditingPosition] = useState<PortfolioContractPosition | null>(null);
   const [addPositionSeed, setAddPositionSeed] = useState<PortfolioTradeInput | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showHistoricalExcelImport, setShowHistoricalExcelImport] = useState(false);
   const [showDataBackup, setShowDataBackup] = useState(false);
   const [showMaintenance, setShowMaintenance] = useState(false);
   const [maintenanceBusy, setMaintenanceBusy] = useState<'lifecycle' | 'entry-vix' | 'entry-snapshot' | null>(null);
@@ -1505,6 +1509,7 @@ export default function PortfolioPage() {
   const maintenanceAssessment = useMemo(() => assessPortfolioMaintenance(trades), [trades]);
   const quoteFreshnessSummary = useMemo(() => summarizePortfolioQuoteFreshness(openPositions), [openPositions]);
   const positionsNeedingFreshData = quoteFreshnessSummary.stale + quoteFreshnessSummary.unavailable;
+  const historicalExcelImportAvailable = account.phase === 'ready' && account.cloud !== null && account.userId !== null;
 
   const scheduleTotals = useMemo(() => buildScheduleTotals(openTrades, markBasis), [openTrades, markBasis]);
 
@@ -1835,6 +1840,10 @@ export default function PortfolioPage() {
     setEditingPosition(null);
   }, []);
 
+  const handleHistoricalExcelImported = useCallback(() => {
+    setTrades(loadPortfolioTrades());
+  }, []);
+
   const handleRefreshOpenTrades = useCallback(async () => {
     if (quoteRefreshInFlightRef.current) return;
     quoteRefreshInFlightRef.current = true;
@@ -2111,7 +2120,7 @@ export default function PortfolioPage() {
   if (isPhone && !isPhoneLandscape) {
     return (
       <div className="mobile-route-page portfolio-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
-        {trades.length === 0 ? <div className="px-6 py-16 text-center"><Briefcase className="mx-auto mb-3 h-7 w-7" style={{ color: 'var(--text-dim)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No open positions</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Add a trade or import a brokerage screenshot.</p><div className="mx-auto mt-4 grid max-w-xs grid-cols-2 gap-2"><button type="button" onClick={() => setShowAddModal(true)} className="mobile-sheet-action primary"><Plus className="h-4 w-4" /> Add Trade</button><button type="button" onClick={() => setShowImportModal(true)} className="mobile-sheet-action secondary"><FileImage className="h-4 w-4" /> Import</button></div><button type="button" onClick={() => setShowDataBackup(true)} className="pressable mt-3 inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-xs font-semibold" style={{ color: 'var(--text-muted)' }}><Download className="h-4 w-4" /> Data Backup</button></div> : (
+        {trades.length === 0 ? <div className="px-6 py-16 text-center"><Briefcase className="mx-auto mb-3 h-7 w-7" style={{ color: 'var(--text-dim)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No open positions</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Add a trade or import historical lots.</p><div className="mx-auto mt-4 grid max-w-xs grid-cols-2 gap-2"><button type="button" onClick={() => setShowAddModal(true)} className="mobile-sheet-action primary"><Plus className="h-4 w-4" /> Add Trade</button><button type="button" onClick={() => setShowImportModal(true)} className="mobile-sheet-action secondary"><FileImage className="h-4 w-4" /> Screenshot</button><button type="button" disabled={!historicalExcelImportAvailable} onClick={() => setShowHistoricalExcelImport(true)} className="mobile-sheet-action secondary col-span-2 disabled:opacity-40"><FileSpreadsheet className="h-4 w-4" /> Import Historical Excel</button></div><button type="button" onClick={() => setShowDataBackup(true)} className="pressable mt-3 inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-xs font-semibold" style={{ color: 'var(--text-muted)' }}><Download className="h-4 w-4" /> Data Backup</button></div> : (
           <>
             <section className="mobile-portfolio-hero px-4 pb-3 pt-3" style={{ backgroundColor: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
               <div className="portfolio-mobile-headline flex items-start justify-between gap-3">
@@ -2160,11 +2169,12 @@ export default function PortfolioPage() {
         )}
 
         {mobilePositionControlsOpen && <MobileBottomSheet title="Position display & sort" description="Refine the open-position scan without reloading data" onClose={() => setMobilePositionControlsOpen(false)} footer={<button type="button" onClick={() => setMobilePositionControlsOpen(false)} className="mobile-sheet-action primary w-full">Done</button>}><div className="space-y-4"><label htmlFor="mobile-portfolio-sort" className="block"><span className="mobile-sheet-label">Sort positions</span><select id="mobile-portfolio-sort" value={sortField} onChange={event => setSortField(event.target.value as PortfolioScheduleSortField)} className="mobile-control-field w-full">{PORTFOLIO_SCHEDULE_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><div><span className="mobile-sheet-label">Direction</span><MobileSegmentedControl value={sortDir} onChange={setSortDir} label="Position sort direction" options={[{ value: 'asc', label: 'Ascending' }, { value: 'desc', label: 'Descending' }]} /></div><div><span className="mobile-sheet-label">Optional detail</span><DisplayToggle checked={showEntryDeltas} onChange={setShowEntryDeltas} label="Show Entry Deltas / IV" className="min-h-11 w-full" /></div></div></MobileBottomSheet>}
-        {mobileActionsOpen && <MobileBottomSheet title="Portfolio actions" onClose={() => setMobileActionsOpen(false)}><div className="space-y-2"><button type="button" onClick={() => { setMobileActionsOpen(false); setShowAddModal(true); }} className="mobile-sheet-action primary w-full"><Plus className="h-4 w-4" /> Add Trade</button><button type="button" onClick={() => { setMobileActionsOpen(false); setShowImportModal(true); }} className="mobile-sheet-action secondary w-full"><FileImage className="h-4 w-4" /> Import Screenshot</button><button type="button" onClick={() => { setMobileActionsOpen(false); setShowMaintenance(true); setMaintenanceMessage(''); }} className="mobile-sheet-action secondary w-full"><Wrench className="h-4 w-4" /> Portfolio Maintenance</button><button type="button" onClick={() => { setMobileActionsOpen(false); setShowDataBackup(true); }} className="mobile-sheet-action secondary w-full"><Download className="h-4 w-4" /> Data Backup</button></div></MobileBottomSheet>}
+        {mobileActionsOpen && <MobileBottomSheet title="Portfolio actions" onClose={() => setMobileActionsOpen(false)}><div className="space-y-2"><button type="button" onClick={() => { setMobileActionsOpen(false); setShowAddModal(true); }} className="mobile-sheet-action primary w-full"><Plus className="h-4 w-4" /> Add Trade</button><button type="button" onClick={() => { setMobileActionsOpen(false); setShowImportModal(true); }} className="mobile-sheet-action secondary w-full"><FileImage className="h-4 w-4" /> Import Screenshot</button><button type="button" disabled={!historicalExcelImportAvailable} onClick={() => { setMobileActionsOpen(false); setShowHistoricalExcelImport(true); }} className="mobile-sheet-action secondary w-full disabled:opacity-40"><FileSpreadsheet className="h-4 w-4" /> Import Historical Excel</button><button type="button" onClick={() => { setMobileActionsOpen(false); setShowMaintenance(true); setMaintenanceMessage(''); }} className="mobile-sheet-action secondary w-full"><Wrench className="h-4 w-4" /> Portfolio Maintenance</button><button type="button" onClick={() => { setMobileActionsOpen(false); setShowDataBackup(true); }} className="mobile-sheet-action secondary w-full"><Download className="h-4 w-4" /> Data Backup</button></div></MobileBottomSheet>}
         {(showAddModal || editingTrade) && <TradeModal trade={editingTrade} seed={addPositionSeed} onClose={() => { setShowAddModal(false); setEditingTrade(null); setAddPositionSeed(null); }} onSave={handleSaveTrade} onDelete={handleDeleteTrade} />}
         {editingPosition && <ContractPositionEditor position={editingPosition} onClose={() => setEditingPosition(null)} onEditLot={lot => { setEditingPosition(null); setEditingTrade(lot); }} onAddToPosition={addToContractPosition} />}
         {drawerSelection && <ErrorBoundary title="Option sheet unavailable" message="Close it and try again."><Suspense fallback={null}><OptionDetailDrawer option={drawerSelection.option} ticker={drawerSelection.ticker} expirationLabel={drawerSelection.expirationLabel} dte={drawerSelection.dte} underlyingPrice={drawerSelection.underlyingPrice} onClose={() => setDrawerSelection(null)} /></Suspense></ErrorBoundary>}
         {showImportModal && <Suspense fallback={null}><PortfolioScreenshotImportModal trades={trades} onClose={() => setShowImportModal(false)} onApply={handleScreenshotImported} /></Suspense>}
+        {showHistoricalExcelImport && <Suspense fallback={null}><PortfolioHistoricalExcelImportModal trades={trades} onClose={() => setShowHistoricalExcelImport(false)} onImported={handleHistoricalExcelImported} /></Suspense>}
         {showDataBackup && <Suspense fallback={null}><DataBackupModal onClose={() => setShowDataBackup(false)} onImported={handleBackupImported} /></Suspense>}
         {showMaintenance && <Suspense fallback={null}><PortfolioMaintenanceModal assessment={maintenanceAssessment} busy={maintenanceBusy} message={maintenanceMessage} onResolveLifecycle={() => { void handleResolveLifecycleMaintenance(); }} onResolveEntryVix={() => { void handleResolveEntryVixMaintenance(); }} onRecoverEntrySnapshots={handleRecoverStoredEntrySnapshots} onClose={() => setShowMaintenance(false)} /></Suspense>}
       </div>
@@ -2184,6 +2194,9 @@ export default function PortfolioPage() {
             </button>
             <button onClick={() => setShowImportModal(true)} className="button-secondary inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs whitespace-nowrap" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
               <FileImage className="w-3.5 h-3.5" /> Import Screenshot
+            </button>
+            <button disabled={!historicalExcelImportAvailable} onClick={() => setShowHistoricalExcelImport(true)} className="button-secondary inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-40" title={historicalExcelImportAvailable ? 'Stage historical V5 Excel lots' : 'Sign in and wait for cloud Portfolio to finish loading'} style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
+              <FileSpreadsheet className="w-3.5 h-3.5" /> Import Historical Excel
             </button>
             <button onClick={() => setShowDataBackup(true)} className="button-secondary inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs whitespace-nowrap" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
               <Download className="w-3.5 h-3.5" /> Data Backup
@@ -2222,6 +2235,9 @@ export default function PortfolioPage() {
               </button>
               <button onClick={() => setShowImportModal(true)} className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium min-h-[44px]" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
                 <FileImage className="w-3.5 h-3.5" /> Import Screenshot
+              </button>
+              <button disabled={!historicalExcelImportAvailable} onClick={() => setShowHistoricalExcelImport(true)} className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-xs font-medium disabled:opacity-40" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
+                <FileSpreadsheet className="w-3.5 h-3.5" /> Import Historical Excel
               </button>
             </div>
           </div>
@@ -2673,6 +2689,11 @@ export default function PortfolioPage() {
       {showMaintenance && (
         <Suspense fallback={null}>
           <PortfolioMaintenanceModal assessment={maintenanceAssessment} busy={maintenanceBusy} message={maintenanceMessage} onResolveLifecycle={() => { void handleResolveLifecycleMaintenance(); }} onResolveEntryVix={() => { void handleResolveEntryVixMaintenance(); }} onRecoverEntrySnapshots={handleRecoverStoredEntrySnapshots} onClose={() => setShowMaintenance(false)} />
+        </Suspense>
+      )}
+      {showHistoricalExcelImport && (
+        <Suspense fallback={<div className="fixed inset-0 z-[110] flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.72)' }}><div className="rounded-lg border px-4 py-3 text-sm" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', color: 'var(--text)' }}>Loading historical import tools...</div></div>}>
+          <PortfolioHistoricalExcelImportModal trades={trades} onClose={() => setShowHistoricalExcelImport(false)} onImported={handleHistoricalExcelImported} />
         </Suspense>
       )}
       {worthlessConfirmationTrade && (
