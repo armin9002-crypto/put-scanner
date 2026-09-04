@@ -1,5 +1,6 @@
 import type { EtfPulseRow } from '../etfPulseMetrics.ts';
 import type { RegimeAnalysis } from '../marketRead/types.ts';
+import { technicalStateLabel, type UnderlyingTechnicalAssessment } from '../underlyingTechnical.ts';
 import type { RecommendationPolicyV1 } from './policy.ts';
 import { RECOMMENDATION_POLICY_V1 } from './policy.ts';
 import type { RecommendationBand, RecommendationReasonCode, UnderlyingAssessment } from './types.ts';
@@ -12,59 +13,34 @@ function pct(value: number | null | undefined): string {
   return finite(value) ? `${(value * 100).toFixed(1)}%` : '—';
 }
 
-function evidenceQuality(row: EtfPulseRow, policy: RecommendationPolicyV1): UnderlyingAssessment['evidenceQuality'] {
-  const fields = [
-    row.price,
-    row.distance20,
-    row.distance50,
-    row.distance200,
-    row.rsi14,
-    row.realizedVolatility20,
-    row.position52Week,
-    row.drawdown52Week,
-    row.recentDrawdown30,
-  ];
-  const count = fields.filter(finite).length;
-  if (count >= policy.evidence.minimumUnderlyingTechnicalFieldsHigh) return 'HIGH';
-  if (count >= policy.evidence.minimumUnderlyingTechnicalFieldsModerate) return 'MODERATE';
-  return 'LOW';
-}
-
-function trendIntegrity(row: EtfPulseRow): RecommendationBand {
-  if (row.trend === 'Downtrend' || (finite(row.distance200) && row.distance200 < -0.08)) return 'WEAK';
-  if (row.trend === 'Strong Uptrend' && finite(row.distance50) && row.distance50 > 0 && finite(row.distance200) && row.distance200 > 0) return 'STRONG';
-  if (row.trend === 'Uptrend' && finite(row.distance200) && row.distance200 > 0) return 'GOOD';
-  if (row.trend === 'Weakening' && finite(row.distance200) && row.distance200 > 0) return 'MIXED';
+function trendIntegrity(technical: UnderlyingTechnicalAssessment): RecommendationBand {
+  if (technical.signals.structure === 'BROKEN' || technical.state === 'BROKEN_TREND') return 'WEAK';
+  if (technical.state === 'STRONG_TREND') return 'STRONG';
+  if (technical.signals.structure === 'STRONG' || technical.signals.structure === 'POSITIVE') return 'GOOD';
   return 'MIXED';
 }
 
-function resetExtension(row: EtfPulseRow): RecommendationBand {
-  const rsi = row.rsi14;
-  const recentDrawdown = row.recentDrawdown30;
-  if ((finite(rsi) && rsi > 72) || (finite(row.position52Week) && row.position52Week >= 0.97)) return 'WEAK';
-  if (finite(recentDrawdown) && recentDrawdown < -0.2) return 'WEAK';
-  if (finite(rsi) && rsi >= 38 && rsi <= 58 && finite(recentDrawdown) && recentDrawdown <= -0.02 && recentDrawdown >= -0.12) return 'STRONG';
-  if (finite(rsi) && rsi >= 35 && rsi <= 65 && finite(recentDrawdown) && recentDrawdown >= -0.15) return 'GOOD';
+function resetExtension(technical: UnderlyingTechnicalAssessment): RecommendationBand {
+  if (technical.signals.resetExtension === 'EXTENDED') return 'WEAK';
+  if (technical.signals.resetExtension === 'CONSTRUCTIVE_RESET' || technical.signals.resetExtension === 'RECOVERING') return 'STRONG';
+  if (technical.signals.resetExtension === 'NEUTRAL') return 'GOOD';
   return 'MIXED';
 }
 
-function volatilityContext(row: EtfPulseRow): RecommendationBand {
-  const rv = row.realizedVolatility20;
-  if (!finite(rv)) return 'MIXED';
-  if (rv > 1.2 && finite(row.recentDrawdown30) && row.recentDrawdown30 < -0.12) return 'WEAK';
-  if (rv >= 0.35 && rv <= 0.75) return 'STRONG';
-  if (rv >= 0.2 && rv <= 0.95) return 'GOOD';
+function volatilityContext(technical: UnderlyingTechnicalAssessment): RecommendationBand {
+  if (technical.signals.volatilityStress === 'STRESSED') return 'WEAK';
+  if (technical.signals.volatilityStress === 'NORMAL') return 'GOOD';
   return 'MIXED';
 }
 
-function regimeFit(row: EtfPulseRow, regime: RegimeAnalysis): RecommendationBand {
-  const damaged = row.trend === 'Downtrend' || (finite(row.distance200) && row.distance200 < -0.05);
+function regimeFit(technical: UnderlyingTechnicalAssessment, regime: RegimeAnalysis): RecommendationBand {
+  const damaged = technical.signals.structure === 'BROKEN' || technical.state === 'BROKEN_TREND';
   if ((regime.label === 'Risk-Off' || regime.label === 'Oversold Panic') && damaged) return 'WEAK';
   if (regime.label === 'Risk-Off' || regime.label === 'Oversold Panic' || regime.label === 'Choppy / Elevated Vol') {
-    return row.trend === 'Strong Uptrend' && finite(row.distance200) && row.distance200 > 0 ? 'GOOD' : 'MIXED';
+    return technical.signals.structure === 'STRONG' ? 'GOOD' : 'MIXED';
   }
-  if (finite(row.distance200) && row.distance200 > 0 && (row.trend === 'Strong Uptrend' || row.trend === 'Uptrend')) return 'STRONG';
-  if (finite(row.distance200) && row.distance200 > 0) return 'GOOD';
+  if (technical.signals.structure === 'STRONG') return 'STRONG';
+  if (technical.signals.structure === 'POSITIVE') return 'GOOD';
   return 'MIXED';
 }
 
@@ -84,20 +60,22 @@ export function assessUnderlying(
   regime: RegimeAnalysis,
   policy: RecommendationPolicyV1 = RECOMMENDATION_POLICY_V1,
 ): UnderlyingAssessment {
+  void policy;
+  const technical = row.technicalAssessment;
   const lenses = {
-    trendIntegrity: trendIntegrity(row),
-    resetExtension: resetExtension(row),
-    volatilityContext: volatilityContext(row),
-    regimeFit: regimeFit(row, regime),
+    trendIntegrity: trendIntegrity(technical),
+    resetExtension: resetExtension(technical),
+    volatilityContext: volatilityContext(technical),
+    regimeFit: regimeFit(technical, regime),
   };
-  const setup = overallSetup(lenses);
-  const quality = evidenceQuality(row, policy);
-  const severeTrendDamage = row.trend === 'Downtrend'
-    && ((finite(row.distance200) && row.distance200 <= -0.08) || (finite(row.recentDrawdown30) && row.recentDrawdown30 <= -0.2));
+  const uncappedSetup = overallSetup(lenses);
+  const setup = technical.state === 'OVERSOLD_INTACT' && (uncappedSetup === 'STRONG' || uncappedSetup === 'GOOD')
+    ? 'MIXED'
+    : uncappedSetup;
+  const quality = technical.evidenceQuality;
+  const severeTrendDamage = technical.state === 'BROKEN_TREND';
   const regimeDamage = (regime.label === 'Risk-Off' || regime.label === 'Oversold Panic')
-    && row.trend === 'Downtrend'
-    && finite(row.distance200)
-    && row.distance200 < 0;
+    && technical.signals.structure === 'BROKEN';
   const qualification: UnderlyingAssessment['qualification'] = severeTrendDamage || regimeDamage
     ? 'HARD_FAIL'
     : (setup === 'STRONG' || setup === 'GOOD') && quality !== 'LOW'
@@ -111,6 +89,7 @@ export function assessUnderlying(
 
   return {
     ticker: row.ticker,
+    technicalAssessment: technical,
     setup,
     qualification,
     evidenceQuality: quality,
@@ -120,12 +99,16 @@ export function assessUnderlying(
       realizedVolatility20: finite(row.realizedVolatility20) ? row.realizedVolatility20 : null,
     },
     evidence: [
-      { label: 'Trend', value: row.trend },
+      { label: 'Technical state', value: technicalStateLabel(technical.state) },
+      { label: 'Structure', value: technical.signals.structure },
+      { label: 'Momentum', value: technical.signals.momentum },
       { label: 'vs 50D', value: pct(row.distance50) },
       { label: 'vs 200D', value: pct(row.distance200) },
       { label: 'RSI 14', value: finite(row.rsi14) ? row.rsi14.toFixed(1) : '—' },
+      { label: 'RSI Δ5', value: finite(row.rsi14Change5) ? row.rsi14Change5.toFixed(1) : '—' },
       { label: 'Recent drawdown', value: pct(row.recentDrawdown30) },
       { label: '20D realized vol', value: pct(row.realizedVolatility20) },
+      { label: '20D / 60D RV', value: finite(row.realizedVolatilityAcceleration) ? `${row.realizedVolatilityAcceleration.toFixed(2)}×` : '—' },
       { label: '52W position', value: pct(row.position52Week) },
     ],
   };

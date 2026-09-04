@@ -1,6 +1,6 @@
 import { SCREENER_TICKERS } from '../../../shared/screenerUniverse.js';
 import { buildEtfPulseRows, getEtfPulseUniverse, type EtfPulseLoadResult, type EtfPulseProgress } from '../etfPulseData.ts';
-import type { EtfPulseRow } from '../etfPulseMetrics.ts';
+import { withEtfPulseTechnicalAssessment, type EtfPulseRow } from '../etfPulseMetrics.ts';
 import { analyzeRegime } from '../marketRead/regime.ts';
 import { postureFromRegime } from '../marketRead/posture.ts';
 import { runScreenerBatchScan, type ScreenerScanResult } from '../screenerAcquisition.ts';
@@ -65,7 +65,7 @@ export function clearInMemoryRecommendationRunForTests(): void {
 
 function unavailablePulseRow(ticker: string): EtfPulseRow {
   const metadata = getEtfPulseUniverse().find(item => item.ticker === ticker);
-  return {
+  return withEtfPulseTechnicalAssessment({
     ticker,
     name: metadata?.name ?? ticker,
     type: metadata?.type ?? 'Broad Index',
@@ -87,11 +87,8 @@ function unavailablePulseRow(ticker: string): EtfPulseRow {
     position52Week: null,
     drawdown52Week: null,
     recentDrawdown30: null,
-    trend: 'Neutral',
-    isOversold: false,
-    isOverbought: false,
     error: 'ETF Pulse technical context unavailable',
-  };
+  });
 }
 
 function canonicalUnderlyingRows(result: EtfPulseLoadResult): EtfPulseRow[] {

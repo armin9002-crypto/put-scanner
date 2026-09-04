@@ -1,10 +1,11 @@
-import { buildEtfPulseRow, type EtfPulseRow } from './etfPulseMetrics.ts';
+import { buildEtfPulseRow, withEtfPulseTechnicalAssessment, type EtfPulseAssessmentSourceRow, type EtfPulseRow } from './etfPulseMetrics.ts';
 import type { ETFInfo } from './types.ts';
 import type { ChartPoint } from './chartHistory.ts';
 import { fetchObservedMarketData, recordRequestDiagnostic } from './requestDiagnostics.ts';
 import { isAbortError } from './marketDataRequest.ts';
 import { ETF_PULSE_TICKERS } from '../../shared/etfPulseUniverse.js';
 import { ETF_PULSE_SYMBOLS } from '../../shared/symbolRegistry.js';
+import { isUnderlyingTechnicalAssessment } from './underlyingTechnical.ts';
 
 export interface EtfPulseLoadResult {
   rows: EtfPulseRow[];
@@ -23,7 +24,8 @@ export interface EtfPulseProgress {
   ticker?: string;
 }
 
-const ROW_CACHE_KEY = 'etf_pulse_rows:v2';
+const ROW_CACHE_KEY = 'etf_pulse_rows:v3';
+const LEGACY_ROW_CACHE_KEY = 'etf_pulse_rows:v2';
 const ROW_CACHE_TTL = 6 * 60 * 60 * 1000;
 const ROW_CACHE_HARD_TTL = 24 * 60 * 60 * 1000;
 
@@ -55,9 +57,34 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-function isValidPulseRow(value: unknown): value is EtfPulseRow {
+function isValidLegacyPulseRow(value: unknown): value is EtfPulseAssessmentSourceRow {
   if (!isRecord(value)) return false;
-  return typeof value.ticker === 'string' && typeof value.name === 'string' && isRecord(value.returns);
+  return typeof value.ticker === 'string'
+    && typeof value.name === 'string'
+    && isRecord(value.returns)
+    && ('price' in value)
+    && ('rsi14' in value)
+    && ('realizedVolatility20' in value)
+    && ('distance20' in value)
+    && ('distance50' in value)
+    && ('distance200' in value);
+}
+
+function isValidPulseRow(value: unknown): value is EtfPulseRow {
+  return isValidLegacyPulseRow(value)
+    && isRecord(value)
+    && isUnderlyingTechnicalAssessment(value.technicalAssessment);
+}
+
+function isValidLegacyLoadResult(value: unknown): value is Omit<EtfPulseLoadResult, 'rows'> & { rows: EtfPulseAssessmentSourceRow[] } {
+  if (!isRecord(value)) return false;
+  return typeof value.fetchedAt === 'number'
+    && Array.isArray(value.rows)
+    && value.rows.every(isValidLegacyPulseRow)
+    && typeof value.total === 'number'
+    && typeof value.loaded === 'number'
+    && typeof value.failed === 'number'
+    && Array.isArray(value.errors);
 }
 
 function isValidLoadResult(value: unknown): value is EtfPulseLoadResult {
@@ -75,12 +102,22 @@ export function readEtfPulseRowsCache(allowStale = false): EtfPulseLoadResult | 
   const storage = getStorage();
   if (!storage) return null;
   try {
-    const raw = storage.getItem(ROW_CACHE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!isValidLoadResult(parsed)) return null;
     const maxAge = allowStale ? ROW_CACHE_HARD_TTL : ROW_CACHE_TTL;
-    return Date.now() - parsed.fetchedAt < maxAge ? parsed : null;
+    const raw = storage.getItem(ROW_CACHE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (isValidLoadResult(parsed) && Date.now() - parsed.fetchedAt < maxAge) return parsed;
+    }
+    const legacyRaw = storage.getItem(LEGACY_ROW_CACHE_KEY);
+    if (!legacyRaw) return null;
+    const legacy = JSON.parse(legacyRaw);
+    if (!isValidLegacyLoadResult(legacy) || Date.now() - legacy.fetchedAt >= maxAge) return null;
+    const upgraded: EtfPulseLoadResult = {
+      ...legacy,
+      rows: legacy.rows.map(withEtfPulseTechnicalAssessment),
+    };
+    writeRowsCache(upgraded);
+    return upgraded;
   } catch {
     return null;
   }

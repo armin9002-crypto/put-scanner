@@ -35,10 +35,6 @@ export interface RecommendationPolicyV1 {
     maximumDeltaGap: number;
     quoteTick: number;
   };
-  evidence: {
-    minimumUnderlyingTechnicalFieldsHigh: number;
-    minimumUnderlyingTechnicalFieldsModerate: number;
-  };
   robustness: {
     hurdlePerturbation: number;
     materialDeltaPerturbation: number;
@@ -90,10 +86,6 @@ export const RECOMMENDATION_POLICY_V1: RecommendationPolicyV1 = Object.freeze({
     maximumIvGapPct: 40,
     maximumDeltaGap: 0.18,
     quoteTick: 0.01,
-  },
-  evidence: {
-    minimumUnderlyingTechnicalFieldsHigh: 7,
-    minimumUnderlyingTechnicalFieldsModerate: 4,
   },
   robustness: {
     hurdlePerturbation: 0.02,

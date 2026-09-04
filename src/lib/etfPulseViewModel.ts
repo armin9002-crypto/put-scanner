@@ -1,7 +1,8 @@
-import type { EtfPulseRow, EtfPulseTrend } from './etfPulseMetrics';
+import type { EtfPulseRow } from './etfPulseMetrics';
+import { technicalStateLabel, type UnderlyingTechnicalState } from './underlyingTechnical.ts';
 
 export type PulseSortField = 'ticker' | 'name' | 'type' | 'leverage' | 'price' | 'oneDay' | 'fiveDay' | 'thirtyDay' | 'threeMonth' | 'sixMonth' | 'yearToDate' | 'oneYear' | 'recentDrawdown30' | 'rsi14' | 'realizedVolatility20' | 'distance20' | 'distance50' | 'distance200' | 'high52Week' | 'percentOf52WeekHigh' | 'position52Week' | 'drawdown52Week' | 'trend';
-export type TrendFilter = 'All' | EtfPulseTrend | 'Oversold' | 'Overbought';
+export type TrendFilter = 'All' | UnderlyingTechnicalState;
 export type VisualPeriod = '1D' | '5D' | '30D' | '3M' | '6M' | 'YTD' | '1Y';
 
 export function getReturnForPeriod(row: EtfPulseRow, period: VisualPeriod): number | null {
@@ -20,13 +21,15 @@ export function heatmapTileStyle(value: number | null): { backgroundColor: strin
 }
 
 export function trendStyle(row: EtfPulseRow): { label: string; color: string; bg: string; border: string } {
-  if (row.isOversold && (row.distance50 ?? 1) < 0) return { label: 'Oversold', color: 'var(--accent-light)', bg: 'var(--accent-bg)', border: 'var(--accent-border)' };
-  if (row.isOverbought) return { label: 'Overbought', color: 'var(--orange)', bg: 'rgba(251,146,60,0.10)', border: 'rgba(251,146,60,0.28)' };
-  if (row.trend === 'Strong Uptrend') return { label: 'Strong Uptrend', color: 'var(--green)', bg: 'rgba(34,197,94,0.10)', border: 'rgba(34,197,94,0.25)' };
-  if (row.trend === 'Uptrend') return { label: 'Uptrend', color: 'var(--green)', bg: 'rgba(34,197,94,0.06)', border: 'rgba(34,197,94,0.18)' };
-  if (row.trend === 'Weakening') return { label: 'Weakening', color: 'var(--yellow)', bg: 'rgba(250,204,21,0.10)', border: 'rgba(250,204,21,0.25)' };
-  if (row.trend === 'Downtrend') return { label: 'Downtrend', color: 'var(--red)', bg: 'rgba(239,68,68,0.10)', border: 'rgba(239,68,68,0.25)' };
-  return { label: 'Neutral', color: 'var(--text-muted)', bg: 'var(--surface-alt)', border: 'var(--border)' };
+  const state = row.technicalAssessment.state;
+  const label = technicalStateLabel(state);
+  if (state === 'STRONG_TREND') return { label, color: 'var(--green)', bg: 'rgba(34,197,94,0.10)', border: 'rgba(34,197,94,0.25)' };
+  if (state === 'CONSTRUCTIVE_PULLBACK' || state === 'RECOVERY_RECLAIM') return { label, color: 'var(--green)', bg: 'rgba(34,197,94,0.06)', border: 'rgba(34,197,94,0.18)' };
+  if (state === 'OVERSOLD_INTACT') return { label, color: 'var(--accent-light)', bg: 'var(--accent-bg)', border: 'var(--accent-border)' };
+  if (state === 'EXTENDED') return { label, color: 'var(--orange)', bg: 'rgba(251,146,60,0.10)', border: 'rgba(251,146,60,0.28)' };
+  if (state === 'TRANSITION_DETERIORATING') return { label, color: 'var(--yellow)', bg: 'rgba(250,204,21,0.10)', border: 'rgba(250,204,21,0.25)' };
+  if (state === 'BROKEN_TREND') return { label, color: 'var(--red)', bg: 'rgba(239,68,68,0.10)', border: 'rgba(239,68,68,0.25)' };
+  return { label, color: 'var(--text-muted)', bg: 'var(--surface-alt)', border: 'var(--border)' };
 }
 
 export function sortValue(row: EtfPulseRow, field: PulseSortField): number | string | null {
@@ -38,7 +41,5 @@ export function sortValue(row: EtfPulseRow, field: PulseSortField): number | str
 
 export function matchesTrend(row: EtfPulseRow, filter: TrendFilter): boolean {
   if (filter === 'All') return true;
-  if (filter === 'Oversold') return row.isOversold;
-  if (filter === 'Overbought') return row.isOverbought;
-  return row.trend === filter;
+  return row.technicalAssessment.state === filter;
 }

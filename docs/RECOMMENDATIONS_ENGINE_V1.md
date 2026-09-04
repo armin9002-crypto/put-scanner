@@ -4,7 +4,7 @@
 
 Recommendations is a deterministic Market-mode decision-support system. It can validly return **NO TRADE**. It uses no LLM, AI API, model key, paid inference, prediction, training, or automatic policy tuning. It has no Portfolio Fit lens and does not read or modify Portfolio data.
 
-The current contract is `RECOMMENDATION_ENGINE_VERSION = 2` and `RECOMMENDATION_POLICY_VERSION = 2`. V1.1 changed both versions because its immutable input/output now includes the selected acquisition universe, per-ticker expiration plans, explicit policy-check classifications, cross-duration reasons, and Decision Trace. The same snapshot and policy produce the same ordered `RecommendationRun`.
+The current contract is `RECOMMENDATION_ENGINE_VERSION = 3` and `RECOMMENDATION_POLICY_VERSION = 2`. Engine V3 adds the versioned shared `UnderlyingTechnicalAssessment` to immutable ETF Pulse input and Recommendation evidence; pricing, compensation, selection, and policy V2 are unchanged. V1.1 previously changed both versions because its immutable input/output added the selected acquisition universe, per-ticker expiration plans, explicit policy-check classifications, cross-duration reasons, and Decision Trace. The same snapshot and policy produce the same ordered `RecommendationRun`.
 
 Earlier repository history contained an additive-score Trade Cockpit. V1 retained its useful manual acquisition, posture, diagnostics, and near-miss ideas but did not restore universal scores, Portfolio contamination, pre-ranking truncation, mandatory-bid qualification, or binary liquidity buckets.
 
@@ -12,14 +12,15 @@ Earlier repository history contained an additive-score Trade Cockpit. V1 retaine
 
 - `types.ts`: versioned snapshot, universe, run, evidence, comparison, trace, and verdict contracts.
 - `policy.ts`: all consequential thresholds.
-- `underlying.ts`: pre-contract qualification and structured ETF evidence.
+- `underlyingTechnical.ts`: shared close-derived ticker state, signals, metrics, evidence quality, reason codes, and thresholds used by ETF Pulse and Recommendations.
+- `underlying.ts`: maps that shared ticker assessment plus separate Market Regime context into pre-contract qualification and structured Recommendation evidence.
 - `pricing.ts`: same-expiration price discovery and quote provenance.
 - `engine.ts`: hurdles, comparisons, skeptic, robustness, verdicts, trace, and selections.
 - `explanations.ts`: centralized deterministic reason-code copy.
 - `acquisition.ts`: explicit-refresh orchestration and session-memory publication.
 - `visualFixtures.ts`: sanitized request-free UI states.
 
-The system reuses canonical Market Read, ETF Pulse, Screener batches/rows, option-chain cache keys, option math, Watchlist, and Option Detail modules. It does not introduce a second option-data pipeline or duplicate NY, AY, Delta, IV, moneyness, or breakeven math.
+The system reuses canonical Market Read, ETF Pulse, the [Underlying Technical Assessment V1](./UNDERLYING_TECHNICAL_ASSESSMENT_V1.md), Screener batches/rows, option-chain cache keys, option math, Watchlist, and Option Detail modules. It does not introduce a second option-data pipeline or duplicate NY, AY, Delta, IV, moneyness, breakeven, or ticker-technical definitions.
 
 ## Snapshot and decision pipeline
 
@@ -54,7 +55,7 @@ Robustness uses seven deterministic cases: basis; hurdle ±2pp; Delta/cushion bo
 
 ## Underlying, policy checks, and DTE
 
-Underlying lenses are Trend Integrity, Reset/Extension, Volatility Context, and Regime Fit. Strong/Good setups with non-Low evidence are Eligible. Mixed but undamaged setups remain Watch. A materially damaged trend is a pre-chain Hard Fail.
+Underlying lenses are Trend Integrity, Reset/Extension, Volatility Context, and Regime Fit. The first three consume the exact shared ETF Pulse assessment; Regime Fit remains separate broad-market context. Strong/Good setups with non-Low evidence are Eligible. Mixed but undamaged setups remain Watch. A materially damaged `BROKEN_TREND` remains a pre-chain Hard Fail, as does the prior Risk-Off/Oversold-Panic combination with price below both SMA50 and SMA200. The richer taxonomy does not broadly create new Hard Fails.
 
 Every candidate preserves six independent lenses: Compensation, Cushion, Volatility Opportunity, Underlying Setup, Pricing Confidence, and Actionability. They are qualitative and never summed into a universal score.
 
@@ -108,7 +109,7 @@ The old two-standard-expiration cold ceiling was 15 browser requests, 15 functio
 
 The conservative V1.1 cold full-universe ceiling is 15 browser requests, 15 functions, 254 logical acquisitions, and 324 conditional HTTP attempts. It comprises 44 Pulse histories plus, for up to 42 qualified ETFs, one discovery chain, at most three selected representative chains, and one volatility-context operation. A deterministic three-ETF worst-case fixture measures 12 option acquisitions—3 discovery plus 9 selected—and 3 volatility operations. Discovery reuse, hard fails, sparse calendars, and no-eligible cases lower this count.
 
-A compatible warm Pulse/batch cache creates zero provider acquisitions. Sorting, expansion, show-all, evidence, Decision Trace, near misses, methodology, hover, selection, and JSON export are 0 browser / 0 function / 0 provider requests. The bounded increase provides near/middle/far DTE representation without crawling all expirations.
+A compatible warm Pulse/batch cache creates zero provider acquisitions. The `etf_pulse_rows:v3` calculated-row cache includes shared assessment V1; compatible v2 rows upgrade locally without acquisition. Sorting, expansion, show-all, evidence, Decision Trace, near misses, methodology, hover, selection, and JSON export are 0 browser / 0 function / 0 provider requests. The bounded increase provides near/middle/far DTE representation without crawling all expirations.
 
 ## Product information hierarchy and evaluation
 

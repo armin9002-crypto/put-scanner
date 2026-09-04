@@ -1,4 +1,4 @@
-import type { EtfPulseRow } from '../etfPulseMetrics.ts';
+import { withEtfPulseTechnicalAssessment, type EtfPulseRow } from '../etfPulseMetrics.ts';
 import { postureFromRegime } from '../marketRead/posture.ts';
 import type { RegimeAnalysis } from '../marketRead/types.ts';
 import { canonicalOptionChainKey } from '../optionChainRequests.ts';
@@ -54,7 +54,7 @@ function chain(ticker: string, candidate: OptionContract, values: Partial<Option
 }
 
 function underlying(ticker: string, values: Partial<EtfPulseRow> = {}): EtfPulseRow {
-  return {
+  return withEtfPulseTechnicalAssessment({
     ticker,
     name: `${ticker} leveraged ETF`,
     type: 'Sector',
@@ -76,11 +76,8 @@ function underlying(ticker: string, values: Partial<EtfPulseRow> = {}): EtfPulse
     position52Week: 0.71,
     drawdown52Week: -0.18,
     recentDrawdown30: -0.05,
-    trend: 'Strong Uptrend',
-    isOversold: false,
-    isOverbought: false,
     ...values,
-  };
+  });
 }
 
 function market(): RegimeAnalysis {
@@ -107,7 +104,7 @@ function snapshot(rows: EtfPulseRow[], chains: OptionsChainData[], incomplete = 
   const ivVsRealizedRangeByTicker = new Map(chains.map(item => [item.chainMeta?.ticker ?? '', 76]));
   const built = buildScreenerRows({ initialResults, chainsByKey, ivVsRealizedRangeByTicker }, 'all');
   const regime = market();
-  const hardFailed = rows.filter(row => row.trend === 'Downtrend').map(row => row.ticker);
+  const hardFailed = rows.filter(row => row.technicalAssessment.state === 'BROKEN_TREND').map(row => row.ticker);
   const successful = chains.map(item => item.chainMeta?.ticker ?? '').sort();
   return {
     asOf: AS_OF,
@@ -137,8 +134,8 @@ function snapshot(rows: EtfPulseRow[], chains: OptionsChainData[], incomplete = 
 export function buildRecommendationVisualFixture(name: RecommendationVisualFixture): RecommendationRun {
   const tqqq = underlying('TQQQ');
   const soxl = underlying('SOXL', { rsi14: 54, distance50: 0.03 });
-  const labu = underlying('LABU', { trend: 'Weakening', distance50: -0.04, distance200: 0.08, recentDrawdown30: -0.14 });
-  const boil = underlying('BOIL', { trend: 'Downtrend', distance50: -0.18, distance200: -0.12, recentDrawdown30: -0.25, rsi14: 28 });
+  const labu = underlying('LABU', { distance20: -0.05, distance50: -0.04, distance200: 0.08, recentDrawdown30: -0.14 });
+  const boil = underlying('BOIL', { distance20: -0.15, distance50: -0.18, distance200: -0.12, recentDrawdown30: -0.25, rsi14: 28 });
   const actionable = chain('TQQQ', option(65, { bid: 1.45, ask: 1.56, last: 1.5, delta: -0.11, impliedVolatility: 82 }));
   const conditional = chain('SOXL', option(60, { bid: 0, ask: 5, last: 4.4, delta: -0.1, impliedVolatility: 95 }));
   const weak = chain('LABU', option(60, { bid: 0.18, ask: 0.28, last: 0.22, delta: -0.08, impliedVolatility: 45 }));

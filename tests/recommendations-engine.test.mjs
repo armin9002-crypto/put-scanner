@@ -12,6 +12,7 @@ import { clearInMemoryRecommendationRunForTests, getInMemoryRecommendationRun, p
 import { readOnlyEvaluateAtLeast60Dte, persistOnlyEvaluateAtLeast60Dte } from '../src/lib/recommendationPreferences.ts';
 import { RECOMMENDATION_ENGINE_VERSION, RECOMMENDATION_POLICY_VERSION, recommendationUniverse } from '../src/lib/recommendations/types.ts';
 import { planRepresentativeExpirations } from '../api/_lib/screenerBatch.js';
+import { withEtfPulseTechnicalAssessment } from '../src/lib/etfPulseMetrics.ts';
 
 const AS_OF = '2026-09-02T15:00:00.000Z';
 const AS_OF_MS = Date.parse(AS_OF);
@@ -61,7 +62,7 @@ function chain(ticker, puts, overrides = {}) {
 }
 
 function pulse(ticker, overrides = {}) {
-  return {
+  return withEtfPulseTechnicalAssessment({
     ticker,
     name: `${ticker} Fund`,
     type: 'Broad Index',
@@ -83,11 +84,8 @@ function pulse(ticker, overrides = {}) {
     position52Week: 0.73,
     drawdown52Week: -0.17,
     recentDrawdown30: -0.05,
-    trend: 'Strong Uptrend',
-    isOversold: false,
-    isOverbought: false,
     ...overrides,
-  };
+  });
 }
 
 function regime(label = 'Healthy Risk-On') {
@@ -218,7 +216,7 @@ test('canonical inverse annualized-yield helper round-trips without changing yie
 });
 
 test('A: huge AY cannot rescue a deteriorating underlying', () => {
-  const damaged = pulse('TQQQ', { trend: 'Downtrend', distance50: -0.2, distance200: -0.14, recentDrawdown30: -0.26, rsi14: 27 });
+  const damaged = pulse('TQQQ', { distance20: -0.12, distance50: -0.2, distance200: -0.14, recentDrawdown30: -0.26, rsi14: 27 });
   const rich = chain('TQQQ', surface(put(65, { bid: 8, ask: 8.3, delta: -0.12 })));
   const run = runRecommendationEngine(snapshot({ pulseRows: [damaged], chains: [rich] }));
   const candidate = candidateAt(run, 'TQQQ', 65);
@@ -372,7 +370,7 @@ test('O: a bid below Attractive At with a credible ask above it can be Condition
 });
 
 test('T: missing technical context lowers evidence quality without silently substituting zero', () => {
-  const sparse = pulse('TQQQ', { rsi14: null, realizedVolatility20: null, distance20: null, distance50: null, distance200: null, position52Week: null, drawdown52Week: null, recentDrawdown30: null, trend: 'Neutral' });
+  const sparse = pulse('TQQQ', { rsi14: null, realizedVolatility20: null, distance20: null, distance50: null, distance200: null, position52Week: null, drawdown52Week: null, recentDrawdown30: null });
   const assessment = assessUnderlying(sparse, regime());
   assert.equal(assessment.evidenceQuality, 'LOW');
   assert.equal(assessment.qualification, 'WATCH');
@@ -442,7 +440,7 @@ test('financial reconciliation preserves canonical Screener values for direct Bi
 });
 
 test('Recommendations acquisition is one explicit cache-aware Pulse pass plus one bounded Screener pass and skips hard-fails', async () => {
-  const damaged = pulse('TQQQ', { trend: 'Downtrend', distance50: -0.2, distance200: -0.14, recentDrawdown30: -0.26, rsi14: 27 });
+  const damaged = pulse('TQQQ', { distance20: -0.12, distance50: -0.2, distance200: -0.14, recentDrawdown30: -0.26, rsi14: 27 });
   let pulseCalls = 0;
   let scanCalls = 0;
   const result = await refreshRecommendations({

@@ -2,8 +2,9 @@ import type { EtfPulseRow } from '../etfPulseMetrics.ts';
 import type { RegimeAnalysis, TradePosture } from '../marketRead/types.ts';
 import type { ScreenerRow } from '../screenerRows.ts';
 import type { OptionsChainData } from '../types.ts';
+import type { UnderlyingTechnicalAssessment } from '../underlyingTechnical.ts';
 
-export const RECOMMENDATION_ENGINE_VERSION = 2 as const;
+export const RECOMMENDATION_ENGINE_VERSION = 3 as const;
 export const RECOMMENDATION_POLICY_VERSION = 2 as const;
 
 export type RecommendationBand = 'STRONG' | 'GOOD' | 'MIXED' | 'WEAK';
@@ -121,6 +122,7 @@ export function recommendationUniverse(onlyEvaluateAtLeast60Dte: boolean): Recom
 
 export interface UnderlyingAssessment {
   ticker: string;
+  technicalAssessment: UnderlyingTechnicalAssessment;
   setup: RecommendationBand;
   qualification: UnderlyingQualification;
   evidenceQuality: RecommendationEvidenceQuality;
