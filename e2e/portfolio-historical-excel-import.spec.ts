@@ -91,7 +91,7 @@ test('historical Excel audit is responsive, starts unchecked, and separates opti
     await manualRow.getByRole('button').click();
     await expect(manualRow).toContainText('OPTION Close Price');
     await expect(manualRow).toContainText('$0.50');
-    await expect(manualRow).toContainText('$72.00 · context only, not persisted');
+    await expect(manualRow).toContainText('$72.00 · persisted as closeUnderlyingPrice');
   } else {
     await expect(modal.locator('table')).toBeVisible();
     await expect(modal.getByRole('columnheader', { name: 'OPTION Close Price' })).toBeVisible();
@@ -118,6 +118,9 @@ test('historical Excel audit is responsive, starts unchecked, and separates opti
     expect(mutations[0]).toContain('namespace=eq.portfolio');
     const portfolio = cloud.rows.find(row => row.namespace === 'portfolio');
     expect((portfolio?.payload.data as unknown[])).toHaveLength(3);
+    const importedManual = (portfolio?.payload.data as Array<Record<string, unknown>>).find(row => row.ticker === 'ABC');
+    expect(importedManual?.closeUnderlyingPrice).toBe(72);
+    expect(importedManual?.closeUnderlyingPriceSource).toBe('imported');
     expect(cloud.rows.find(row => row.namespace === 'watchlist')?.revision).toBe(watchlistRevisionBeforeCommit);
     expect(cloud.rows.find(row => row.namespace === 'preferences')?.revision).toBe(preferencesRevisionBeforeCommit);
   }

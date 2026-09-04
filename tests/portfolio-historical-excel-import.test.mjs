@@ -11,7 +11,8 @@ import {
   summarizeHistoricalExcelImport,
 } from '../src/lib/portfolioHistoricalExcelImport.ts';
 import { REQUEST_BUDGET_LEDGER } from '../src/lib/requestBudgets.ts';
-import { readPortfolioTrades, writePortfolioTrades } from '../src/lib/portfolioStorage.ts';
+import { readPortfolioTrades, toDurablePortfolioState, writePortfolioTrades } from '../src/lib/portfolioStorage.ts';
+import { historyPriceAtExpiration, historyRealizedIrr } from '../src/lib/portfolioHistoryAnalytics.ts';
 
 const DAY_MS = 86_400_000;
 
@@ -108,6 +109,10 @@ test('exact V5 schema is found after leading rows/columns on an arbitrary worksh
   assert.deepEqual([closed.source.closeDate, closed.source.optionClosePrice, closed.source.underlyingHistoricalPrice], ['2025-06-10', 0.5, 72]);
   assert.equal(closed.proposedTrade.realizedPnl, 200);
   assert.equal(closed.proposedTrade.expirationClosePrice, undefined);
+  assert.deepEqual(
+    [closed.proposedTrade.closeUnderlyingPrice, closed.proposedTrade.closeUnderlyingPriceSource, historyPriceAtExpiration(closed.proposedTrade)],
+    [72, 'imported', 72],
+  );
   assert.equal(closed.proposedTrade.latestMarketData, undefined);
 });
 
@@ -120,18 +125,24 @@ test('1904 workbook dates remain date-only and timezone-independent', async () =
   );
 });
 
-test('manual-close underlying context never changes option economics or persists into expiration fields', async () => {
+test('manual-close underlying is durable history context and never changes option economics', async () => {
   const first = await parseHistoricalExcelWorkbook(makeWorkbook([closedRow({ underlying: 72 })]), 'first.xlsx', parseOptions());
   const second = await parseHistoricalExcelWorkbook(makeWorkbook([closedRow({ underlying: 90 })]), 'second.xlsx', parseOptions());
-  const economicFields = trade => [trade.premiumCollected, trade.realizedPnl, trade.percentCaptured, trade.daysHeld];
+  const economicFields = trade => [trade.premiumCollected, trade.realizedPnl, trade.percentCaptured, trade.daysHeld, historyRealizedIrr(trade)];
   assert.deepEqual(economicFields(first.rows[0].proposedTrade), economicFields(second.rows[0].proposedTrade));
   for (const trade of [first.rows[0].proposedTrade, second.rows[0].proposedTrade]) {
     assert.equal(trade.expirationClosePrice, undefined);
+    assert.equal(trade.closeUnderlyingPriceSource, 'imported');
     assert.equal(trade.entrySnapshot, undefined);
     assert.equal(trade.importedSnapshot, undefined);
     assert.equal(trade.latestMarketData, undefined);
     assert.equal(trade.notes, '');
   }
+  assert.deepEqual([first.rows[0].proposedTrade.closeUnderlyingPrice, second.rows[0].proposedTrade.closeUnderlyingPrice], [72, 90]);
+  assert.deepEqual([historyPriceAtExpiration(first.rows[0].proposedTrade), historyPriceAtExpiration(second.rows[0].proposedTrade)], [72, 90]);
+  const durable = toDurablePortfolioState([first.rows[0].proposedTrade])[0];
+  assert.deepEqual([durable.closeUnderlyingPrice, durable.closeUnderlyingPriceSource], [72, 'imported']);
+  assert.equal('latestMarketData' in durable, false);
 });
 
 test('expired-worthless contradictions block without provider fallback', async () => {
@@ -222,6 +233,28 @@ test('lot-aware duplicate matching preserves multiplicity and distinguishes cont
   ]), 'manual-context.xlsx', parseOptions());
   assert.deepEqual(manualContext.rows.map(row => row.state), ['ready', 'ready']);
   assert.equal(manualContext.rows[1].destination, 'adds_to_imported_contract');
+
+  const baselineClosed = (await parseHistoricalExcelWorkbook(makeWorkbook([closedRow()]), 'baseline-closed.xlsx', parseOptions())).rows[0].proposedTrade;
+  const correctedContextExisting = {
+    ...baselineClosed,
+    id: 'existing-closed',
+    closeUnderlyingPrice: 99,
+    entryDelta: -0.31,
+    entryIv: 91,
+  };
+  const correctedContextReupload = await parseHistoricalExcelWorkbook(makeWorkbook([closedRow({ underlying: 73, delta: -0.31, iv: 0.91 })]), 'corrected-context-reupload.xlsx', {
+    ...parseOptions(),
+    existingTrades: [correctedContextExisting],
+  });
+  assert.equal(correctedContextReupload.rows[0].state, 'possible_existing_duplicate');
+
+  const baselineExpired = (await parseHistoricalExcelWorkbook(makeWorkbook([expiredRow()]), 'baseline-expired.xlsx', parseOptions())).rows[0].proposedTrade;
+  const correctedExpirationExisting = { ...baselineExpired, id: 'existing-expired', expirationClosePrice: 51 };
+  const correctedExpirationReupload = await parseHistoricalExcelWorkbook(makeWorkbook([expiredRow({ underlying: 51 })]), 'corrected-expiration-reupload.xlsx', {
+    ...parseOptions(),
+    existingTrades: [correctedExpirationExisting],
+  });
+  assert.equal(correctedExpirationReupload.rows[0].state, 'possible_existing_duplicate');
 });
 
 test('staging and Entry VIX enrichment perform no durable Portfolio mutation', async () => {

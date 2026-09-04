@@ -76,6 +76,9 @@ export interface PortfolioTrade {
   notes?: string;
   closePrice?: number;
   closeDate?: string;
+  /** Historical underlying price associated with a manually closed contract. */
+  closeUnderlyingPrice?: number;
+  closeUnderlyingPriceSource?: 'imported';
   resolvedDate?: string;
   resolutionType?: PortfolioResolutionType;
   expirationClosePrice?: number;
@@ -318,6 +321,10 @@ export function normalizePortfolioTrade(
   if (!id || !createdAt || !updatedAt) return null;
   const closePrice = nonNegativeNumber(raw.closePrice);
   const closeDate = normalizeIsoDate(raw.closeDate);
+  const closeUnderlyingPrice = status === 'closed' ? (positiveNumber(raw.closeUnderlyingPrice) ?? undefined) : undefined;
+  const closeUnderlyingPriceSource = closeUnderlyingPrice !== undefined && raw.closeUnderlyingPriceSource === 'imported'
+    ? 'imported' as const
+    : undefined;
   const resolvedDate = normalizeIsoDate(raw.resolvedDate);
   const expirationClosePrice = nonNegativeNumber(raw.expirationClosePrice);
   const expirationCloseDate = normalizeIsoDate(raw.expirationCloseDate);
@@ -367,6 +374,8 @@ export function normalizePortfolioTrade(
     notes: typeof raw.notes === 'string' ? raw.notes : typeof raw.note === 'string' ? raw.note : '',
     closePrice: closePrice ?? undefined,
     closeDate: closeDate ?? undefined,
+    closeUnderlyingPrice,
+    closeUnderlyingPriceSource,
     resolvedDate: resolvedDate ?? undefined,
     resolutionType,
     expirationClosePrice: expirationClosePrice ?? undefined,
@@ -443,6 +452,12 @@ function invalidPortfolioEnumFields(entry: Record<string, unknown>): boolean {
       && (typeof entry.entryIvSource !== 'string' || !VALID_ENTRY_IV_SOURCES.includes(entry.entryIvSource as PortfolioEntryIvSource)))
     || (entry.entryIv === undefined && (entry.entryIvSource !== undefined || entry.entryIvCapturedAt !== undefined))
     || (entry.entryIvCapturedAt !== undefined && normalizeIsoTimestamp(entry.entryIvCapturedAt) === undefined)
+    || (entry.closeUnderlyingPriceSource !== undefined
+      && entry.closeUnderlyingPriceSource !== 'imported')
+    || (entry.closeUnderlyingPriceSource !== undefined
+      && (entry.status !== 'closed' || positiveNumber(entry.closeUnderlyingPrice) == null))
+    || (entry.closeUnderlyingPrice !== undefined
+      && (entry.status !== 'closed' || positiveNumber(entry.closeUnderlyingPrice) == null))
     || (entry.expirationBasisStatus !== undefined && entry.expirationBasisStatus !== 'provider_no_actions')
     || (entry.expirationBasisStatus === undefined && entry.expirationBasisCheckedFrom !== undefined)
     || (entry.expirationBasisCheckedFrom !== undefined && normalizeIsoDate(entry.expirationBasisCheckedFrom) === undefined);

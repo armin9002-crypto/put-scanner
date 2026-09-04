@@ -316,6 +316,22 @@ test('historical bought-back trades use close economics, including a buyback on 
   assert.ok(Math.abs(historyRealizedPnl(sameDay) - 196.9) < 1e-10);
 });
 
+test('editing a manually closed imported lot preserves its historical underlying close', () => {
+  const existing = normalizePortfolioTrade({
+    ...historicalInput({ status: 'closed', closePrice: 0.5, closeDate: '2025-06-10', closeUnderlyingPrice: 72, closeUnderlyingPriceSource: 'imported' }),
+    id: 'closed-imported', createdAt: '2025-05-01T12:00:00Z', updatedAt: '2025-06-10T12:00:00Z',
+  });
+  assert.ok(existing);
+  const edited = prepareManualTradeForSave(
+    { soldPrice: 1.4, closePrice: 0.4, closeDate: '2025-06-11' },
+    existing,
+    { mode: 'historical', historicalOutcome: 'closed' },
+    '2026-08-30T12:00:00Z',
+  ).trade;
+  assert.deepEqual([edited.closeUnderlyingPrice, edited.closeUnderlyingPriceSource], [72, 'imported']);
+  assert.equal(historyPriceAtExpiration(edited), 72);
+});
+
 test('historical manual Entry Delta and percentage-point Entry IV store canonical manual provenance without requests', () => {
   assert.equal(normalizeManualHistoricalEntryDelta(0.2271), -0.2271);
   assert.equal(normalizeManualHistoricalEntryDelta(-0.2271), -0.2271);

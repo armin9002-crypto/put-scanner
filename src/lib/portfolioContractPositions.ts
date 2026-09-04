@@ -160,6 +160,8 @@ function buildPosition(lots: PortfolioTrade[], markBasis: MarkBasis | null): Por
     status: orderedLots.every(lot => lot.status === 'open') ? 'open' : representative.status,
     notes: orderedLots.length === 1 ? representative.notes : `${orderedLots.length} independently tracked entries`,
     closeDate: commonValue(orderedLots.map(lot => lot.closeDate)),
+    closeUnderlyingPrice: commonValue(orderedLots.map(lot => lot.closeUnderlyingPrice)),
+    closeUnderlyingPriceSource: commonValue(orderedLots.map(lot => lot.closeUnderlyingPriceSource)),
     resolvedDate: commonValue(orderedLots.map(lot => lot.resolvedDate)),
     resolutionType: commonValue(orderedLots.map(lot => lot.resolutionType)),
     expirationClosePrice: commonValue(orderedLots.map(lot => lot.expirationClosePrice)),

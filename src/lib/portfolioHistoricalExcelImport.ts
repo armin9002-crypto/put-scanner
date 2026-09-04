@@ -199,7 +199,7 @@ function numberKey(value: number | null | undefined): string {
 
 export function makeHistoricalPortfolioLotFingerprint(trade: Pick<PortfolioTrade,
   'ticker' | 'optionType' | 'expiration' | 'strike' | 'contracts' | 'soldDate' | 'soldPrice' | 'status'
-  | 'resolutionType' | 'closeDate' | 'closePrice' | 'expirationClosePrice' | 'entryDelta' | 'entryIv'
+  | 'resolutionType' | 'closeDate' | 'closePrice'
 >): string {
   return [
     trade.ticker.trim().toUpperCase(),
@@ -213,9 +213,6 @@ export function makeHistoricalPortfolioLotFingerprint(trade: Pick<PortfolioTrade
     trade.resolutionType ?? '',
     trade.closeDate ?? '',
     numberKey(trade.closePrice),
-    numberKey(trade.expirationClosePrice),
-    numberKey(trade.entryDelta),
-    numberKey(trade.entryIv),
   ].join('|');
 }
 
@@ -396,7 +393,12 @@ function parseRow(
       soldPrice,
       soldDate,
       status: lifecycle === 'closed_manually' ? 'closed' : 'open',
-      ...(lifecycle === 'closed_manually' ? { closeDate: closeDate!, closePrice: optionClosePrice! } : {}),
+      ...(lifecycle === 'closed_manually' ? {
+        closeDate: closeDate!,
+        closePrice: optionClosePrice!,
+        closeUnderlyingPrice: underlyingHistoricalPrice,
+        closeUnderlyingPriceSource: 'imported' as const,
+      } : {}),
       entryDelta,
       entryDeltaSource: 'imported',
       entryDeltaCapturedAt: nowIso,

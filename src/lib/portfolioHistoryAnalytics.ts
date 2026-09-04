@@ -364,6 +364,7 @@ export function historyEntryVix(trade: PortfolioTrade): number | null {
 export function historyPriceAtExpiration(trade: PortfolioTrade): number | null {
   const derived = derivedHistoricalPositionMetric(trade, 'priceAtExpiration');
   if (derived !== undefined) return derived;
+  if (trade.status === 'closed' && isFiniteNumber(trade.closeUnderlyingPrice)) return trade.closeUnderlyingPrice;
   return isFiniteNumber(trade.expirationClosePrice) ? trade.expirationClosePrice : null;
 }
 

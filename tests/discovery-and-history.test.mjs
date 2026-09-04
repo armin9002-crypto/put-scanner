@@ -15,6 +15,7 @@ import {
   historyEntryVix,
   historyFinalValue,
   historyPriceAtExpiration,
+  historyPercentCaptured,
   historyRealizedIrr,
   historyRealizedPnl,
 } from '../src/lib/portfolioHistoryAnalytics.ts';
@@ -153,4 +154,16 @@ test('History data helpers use original entry economics and stored snapshots onl
   assert.equal(historyFinalValue(item), 200);
   assert.equal(historyEntryVix(trade({ entryVixClose: undefined, latestMarketData: { vix: 99 } })), null);
   assert.equal(historyPriceAtExpiration(trade({ expirationClosePrice: undefined })), null);
+});
+
+test('History exposes the manual-close underlying at resolution without changing close economics', () => {
+  const closed = trade({
+    status: 'closed', closeDate: '2026-08-20', closePrice: 0.5, contracts: 2,
+    closeUnderlyingPrice: 72, closeUnderlyingPriceSource: 'imported', soldPrice: 1.5,
+  });
+  assert.equal(historyPriceAtExpiration(closed), 72);
+  assert.equal(historyPriceAtExpiration({ ...closed, closeUnderlyingPrice: 90 }), 90);
+  assert.equal(historyPriceAtExpiration({ ...closed, closeUnderlyingPrice: undefined }), null);
+  assert.equal(historyRealizedPnl(closed), 200);
+  assert.equal(historyPercentCaptured(closed), 200 / 300);
 });

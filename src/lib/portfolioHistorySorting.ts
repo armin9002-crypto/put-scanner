@@ -50,7 +50,7 @@ export const HISTORY_SORT_OPTIONS: Array<{ value: HistorySortField; label: strin
   { value: 'ny', label: 'NY' },
   { value: 'entryVix', label: 'VIX @ Entry' },
   { value: 'entryIv', label: 'Entry IV' },
-  { value: 'priceAtExpiration', label: 'Price @ Exp.' },
+  { value: 'priceAtExpiration', label: 'Underlying @ Resolution' },
   { value: 'premium', label: 'Premium' },
   { value: 'realizedPnl', label: 'Realized P&L' },
   { value: 'realizedIrr', label: 'Realized IRR' },

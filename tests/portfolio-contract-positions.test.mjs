@@ -169,6 +169,7 @@ test('History filters lots before grouping and preserves event analytics', () =>
   });
   const closed = lot({
     id: 'lot-b', contracts: 5, soldPrice: 1.65, status: 'closed', expiration: '2026-06-19', soldDate: '2026-05-20', closeDate: '2026-06-10', closePrice: 0.5,
+    closeUnderlyingPrice: 72, closeUnderlyingPriceSource: 'imported',
   });
   const allLots = [expired, closed];
   const allPositions = buildHistoricalContractPositions(filterHistoryTrades(allLots, 'all'));
@@ -178,6 +179,8 @@ test('History filters lots before grouping and preserves event analytics', () =>
   assertClose(allPositions[0].positionMetrics.historicalPercentCaptured, (1_200 + 575) / (1_200 + 825), 'historical aggregate capture');
   const expiredOnly = buildHistoricalContractPositions(filterHistoryTrades(allLots, 'expired_worthless'));
   const closedOnly = buildHistoricalContractPositions(filterHistoryTrades(allLots, 'closed'));
+  assert.equal(closedOnly[0].closeUnderlyingPrice, 72);
+  assert.equal(closedOnly[0].positionMetrics.priceAtExpiration, 72);
   assert.deepEqual(expiredOnly[0].lots.map(item => item.id), ['lot-a']);
   assert.deepEqual(closedOnly[0].lots.map(item => item.id), ['lot-b']);
   assert.equal(buildHistoryAnalytics(allLots).resolvedTrades, 2, 'historical activity remains lot/event based');

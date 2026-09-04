@@ -596,6 +596,54 @@ test('N historical lots use one Portfolio CAS after latest-state backup and auth
   assert.equal(device.manager.getSnapshot().phase, 'ready');
 });
 
+test('manual-close underlying survives historical import, cloud bootstrap, backup, and restore', async t => {
+  const manualClose = historicalImportLot('import-closed', {
+    status: 'closed',
+    closePrice: 0.5,
+    closeDate: '2026-06-01',
+    resolvedDate: undefined,
+    resolutionType: undefined,
+    expirationClosePrice: undefined,
+    expirationCloseDate: undefined,
+    finalOptionValue: undefined,
+    realizedPnl: 100,
+    percentCaptured: 100 / 300,
+    premiumCollected: 300,
+    daysHeld: 31,
+    resolutionSource: undefined,
+    resolutionWarning: undefined,
+    closeUnderlyingPrice: 72,
+    closeUnderlyingPriceSource: 'imported',
+  });
+  const backend = new SharedCloudBackend();
+  const device = runtime(backend);
+  t.after(() => device.manager.destroy());
+  await device.manager.setAccount(userId, true);
+  const result = await device.manager.commitHistoricalPortfolioImport(historicalImportRequest(device, [manualClose]));
+  assert.equal(result.ok, true);
+  assert.deepEqual(
+    [backend.state.portfolio.payload.data[1].closeUnderlyingPrice, backend.state.portfolio.payload.data[1].closeUnderlyingPriceSource],
+    [72, 'imported'],
+  );
+  const backup = createPutScannerBackupFromCloudState(device.manager.getSnapshot().cloud, { now: fixedNow, appVersion: '7.0.0' });
+  assert.deepEqual(
+    [backup.data.portfolio.data[1].closeUnderlyingPrice, backup.data.portfolio.data[1].closeUnderlyingPriceSource],
+    [72, 'imported'],
+  );
+  const fresh = runtime(backend);
+  t.after(() => fresh.manager.destroy());
+  await fresh.manager.setAccount(userId, true);
+  assert.deepEqual(
+    [readPortfolioTrades(fresh.storage).data[1].closeUnderlyingPrice, readPortfolioTrades(fresh.storage).data[1].closeUnderlyingPriceSource],
+    [72, 'imported'],
+  );
+  assert.deepEqual(await fresh.manager.restoreBackup(backup), { ok: true });
+  assert.deepEqual(
+    [backend.state.portfolio.payload.data[1].closeUnderlyingPrice, backend.state.portfolio.payload.data[1].closeUnderlyingPriceSource],
+    [72, 'imported'],
+  );
+});
+
 test('revision change and final duplicate recheck stop import before backup or mutation', async t => {
   const backend = new SharedCloudBackend();
   const device = runtime(backend);

@@ -2827,7 +2827,7 @@ function MobileHistoryTradeRow({
           <Metric label="NY" value={formatPctValue(historyEntryNominalYield(trade))} />
           <Metric label="VIX @ Entry" value={isFiniteNumber(historyEntryVix(trade)) ? historyEntryVix(trade)!.toFixed(2) : DASH} />
           <Metric label="Entry IV" value={formatPercentPoints(historyEntryIv(trade), 1)} />
-          <Metric label="Price @ Exp." value={formatCurrency(historyPriceAtExpiration(trade))} />
+          <Metric label="Underlying @ Resolution" value={formatCurrency(historyPriceAtExpiration(trade))} detail="Underlying price at expiration for expired lots, or at the historical contract close for manually closed lots." />
           <Metric label="Entry Delta" value={formatDelta(trade.entryDelta)} />
         </div>
         {trade.resolutionWarning && <p className="mt-2 text-[10px]" style={{ color: 'var(--yellow)' }}>{trade.resolutionWarning}</p>}
@@ -2999,7 +2999,7 @@ function ArchiveHistorySection({
                 <Metric label="NY" value={formatPctValue(historyEntryNominalYield(trade))} detail="Entry Nominal Yield: net sold price ÷ strike, equivalent to Premium ÷ Gross Risk." />
                 <Metric label="VIX @ Entry" value={isFiniteNumber(historyEntryVix(trade)) ? historyEntryVix(trade)!.toFixed(2) : DASH} detail="Stored VIX close captured at the trade entry date." />
                 <Metric label="Entry IV" value={formatPercentPoints(historyEntryIv(trade), 1)} detail="Stored contract implied volatility observed at entry." />
-                <Metric label="Price @ Exp." value={formatCurrency(historyPriceAtExpiration(trade))} detail="Underlying closing price on expiration, or the nearest prior trading close used by lifecycle resolution. It remains unavailable for a manually confirmed worthless outcome." />
+                <Metric label="Underlying @ Resolution" value={formatCurrency(historyPriceAtExpiration(trade))} detail="Underlying price at expiration for expired lots, or at the historical contract close for manually closed lots." />
                 <Metric label="Entry Delta" value={formatDelta(trade.entryDelta)} />
               </div>
               {trade.resolutionWarning && <p className="mt-2 text-[11px]" style={{ color: 'var(--yellow)' }}>{trade.resolutionWarning}</p>}
@@ -3079,7 +3079,7 @@ function ArchiveHistorySection({
                 const percentCaptured = getArchivedPercentCaptured(trade);
                 const realizedIrr = historyRealizedIrr(trade);
                 return (
-                  <tr key={trade.id} title={`${trade.ticker} ${formatCurrency(trade.strike)} Put\nEntry: ${position ? formatPositionEntryDate(position) : formatHistoryDate(trade.soldDate)}\nResolved: ${position ? formatPositionResolvedDate(position) : formatHistoryDate(trade.closeDate ?? trade.resolvedDate ?? trade.expiration)}\nDays held: ${formatDays(historyDaysHeld(trade))}\nSold: ${formatHistoricalOptionPrice(trade.soldPrice)}\nPrice @ Exp.: ${formatCurrency(historyPriceAtExpiration(trade))}\nPremium: ${formatCurrency(getArchivedPremium(trade))}\nRealized P&L: ${formatCurrency(realizedPnl)}\nRealized IRR: ${formatPctValue(realizedIrr)}\nCaptured: ${formatPctValue(percentCaptured)}\nNY: ${formatPctValue(historyEntryNominalYield(trade))}\nVIX @ Entry: ${isFiniteNumber(historyEntryVix(trade)) ? historyEntryVix(trade)!.toFixed(2) : DASH}\nEntry IV: ${formatPercentPoints(historyEntryIv(trade), 1)}\nOutcome: ${getArchiveOutcomeLabel(trade)}`} style={{ borderBottom: '1px solid var(--border)', backgroundColor: index % 2 ? 'var(--row-alt)' : 'transparent' }}>
+                  <tr key={trade.id} title={`${trade.ticker} ${formatCurrency(trade.strike)} Put\nEntry: ${position ? formatPositionEntryDate(position) : formatHistoryDate(trade.soldDate)}\nResolved: ${position ? formatPositionResolvedDate(position) : formatHistoryDate(trade.closeDate ?? trade.resolvedDate ?? trade.expiration)}\nDays held: ${formatDays(historyDaysHeld(trade))}\nSold: ${formatHistoricalOptionPrice(trade.soldPrice)}\nUnderlying @ Resolution: ${formatCurrency(historyPriceAtExpiration(trade))}\nPremium: ${formatCurrency(getArchivedPremium(trade))}\nRealized P&L: ${formatCurrency(realizedPnl)}\nRealized IRR: ${formatPctValue(realizedIrr)}\nCaptured: ${formatPctValue(percentCaptured)}\nNY: ${formatPctValue(historyEntryNominalYield(trade))}\nVIX @ Entry: ${isFiniteNumber(historyEntryVix(trade)) ? historyEntryVix(trade)!.toFixed(2) : DASH}\nEntry IV: ${formatPercentPoints(historyEntryIv(trade), 1)}\nOutcome: ${getArchiveOutcomeLabel(trade)}`} style={{ borderBottom: '1px solid var(--border)', backgroundColor: index % 2 ? 'var(--row-alt)' : 'transparent' }}>
                     <td className="px-2 py-1 text-left font-mono font-bold whitespace-nowrap"><Link to={`/options/${trade.ticker.trim().toUpperCase()}`} className="underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</Link></td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatHistoryDate(trade.expiration)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatCurrency(trade.strike)}</td>
@@ -3091,7 +3091,7 @@ function ArchiveHistorySection({
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{formatPctValue(historyEntryNominalYield(trade))}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{isFiniteNumber(historyEntryVix(trade)) ? historyEntryVix(trade)!.toFixed(2) : DASH}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{formatPercentPoints(historyEntryIv(trade), 1)}</td>
-                    <td className="px-2 py-1 text-right font-mono tabular-nums" title="Underlying closing price on expiration, or the nearest prior trading close used by lifecycle resolution. It remains unavailable for a manually confirmed worthless outcome.">{formatCurrency(historyPriceAtExpiration(trade))}</td>
+                    <td className="px-2 py-1 text-right font-mono tabular-nums" title="Underlying price at expiration for expired lots, or at the historical contract close for manually closed lots.">{formatCurrency(historyPriceAtExpiration(trade))}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(getArchivedPremium(trade))}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(realizedPnl) }}>{formatCurrency(realizedPnl)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(realizedIrr) }}>{formatPctValue(realizedIrr)}</td>

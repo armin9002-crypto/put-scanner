@@ -17,6 +17,7 @@ import {
 } from '../src/lib/watchlist.ts';
 import { migratePreferencesState, readDurablePreferences } from '../src/lib/durablePreferences.ts';
 import { writeValidatedStorageValue } from '../src/lib/durableStorage.ts';
+import { applyPutScannerBackup, createPutScannerBackup } from '../src/lib/userDataBackup.ts';
 import { SHOW_NOMINAL_YIELD_KEY } from '../src/lib/optionTablePreferences.ts';
 import { RECOMMENDATIONS_MINIMUM_DTE_KEY } from '../src/lib/recommendationPreferences.ts';
 import { PORTFOLIO_MARK_BASIS_KEY } from '../src/lib/portfolioMarkPreference.ts';
@@ -159,6 +160,40 @@ test('portfolio controlled write creates a canonical envelope and roundtrips loc
   const afterMarketRefresh = JSON.parse(storage.getItem(PORTFOLIO_STORAGE_KEY));
   assert.equal(afterMarketRefresh.updatedAt, '2026-08-14T01:00:00.000Z');
   assert.equal(afterMarketRefresh.revision, 1);
+});
+
+test('manual-close underlying price survives durable Portfolio storage and backup restore', () => {
+  const storage = new MemoryStorage();
+  const manualClose = trade({
+    status: 'closed',
+    closePrice: 0.5,
+    closeDate: '2026-09-01',
+    closeUnderlyingPrice: 72,
+    closeUnderlyingPriceSource: 'imported',
+  });
+  assert.deepEqual(writePortfolioTrades(storage, [manualClose]), { status: 'ok', written: true });
+  const raw = JSON.parse(storage.getItem(PORTFOLIO_STORAGE_KEY));
+  assert.deepEqual(
+    [raw.data[0].closeUnderlyingPrice, raw.data[0].closeUnderlyingPriceSource],
+    [72, 'imported'],
+  );
+  const roundtrip = readPortfolioTrades(storage);
+  assert.equal(roundtrip.status, 'ok');
+  assert.deepEqual(
+    [roundtrip.data[0].closeUnderlyingPrice, roundtrip.data[0].closeUnderlyingPriceSource],
+    [72, 'imported'],
+  );
+  const backup = createPutScannerBackup(storage, { now: new Date('2026-09-04T12:00:00.000Z'), appVersion: 'test' });
+  assert.deepEqual(
+    [backup.data.portfolio.data[0].closeUnderlyingPrice, backup.data.portfolio.data[0].closeUnderlyingPriceSource],
+    [72, 'imported'],
+  );
+  const restored = new MemoryStorage();
+  applyPutScannerBackup(restored, backup);
+  assert.deepEqual(
+    [readPortfolioTrades(restored).data[0].closeUnderlyingPrice, readPortfolioTrades(restored).data[0].closeUnderlyingPriceSource],
+    [72, 'imported'],
+  );
 });
 
 test('watchlist has the same safe read semantics and deterministic current-key precedence', () => {
