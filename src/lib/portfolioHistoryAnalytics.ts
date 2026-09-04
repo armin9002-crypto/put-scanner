@@ -76,6 +76,21 @@ export interface HistoryGrossRiskWeightedMetric {
   totalGrossRisk: number;
 }
 
+type HistoricalPositionMetric =
+  | 'realizedPnl'
+  | 'historicalPercentCaptured'
+  | 'daysHeld'
+  | 'realizedIrr'
+  | 'entryIv'
+  | 'entryVix'
+  | 'priceAtExpiration'
+  | 'finalOptionValue';
+
+function derivedHistoricalPositionMetric(trade: PortfolioTrade, field: HistoricalPositionMetric): number | null | undefined {
+  const metrics = (trade as PortfolioTrade & { positionMetrics?: Record<string, number | null> }).positionMetrics;
+  return metrics && field in metrics ? metrics[field] : undefined;
+}
+
 export function historyOutcome(trade: PortfolioTrade): Exclude<HistoryOutcome, 'all'> | 'pending' {
   if (trade.status === 'closed') return 'closed';
   if (trade.status === 'assigned') return 'assigned';
@@ -85,6 +100,8 @@ export function historyOutcome(trade: PortfolioTrade): Exclude<HistoryOutcome, '
 }
 
 export function historyOutcomeLabel(trade: PortfolioTrade): string {
+  const derived = (trade as PortfolioTrade & { outcomeLabel?: string }).outcomeLabel;
+  if (derived) return derived;
   switch (historyOutcome(trade)) {
     case 'closed': return 'Closed Manually';
     case 'pending': return 'Expiration Price Pending';
@@ -95,6 +112,8 @@ export function historyOutcomeLabel(trade: PortfolioTrade): string {
 }
 
 export function historyRealizedPnl(trade: PortfolioTrade): number | null {
+  const derived = derivedHistoricalPositionMetric(trade, 'realizedPnl');
+  if (derived !== undefined) return derived;
   const canonical = canonicalHistoricalRealizedPnl(trade);
   if (canonical != null) return canonical;
   if ((trade.status === 'expired' || trade.status === 'assigned') && Number.isFinite(trade.realizedPnl)) return trade.realizedPnl!;
@@ -112,6 +131,8 @@ export function historyGrossRisk(trade: PortfolioTrade): number | null {
 }
 
 export function historyPercentCaptured(trade: PortfolioTrade): number | null {
+  const derived = derivedHistoricalPositionMetric(trade, 'historicalPercentCaptured');
+  if (derived !== undefined) return derived;
   const premium = historyPremium(trade);
   const realizedPnl = historyRealizedPnl(trade);
   if (isFiniteNumber(premium) && premium > 0 && isFiniteNumber(realizedPnl)) return realizedPnl / premium;
@@ -119,6 +140,8 @@ export function historyPercentCaptured(trade: PortfolioTrade): number | null {
 }
 
 export function historyDaysHeld(trade: PortfolioTrade): number | null {
+  const derived = derivedHistoricalPositionMetric(trade, 'daysHeld');
+  if (derived !== undefined) return derived;
   const canonical = canonicalHistoricalDaysHeld(trade);
   if (canonical != null) return canonical;
   if (Number.isFinite(trade.daysHeld)) return trade.daysHeld!;
@@ -130,6 +153,8 @@ export function historyDaysHeld(trade: PortfolioTrade): number | null {
 }
 
 export function historyRealizedIrr(trade: PortfolioTrade): number | null {
+  const derived = derivedHistoricalPositionMetric(trade, 'realizedIrr');
+  if (derived !== undefined) return derived;
   const realizedPnl = historyRealizedPnl(trade);
   const grossRisk = historyGrossRisk(trade);
   const daysHeld = historyDaysHeld(trade);
@@ -283,6 +308,8 @@ export function calculateHistoryWeightedEntryDelta(trades: PortfolioTrade[]): Hi
 }
 
 export function historyEntryIv(trade: PortfolioTrade): number | null {
+  const derived = derivedHistoricalPositionMetric(trade, 'entryIv');
+  if (derived !== undefined) return derived;
   return isValidEntryIv(trade.entryIv) ? trade.entryIv! : null;
 }
 
@@ -329,14 +356,20 @@ export function historyEntryNominalYield(trade: PortfolioTrade): number | null {
 }
 
 export function historyEntryVix(trade: PortfolioTrade): number | null {
+  const derived = derivedHistoricalPositionMetric(trade, 'entryVix');
+  if (derived !== undefined) return derived;
   return isFiniteNumber(trade.entryVixClose) ? trade.entryVixClose : null;
 }
 
 export function historyPriceAtExpiration(trade: PortfolioTrade): number | null {
+  const derived = derivedHistoricalPositionMetric(trade, 'priceAtExpiration');
+  if (derived !== undefined) return derived;
   return isFiniteNumber(trade.expirationClosePrice) ? trade.expirationClosePrice : null;
 }
 
 export function historyFinalValue(trade: PortfolioTrade): number | null {
+  const derived = derivedHistoricalPositionMetric(trade, 'finalOptionValue');
+  if (derived !== undefined) return derived;
   const canonical = canonicalHistoricalFinalOptionValue(trade);
   if (canonical != null) return canonical;
   if (isFiniteNumber(trade.finalOptionValue)) return trade.finalOptionValue;

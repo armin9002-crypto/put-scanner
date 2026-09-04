@@ -41,7 +41,7 @@ export default defineConfig({
       ? visualBuildCommand
       : 'npm run dev -- --host 127.0.0.1 --port 4317',
     url: 'http://127.0.0.1:4317',
-    reuseExistingServer: false,
+    reuseExistingServer: process.env.PLAYWRIGHT_REUSE_SERVER === 'true',
     timeout: 120_000,
   },
 });

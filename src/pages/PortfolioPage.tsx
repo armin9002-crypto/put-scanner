@@ -134,6 +134,13 @@ import {
   type ManualTradeMode,
   type ManualTradeSaveIntent,
 } from '../lib/portfolioHistoricalTrade';
+import {
+  buildAddToPositionSeed,
+  buildHistoricalContractPositions,
+  buildOpenContractPositions,
+  isPortfolioContractPosition,
+  type PortfolioContractPosition,
+} from '../lib/portfolioContractPositions';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 const PortfolioScreenshotImportModal = lazy(() => import('../components/PortfolioScreenshotImportModal'));
@@ -144,6 +151,7 @@ const MARK_BASIS_OPTIONS: MarkBasis[] = [...OPTION_QUOTE_TABLE_DISPLAY_ORDER];
 
 interface TradeModalProps {
   trade: PortfolioTrade | null;
+  seed?: PortfolioTradeInput | null;
   onClose: () => void;
   onSave: (trade: PortfolioTradeInput, intent: ManualTradeSaveIntent, id?: string, options?: { keepOpen?: boolean }) => Promise<boolean>;
   onDelete: (id: string) => void;
@@ -226,13 +234,14 @@ function scheduleGroupMetadata(group: PortfolioScheduleGroup): string {
 }
 
 function VixEntryTooltipContent({ trade }: { trade: PortfolioTrade }) {
+  const position = isPortfolioContractPosition(trade) ? trade : null;
   return (
     <div>
       <div className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text)' }}>VIX at Trade Entry</div>
       <TooltipRows rows={[
-        { label: 'Written', value: formatFullDate(trade.soldDate) },
+        { label: 'Written', value: position ? formatPositionEntryDate(position) : formatFullDate(trade.soldDate) },
         { label: 'VIX Close', value: isFiniteNumber(trade.entryVixClose) ? trade.entryVixClose.toFixed(2) : DASH },
-        { label: 'Source', value: trade.entryVixSource === 'nearest_prior_close' ? `Nearest prior close · ${formatFullDate(trade.entryVixDate)}` : trade.entryVixSource === 'historical_close' ? `${formatFullDate(trade.entryVixDate)} closing value` : DASH },
+        { label: 'Source', value: position && position.lotCount > 1 ? `Gross-Risk-weighted across ${position.lotCount} entries` : trade.entryVixSource === 'nearest_prior_close' ? `Nearest prior close · ${formatFullDate(trade.entryVixDate)}` : trade.entryVixSource === 'historical_close' ? `${formatFullDate(trade.entryVixDate)} closing value` : DASH },
       ]} />
     </div>
   );
@@ -247,7 +256,9 @@ function HistoryAggregateValue({ value }: { value: string }) {
 }
 
 function EntryDeltaTooltipContent({ trade }: { trade: PortfolioTrade }) {
-  const source = trade.entryDeltaSource === 'provider' ? 'Provider exact-contract Delta'
+  const position = isPortfolioContractPosition(trade) ? trade : null;
+  const source = position && position.lotCount > 1 ? `Gross-Risk-weighted across ${position.lotCount} entries`
+    : trade.entryDeltaSource === 'provider' ? 'Provider exact-contract Delta'
     : trade.entryDeltaSource === 'calculated' ? 'Canonical contemporaneous calculation'
       : trade.entryDeltaSource === 'stored_snapshot' ? 'Recovered stored entry snapshot'
         : trade.entryDeltaSource === 'manual' ? 'User-provided broker value'
@@ -261,7 +272,9 @@ function EntryDeltaTooltipContent({ trade }: { trade: PortfolioTrade }) {
 }
 
 function EntryIvTooltipContent({ trade }: { trade: PortfolioTrade }) {
-  const source = trade.entryIvSource === 'provider' ? 'Provider exact-contract IV'
+  const position = isPortfolioContractPosition(trade) ? trade : null;
+  const source = position && position.lotCount > 1 ? `Gross-Risk-weighted across ${position.lotCount} entries`
+    : trade.entryIvSource === 'provider' ? 'Provider exact-contract IV'
     : trade.entryIvSource === 'stored_snapshot' ? 'Recovered stored entry snapshot'
       : trade.entryIvSource === 'manual' ? 'User-provided historical value'
         : trade.entryIvSource === 'imported' ? 'Imported backup value'
@@ -308,6 +321,18 @@ function formatHistoryDate(value: string | number | null | undefined): string {
   }
   const monthLabel = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][month - 1];
   return monthLabel ? `${monthLabel} ${day}, '${String(year).slice(-2)}` : DASH;
+}
+
+function formatPositionEntryDate(position: PortfolioContractPosition): string {
+  if (position.lotCount === 1) return formatHistoryDate(position.entryDateStart);
+  if (position.entryDateStart === position.entryDateEnd) return `Multiple entries · ${formatHistoryDate(position.entryDateStart)}`;
+  return `${formatHistoryDate(position.entryDateStart)}–${formatHistoryDate(position.entryDateEnd)}`;
+}
+
+function formatPositionResolvedDate(position: PortfolioContractPosition): string {
+  if (!position.resolvedDateStart) return DASH;
+  if (position.resolvedDateStart === position.resolvedDateEnd) return formatHistoryDate(position.resolvedDateStart);
+  return `${formatHistoryDate(position.resolvedDateStart)}–${formatHistoryDate(position.resolvedDateEnd)}`;
 }
 
 function formatHistoricalOptionPrice(value: number | null | undefined): string {
@@ -442,14 +467,15 @@ function CurrentMarkTooltipContent({ trade, markBasis }: { trade: PortfolioTrade
 
 function DteTooltipContent({ trade }: { trade: PortfolioTrade }) {
   const dte = calculateRemainingDte(trade);
+  const position = isPortfolioContractPosition(trade) ? trade : null;
   return (
     <div>
       <div className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text)' }}>Position Timing</div>
       <TooltipRows rows={[
         { label: 'Expiration', value: formatFullDate(trade.expiration) },
         { label: 'DTE', value: isFiniteNumber(dte) ? formatDays(dte) : DASH },
-        { label: 'Written', value: formatFullDate(trade.soldDate) },
-        { label: 'Days Since Written', value: formatDaysAgo(trade.soldDate) },
+        { label: 'Written', value: position ? formatPositionEntryDate(position) : formatFullDate(trade.soldDate) },
+        { label: position && position.lotCount > 1 ? 'Wtd. Original DTE' : 'Days Since Written', value: position && position.lotCount > 1 ? formatAverageDays(position.positionMetrics.originalDte) : formatDaysAgo(trade.soldDate) },
       ]} />
     </div>
   );
@@ -735,7 +761,7 @@ function CompactExposureBars({
               `Gross Risk: ${formatCurrency(group.grossRisk, 0)}`,
               `Net Risk: ${formatCurrency(group.netCapitalAtRisk, 0)}`,
               `Premium: ${formatCurrency(group.premiumCollected, 0)}`,
-              `Trades: ${group.tradeCount}`,
+              `Positions: ${group.tradeCount}`,
               `Entry AY: ${formatPctValue(group.originalAY)}`,
               `Weighted Avg Delta: ${formatDelta(group.weightedAverageDelta)}`,
               `Current AY: ${formatPctValue(group.currentAY)}`,
@@ -753,7 +779,7 @@ function CompactExposureBars({
                   <div className="h-full rounded-full" style={{ width: `${width}%`, backgroundColor: 'var(--accent)' }} />
                 </div>
                 <div className="flex justify-between gap-2 mt-1 text-[11px] leading-none" style={{ color: 'var(--text-dim)' }}>
-                  <span>{group.tradeCount} trade{group.tradeCount === 1 ? '' : 's'}</span>
+                  <span>{group.tradeCount} position{group.tradeCount === 1 ? '' : 's'}</span>
                   <span className="truncate tabular-nums">Prem {formatCompactCurrency(group.premiumCollected)} · Captured {formatGroupPercentCaptured(group)} · Δ {formatDelta(group.weightedAverageDelta)} · Current AY {formatPctValue(group.currentAY)}</span>
                 </div>
               </button>
@@ -886,7 +912,7 @@ function ConcentrationBars({
                 </div>
                 <div className="flex justify-between gap-2 mt-1 text-[11px] leading-none" style={{ color: 'var(--text-dim)' }}>
                   <span>{formatPctValue(percentOfTotal(group.grossRisk, totalGrossRisk))}</span>
-                  <span className="truncate tabular-nums">{group.tradeCount} trades · Captured {formatGroupPercentCaptured(group)} · Δ {formatDelta(group.weightedAverageDelta)} · Current AY {formatPctValue(group.currentAY)}</span>
+                  <span className="truncate tabular-nums">{group.tradeCount} positions · Captured {formatGroupPercentCaptured(group)} · Δ {formatDelta(group.weightedAverageDelta)} · Current AY {formatPctValue(group.currentAY)}</span>
                 </div>
               </button>
             );
@@ -912,7 +938,7 @@ function groupTooltip(group: PortfolioExposureGroup): string {
     `Weighted Avg Delta: ${formatDelta(group.weightedAverageDelta)}`,
     `Current AY: ${formatPctValue(group.currentAY)}`,
     `% Captured: ${formatGroupPercentCaptured(group)}`,
-    `Trades: ${group.tradeCount}`,
+    `Positions: ${group.tradeCount}`,
   ].join('\n');
 }
 
@@ -921,6 +947,7 @@ function getArchiveOutcomeLabel(trade: PortfolioTrade): string {
 }
 
 function getArchiveOutcomeColor(trade: PortfolioTrade): string {
+  if (getArchiveOutcomeLabel(trade) === 'Mixed') return 'var(--yellow)';
   if (trade.status === 'expired_price_pending' || trade.resolutionType === 'expired_price_pending') return 'var(--yellow)';
   if (trade.resolutionType === 'expired_itm') return 'var(--red)';
   if (trade.resolutionType === 'expired_worthless' || trade.status === 'expired') return 'var(--green)';
@@ -976,15 +1003,15 @@ function formatEntryIvInput(value: number | null | undefined): string {
   return value.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
 }
 
-function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
+function TradeModal({ trade, seed = null, onClose, onSave, onDelete }: TradeModalProps) {
   const marketDate = usMarketDateIso();
-  const [ticker, setTicker] = useState(trade?.ticker ?? '');
-  const [expiration, setExpiration] = useState(trade?.expiration ?? '');
-  const [strike, setStrike] = useState(trade ? String(trade.strike) : '');
-  const [contracts, setContracts] = useState(trade ? String(trade.contracts) : '1');
+  const [ticker, setTicker] = useState(trade?.ticker ?? seed?.ticker ?? '');
+  const [expiration, setExpiration] = useState(trade?.expiration ?? seed?.expiration ?? '');
+  const [strike, setStrike] = useState(trade ? String(trade.strike) : seed && Number.isFinite(seed.strike) ? String(seed.strike) : '');
+  const [contracts, setContracts] = useState(trade ? String(trade.contracts) : seed ? '' : '1');
   const [soldPrice, setSoldPrice] = useState(trade ? String(trade.soldPrice) : '');
-  const [soldDate, setSoldDate] = useState(trade?.soldDate ?? todayIso());
-  const [tradeMode, setTradeMode] = useState<ManualTradeMode>(() => inferManualTradeMode(trade, marketDate));
+  const [soldDate, setSoldDate] = useState(trade?.soldDate ?? (seed ? '' : todayIso()));
+  const [tradeMode, setTradeMode] = useState<ManualTradeMode>(() => trade ? inferManualTradeMode(trade, marketDate) : seed?.expiration ? inferManualTradeModeFromExpiration(seed.expiration, marketDate) : 'open');
   const [historicalOutcome, setHistoricalOutcome] = useState<HistoricalTradeOutcome>(() => inferHistoricalTradeOutcome(trade));
   const [notes, setNotes] = useState(trade?.notes ?? '');
   const [closePrice, setClosePrice] = useState(trade?.closePrice != null ? String(trade.closePrice) : '');
@@ -1196,11 +1223,13 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
         <div className="mx-auto mb-2 h-1 w-10 rounded-full sm:hidden" aria-hidden="true" style={{ backgroundColor: 'var(--border-strong)' }} />
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
-            <h2 id="trade-modal-title" className="text-lg font-bold" style={{ color: 'var(--text)' }}>{trade ? 'Edit Sold Put' : 'Add Sold Put'}</h2>
-            <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>{trade ? 'Update this durable trade record.' : 'Track a current or historical short put.'}</p>
+            <h2 id="trade-modal-title" className="text-lg font-bold" style={{ color: 'var(--text)' }}>{trade ? 'Edit Sold Put' : seed ? 'Add to Position' : 'Add Sold Put'}</h2>
+            <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>{trade ? 'Correct this independently tracked entry lot.' : seed ? 'Create a new entry lot for this exact contract.' : 'Track a current or historical short put.'}</p>
           </div>
           <button type="button" onClick={onClose} aria-label="Close add trade modal" className="icon-button min-h-11 min-w-11 rounded-lg text-lg" style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}>×</button>
         </div>
+
+        {trade && <p className="mb-3 rounded-lg px-3 py-2 text-[11px] leading-4" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>Editing changes this original entry. If contracts were entered separately later, add them as a new entry instead.</p>}
 
         <fieldset className="trade-modal-section mb-3 rounded-lg border p-2.5" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
           <legend className="px-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Trade mode</legend>
@@ -1345,10 +1374,73 @@ function TradeModal({ trade, onClose, onSave, onDelete }: TradeModalProps) {
           ) : <span className="hidden sm:block" />}
           <div className="portfolio-trade-sheet__action-group flex flex-col gap-2 sm:flex-row sm:items-center">
             <button type="button" onClick={onClose} className="order-3 min-h-11 rounded-lg px-4 py-2 text-xs sm:order-1" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
-            {!trade && <button type="button" onClick={() => void submit(true)} disabled={saving} className="order-2 min-h-11 rounded-lg px-4 py-2 text-xs disabled:opacity-60" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>{saving ? 'Saving…' : 'Save & Add Another'}</button>}
+            {!trade && !seed && <button type="button" onClick={() => void submit(true)} disabled={saving} className="order-2 min-h-11 rounded-lg px-4 py-2 text-xs disabled:opacity-60" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>{saving ? 'Saving…' : 'Save & Add Another'}</button>}
             <button type="button" onClick={() => void submit(false)} disabled={saving} className="order-1 min-h-11 rounded-lg px-4 py-2 text-xs font-medium text-white disabled:opacity-60 sm:order-3" style={{ backgroundColor: 'var(--accent)' }}>{saving ? 'Saving…' : trade ? 'Save Changes' : 'Save Trade'}</button>
           </div>
         </div>
+      </section>
+    </div>
+  );
+}
+
+function ContractPositionEditor({
+  position,
+  onClose,
+  onEditLot,
+  onAddToPosition,
+}: {
+  position: PortfolioContractPosition;
+  onClose: () => void;
+  onEditLot: (lot: PortfolioTrade) => void;
+  onAddToPosition: (position: PortfolioContractPosition) => void;
+}) {
+  const dialogRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKeyDown);
+    window.requestAnimationFrame(() => dialogRef.current?.focus());
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-[125]">
+      <button type="button" aria-label="Close contract position editor" onClick={onClose} className="absolute inset-0 bg-black/55" />
+      <section ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="contract-position-editor-title" className="absolute inset-x-0 bottom-0 max-h-[96dvh] overflow-y-auto rounded-t-2xl p-3 shadow-2xl sm:inset-x-1/2 sm:top-1/2 sm:bottom-auto sm:max-h-[calc(100dvh-2rem)] sm:w-[680px] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl sm:p-4" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div>
+            <h2 id="contract-position-editor-title" className="text-lg font-bold" style={{ color: 'var(--text)' }}>{position.ticker} {formatCurrency(position.strike)} Put</h2>
+            <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>{formatFullDate(position.expiration)} · {position.totalContracts} {position.totalContracts === 1 ? 'contract' : 'contracts'} · {position.lotCount} {position.lotCount === 1 ? 'entry' : 'entries'}</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close contract position editor" className="icon-button min-h-11 min-w-11 rounded-lg text-lg" style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}>×</button>
+        </div>
+
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h3 className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Entries</h3>
+          <button type="button" onClick={() => onAddToPosition(position)} className="button-secondary inline-flex min-h-10 items-center gap-1.5 rounded-lg px-3 text-xs" style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)', border: '1px solid var(--accent-border)' }}><Plus className="h-3.5 w-3.5" /> Add to Position</button>
+        </div>
+        <div className="space-y-2">
+          {position.lots.map(lot => (
+            <article key={lot.id} className="grid gap-2 rounded-lg p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+              <div className="min-w-0">
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] sm:grid-cols-5">
+                  <Metric label="Sold Date" value={formatHistoryDate(lot.soldDate)} />
+                  <Metric label="Contracts" value={String(lot.contracts)} />
+                  <Metric label="Sold Price" value={formatHistoricalOptionPrice(lot.soldPrice)} />
+                  <Metric label="Entry Delta" value={formatDelta(lot.entryDelta)} />
+                  <Metric label="Entry IV" value={formatPercentPoints(lot.entryIv, 1)} />
+                </div>
+                <p className="mt-2 truncate text-[10px]" title={lot.notes || undefined} style={{ color: 'var(--text-dim)' }}>{lot.status === 'open' ? 'Open entry' : historyOutcomeLabel(lot)}{lot.notes ? ` · ${lot.notes}` : ''}</p>
+              </div>
+              <button type="button" onClick={() => onEditLot(lot)} className="button-secondary inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg px-3 text-xs" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}><Edit2 className="h-3.5 w-3.5" /> Edit Entry</button>
+            </article>
+          ))}
+        </div>
+        <p className="mt-3 text-[11px] leading-4" style={{ color: 'var(--text-dim)' }}>Close and delete actions remain entry-scoped. A partial close within one entry is not split automatically; correct or split the affected lot before recording its lifecycle.</p>
       </section>
     </div>
   );
@@ -1358,6 +1450,8 @@ export default function PortfolioPage() {
   const { isPhone, isPhoneLandscape } = useResponsiveMode();
   const [trades, setTrades] = useState<PortfolioTrade[]>([]);
   const [editingTrade, setEditingTrade] = useState<PortfolioTrade | null>(null);
+  const [editingPosition, setEditingPosition] = useState<PortfolioContractPosition | null>(null);
+  const [addPositionSeed, setAddPositionSeed] = useState<PortfolioTradeInput | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showDataBackup, setShowDataBackup] = useState(false);
@@ -1404,11 +1498,12 @@ export default function PortfolioPage() {
 
   const summary = useMemo(() => calculatePortfolioSummary(trades), [trades]);
   const openTrades = useMemo(() => trades.filter(trade => trade.status === 'open'), [trades]);
+  const openPositions = useMemo(() => buildOpenContractPositions(openTrades, markBasis), [markBasis, openTrades]);
   const archivedTrades = useMemo(() => trades.filter(isArchivedTrade).sort((a, b) => b.expiration.localeCompare(a.expiration)), [trades]);
   const archiveSummary = useMemo(() => buildArchiveSummary(archivedTrades), [archivedTrades]);
   const markSummary = useMemo(() => calculatePortfolioMarkSummary(openTrades, markBasis), [openTrades, markBasis]);
   const maintenanceAssessment = useMemo(() => assessPortfolioMaintenance(trades), [trades]);
-  const quoteFreshnessSummary = useMemo(() => summarizePortfolioQuoteFreshness(openTrades), [openTrades]);
+  const quoteFreshnessSummary = useMemo(() => summarizePortfolioQuoteFreshness(openPositions), [openPositions]);
   const positionsNeedingFreshData = quoteFreshnessSummary.stale + quoteFreshnessSummary.unavailable;
 
   const scheduleTotals = useMemo(() => buildScheduleTotals(openTrades, markBasis), [openTrades, markBasis]);
@@ -1438,17 +1533,17 @@ export default function PortfolioPage() {
   }, []);
 
   const expirationGroups = useMemo(() => {
-    const groups = buildExpirationScheduleGroups(openTrades, markBasis);
+    const groups = buildExpirationScheduleGroups(openPositions, markBasis);
     return sortExpirationPortfolioScheduleGroups(groups, sortField, sortDir, markBasis);
-  }, [openTrades, sortField, sortDir, markBasis]);
+  }, [openPositions, sortField, sortDir, markBasis]);
 
   const underlyingGroups = useMemo(() => sortUnderlyingPortfolioScheduleGroups(
-    buildUnderlyingScheduleGroups(openTrades, markBasis), sortField, sortDir, markBasis
-  ), [openTrades, sortField, sortDir, markBasis]);
+    buildUnderlyingScheduleGroups(openPositions, markBasis), sortField, sortDir, markBasis
+  ), [openPositions, sortField, sortDir, markBasis]);
 
   const flatScheduleTrades = useMemo(() => sortFlatPortfolioSchedule(
-    buildFlatScheduleTrades(openTrades), sortField, sortDir, markBasis
-  ), [openTrades, sortField, sortDir, markBasis]);
+    buildFlatScheduleTrades(openPositions), sortField, sortDir, markBasis
+  ), [openPositions, sortField, sortDir, markBasis]);
   const scheduleGroups = useMemo<PortfolioScheduleGroup[]>(() => (
     groupMode === 'expiration' ? expirationGroups : groupMode === 'underlying' ? underlyingGroups : []
   ), [expirationGroups, groupMode, underlyingGroups]);
@@ -1521,6 +1616,25 @@ export default function PortfolioPage() {
     startTransientHighlight('trade', trade.id);
     scrollToSchedule(`[data-trade-id="${trade.id}"]`);
   }, [groupMode, scrollToSchedule, startTransientHighlight]);
+
+  const editContractPosition = useCallback((trade: PortfolioTrade) => {
+    if (!isPortfolioContractPosition(trade)) {
+      setEditingTrade(trade);
+      return;
+    }
+    if (trade.lotCount === 1) {
+      setEditingTrade(trade.lots[0]);
+      return;
+    }
+    setEditingPosition(trade);
+  }, []);
+
+  const addToContractPosition = useCallback((position: PortfolioContractPosition) => {
+    setEditingPosition(null);
+    setEditingTrade(null);
+    setAddPositionSeed(buildAddToPositionSeed(position));
+    setShowAddModal(true);
+  }, []);
 
   const persistTrades = useCallback((next: PortfolioTrade[]) => {
     const saved = savePortfolioTrades(next);
@@ -1607,6 +1721,7 @@ export default function PortfolioPage() {
     if (!options?.keepOpen) {
       setShowAddModal(false);
       setEditingTrade(null);
+      setAddPositionSeed(null);
     }
     if (finalTrade.status === 'expired_price_pending') {
       setDurableActivityNotice(finalTrade.resolutionWarning ?? 'Historical trade saved; expiration price remains pending for Portfolio Maintenance.');
@@ -1717,6 +1832,7 @@ export default function PortfolioPage() {
     }
     setTrades(next);
     setEditingTrade(null);
+    setEditingPosition(null);
   }, []);
 
   const handleRefreshOpenTrades = useCallback(async () => {
@@ -1988,7 +2104,8 @@ export default function PortfolioPage() {
   const renderMobileScheduleTrade = (trade: PortfolioTrade) => {
     const freshness = getPortfolioQuoteFreshness(trade);
     const visibleFreshness = freshness.state === 'stale' || freshness.state === 'unavailable' ? freshness.label : '';
-    return <MobilePositionRow key={trade.id} ticker={trade.ticker} strike={formatCurrency(trade.strike)} contracts={trade.contracts} expiration={formatDteValue(calculateRemainingDte(trade))} entryDate={formatHistoryDate(trade.soldDate)} pnl={formatCurrency(calculateTotalGainLoss(trade, markBasis), 0)} captured={formatPctValue(calculatePercentCaptured(trade, markBasis))} mark={formatOptionPrice(calculateCurrentOptionMark(trade, markBasis))} entryDelta={formatDelta(trade.entryDelta)} showEntryDelta={showEntryDeltas} currentDelta={formatDelta(trade.latestMarketData?.delta)} entryIv={formatPercentPoints(trade.entryIv, 1)} currentIv={formatPercentPoints(trade.latestMarketData?.iv, 1)} showEntryIv={showEntryDeltas} freshness={visibleFreshness} distance={formatPctValue(calculateDistanceToStrike(trade))} entryVix={isFiniteNumber(trade.entryVixClose) ? trade.entryVixClose.toFixed(2) : DASH} health={getPositionHealth(trade)} onOpen={() => openDrawer(trade)} onEdit={() => setEditingTrade(trade)} />;
+    const entryDate = isPortfolioContractPosition(trade) ? formatPositionEntryDate(trade) : formatHistoryDate(trade.soldDate);
+    return <MobilePositionRow key={trade.id} ticker={trade.ticker} strike={formatCurrency(trade.strike)} contracts={trade.contracts} expiration={formatDteValue(calculateRemainingDte(trade))} entryDate={entryDate} pnl={formatCurrency(calculateTotalGainLoss(trade, markBasis), 0)} captured={formatPctValue(calculatePercentCaptured(trade, markBasis))} mark={formatOptionPrice(calculateCurrentOptionMark(trade, markBasis))} entryDelta={formatDelta(trade.entryDelta)} showEntryDelta={showEntryDeltas} currentDelta={formatDelta(trade.latestMarketData?.delta)} entryIv={formatPercentPoints(trade.entryIv, 1)} currentIv={formatPercentPoints(trade.latestMarketData?.iv, 1)} showEntryIv={showEntryDeltas} freshness={visibleFreshness} distance={formatPctValue(calculateDistanceToStrike(trade))} entryVix={isFiniteNumber(trade.entryVixClose) ? trade.entryVixClose.toFixed(2) : DASH} health={getPositionHealth(trade)} onOpen={() => openDrawer(trade)} onEdit={() => editContractPosition(trade)} />;
   };
 
   if (isPhone && !isPhoneLandscape) {
@@ -1998,7 +2115,7 @@ export default function PortfolioPage() {
           <>
             <section className="mobile-portfolio-hero px-4 pb-3 pt-3" style={{ backgroundColor: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
               <div className="portfolio-mobile-headline flex items-start justify-between gap-3">
-                <div className="min-w-0"><div className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: 'var(--text-muted)' }}>Open trade book</div><div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-dim)' }}>{openTrades.length} {openTrades.length === 1 ? 'position' : 'positions'} · {markBasis.charAt(0).toUpperCase() + markBasis.slice(1)} marks</div></div>
+                <div className="min-w-0"><div className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: 'var(--text-muted)' }}>Open trade book</div><div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-dim)' }}>{openPositions.length} {openPositions.length === 1 ? 'position' : 'positions'} · {markBasis.charAt(0).toUpperCase() + markBasis.slice(1)} marks</div></div>
                 <button type="button" onClick={() => void handleRefreshOpenTrades()} disabled={refreshing || openTrades.length === 0} className="pressable portfolio-mobile-refresh flex h-11 w-11 flex-none items-center justify-center rounded-full disabled:cursor-not-allowed disabled:opacity-40" aria-label="Refresh open trades" title="Refresh open trades" style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)' }}><RefreshCw className={`h-5 w-5 ${refreshing ? 'animate-spin' : ''}`} /></button>
               </div>
               <div className="portfolio-mobile-metrics mt-2 grid grid-cols-4 border-y" style={{ borderColor: 'var(--border)' }}>
@@ -2020,12 +2137,12 @@ export default function PortfolioPage() {
               {durableActivityNotice && <p role="status" className="mt-2 text-[11px] leading-4" style={{ color: 'var(--yellow)' }}>{durableActivityNotice}</p>}
             </section>
 
-            {!analyticsExpanded && <PortfolioPriorityStrip trades={openTrades} markBasis={markBasis} onOpenTrade={openDrawer} />}
+            {!analyticsExpanded && <PortfolioPriorityStrip trades={openPositions} markBasis={markBasis} onOpenTrade={openDrawer} />}
 
             <div ref={scheduleRef} className="border-b px-3.5 py-2" style={{ borderColor: 'var(--border)' }}>
               <div className="mb-2 flex min-h-11 items-center justify-between gap-2">
                 <h2 className="text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Open Positions</h2>
-                <div className="flex items-center gap-0.5"><span className="mr-1 font-mono text-[11px]" style={{ color: 'var(--text-muted)' }}>{openTrades.length} trades</span><button type="button" onClick={() => setMobilePositionControlsOpen(true)} className="pressable flex h-11 w-11 items-center justify-center rounded-full" aria-label="Position display and sort" title="Position display and sort" style={{ color: 'var(--text-muted)' }}><SlidersHorizontal className="h-4 w-4" /></button><button type="button" onClick={() => setMobileActionsOpen(true)} className="pressable flex h-11 w-11 items-center justify-center rounded-full" aria-label="Portfolio actions" title="Portfolio actions" style={{ color: 'var(--text-muted)' }}><MoreHorizontal className="h-5 w-5" /></button></div>
+                <div className="flex items-center gap-0.5"><span className="mr-1 font-mono text-[11px]" style={{ color: 'var(--text-muted)' }}>{openPositions.length} positions</span><button type="button" onClick={() => setMobilePositionControlsOpen(true)} className="pressable flex h-11 w-11 items-center justify-center rounded-full" aria-label="Position display and sort" title="Position display and sort" style={{ color: 'var(--text-muted)' }}><SlidersHorizontal className="h-4 w-4" /></button><button type="button" onClick={() => setMobileActionsOpen(true)} className="pressable flex h-11 w-11 items-center justify-center rounded-full" aria-label="Portfolio actions" title="Portfolio actions" style={{ color: 'var(--text-muted)' }}><MoreHorizontal className="h-5 w-5" /></button></div>
               </div>
               <div className="flex items-center gap-2"><span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Group</span><div className="min-w-0 flex-1"><MobileSegmentedControl value={groupMode} onChange={setGroupMode} label="Group portfolio positions" options={[{ value: 'expiration', label: 'Expiry' }, { value: 'underlying', label: 'Underlying' }, { value: 'none', label: 'None' }]} /></div></div>
             </div>
@@ -2036,15 +2153,16 @@ export default function PortfolioPage() {
               return <MobileExpirationGroup key={key} label={scheduleGroupLabel(group)} dte={groupMode === 'underlying' && 'expirationCount' in group ? `${group.expirationCount} ${group.expirationCount === 1 ? 'expiry' : 'expiries'}` : scheduleGroupDte(group)} positions={group.tradeCount} contracts={group.contractCount} risk={formatCurrency(group.grossRisk, 0)} pnl={formatCurrency(group.totalGainLoss, 0)} captured={formatPctValue(captured)} expanded={expanded} onToggle={() => toggleScheduleGroup(key)}>{group.trades.map(renderMobileScheduleTrade)}</MobileExpirationGroup>;
             })}</div>}
 
-            {openTrades.length > 0 && <section className="portfolio-analytics-section border-t px-3.5 py-2" style={{ borderColor: 'var(--border)' }}><button type="button" onClick={() => setAnalyticsExpanded(expanded => !expanded)} aria-expanded={analyticsExpanded} aria-controls="portfolio-analytics-content" className="portfolio-analytics-disclosure pressable flex min-h-11 w-full items-center justify-between text-left"><span><h2 className="text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Portfolio Analytics</h2><span className="portfolio-analytics-disclosure__hint">Concentration, timing, and policy signals</span></span><ChevronDown className={`h-4 w-4 transition-transform ${analyticsExpanded ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} aria-hidden="true" /></button><div id="portfolio-analytics-content">{analyticsExpanded && <div className="portfolio-analytics-content pb-2"><MobileSegmentedControl value={mobileAnalytics} onChange={setMobileAnalytics} label="Portfolio analytics" options={[{ value: 'maturity', label: 'Maturity' }, { value: 'ticker', label: 'Exposure' }, { value: 'attention', label: 'Attention' }, { value: 'close', label: 'Close' }]} /><div className="mt-2">{mobileAnalytics === 'maturity' && <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openTrades, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." onGroupClick={drillToExpiration} />}{mobileAnalytics === 'ticker' && <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openTrades, markBasis)} totalGrossRisk={sumValues(openTrades.map(calculateEquityAtRisk))} maxItems={8} onGroupClick={drillToTicker} />}{mobileAnalytics === 'attention' && <NeedsAttentionList items={buildNeedsAttention(openTrades).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} />}{mobileAnalytics === 'close' && <CloseCandidatesCard candidates={buildCloseCandidates(openTrades, markBasis).slice(0, 5)} onNavigate={drillToTrade} />}</div></div>}</div></section>}
+            {openPositions.length > 0 && <section className="portfolio-analytics-section border-t px-3.5 py-2" style={{ borderColor: 'var(--border)' }}><button type="button" onClick={() => setAnalyticsExpanded(expanded => !expanded)} aria-expanded={analyticsExpanded} aria-controls="portfolio-analytics-content" className="portfolio-analytics-disclosure pressable flex min-h-11 w-full items-center justify-between text-left"><span><h2 className="text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Portfolio Analytics</h2><span className="portfolio-analytics-disclosure__hint">Concentration, timing, and policy signals</span></span><ChevronDown className={`h-4 w-4 transition-transform ${analyticsExpanded ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} aria-hidden="true" /></button><div id="portfolio-analytics-content">{analyticsExpanded && <div className="portfolio-analytics-content pb-2"><MobileSegmentedControl value={mobileAnalytics} onChange={setMobileAnalytics} label="Portfolio analytics" options={[{ value: 'maturity', label: 'Maturity' }, { value: 'ticker', label: 'Exposure' }, { value: 'attention', label: 'Attention' }, { value: 'close', label: 'Close' }]} /><div className="mt-2">{mobileAnalytics === 'maturity' && <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openPositions, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." onGroupClick={drillToExpiration} />}{mobileAnalytics === 'ticker' && <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openPositions, markBasis)} totalGrossRisk={sumValues(openPositions.map(calculateEquityAtRisk))} maxItems={8} onGroupClick={drillToTicker} />}{mobileAnalytics === 'attention' && <NeedsAttentionList items={buildNeedsAttention(openPositions).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} />}{mobileAnalytics === 'close' && <CloseCandidatesCard candidates={buildCloseCandidates(openPositions, markBasis).slice(0, 5)} onNavigate={drillToTrade} />}</div></div>}</div></section>}
 
-            {archivedTrades.length > 0 && <section className="border-t px-3.5 py-3" style={{ borderColor: 'var(--border)' }}><button type="button" onClick={() => setMobileHistoryOpen(current => !current)} className="pressable flex min-h-11 w-full items-center justify-between text-left" aria-expanded={mobileHistoryOpen}><span><b className="block text-[15px]" style={{ color: 'var(--text)' }}>History</b><span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{archivedTrades.length} resolved · {formatCurrency(archiveSummary.realizedPnl, 0)} realized</span></span><ChevronDown className={`h-4 w-4 transition-transform ${mobileHistoryOpen ? 'rotate-180' : ''}`} /></button>{mobileHistoryOpen && <ArchiveHistorySection mobileLayout rollingTrades={trades} trades={archivedTrades} summary={archiveSummary} resolvingIds={resolvingArchiveIds} onRetryResolve={handleRetryResolve} onManualExpirationClose={handleManualExpirationClose} onRequestWorthlessConfirmation={setWorthlessConfirmationTrade} onEdit={setEditingTrade} onDelete={handleDeleteTrade} />}</section>}
+            {archivedTrades.length > 0 && <section className="border-t px-3.5 py-3" style={{ borderColor: 'var(--border)' }}><button type="button" onClick={() => setMobileHistoryOpen(current => !current)} className="pressable flex min-h-11 w-full items-center justify-between text-left" aria-expanded={mobileHistoryOpen}><span><b className="block text-[15px]" style={{ color: 'var(--text)' }}>History</b><span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{buildHistoricalContractPositions(archivedTrades).length} positions · {archivedTrades.length} entries · {formatCurrency(archiveSummary.realizedPnl, 0)} realized</span></span><ChevronDown className={`h-4 w-4 transition-transform ${mobileHistoryOpen ? 'rotate-180' : ''}`} /></button>{mobileHistoryOpen && <ArchiveHistorySection mobileLayout rollingTrades={trades} trades={archivedTrades} summary={archiveSummary} resolvingIds={resolvingArchiveIds} onRetryResolve={handleRetryResolve} onManualExpirationClose={handleManualExpirationClose} onRequestWorthlessConfirmation={setWorthlessConfirmationTrade} onEdit={editContractPosition} onDelete={handleDeleteTrade} />}</section>}
           </>
         )}
 
         {mobilePositionControlsOpen && <MobileBottomSheet title="Position display & sort" description="Refine the open-position scan without reloading data" onClose={() => setMobilePositionControlsOpen(false)} footer={<button type="button" onClick={() => setMobilePositionControlsOpen(false)} className="mobile-sheet-action primary w-full">Done</button>}><div className="space-y-4"><label htmlFor="mobile-portfolio-sort" className="block"><span className="mobile-sheet-label">Sort positions</span><select id="mobile-portfolio-sort" value={sortField} onChange={event => setSortField(event.target.value as PortfolioScheduleSortField)} className="mobile-control-field w-full">{PORTFOLIO_SCHEDULE_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><div><span className="mobile-sheet-label">Direction</span><MobileSegmentedControl value={sortDir} onChange={setSortDir} label="Position sort direction" options={[{ value: 'asc', label: 'Ascending' }, { value: 'desc', label: 'Descending' }]} /></div><div><span className="mobile-sheet-label">Optional detail</span><DisplayToggle checked={showEntryDeltas} onChange={setShowEntryDeltas} label="Show Entry Deltas / IV" className="min-h-11 w-full" /></div></div></MobileBottomSheet>}
         {mobileActionsOpen && <MobileBottomSheet title="Portfolio actions" onClose={() => setMobileActionsOpen(false)}><div className="space-y-2"><button type="button" onClick={() => { setMobileActionsOpen(false); setShowAddModal(true); }} className="mobile-sheet-action primary w-full"><Plus className="h-4 w-4" /> Add Trade</button><button type="button" onClick={() => { setMobileActionsOpen(false); setShowImportModal(true); }} className="mobile-sheet-action secondary w-full"><FileImage className="h-4 w-4" /> Import Screenshot</button><button type="button" onClick={() => { setMobileActionsOpen(false); setShowMaintenance(true); setMaintenanceMessage(''); }} className="mobile-sheet-action secondary w-full"><Wrench className="h-4 w-4" /> Portfolio Maintenance</button><button type="button" onClick={() => { setMobileActionsOpen(false); setShowDataBackup(true); }} className="mobile-sheet-action secondary w-full"><Download className="h-4 w-4" /> Data Backup</button></div></MobileBottomSheet>}
-        {(showAddModal || editingTrade) && <TradeModal trade={editingTrade} onClose={() => { setShowAddModal(false); setEditingTrade(null); }} onSave={handleSaveTrade} onDelete={handleDeleteTrade} />}
+        {(showAddModal || editingTrade) && <TradeModal trade={editingTrade} seed={addPositionSeed} onClose={() => { setShowAddModal(false); setEditingTrade(null); setAddPositionSeed(null); }} onSave={handleSaveTrade} onDelete={handleDeleteTrade} />}
+        {editingPosition && <ContractPositionEditor position={editingPosition} onClose={() => setEditingPosition(null)} onEditLot={lot => { setEditingPosition(null); setEditingTrade(lot); }} onAddToPosition={addToContractPosition} />}
         {drawerSelection && <ErrorBoundary title="Option sheet unavailable" message="Close it and try again."><Suspense fallback={null}><OptionDetailDrawer option={drawerSelection.option} ticker={drawerSelection.ticker} expirationLabel={drawerSelection.expirationLabel} dte={drawerSelection.dte} underlyingPrice={drawerSelection.underlyingPrice} onClose={() => setDrawerSelection(null)} /></Suspense></ErrorBoundary>}
         {showImportModal && <Suspense fallback={null}><PortfolioScreenshotImportModal trades={trades} onClose={() => setShowImportModal(false)} onApply={handleScreenshotImported} /></Suspense>}
         {showDataBackup && <Suspense fallback={null}><DataBackupModal onClose={() => setShowDataBackup(false)} onImported={handleBackupImported} /></Suspense>}
@@ -2116,7 +2234,7 @@ export default function PortfolioPage() {
                   <div className="mt-1 font-mono text-2xl font-bold tabular-nums" style={{ color: pnlColor(markSummary.totalGainLoss) }}>{formatCurrency(markSummary.totalGainLoss, 0)}</div>
                   <div className="mt-1 text-xs font-mono" style={{ color: pnlColor(markSummary.percentCaptured) }}>{formatPctValue(markSummary.percentCaptured)} captured</div>
                 </div>
-                <SummaryCard label="Open Trades" value={String(summary.totalOpenTrades)} />
+                <SummaryCard label="Open Positions" value={String(openPositions.length)} />
                 <SummaryCard label="Premium" value={formatCurrency(summary.totalPremiumCollected, 0)} color="var(--green)" />
                 <SummaryCard label="Gross Risk" value={formatCurrency(summary.totalEquityAtRisk, 0)} />
                 <SummaryCard label="Net Risk" value={formatCurrency(summary.totalNetCapitalAtRisk, 0)} />
@@ -2133,7 +2251,7 @@ export default function PortfolioPage() {
             </div>
 
             <div className="portfolio-summary-grid hidden grid-cols-2 md:grid md:grid-cols-5 2xl:grid-cols-10 gap-1.5 mb-3">
-              <SummaryCard label="Open Trades" value={String(summary.totalOpenTrades)} />
+              <SummaryCard label="Open Positions" value={String(openPositions.length)} />
               <SummaryCard label="Premium" value={formatCurrency(summary.totalPremiumCollected, 0)} color="var(--green)" />
               <SummaryCard label="Gross Risk" value={formatCurrency(summary.totalEquityAtRisk, 0)} />
               <SummaryCard label="Net Risk" value={formatCurrency(summary.totalNetCapitalAtRisk, 0)} />
@@ -2146,7 +2264,7 @@ export default function PortfolioPage() {
             </div>
             {openTrades.length > 0 && markSummary.totalGainLoss == null && <p className="portfolio-partial-mark mb-3" role="status">Partial marks · one or more open quotes are unavailable; aggregate P&amp;L stays — until refreshed.</p>}
 
-            {!analyticsExpanded && <PortfolioPriorityStrip trades={openTrades} markBasis={markBasis} onOpenTrade={openDrawer} />}
+            {!analyticsExpanded && <PortfolioPriorityStrip trades={openPositions} markBasis={markBasis} onOpenTrade={openDrawer} />}
 
             {openTrades.length === 0 && (
               <div className="rounded-lg px-3 py-2 mb-4 text-sm" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>No open trades.</div>
@@ -2168,24 +2286,24 @@ export default function PortfolioPage() {
                     ))}
                   </div>
                   <div className="mt-2">
-                    {mobileAnalytics === 'maturity' && <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openTrades, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." onGroupClick={drillToExpiration} />}
-                    {mobileAnalytics === 'ticker' && <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openTrades, markBasis)} totalGrossRisk={sumValues(openTrades.map(calculateEquityAtRisk))} maxItems={8} onGroupClick={drillToTicker} />}
-                    {mobileAnalytics === 'attention' && <NeedsAttentionList items={buildNeedsAttention(openTrades).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} />}
-                    {mobileAnalytics === 'close' && <CloseCandidatesCard candidates={buildCloseCandidates(openTrades, markBasis).slice(0, 5)} onNavigate={drillToTrade} />}
+                    {mobileAnalytics === 'maturity' && <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openPositions, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." onGroupClick={drillToExpiration} />}
+                    {mobileAnalytics === 'ticker' && <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openPositions, markBasis)} totalGrossRisk={sumValues(openPositions.map(calculateEquityAtRisk))} maxItems={8} onGroupClick={drillToTicker} />}
+                    {mobileAnalytics === 'attention' && <NeedsAttentionList items={buildNeedsAttention(openPositions).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} />}
+                    {mobileAnalytics === 'close' && <CloseCandidatesCard candidates={buildCloseCandidates(openPositions, markBasis).slice(0, 5)} onNavigate={drillToTrade} />}
                   </div>
                 </div>
                 <div className="portfolio-analytics-grid hidden grid-cols-1 md:grid md:grid-cols-2 xl:grid-cols-12 auto-rows-auto items-stretch gap-2">
                   <div className="md:col-span-1 xl:col-span-6">
-                    <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openTrades, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." onGroupClick={drillToExpiration} />
+                    <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openPositions, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." onGroupClick={drillToExpiration} />
                   </div>
                   <div className="md:col-span-1 xl:col-span-6">
-                    <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openTrades, markBasis)} totalGrossRisk={sumValues(openTrades.map(calculateEquityAtRisk))} maxItems={8} onGroupClick={drillToTicker} />
+                    <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openPositions, markBasis)} totalGrossRisk={sumValues(openPositions.map(calculateEquityAtRisk))} maxItems={8} onGroupClick={drillToTicker} />
                   </div>
                   <div className="md:col-span-1 xl:col-span-6">
-                    <NeedsAttentionList items={buildNeedsAttention(openTrades).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} />
+                    <NeedsAttentionList items={buildNeedsAttention(openPositions).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} />
                   </div>
                   <div className="md:col-span-1 xl:col-span-6">
-                    <CloseCandidatesCard candidates={buildCloseCandidates(openTrades, markBasis).slice(0, 5)} onNavigate={drillToTrade} />
+                    <CloseCandidatesCard candidates={buildCloseCandidates(openPositions, markBasis).slice(0, 5)} onNavigate={drillToTrade} />
                   </div>
                 </div>
                 </>
@@ -2280,7 +2398,7 @@ export default function PortfolioPage() {
                   )}
                   {trade.notes && <p className="text-xs mt-3" style={{ color: 'var(--text-secondary)' }}>{trade.notes}</p>}
                   <div className="flex flex-wrap gap-2 mt-3">
-                    <button onClick={() => setEditingTrade(trade)} className="px-3 py-2 rounded-lg text-xs min-h-[40px]" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Edit</button>
+                    <button onClick={() => editContractPosition(trade)} className="px-3 py-2 rounded-lg text-xs min-h-[40px]" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Edit</button>
                   </div>
                 </div>
                     ))}
@@ -2381,7 +2499,7 @@ export default function PortfolioPage() {
                             <Link to={`/options/${trade.ticker.trim().toUpperCase()}`} className="underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</Link>
                           </td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{expiryLabel(trade.expiration)}</td>
-                          <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatHistoryDate(trade.soldDate)}</td>
+                          <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{isPortfolioContractPosition(trade) ? formatPositionEntryDate(trade) : formatHistoryDate(trade.soldDate)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">
                             <HoverTooltip content={<DteTooltipContent trade={trade} />} ariaLabel={`${trade.ticker} position timing details`}>
                               {formatDteValue(calculateRemainingDte(trade))}
@@ -2441,8 +2559,8 @@ export default function PortfolioPage() {
                           </td>}
                           <td className="px-2 py-1 whitespace-nowrap">
                             <div className="flex items-center gap-1">
-                              <button onClick={() => setEditingTrade(trade)} className="p-1.5 rounded" title="Edit" style={{ color: 'var(--text-muted)' }}><Edit2 className="w-3.5 h-3.5" /></button>
-                              <button onClick={() => handleDeleteTrade(trade.id)} className="p-1.5 rounded" title="Delete" style={{ color: 'var(--red)' }}><Trash2 className="w-3.5 h-3.5" /></button>
+                              <button onClick={() => editContractPosition(trade)} className="p-1.5 rounded" title={isPortfolioContractPosition(trade) && trade.lotCount > 1 ? 'Edit entries' : 'Edit'} style={{ color: 'var(--text-muted)' }}><Edit2 className="w-3.5 h-3.5" /></button>
+                              {(!isPortfolioContractPosition(trade) || trade.lotCount === 1) && <button onClick={() => handleDeleteTrade(isPortfolioContractPosition(trade) ? trade.lots[0].id : trade.id)} className="p-1.5 rounded" title="Delete" style={{ color: 'var(--red)' }}><Trash2 className="w-3.5 h-3.5" /></button>}
                             </div>
                           </td>
                         </tr>
@@ -2485,7 +2603,7 @@ export default function PortfolioPage() {
             </div>
 
             <div className="mt-3 text-[10px]" style={{ color: 'var(--text-dim)' }}>
-              Closed trades: {summary.totalClosedTrades} · Current mark-dependent metrics use the selected {markBasis.toUpperCase()} basis and show {DASH} when that mark is unavailable.
+              Resolved entries: {summary.totalClosedTrades} · Current mark-dependent metrics use the selected {markBasis.toUpperCase()} basis and show {DASH} when that mark is unavailable.
             </div>
 
             <ArchiveHistorySection
@@ -2496,7 +2614,7 @@ export default function PortfolioPage() {
               onRetryResolve={handleRetryResolve}
               onManualExpirationClose={handleManualExpirationClose}
               onRequestWorthlessConfirmation={setWorthlessConfirmationTrade}
-              onEdit={setEditingTrade}
+              onEdit={editContractPosition}
               onDelete={handleDeleteTrade}
             />
 
@@ -2511,14 +2629,17 @@ export default function PortfolioPage() {
       {(showAddModal || editingTrade) && (
         <TradeModal
           trade={editingTrade}
+          seed={addPositionSeed}
           onClose={() => {
             setShowAddModal(false);
             setEditingTrade(null);
+            setAddPositionSeed(null);
           }}
           onSave={handleSaveTrade}
           onDelete={handleDeleteTrade}
         />
       )}
+      {editingPosition && <ContractPositionEditor position={editingPosition} onClose={() => setEditingPosition(null)} onEditLot={lot => { setEditingPosition(null); setEditingTrade(lot); }} onAddToPosition={addToContractPosition} />}
 
       {drawerSelection && (
         <ErrorBoundary title="Option drawer unavailable" message="The option detail drawer could not render. Close it and try again.">
@@ -2659,10 +2780,13 @@ function MobileHistoryTradeRow({
   onDelete: (id: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const pending = trade.status === 'expired_price_pending' || trade.resolutionType === 'expired_price_pending';
+  const position = isPortfolioContractPosition(trade) ? trade : null;
+  const multiLot = (position?.lotCount ?? 1) > 1;
+  const lifecycleTrade = position?.lots[0] ?? trade;
+  const pending = !multiLot && (lifecycleTrade.status === 'expired_price_pending' || lifecycleTrade.resolutionType === 'expired_price_pending');
   const canEnterExpirationPrice = pending;
-  const canCorrectExpirationClose = trade.status === 'expired' && !pending;
-  const canConfirmWorthless = isManualWorthlessConfirmationEligible(trade);
+  const canCorrectExpirationClose = !multiLot && lifecycleTrade.status === 'expired' && !pending;
+  const canConfirmWorthless = !multiLot && isManualWorthlessConfirmationEligible(lifecycleTrade);
   const realizedPnl = getArchivedRealizedPnl(trade);
   const percentCaptured = getArchivedPercentCaptured(trade);
   const realizedIrr = historyRealizedIrr(trade);
@@ -2673,7 +2797,7 @@ function MobileHistoryTradeRow({
         <span className="portfolio-history-mobile-row__primary"><span><small>Realized P&amp;L</small><b className="font-mono" style={{ color: pnlColor(realizedPnl) }}>{formatCurrency(realizedPnl)}</b></span><span><small>Realized IRR</small><b className="font-mono" style={{ color: pnlColor(realizedIrr) }}>{formatPctValue(realizedIrr)}</b></span></span>
       </button>
       {expanded && <div className="portfolio-history-mobile-row__details">
-        <div className="portfolio-history-mobile-row__meta">Entry {formatHistoryDate(trade.soldDate)} · {formatDays(historyDaysHeld(trade))} held · {getArchiveOutcomeLabel(trade)}</div>
+        <div className="portfolio-history-mobile-row__meta">Entry {position ? formatPositionEntryDate(position) : formatHistoryDate(trade.soldDate)} · {formatDays(historyDaysHeld(trade))} held · {getArchiveOutcomeLabel(trade)}</div>
         <div className="portfolio-history-mobile-row__metrics">
           <Metric label="Sold Price" value={formatHistoricalOptionPrice(trade.soldPrice)} />
           <Metric label="Gross Risk" value={formatCurrency(historyGrossRisk(trade), 0)} />
@@ -2687,12 +2811,12 @@ function MobileHistoryTradeRow({
         </div>
         {trade.resolutionWarning && <p className="mt-2 text-[10px]" style={{ color: 'var(--yellow)' }}>{trade.resolutionWarning}</p>}
         <div className="portfolio-history-mobile-row__actions">
-          {pending && <button type="button" onClick={() => onRetryResolve(trade)} disabled={resolving} className="tap-target rounded-md px-2 text-[11px] disabled:opacity-50" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>{resolving ? 'Resolving...' : 'Retry Resolve'}</button>}
-          {canConfirmWorthless && <button type="button" onClick={() => onRequestWorthlessConfirmation(trade)} className="tap-target rounded-md px-2 text-[11px]" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Confirm Worthless</button>}
-          {canEnterExpirationPrice && <button type="button" onClick={() => onManualExpirationClose(trade)} className="tap-target rounded-md px-2 text-[11px]" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Enter Exp. Price</button>}
-          {canCorrectExpirationClose && <button type="button" onClick={() => onManualExpirationClose(trade)} className="tap-target flex items-center justify-center rounded-md px-2" aria-label={`Correct Price @ Exp. for ${trade.ticker}`} title="Correct Price @ Exp." style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }}><Wrench className="h-4 w-4" /></button>}
+          {pending && <button type="button" onClick={() => onRetryResolve(lifecycleTrade)} disabled={resolving} className="tap-target rounded-md px-2 text-[11px] disabled:opacity-50" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>{resolving ? 'Resolving...' : 'Retry Resolve'}</button>}
+          {canConfirmWorthless && <button type="button" onClick={() => onRequestWorthlessConfirmation(lifecycleTrade)} className="tap-target rounded-md px-2 text-[11px]" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Confirm Worthless</button>}
+          {canEnterExpirationPrice && <button type="button" onClick={() => onManualExpirationClose(lifecycleTrade)} className="tap-target rounded-md px-2 text-[11px]" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Enter Exp. Price</button>}
+          {canCorrectExpirationClose && <button type="button" onClick={() => onManualExpirationClose(lifecycleTrade)} className="tap-target flex items-center justify-center rounded-md px-2" aria-label={`Correct Price @ Exp. for ${trade.ticker}`} title="Correct Price @ Exp." style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }}><Wrench className="h-4 w-4" /></button>}
           <button type="button" onClick={() => onEdit(trade)} className="tap-target flex items-center justify-center rounded-md px-2" aria-label={`Edit ${trade.ticker} trade`} style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }}><Edit2 className="h-4 w-4" /></button>
-          <button type="button" onClick={() => onDelete(trade.id)} className="tap-target flex items-center justify-center rounded-md px-2" aria-label={`Delete ${trade.ticker} trade`} style={{ color: 'var(--red)', backgroundColor: 'rgba(239,68,68,0.1)' }}><Trash2 className="h-4 w-4" /></button>
+          {!multiLot && <button type="button" onClick={() => onDelete(lifecycleTrade.id)} className="tap-target flex items-center justify-center rounded-md px-2" aria-label={`Delete ${trade.ticker} trade`} style={{ color: 'var(--red)', backgroundColor: 'rgba(239,68,68,0.1)' }}><Trash2 className="h-4 w-4" /></button>}
         </div>
       </div>}
     </article>
@@ -2728,8 +2852,9 @@ function ArchiveHistorySection({
   const [historySortField, setHistorySortField] = useState<HistorySortField | null>(null);
   const [historySortDir, setHistorySortDir] = useState<HistorySortDirection>('asc');
   const visibleTrades = useMemo(() => filterHistoryTrades(trades, outcomeFilter), [outcomeFilter, trades]);
+  const visiblePositions = useMemo(() => buildHistoricalContractPositions(visibleTrades), [visibleTrades]);
   const visibleSummary = useMemo(() => outcomeFilter === 'all' ? summary : buildArchiveSummary(visibleTrades), [outcomeFilter, summary, visibleTrades]);
-  const visibleGroups = useMemo(() => buildHistoryGroups(visibleTrades, groupMode), [groupMode, visibleTrades]);
+  const visibleGroups = useMemo(() => buildHistoryGroups(visiblePositions, groupMode), [groupMode, visiblePositions]);
   const sortedHistoryGroups = useMemo(() => sortHistoryGroups(visibleGroups, historySortField, historySortDir), [historySortDir, historySortField, visibleGroups]);
   const visibleGrandTotals = useMemo(() => buildHistoryGroupAggregates(visibleTrades), [visibleTrades]);
   const historyGroupLabel = (group: ReturnType<typeof buildHistoryGroups>[number]) => groupMode === 'expiration' ? formatHistoryDate(group.label) : group.label;
@@ -2824,7 +2949,7 @@ function ArchiveHistorySection({
           return <Fragment key={`mobile-history-group-${group.key}`}>
            {groupMode !== 'none' && (
               <button type="button" className="portfolio-history-mobile-group-header" aria-expanded={!collapsed} onClick={() => toggleHistoryGroup(group)}>
-                <span className="portfolio-history-mobile-group-header__identity"><span className="portfolio-history-group-chevron" aria-hidden="true">{collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</span><span className="min-w-0"><strong>{label}</strong><small>{group.tradeCount} trades</small></span></span>
+                <span className="portfolio-history-mobile-group-header__identity"><span className="portfolio-history-group-chevron" aria-hidden="true">{collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</span><span className="min-w-0"><strong>{label}</strong><small>{group.tradeCount} positions</small></span></span>
                 <span className="portfolio-history-mobile-group-header__totals">
                   <span className="portfolio-history-mobile-group-header__primary"><span><small>Premium</small><strong>{formatCurrency(group.premium, 0)}</strong></span><span className="portfolio-history-mobile-group-header__pnl"><small>Realized P&amp;L</small><strong style={{ color: pnlColor(group.realizedPnl) }}>{formatCurrency(group.realizedPnl)}</strong></span></span>
                   <span className="portfolio-history-mobile-group-header__secondary" title="Days, NY, VIX, IV, IRR, capture, and Entry Delta use the canonical group weighted values."><span>Risk {formatCurrency(group.grossRisk, 0)}</span><span>Days {formatAverageDays(group.weightedAverageDaysHeld)} · NY {formatPctValue(group.weightedAverageNy)}</span><span>VIX {isFiniteNumber(group.weightedAverageEntryVix) ? group.weightedAverageEntryVix.toFixed(1) : DASH} · IV {formatPercentPoints(group.weightedAverageEntryIv, 1)} · IRR {formatPctValue(group.weightedAverageRealizedIrr)} · {formatPctValue(group.weightedAveragePercentCaptured)} cap · Δ {formatDelta(group.weightedAverageEntryDelta)}</span></span>
@@ -2834,7 +2959,7 @@ function ArchiveHistorySection({
           {(groupMode === 'none' || !collapsed) && group.trades.map(trade => {
           return (
             <>
-            <MobileHistoryTradeRow key={`history-${trade.id}`} trade={trade} resolving={resolvingIds.has(trade.id)} onRetryResolve={onRetryResolve} onManualExpirationClose={onManualExpirationClose} onRequestWorthlessConfirmation={onRequestWorthlessConfirmation} onEdit={onEdit} onDelete={onDelete} />
+            <MobileHistoryTradeRow key={`history-${trade.id}`} trade={trade} resolving={resolvingIds.has(isPortfolioContractPosition(trade) ? trade.lots[0].id : trade.id)} onRetryResolve={onRetryResolve} onManualExpirationClose={onManualExpirationClose} onRequestWorthlessConfirmation={onRequestWorthlessConfirmation} onEdit={onEdit} onDelete={onDelete} />
             {/*
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -2877,7 +3002,7 @@ function ArchiveHistorySection({
           </Fragment>;
         })}
         <div className="portfolio-history-mobile-grand-total" aria-label="History totals">
-          <div><strong>Totals</strong><small>{visibleGrandTotals.tradeCount} trades · {visibleGrandTotals.contractCount} contracts</small></div>
+          <div><strong>Totals</strong><small>{visiblePositions.length} positions · {visibleGrandTotals.tradeCount} entries · {visibleGrandTotals.contractCount} contracts</small></div>
           <div><small>Gross Risk</small><strong>{formatCurrency(visibleGrandTotals.grossRisk, 0)}</strong></div>
           <div><small>Premium</small><strong>{formatCurrency(visibleGrandTotals.premium, 0)}</strong></div>
           <div><small>Realized P&amp;L</small><strong style={{ color: pnlColor(visibleGrandTotals.realizedPnl) }}>{formatCurrency(visibleGrandTotals.realizedPnl)}</strong></div>
@@ -2903,7 +3028,7 @@ function ArchiveHistorySection({
                       <td className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
                         <button type="button" className="portfolio-history-group-toggle" aria-expanded={!collapsed} onClick={() => toggleHistoryGroup(group)}>
                           {collapsed ? <ChevronRight className="h-4 w-4" aria-hidden="true" /> : <ChevronDown className="h-4 w-4" aria-hidden="true" />}
-                          <span>{label}</span><small>{group.tradeCount} trades</small>
+                          <span>{label}</span><small>{group.tradeCount} positions</small>
                         </button>
                       </td>
                       <td /><td /><td className="px-2 py-2 text-right font-mono tabular-nums"><HistoryAggregateValue value={String(group.contractCount)} /></td>
@@ -2921,22 +3046,25 @@ function ArchiveHistorySection({
                   </tr>
                 )}
                 {(groupMode === 'none' || !collapsed) && group.trades.map((trade, index) => {
-                const pending = trade.status === 'expired_price_pending' || trade.resolutionType === 'expired_price_pending';
+                const position = isPortfolioContractPosition(trade) ? trade : null;
+                const multiLot = (position?.lotCount ?? 1) > 1;
+                const lifecycleTrade = position?.lots[0] ?? trade;
+                const pending = !multiLot && (lifecycleTrade.status === 'expired_price_pending' || lifecycleTrade.resolutionType === 'expired_price_pending');
                 const canEnterExpirationPrice = pending;
-                const canCorrectExpirationClose = trade.status === 'expired' && !pending;
-                const canConfirmWorthless = isManualWorthlessConfirmationEligible(trade);
-                const resolving = resolvingIds.has(trade.id);
+                const canCorrectExpirationClose = !multiLot && lifecycleTrade.status === 'expired' && !pending;
+                const canConfirmWorthless = !multiLot && isManualWorthlessConfirmationEligible(lifecycleTrade);
+                const resolving = resolvingIds.has(lifecycleTrade.id);
                 const realizedPnl = getArchivedRealizedPnl(trade);
                 const percentCaptured = getArchivedPercentCaptured(trade);
                 const realizedIrr = historyRealizedIrr(trade);
                 return (
-                  <tr key={trade.id} title={`${trade.ticker} ${formatCurrency(trade.strike)} Put\nEntry: ${formatHistoryDate(trade.soldDate)}\nResolved: ${formatHistoryDate(trade.closeDate ?? trade.resolvedDate ?? trade.expiration)}\nDays held: ${formatDays(historyDaysHeld(trade))}\nSold: ${formatHistoricalOptionPrice(trade.soldPrice)}\nClose: ${formatOptionPrice(trade.closePrice)}\nPrice @ Exp.: ${formatCurrency(historyPriceAtExpiration(trade))}\nPremium: ${formatCurrency(getArchivedPremium(trade))}\nRealized P&L: ${formatCurrency(realizedPnl)}\nRealized IRR: ${formatPctValue(realizedIrr)}\nCaptured: ${formatPctValue(percentCaptured)}\nNY: ${formatPctValue(historyEntryNominalYield(trade))}\nVIX @ Entry: ${isFiniteNumber(historyEntryVix(trade)) ? historyEntryVix(trade)!.toFixed(2) : DASH}\nEntry IV: ${formatPercentPoints(historyEntryIv(trade), 1)}\nOutcome: ${getArchiveOutcomeLabel(trade)}`} style={{ borderBottom: '1px solid var(--border)', backgroundColor: index % 2 ? 'var(--row-alt)' : 'transparent' }}>
+                  <tr key={trade.id} title={`${trade.ticker} ${formatCurrency(trade.strike)} Put\nEntry: ${position ? formatPositionEntryDate(position) : formatHistoryDate(trade.soldDate)}\nResolved: ${position ? formatPositionResolvedDate(position) : formatHistoryDate(trade.closeDate ?? trade.resolvedDate ?? trade.expiration)}\nDays held: ${formatDays(historyDaysHeld(trade))}\nSold: ${formatHistoricalOptionPrice(trade.soldPrice)}\nPrice @ Exp.: ${formatCurrency(historyPriceAtExpiration(trade))}\nPremium: ${formatCurrency(getArchivedPremium(trade))}\nRealized P&L: ${formatCurrency(realizedPnl)}\nRealized IRR: ${formatPctValue(realizedIrr)}\nCaptured: ${formatPctValue(percentCaptured)}\nNY: ${formatPctValue(historyEntryNominalYield(trade))}\nVIX @ Entry: ${isFiniteNumber(historyEntryVix(trade)) ? historyEntryVix(trade)!.toFixed(2) : DASH}\nEntry IV: ${formatPercentPoints(historyEntryIv(trade), 1)}\nOutcome: ${getArchiveOutcomeLabel(trade)}`} style={{ borderBottom: '1px solid var(--border)', backgroundColor: index % 2 ? 'var(--row-alt)' : 'transparent' }}>
                     <td className="px-2 py-1 text-left font-mono font-bold whitespace-nowrap"><Link to={`/options/${trade.ticker.trim().toUpperCase()}`} className="underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</Link></td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatHistoryDate(trade.expiration)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatCurrency(trade.strike)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{trade.contracts}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatCurrency(historyGrossRisk(trade), 0)}</td>
-                    <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatHistoryDate(trade.soldDate)}</td>
+                    <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{position ? formatPositionEntryDate(position) : formatHistoryDate(trade.soldDate)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{formatDays(historyDaysHeld(trade))}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{formatHistoricalOptionPrice(trade.soldPrice)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{formatPctValue(historyEntryNominalYield(trade))}</td>
@@ -2957,21 +3085,21 @@ function ArchiveHistorySection({
                     <td className="px-2 py-1 whitespace-nowrap">
                       <div className="portfolio-history-actions flex items-center gap-1">
                         {pending && (
-                          <button type="button" onClick={() => onRetryResolve(trade)} disabled={resolving} className="h-7 rounded px-2 text-[11px] leading-none disabled:opacity-50" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>
+                          <button type="button" onClick={() => onRetryResolve(lifecycleTrade)} disabled={resolving} className="h-7 rounded px-2 text-[11px] leading-none disabled:opacity-50" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>
                             {resolving ? 'Resolving...' : 'Retry Resolve'}
                           </button>
                         )}
                         {canConfirmWorthless && (
-                          <button type="button" onClick={() => onRequestWorthlessConfirmation(trade)} className="h-7 rounded px-2 text-[11px] leading-none" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Confirm Worthless</button>
+                          <button type="button" onClick={() => onRequestWorthlessConfirmation(lifecycleTrade)} className="h-7 rounded px-2 text-[11px] leading-none" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Confirm Worthless</button>
                         )}
                         {canEnterExpirationPrice && (
-                          <button type="button" onClick={() => onManualExpirationClose(trade)} className="h-7 rounded px-2 text-[11px] leading-none" title="Enter the underlying price at expiration" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Enter Exp. Price</button>
+                          <button type="button" onClick={() => onManualExpirationClose(lifecycleTrade)} className="h-7 rounded px-2 text-[11px] leading-none" title="Enter the underlying price at expiration" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)', border: '1px solid var(--border)' }}>Enter Exp. Price</button>
                         )}
                         {canCorrectExpirationClose && (
-                          <button type="button" onClick={() => onManualExpirationClose(trade)} className="icon-button h-7 w-7 rounded-md" aria-label={`Correct Price @ Exp. for ${trade.ticker}`} title="Correct Price @ Exp." style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }}><Wrench className="h-3.5 w-3.5" /></button>
+                          <button type="button" onClick={() => onManualExpirationClose(lifecycleTrade)} className="icon-button h-7 w-7 rounded-md" aria-label={`Correct Price @ Exp. for ${trade.ticker}`} title="Correct Price @ Exp." style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }}><Wrench className="h-3.5 w-3.5" /></button>
                         )}
                         <button type="button" onClick={() => onEdit(trade)} className="icon-button h-7 w-7 rounded-md" aria-label={`Edit ${trade.ticker} trade`} title="Edit" style={{ color: 'var(--text-muted)' }}><Edit2 className="w-3.5 h-3.5" /></button>
-                        <button type="button" onClick={() => onDelete(trade.id)} className="icon-button h-7 w-7 rounded-md" aria-label={`Delete ${trade.ticker} trade`} title="Delete" style={{ color: 'var(--red)' }}><Trash2 className="w-3.5 h-3.5" /></button>
+                        {!multiLot && <button type="button" onClick={() => onDelete(lifecycleTrade.id)} className="icon-button h-7 w-7 rounded-md" aria-label={`Delete ${trade.ticker} trade`} title="Delete" style={{ color: 'var(--red)' }}><Trash2 className="w-3.5 h-3.5" /></button>}
                       </div>
                     </td>
                   </tr>

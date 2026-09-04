@@ -27,7 +27,8 @@ test('Schedule Entry Delta / IV display toggle defaults off and keeps paired val
   assert.doesNotMatch(portfolio, /<br \/><\/span><span className="text-\[9px\]"/);
   assert.match(portfolio, /showEntryDelta=\{showEntryDeltas\}/);
   assert.match(portfolio, /showEntryIv=\{showEntryDeltas\}/);
-  assert.match(portfolio, /entryDate=\{formatHistoryDate\(trade\.soldDate\)\}/);
+  assert.match(portfolio, /const entryDate = isPortfolioContractPosition\(trade\) \? formatPositionEntryDate\(trade\) : formatHistoryDate\(trade\.soldDate\)/);
+  assert.match(portfolio, /entryDate=\{entryDate\}/);
   assert.match(portfolio, /sortButton\('entry', 'Entry'\)/);
   assert.match(portfolio, /showEntryDeltas && <span className="portfolio-paired-metric__line"><span className="portfolio-paired-metric__label">Entry<\/span> \{isValidEntryIv/);
   assert.match(mobile, /showEntryIv &&/);

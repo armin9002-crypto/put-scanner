@@ -35,6 +35,11 @@ export interface PortfolioMarkSummaryMetrics {
   totalDeltaExposure: number | null;
 }
 
+function derivedPositionMetric(trade: PortfolioTrade, field: 'originalDte' | 'originalAnnualizedYield'): number | null | undefined {
+  const metrics = (trade as PortfolioTrade & { positionMetrics?: Record<string, number | null> }).positionMetrics;
+  return metrics && field in metrics ? metrics[field] : undefined;
+}
+
 function validContracts(trade: PortfolioTrade): number | null {
   return Number.isInteger(trade.contracts) && trade.contracts > 0 ? trade.contracts : null;
 }
@@ -79,6 +84,8 @@ export function calculateBreakeven(trade: PortfolioTrade): number | null {
 }
 
 export function calculateOriginalDte(trade: PortfolioTrade): number | null {
+  const derived = derivedPositionMetric(trade, 'originalDte');
+  if (derived !== undefined) return derived;
   const sold = parseIsoDateUtc(trade.soldDate);
   const expiration = parseIsoDateUtc(trade.expiration);
   if (sold == null || expiration == null) return null;
@@ -91,6 +98,8 @@ export function calculateRemainingDte(trade: PortfolioTrade): number | null {
 }
 
 export function calculateOriginalAnnualizedYield(trade: PortfolioTrade): number | null {
+  const derived = derivedPositionMetric(trade, 'originalAnnualizedYield');
+  if (derived !== undefined) return derived;
   return calculateAnnualizedYield(trade.soldPrice, trade.strike, calculateOriginalDte(trade));
 }
 

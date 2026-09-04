@@ -1,16 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Clipboard, Copy, FileImage, Upload, X } from 'lucide-react';
 import { formatCurrency, formatDate, formatOptionPrice } from '../lib/format';
+import { makePortfolioContractKey } from '../lib/portfolioContractIdentity';
 import type { PortfolioTrade } from '../lib/portfolioStorage';
 import {
   applyPortfolioImportPlan,
   buildPortfolioImportPlan,
-  getImportDifferences,
+  hasPortfolioImportMutations,
   isImportableRow,
-  makePortfolioContractKey,
   parseBrokerageScreenshotOcr,
   validateParsedBrokerageRow,
-  type ExistingTradeAction,
   type ImportEditableRow,
   type ParsedImportAction,
   type ParsedBrokerageOptionRow,
@@ -37,7 +36,6 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState('');
   const [rows, setRows] = useState<ImportEditableRow[]>([]);
-  const [missingActions, setMissingActions] = useState<Record<string, ExistingTradeAction['action']>>({});
   const [soldDate, setSoldDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [diagnostics, setDiagnostics] = useState<PortfolioImportDiagnostics | null>(null);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
@@ -50,16 +48,9 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
     };
   }, [imageUrl]);
 
-  const plan = useMemo(() => {
-    const base = buildPortfolioImportPlan(rows, trades);
-    const missingFromImport = base.missingFromImport.map(action => ({
-      ...action,
-      action: missingActions[action.key] ?? action.action,
-    }));
-    return { ...base, missingFromImport };
-  }, [missingActions, rows, trades]);
+  const plan = useMemo(() => buildPortfolioImportPlan(rows, trades), [rows, trades]);
 
-  const selectedImportableCount = plan.adds.length + plan.updates.length;
+  const selectedImportableCount = plan.adds.length + plan.keeps.length;
 
   useEffect(() => {
     setRows(previous => previous.map(row => {
@@ -78,7 +69,6 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
     setFileName(file.name || 'Pasted screenshot');
     setRows([]);
     setDiagnostics(null);
-    setMissingActions({});
     setError('');
     setStatus('loading');
     setProgress(0);
@@ -168,6 +158,10 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
   }, [onClose]);
 
   const applyImport = () => {
+    if (!hasPortfolioImportMutations(plan)) {
+      onClose();
+      return;
+    }
     const nowIso = new Date().toISOString();
     onApply(applyPortfolioImportPlan(plan, trades, soldDate || nowIso.split('T')[0], nowIso));
   };
@@ -312,7 +306,7 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
           <div className="min-w-0 min-h-0 space-y-3 lg:flex lg:flex-col lg:overflow-hidden">
             <ReviewSummary plan={plan} />
             <ParsedRowsTable rows={rows} setRows={setRows} plan={plan} />
-            <MissingTradesTable plan={plan} setMissingActions={setMissingActions} expanded={showMissing} onToggle={() => setShowMissing(value => !value)} />
+            <MissingTradesTable plan={plan} expanded={showMissing} onToggle={() => setShowMissing(value => !value)} />
           </div>
         </div>
 
@@ -324,7 +318,7 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
             className="px-4 py-2 rounded-lg text-xs font-medium text-white min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ backgroundColor: 'var(--accent)' }}
           >
-            Apply Import
+            {hasPortfolioImportMutations(plan) ? 'Apply Import' : 'Finish Review'}
           </button>
         </div>
       </div>
@@ -335,10 +329,9 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
 function ReviewSummary({ plan }: { plan: PortfolioImportPlan }) {
   return (
     <div className="space-y-2 flex-shrink-0">
-      <div className="grid grid-cols-5 gap-2">
+      <div className="grid grid-cols-4 gap-2">
         <MiniCard label="Add" value={plan.adds.length} />
-        <MiniCard label="Update" value={plan.updates.length} />
-        <MiniCard label="Keep" value={plan.keeps.length} />
+        <MiniCard label="Reconcile" value={plan.keeps.length} />
         <MiniCard label="Skipped" value={plan.skipped.length} />
         <MiniCard label="Missing" value={plan.missingFromImport.length} />
       </div>
@@ -359,27 +352,26 @@ function MiniCard({ label, value }: { label: string; value: number }) {
 }
 
 function createEditableImportRows(rows: ParsedBrokerageOptionRow[], trades: PortfolioTrade[], globalSoldDate: string): ImportEditableRow[] {
-  const existingByKey = new Map(
-    trades
-      .filter(trade => trade.status === 'open')
-      .map(trade => [makePortfolioContractKey(trade), trade])
-  );
+  const existingByKey = new Map<string, PortfolioTrade[]>();
+  trades.filter(trade => trade.status === 'open').forEach(trade => {
+    const key = makePortfolioContractKey(trade);
+    existingByKey.set(key, [...(existingByKey.get(key) ?? []), trade]);
+  });
 
   return rows.map(row => {
     const importable = isImportableRow(row);
-    const existing = importable ? existingByKey.get(makePortfolioContractKey(row)) : undefined;
-    const differences = existing && importable ? getImportDifferences(existing, { ...row, selected: true }) : [];
-    const selected = importable && (row.confidence ?? 0) >= 0.62 && (!existing || differences.length > 0);
+    const existingLots = importable ? existingByKey.get(makePortfolioContractKey(row)) : undefined;
+    const selected = importable && (row.confidence ?? 0) >= 0.62;
     const importAction: ImportEditableRow['importAction'] = !importable
       ? 'skip'
-      : existing
-        ? differences.length > 0 ? 'update' : 'keep'
+      : existingLots
+        ? 'keep'
         : 'add';
 
     return {
       ...row,
       selected: importAction === 'keep' ? true : selected,
-      dateAcquired: existing?.soldDate ?? globalSoldDate,
+      dateAcquired: existingLots ? (existingLots.length === 1 ? existingLots[0].soldDate : '') : globalSoldDate,
       dateAcquiredEdited: false,
       importAction,
     };
@@ -393,8 +385,7 @@ function ParsedRowsTable({ rows, setRows, plan }: { rows: ImportEditableRow[]; s
   const planActionForRow = (row: ImportEditableRow): ParsedImportAction | undefined => actions.find(action => action.row === row);
   const actionLabel = (row: ImportEditableRow, action?: ParsedImportAction): string => {
     if (!row.selected || row.importAction === 'skip' || plan.skipped.some(item => item.row === row)) return 'Skip';
-    if (row.importAction === 'keep' || plan.keeps.some(item => item.row === row)) return 'Keep';
-    if (row.importAction === 'update' || plan.updates.some(item => item.row === row)) return 'Update';
+    if (row.importAction === 'keep' || plan.keeps.some(item => item.row === row)) return 'Reconcile';
     if (row.importAction === 'add' || plan.adds.some(item => item.row === row)) return 'Add';
     return action?.existingTrade ? 'Keep' : 'Add';
   };
@@ -413,7 +404,7 @@ function ParsedRowsTable({ rows, setRows, plan }: { rows: ImportEditableRow[]; s
       <div className="px-3 py-2" style={{ borderBottom: '1px solid var(--border)' }}>
         <div className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--text-muted)' }}>Parsed Positions</div>
         <p className="mt-1 text-[11px]" style={{ color: 'var(--text-dim)' }}>
-          Import uses the screenshot for contract details and original cost basis. Current marks and portfolio P/L are refreshed from live option data after import.
+          New contracts can be added from screenshot cost basis. Existing contracts are reconciliation-only: tracked entry lots are never overwritten.
         </p>
       </div>
       {rows.length === 0 ? (
@@ -460,7 +451,7 @@ function ParsedRowsTable({ rows, setRows, plan }: { rows: ImportEditableRow[]; s
                             setRowAction(index, 'skip');
                             return;
                           }
-                          setRowAction(index, row.importAction === 'skip' ? (hasExisting ? differences.length > 0 ? 'update' : 'keep' : 'add') : row.importAction);
+                          setRowAction(index, row.importAction === 'skip' ? (hasExisting ? 'keep' : 'add') : row.importAction);
                         }}
                       />
                     </td>
@@ -468,14 +459,13 @@ function ParsedRowsTable({ rows, setRows, plan }: { rows: ImportEditableRow[]; s
                     <td className="px-1 py-0.5">
                       <div className="flex items-center gap-1 min-w-0">
                         <select
-                          value={row.importAction ?? (hasExisting ? differences.length > 0 ? 'update' : 'keep' : 'add')}
+                          value={row.importAction ?? (hasExisting ? 'keep' : 'add')}
                           onChange={event => setRowAction(index, event.target.value as ImportEditableRow['importAction'])}
                           className="min-w-0 flex-1 rounded px-1 py-0.5 text-[10px] outline-none"
                           style={{ backgroundColor: 'var(--input-bg)', color: action === 'Skip' ? 'var(--red)' : 'var(--text)', border: '1px solid var(--border)' }}
                         >
                           {!hasExisting && <option value="add">Add</option>}
-                          {hasExisting && <option value="update">Update</option>}
-                          {hasExisting && <option value="keep">Keep</option>}
+                          {hasExisting && <option value="keep">Reconcile only</option>}
                           <option value="skip">Skip</option>
                         </select>
                         {differences.length > 0 && (
@@ -559,7 +549,7 @@ function ParsedRowsTable({ rows, setRows, plan }: { rows: ImportEditableRow[]; s
   );
 }
 
-function MissingTradesTable({ plan, setMissingActions, expanded, onToggle }: { plan: PortfolioImportPlan; setMissingActions: (updater: (prev: Record<string, ExistingTradeAction['action']>) => Record<string, ExistingTradeAction['action']>) => void; expanded: boolean; onToggle: () => void }) {
+function MissingTradesTable({ plan, expanded, onToggle }: { plan: PortfolioImportPlan; expanded: boolean; onToggle: () => void }) {
   if (plan.missingFromImport.length === 0) return null;
   return (
     <section className="rounded-lg min-w-0 flex-shrink-0" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
@@ -574,7 +564,7 @@ function MissingTradesTable({ plan, setMissingActions, expanded, onToggle }: { p
       </button>
       {expanded && <div className="overflow-x-auto max-h-[180px]">
         <p className="px-3 py-2 text-[11px]" style={{ color: 'var(--text-dim)' }}>
-          These existing open trades were not found in the imported screenshot. They will remain in your portfolio unless you manually close or mark them.
+          These tracked contract positions were not found in the screenshot. Screenshot absence never changes a lot; review and edit the correct entry in Portfolio if needed.
         </p>
         <table className="financial-table min-w-[680px] w-full text-[11px]">
           <thead>
@@ -591,21 +581,9 @@ function MissingTradesTable({ plan, setMissingActions, expanded, onToggle }: { p
               <tr key={item.key} style={{ borderTop: '1px solid var(--border)' }}>
                 <td className="px-2 py-1 font-mono" style={{ color: 'var(--text)' }}>{item.trade.ticker} {item.trade.strike} Put</td>
                 <td className="px-2 py-1 text-right font-mono">{formatDate(`${item.trade.expiration}T00:00:00`)}</td>
-                <td className="px-2 py-1 text-right font-mono">{item.trade.contracts}</td>
-                <td className="px-2 py-1 text-right font-mono">{formatOptionPrice(item.trade.soldPrice)}</td>
-                <td className="px-2 py-1">
-                  <select
-                    value={item.action}
-                    onChange={event => setMissingActions(prev => ({ ...prev, [item.key]: event.target.value as ExistingTradeAction['action'] }))}
-                    className="rounded px-2 py-1 outline-none"
-                    style={{ backgroundColor: 'var(--input-bg)', color: 'var(--text)', border: '1px solid var(--border)' }}
-                  >
-                    <option value="keep">Keep as-is</option>
-                    <option value="closed">Mark Closed</option>
-                    <option value="expired">Mark Expired{item.suggestedStatus === 'expired' ? ' (suggested)' : ''}</option>
-                    <option value="assigned">Mark Assigned</option>
-                  </select>
-                </td>
+                <td className="px-2 py-1 text-right font-mono">{item.totalContracts}</td>
+                <td className="px-2 py-1 text-right font-mono">{formatOptionPrice(item.weightedSoldPrice)}</td>
+                <td className="px-2 py-1" style={{ color: 'var(--text-muted)' }}>Keep tracked lots</td>
               </tr>
             ))}
           </tbody>

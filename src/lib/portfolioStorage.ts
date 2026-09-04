@@ -57,6 +57,12 @@ export interface PortfolioImportedSnapshot {
   costBasisTotal?: number | null;
 }
 
+/**
+ * Durable canonical record for one independently tracked option entry lot.
+ * Its ID, Sold Date, contracts, Sold Price, entry snapshots, notes, and lifecycle
+ * belong to this lot. Exact-contract positions are derived read models and are
+ * never persisted in place of their constituent PortfolioTrade records.
+ */
 export interface PortfolioTrade {
   id: string;
   ticker: string;

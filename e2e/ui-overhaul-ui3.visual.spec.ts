@@ -88,7 +88,7 @@ async function assertRenderedPortfolioDensity(page: Page, desktop: boolean) {
   const summaryCards = page.locator('.portfolio-summary-grid > *:visible');
   if (desktop) {
     await expect(summaryCards).toHaveCount(10);
-    await expect(summaryCards.locator('.portfolio-summary-card__label')).toHaveText(['Open Trades', 'Premium', 'Gross Risk', 'Net Risk', 'Gain/Loss', '% Captured', 'Entry Wtd. Avg. AY', 'Current Wtd. Avg. AY', 'Weighted Avg Delta', 'Weighted Avg DTE']);
+    await expect(summaryCards.locator('.portfolio-summary-card__label')).toHaveText(['Open Positions', 'Premium', 'Gross Risk', 'Net Risk', 'Gain/Loss', '% Captured', 'Entry Wtd. Avg. AY', 'Current Wtd. Avg. AY', 'Weighted Avg Delta', 'Weighted Avg DTE']);
     const heights = await summaryCards.evaluateAll(elements => elements.map(element => element.getBoundingClientRect().height));
     expect(Math.max(...heights) - Math.min(...heights)).toBeLessThan(1);
     expect(Math.max(...heights)).toBeLessThan(60);

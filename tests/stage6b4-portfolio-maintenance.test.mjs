@@ -417,7 +417,7 @@ test('Add Trade exposes manual Entry Delta and percentage-point IV only for hist
   assert.match(page, /group\.weightedAveragePercentCaptured/, 'History subtotals align weighted % Captured');
   assert.match(page, /group\.weightedAverageEntryDelta/, 'History subtotals align weighted Entry Delta');
   assert.match(page, /group\.weightedAverageEntryIv/, 'History subtotals align weighted Entry IV');
-  assert.match(page, /isManualWorthlessConfirmationEligible\(trade\)/, 'History derives confirmation eligibility from canonical durable state');
+  assert.match(page, /!multiLot && isManualWorthlessConfirmationEligible\(lifecycleTrade\)/, 'History derives confirmation eligibility from one canonical durable lot and never applies it in bulk');
   assert.match(page, />Confirm Worthless<\/button>/, 'eligible pending rows expose the narrow outcome-attestation action');
   assert.match(page, /Confirm this put expired worthless\? Put Scanner will record final option value as \$0 and keep Price @ Exp\. unavailable\./, 'financial mutation requires the established confirmation-sheet pattern');
   const manualConfirmation = page.slice(page.indexOf('const handleConfirmExpiredWorthless'), page.indexOf('const openDrawer'));

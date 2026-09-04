@@ -1,4 +1,5 @@
-import type { PortfolioTrade, PortfolioTradeInput, PortfolioTradeStatus } from './portfolioStorage';
+import { makePortfolioContractKey } from './portfolioContractIdentity.ts';
+import type { PortfolioTrade, PortfolioTradeInput } from './portfolioStorage';
 
 export type OptionSide = 'short' | 'long' | 'unknown';
 
@@ -82,6 +83,7 @@ export interface ParsedImportAction {
   key: string;
   row: ImportEditableRow;
   existingTrade?: PortfolioTrade;
+  existingTrades?: PortfolioTrade[];
   warnings: string[];
   differences?: ImportDifference[];
 }
@@ -95,8 +97,10 @@ export interface ImportDifference {
 export interface ExistingTradeAction {
   key: string;
   trade: PortfolioTrade;
-  suggestedStatus?: PortfolioTradeStatus;
-  action: 'keep' | 'closed' | 'expired' | 'assigned';
+  trades: PortfolioTrade[];
+  totalContracts: number;
+  weightedSoldPrice: number;
+  action: 'keep';
 }
 
 export interface PortfolioImportPlan {
@@ -293,9 +297,7 @@ export function parseOptionSymbolLine(value: string): { ticker: string; strike: 
   return { ticker: repairTicker(match[1].toUpperCase()), strike, optionType: 'put' };
 }
 
-export function makePortfolioContractKey({ ticker, optionType, expiration, strike }: { ticker: string; optionType: 'put'; expiration: string; strike: number }): string {
-  return `${ticker.trim().toUpperCase()}|${optionType}|${expiration}|${Number(strike.toFixed(4)).toString()}`;
-}
+export { makePortfolioContractKey } from './portfolioContractIdentity.ts';
 
 export function parseBrokerageScreenshotText(ocrText: string): ParsedBrokerageOptionRow[] {
   return parseBrokerageScreenshotOcr({ text: ocrText, words: [] }).rows;
@@ -419,7 +421,7 @@ export function parsedBrokerageRowToPortfolioTrade(row: ImportEditableRow, impor
 
 export function buildPortfolioImportPlan(rows: ImportEditableRow[], existingTrades: PortfolioTrade[]): PortfolioImportPlan {
   const existingOpen = existingTrades.filter(trade => trade.status === 'open');
-  const existingByKey = new Map(existingOpen.map(trade => [makePortfolioContractKey(trade), trade]));
+  const existingByKey = groupOpenTradesByContract(existingOpen);
   const importableRows = rows.filter(isImportableRow);
   const importedKeys = new Set<string>();
   const plan: PortfolioImportPlan = { adds: [], updates: [], keeps: [], skipped: [], missingFromImport: [], warnings: [] };
@@ -435,25 +437,25 @@ export function buildPortfolioImportPlan(rows: ImportEditableRow[], existingTrad
     rowOccurrences.set(baseKey, occurrence);
     const key = occurrence === 1 ? baseKey : `${baseKey}#${occurrence}`;
     if (importable) importedKeys.add(baseKey);
-    const existingTrade = importable && occurrence === 1 ? existingByKey.get(baseKey) : undefined;
-    const differences = existingTrade && importable ? getImportDifferences(existingTrade, row) : [];
+    const duplicateImportedContract = importable && occurrence > 1;
+    const existingLots = importable ? existingByKey.get(baseKey) : undefined;
+    const existingTrade = existingLots?.[0];
+    const differences = existingLots && importable ? getImportDifferences(existingLots, row) : [];
+    const reconciliationWarnings = existingLots && importable ? getPortfolioReconciliationWarnings(existingLots, row) : [];
     const action: ParsedImportAction = {
       key,
       row,
       existingTrade,
-      warnings: row.warnings,
+      existingTrades: existingLots,
+      warnings: [...row.warnings, ...reconciliationWarnings, ...(duplicateImportedContract ? ['Duplicate screenshot row for the same contract was skipped.'] : [])],
       differences,
     };
     const requestedAction = row.importAction;
-    if (!row.selected || requestedAction === 'skip' || !importable) {
+    if (!row.selected || requestedAction === 'skip' || !importable || duplicateImportedContract) {
       plan.skipped.push(action);
-    } else if (existingTrade && requestedAction === 'keep') {
-      plan.keeps.push(action);
-    } else if (existingTrade && differences.length === 0 && requestedAction !== 'update') {
-      plan.keeps.push(action);
     } else if (existingTrade && !matchedExistingKeys.has(baseKey)) {
       matchedExistingKeys.add(baseKey);
-      plan.updates.push(action);
+      plan.keeps.push(action);
     } else if (!existingTrade) {
       plan.adds.push(action);
     } else {
@@ -464,14 +466,15 @@ export function buildPortfolioImportPlan(rows: ImportEditableRow[], existingTrad
   if (importableRows.length === 0 && rows.length > 0) {
     plan.warnings.push('Import could not confidently parse positions. Existing positions were not compared.');
   } else {
-    existingOpen.forEach(trade => {
-      const key = makePortfolioContractKey(trade);
+    existingByKey.forEach((lots, key) => {
       if (importedKeys.has(key)) return;
-      const expired = new Date(`${trade.expiration}T00:00:00Z`).getTime() < startOfTodayUtc();
+      const trade = lots[0];
       plan.missingFromImport.push({
         key,
         trade,
-        suggestedStatus: expired ? 'expired' : undefined,
+        trades: lots,
+        totalContracts: lots.reduce((sum, lot) => sum + lot.contracts, 0),
+        weightedSoldPrice: weightedTrackedSoldPrice(lots),
         action: 'keep',
       });
     });
@@ -484,7 +487,6 @@ export function buildPortfolioImportPlan(rows: ImportEditableRow[], existingTrad
 }
 
 export function applyPortfolioImportPlan(plan: PortfolioImportPlan, existingTrades: PortfolioTrade[], importDate: string, nowIso = new Date().toISOString()): PortfolioTrade[] {
-  const byId = new Map(existingTrades.map(trade => [trade.id, trade]));
   const next = [...existingTrades];
 
   plan.adds.forEach(action => {
@@ -500,54 +502,45 @@ export function applyPortfolioImportPlan(plan: PortfolioImportPlan, existingTrad
     });
   });
 
-  plan.updates.forEach(action => {
-    if (!action.row.selected || action.row.importAction === 'skip' || action.row.importAction === 'keep' || !action.existingTrade) return;
-    const existing = byId.get(action.existingTrade.id);
-    if (!existing) return;
-    const rowImportDate = action.row.dateAcquiredEdited && action.row.dateAcquired ? action.row.dateAcquired : existing.soldDate;
-    const input = parsedBrokerageRowToPortfolioTrade(action.row, rowImportDate, nowIso);
-    if (!input) return;
-    const updated: PortfolioTrade = {
-      ...existing,
-      contracts: input.contracts,
-      soldPrice: input.soldPrice,
-      soldDate: rowImportDate,
-      notes: existing.notes ?? '',
-      updatedAt: nowIso,
-      latestMarketData: existing.latestMarketData,
-      importedSnapshot: input.importedSnapshot,
-    };
-    const index = next.findIndex(trade => trade.id === existing.id);
-    if (index >= 0) next[index] = updated;
-  });
-
-  plan.missingFromImport.forEach(action => {
-    if (action.action === 'keep') return;
-    const index = next.findIndex(trade => trade.id === action.trade.id);
-    if (index < 0) return;
-    next[index] = {
-      ...next[index],
-      status: action.action,
-      closePrice: action.action === 'expired' ? 0 : next[index].closePrice,
-      closeDate: action.action === 'expired' ? importDate : next[index].closeDate,
-      updatedAt: nowIso,
-    };
-  });
-
   return next;
 }
 
-export function getImportDifferences(existingTrade: PortfolioTrade, row: ImportEditableRow): ImportDifference[] {
+/** Reconciliation-only plans are intentionally request- and mutation-free. */
+export function hasPortfolioImportMutations(plan: PortfolioImportPlan): boolean {
+  return plan.adds.length > 0;
+}
+
+export function getImportDifferences(existingTradeOrLots: PortfolioTrade | PortfolioTrade[], row: ImportEditableRow): ImportDifference[] {
+  const lots = Array.isArray(existingTradeOrLots) ? existingTradeOrLots : [existingTradeOrLots];
+  const existingTrade = lots[0];
+  const trackedContracts = lots.reduce((sum, lot) => sum + lot.contracts, 0);
+  const trackedSoldPrice = weightedTrackedSoldPrice(lots);
   const differences: ImportDifference[] = [];
   addTextDifference(differences, 'Ticker', existingTrade.ticker, row.ticker);
   addTextDifference(differences, 'Expiry', existingTrade.expiration, row.expiration);
   addNumberDifference(differences, 'Strike', existingTrade.strike, row.strike, 0.0001, formatPlainNumber);
-  addNumberDifference(differences, 'Quantity', -Math.abs(existingTrade.contracts), row.quantity, 0.01, formatPlainNumber);
-  addNumberDifference(differences, 'Contracts', existingTrade.contracts, row.contracts, 0.01, formatPlainNumber);
-  addNumberDifference(differences, 'Sold price', existingTrade.soldPrice, getExactSoldPrice(row), 0.005, formatOptionDiff);
-  addNumberDifference(differences, 'Cost basis', getExistingCostBasisTotal(existingTrade), getExactCostBasisTotal(row), 1, formatMoneyDiff);
-  if (row.dateAcquiredEdited) addTextDifference(differences, 'Date acquired', existingTrade.soldDate, row.dateAcquired);
+  addNumberDifference(differences, 'Quantity', -Math.abs(trackedContracts), row.quantity, 0.01, formatPlainNumber);
+  addNumberDifference(differences, 'Contracts', trackedContracts, row.contracts, 0.01, formatPlainNumber);
+  addNumberDifference(differences, 'Avg. cost basis', trackedSoldPrice, getExactSoldPrice(row), 0.005, formatOptionDiff);
+  addNumberDifference(differences, 'Total cost basis', getTrackedCostBasisTotal(lots), getExactCostBasisTotal(row), 1, formatMoneyDiff);
   return differences;
+}
+
+export function getPortfolioReconciliationWarnings(existingLots: PortfolioTrade[], row: ImportEditableRow): string[] {
+  const trackedContracts = existingLots.reduce((sum, lot) => sum + lot.contracts, 0);
+  const screenshotContracts = Number(row.contracts);
+  const warnings: string[] = [];
+  if (Number.isFinite(screenshotContracts) && screenshotContracts > trackedContracts) {
+    warnings.push(`Brokerage shows ${formatPlainNumber(screenshotContracts - trackedContracts)} additional contracts. Add the missing entry details.`);
+  } else if (Number.isFinite(screenshotContracts) && screenshotContracts < trackedContracts) {
+    warnings.push(`Brokerage shows ${formatPlainNumber(trackedContracts - screenshotContracts)} fewer contracts than tracked. Review and close the correct entry lot manually.`);
+  }
+  const screenshotCost = getExactCostBasisTotal(row);
+  const trackedCost = getTrackedCostBasisTotal(existingLots);
+  if (Number.isFinite(screenshotCost) && Math.abs(screenshotCost - trackedCost) > 1) {
+    warnings.push('Brokerage aggregate cost basis differs from the tracked weighted lot basis. Existing entry history was preserved.');
+  }
+  return warnings;
 }
 
 function getExactSoldPrice(row: ImportEditableRow & { contracts?: number | null; averageCostBasis?: number | null }): number {
@@ -562,9 +555,22 @@ function getExactCostBasisTotal(row: ImportEditableRow & { contracts?: number | 
   return getExactSoldPrice(row) * Number(row.contracts) * 100;
 }
 
-function getExistingCostBasisTotal(trade: PortfolioTrade): number {
-  if (Number.isFinite(trade.importedSnapshot?.costBasisTotal)) return Number(trade.importedSnapshot?.costBasisTotal);
-  return trade.soldPrice * trade.contracts * 100;
+function groupOpenTradesByContract(trades: PortfolioTrade[]): Map<string, PortfolioTrade[]> {
+  const grouped = new Map<string, PortfolioTrade[]>();
+  trades.forEach(trade => {
+    const key = makePortfolioContractKey(trade);
+    grouped.set(key, [...(grouped.get(key) ?? []), trade]);
+  });
+  return grouped;
+}
+
+function getTrackedCostBasisTotal(lots: PortfolioTrade[]): number {
+  return lots.reduce((sum, lot) => sum + lot.soldPrice * lot.contracts * 100, 0);
+}
+
+function weightedTrackedSoldPrice(lots: PortfolioTrade[]): number {
+  const contracts = lots.reduce((sum, lot) => sum + lot.contracts, 0);
+  return contracts > 0 ? getTrackedCostBasisTotal(lots) / contracts / 100 : 0;
 }
 
 function addTextDifference(differences: ImportDifference[], field: string, existing: string | undefined, imported: string | undefined): void {
@@ -1392,9 +1398,4 @@ function lineHeight(line: OcrLine): number {
 
 function makeGeneratedImportId(key: string, nowIso: string): string {
   return `import_${key.replace(/[^A-Z0-9]+/gi, '_')}_${new Date(nowIso).getTime().toString(36)}`;
-}
-
-function startOfTodayUtc(): number {
-  const now = new Date();
-  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
 }
