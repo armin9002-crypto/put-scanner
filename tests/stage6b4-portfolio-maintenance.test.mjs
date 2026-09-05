@@ -391,7 +391,7 @@ test('Add Trade exposes manual Entry Delta and percentage-point IV only for hist
   assert.ok(save.indexOf('enrichCurrentTradeEntrySnapshot') < save.indexOf('addPortfolioTrade(finalTrade)'), 'snapshot lookup completes before the one initial durable add');
   assert.equal((save.match(/addPortfolioTrade\(/g) ?? []).length, 1, 'manual Add Trade uses one canonical durable mutation');
   assert.match(page, /useState<HistoryGroupMode>\('year'\)/, 'History defaults to expiration-year grouping without durable preference state');
-  assert.match(page, /summary\.totalHistoricalNotional/, 'the headline notional always covers all History, independent of outcome filtering');
+  assert.match(page, /visibleSummary\.totalHistoricalNotional/, 'the headline notional follows the same scoped visible History trades as the other realized metrics');
   assert.match(page, /label="Total Realized IRR"/, 'History exposes the combined realized money-weighted return');
   assert.match(page, /label="Wtd\. Avg\. Entry Delta"/, 'History exposes the signed weighted Entry Delta summary');
   assert.match(page, /label="Wtd\. Avg\. Entry IV"/, 'History exposes Gross-Risk-weighted Entry IV with coverage');

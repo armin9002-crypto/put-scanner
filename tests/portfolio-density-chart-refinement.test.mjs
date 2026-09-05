@@ -24,30 +24,35 @@ test('Portfolio density uses compact card tokens without changing headline compo
   assert.match(styles, /\.portfolio-history-outcome-bar \{[\s\S]*margin-bottom: 0\.375rem !important/);
 });
 
-test('Realized P&L chart renders generic expiration-period labels with bounded, collision-safe geometry', async () => {
+test('Realized History chart renders both metrics with adaptive, collision-safe geometry', async () => {
   const [source, styles, browser] = await Promise.all([
     read('src/pages/PortfolioPage.tsx'),
     read('src/index.css'),
     read('e2e/ui-overhaul-ui3.visual.spec.ts'),
   ]);
   assert.match(source, /function formatMonthlyRealizedPnlLabel\(value: number\): string/);
-  assert.match(source, /if \(value === 0\) return ''/);
   assert.match(source, /const formatted = formatCurrency\(Math\.abs\(value\), 0\)/);
   assert.match(source, /return value < 0 \? `\(\$\{formatted\}\)` : formatted/);
   assert.match(source, /data-chart-pnl-label/);
+  assert.match(source, /data-chart-value-label/);
   assert.match(source, /data-chart-period-label/);
   assert.match(source, /className=\{`portfolio-realized-pnl-chart__bar/);
-  assert.match(source, /const scrolls = buckets\.length > 30/);
-  assert.match(source, /const bandWidth = scrolls \? Math\.max\(34, Math\.min\(64, availableWidth \/ 16\)\) : availableWidth \/ buckets\.length/);
-  assert.match(source, /const barWidth = Math\.min\(58, Math\.max\(5, bandWidth \* 0\.62\)\)/);
+  assert.match(source, /const minimumSlotWidth = 62/);
+  assert.match(source, /const contentWidth = Math\.max\(availableWidth, buckets\.length \* minimumSlotWidth \+ plotInset \* 2\)/);
+  assert.match(source, /const scrolls = contentWidth > availableWidth \+ 1/);
+  assert.match(source, /const slotWidth = \(contentWidth - plotInset \* 2\) \/ buckets\.length/);
+  assert.match(source, /const barWidth = Math\.min\(58, Math\.max\(5, slotWidth \* 0\.62\)\)/);
   assert.match(source, /data-scroll-mode=\{scrolls \? 'contained' : 'fit'\}/);
-  assert.match(source, /style=\{\{ width: scrolls \? `\$\{bandWidth \* buckets\.length\}px` : '100%'/);
+  assert.match(source, /style=\{\{ width: `\$\{contentWidth\}px`/);
   assert.match(source, /style=\{\{ top: `\$\{top\}%`, height: `\$\{height\}%`, width: `\$\{barWidth\}px`/);
   assert.match(source, /style=\{\{ fontSize: `\$\{labelFontSize\}px` \}\}/);
-  assert.match(source, /const showValue = buckets\.length <= 15 \|\| showAxisLabel/);
+  assert.doesNotMatch(source, /const showValue/);
+  assert.doesNotMatch(source, /is-first|is-last/);
   assert.match(styles, /\.portfolio-realized-pnl-chart__month,[\s\S]*font-size: 0\.625rem/);
   assert.match(styles, /\.portfolio-realized-pnl-chart__value--positive \{[\s\S]*color: var\(--positive\)/);
   assert.match(styles, /\.portfolio-realized-pnl-chart__value--negative \{[\s\S]*color: var\(--negative\)/);
+  assert.match(styles, /\.portfolio-realized-pnl-chart__canvas \{[\s\S]*padding: 0\.5rem 2rem 1\.5rem/);
+  assert.doesNotMatch(styles, /\.portfolio-realized-pnl-chart__month\.is-first/);
   assert.match(browser, /expect\(values\)\.toContain\('\(\$150\)'\)/);
   assert.ok(browser.includes("expect(values.every(value => !/\\.\\d/.test(value))).toBe(true);"));
   assert.match(browser, /document\.documentElement\.scrollWidth <= document\.documentElement\.clientWidth \+ 1/);

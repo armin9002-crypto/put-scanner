@@ -64,9 +64,11 @@ import {
   buildHistoryAnalytics,
   buildHistoryGroupAggregates,
   buildHistoryGroups,
+  buildHistoryInstrumentScope,
   buildExpirationPeriodRealizedPnl,
-  buildRealizedPnlChartScale,
+  buildRealizedHistoryChartScale,
   filterHistoryTrades,
+  getRealizedHistoryMetricValue,
   historyDaysHeld,
   historyEntryNominalYield,
   historyEntryIv,
@@ -80,6 +82,7 @@ import {
   historyRealizedPnl,
   type HistoryGroupMode,
   type HistoryOutcome,
+  type RealizedHistoryMetric,
   type RealizedPnlPeriod,
 } from '../lib/portfolioHistoryAnalytics';
 import { applyTransientPortfolioMarketData, mergePortfolioLifecycleResults, mergePortfolioMarketRefresh } from '../lib/portfolioMarketRefresh';
@@ -630,9 +633,13 @@ function SummaryCard({ label, value, color, detail }: { label: string; value: st
 }
 
 function formatMonthlyRealizedPnlLabel(value: number): string {
-  if (value === 0) return '';
   const formatted = formatCurrency(Math.abs(value), 0);
   return value < 0 ? `(${formatted})` : formatted;
+}
+
+function formatRealizedHistoryValueLabel(value: number | null, metric: RealizedHistoryMetric): string | null {
+  if (!isFiniteNumber(value)) return null;
+  return metric === 'realizedPnl' ? formatMonthlyRealizedPnlLabel(value) : formatPctValue(value);
 }
 
 function PortfolioPriorityStrip({
@@ -1487,6 +1494,7 @@ export default function PortfolioPage() {
   const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
   const [mobilePositionControlsOpen, setMobilePositionControlsOpen] = useState(false);
   const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false);
+  const [onlyShowEtfs, setOnlyShowEtfs] = useState(true);
   const scheduleRef = useRef<HTMLDivElement | null>(null);
   const highlightTimerRef = useRef<number | null>(null);
   const quoteRefreshInFlightRef = useRef(false);
@@ -1504,7 +1512,9 @@ export default function PortfolioPage() {
   const openTrades = useMemo(() => trades.filter(trade => trade.status === 'open'), [trades]);
   const openPositions = useMemo(() => buildOpenContractPositions(openTrades, markBasis), [markBasis, openTrades]);
   const archivedTrades = useMemo(() => trades.filter(isArchivedTrade).sort((a, b) => b.expiration.localeCompare(a.expiration)), [trades]);
-  const archiveSummary = useMemo(() => buildArchiveSummary(archivedTrades), [archivedTrades]);
+  const archivedHistoryScope = useMemo(() => buildHistoryInstrumentScope(archivedTrades, onlyShowEtfs), [archivedTrades, onlyShowEtfs]);
+  const scopedArchivedTrades = archivedHistoryScope.trades;
+  const archiveSummary = useMemo(() => buildArchiveSummary(scopedArchivedTrades), [scopedArchivedTrades]);
   const markSummary = useMemo(() => calculatePortfolioMarkSummary(openTrades, markBasis), [openTrades, markBasis]);
   const maintenanceAssessment = useMemo(() => assessPortfolioMaintenance(trades), [trades]);
   const quoteFreshnessSummary = useMemo(() => summarizePortfolioQuoteFreshness(openPositions), [openPositions]);
@@ -2164,7 +2174,7 @@ export default function PortfolioPage() {
 
             {openPositions.length > 0 && <section className="portfolio-analytics-section border-t px-3.5 py-2" style={{ borderColor: 'var(--border)' }}><button type="button" onClick={() => setAnalyticsExpanded(expanded => !expanded)} aria-expanded={analyticsExpanded} aria-controls="portfolio-analytics-content" className="portfolio-analytics-disclosure pressable flex min-h-11 w-full items-center justify-between text-left"><span><h2 className="text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Portfolio Analytics</h2><span className="portfolio-analytics-disclosure__hint">Concentration, timing, and policy signals</span></span><ChevronDown className={`h-4 w-4 transition-transform ${analyticsExpanded ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} aria-hidden="true" /></button><div id="portfolio-analytics-content">{analyticsExpanded && <div className="portfolio-analytics-content pb-2"><MobileSegmentedControl value={mobileAnalytics} onChange={setMobileAnalytics} label="Portfolio analytics" options={[{ value: 'maturity', label: 'Maturity' }, { value: 'ticker', label: 'Exposure' }, { value: 'attention', label: 'Attention' }, { value: 'close', label: 'Close' }]} /><div className="mt-2">{mobileAnalytics === 'maturity' && <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openPositions, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." onGroupClick={drillToExpiration} />}{mobileAnalytics === 'ticker' && <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openPositions, markBasis)} totalGrossRisk={sumValues(openPositions.map(calculateEquityAtRisk))} maxItems={8} onGroupClick={drillToTicker} />}{mobileAnalytics === 'attention' && <NeedsAttentionList items={buildNeedsAttention(openPositions).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} />}{mobileAnalytics === 'close' && <CloseCandidatesCard candidates={buildCloseCandidates(openPositions, markBasis).slice(0, 5)} onNavigate={drillToTrade} />}</div></div>}</div></section>}
 
-            {archivedTrades.length > 0 && <section className="border-t px-3.5 py-3" style={{ borderColor: 'var(--border)' }}><button type="button" onClick={() => setMobileHistoryOpen(current => !current)} className="pressable flex min-h-11 w-full items-center justify-between text-left" aria-expanded={mobileHistoryOpen}><span><b className="block text-[15px]" style={{ color: 'var(--text)' }}>History</b><span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{buildHistoricalContractPositions(archivedTrades).length} positions · {archivedTrades.length} entries · {formatCurrency(archiveSummary.realizedPnl, 0)} realized</span></span><ChevronDown className={`h-4 w-4 transition-transform ${mobileHistoryOpen ? 'rotate-180' : ''}`} /></button>{mobileHistoryOpen && <ArchiveHistorySection mobileLayout rollingTrades={trades} trades={archivedTrades} summary={archiveSummary} resolvingIds={resolvingArchiveIds} onRetryResolve={handleRetryResolve} onManualExpirationClose={handleManualExpirationClose} onRequestWorthlessConfirmation={setWorthlessConfirmationTrade} onEdit={editContractPosition} onDelete={handleDeleteTrade} />}</section>}
+            {archivedTrades.length > 0 && <section className="border-t px-3.5 py-3" style={{ borderColor: 'var(--border)' }}><button type="button" onClick={() => setMobileHistoryOpen(current => !current)} className="pressable flex min-h-11 w-full items-center justify-between text-left" aria-expanded={mobileHistoryOpen}><span><b className="block text-[15px]" style={{ color: 'var(--text)' }}>History</b><span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{buildHistoricalContractPositions(scopedArchivedTrades).length} positions · {scopedArchivedTrades.length} entries · {formatCurrency(archiveSummary.realizedPnl, 0)} realized</span></span><ChevronDown className={`h-4 w-4 transition-transform ${mobileHistoryOpen ? 'rotate-180' : ''}`} /></button>{mobileHistoryOpen && <ArchiveHistorySection mobileLayout rollingTrades={trades} trades={scopedArchivedTrades} onlyShowEtfs={onlyShowEtfs} onOnlyShowEtfsChange={setOnlyShowEtfs} excludedUnknownTickers={archivedHistoryScope.excludedUnknownTickers} resolvingIds={resolvingArchiveIds} onRetryResolve={handleRetryResolve} onManualExpirationClose={handleManualExpirationClose} onRequestWorthlessConfirmation={setWorthlessConfirmationTrade} onEdit={editContractPosition} onDelete={handleDeleteTrade} />}</section>}
           </>
         )}
 
@@ -2622,17 +2632,19 @@ export default function PortfolioPage() {
               Resolved entries: {summary.totalClosedTrades} · Current mark-dependent metrics use the selected {markBasis.toUpperCase()} basis and show {DASH} when that mark is unavailable.
             </div>
 
-            <ArchiveHistorySection
+            {archivedTrades.length > 0 && <ArchiveHistorySection
               rollingTrades={trades}
-              trades={archivedTrades}
-              summary={archiveSummary}
+              trades={scopedArchivedTrades}
+              onlyShowEtfs={onlyShowEtfs}
+              onOnlyShowEtfsChange={setOnlyShowEtfs}
+              excludedUnknownTickers={archivedHistoryScope.excludedUnknownTickers}
               resolvingIds={resolvingArchiveIds}
               onRetryResolve={handleRetryResolve}
               onManualExpirationClose={handleManualExpirationClose}
               onRequestWorthlessConfirmation={setWorthlessConfirmationTrade}
               onEdit={editContractPosition}
               onDelete={handleDeleteTrade}
-            />
+            />}
 
           </>
         )}
@@ -2731,7 +2743,8 @@ const HISTORY_GROUP_OPTIONS: Array<{ value: HistoryGroupMode; label: string }> =
   { value: 'none', label: 'None' },
 ];
 
-function MonthlyRealizedChart({ trades }: { trades: PortfolioTrade[] }) {
+function RealizedHistoryChart({ trades }: { trades: PortfolioTrade[] }) {
+  const [metric, setMetric] = useState<RealizedHistoryMetric>('realizedPnl');
   const [period, setPeriod] = useState<RealizedPnlPeriod>('month');
   const buckets = useMemo(() => buildExpirationPeriodRealizedPnl(trades, period), [period, trades]);
   const plotRef = useRef<HTMLDivElement>(null);
@@ -2748,33 +2761,42 @@ function MonthlyRealizedChart({ trades }: { trades: PortfolioTrade[] }) {
   }, []);
   if (buckets.length === 0) return null;
   const availableWidth = plotWidth || 640;
-  const scrolls = buckets.length > 30;
-  const bandWidth = scrolls ? Math.max(34, Math.min(64, availableWidth / 16)) : availableWidth / buckets.length;
-  const barWidth = Math.min(58, Math.max(5, bandWidth * 0.62));
-  const labelFontSize = Math.min(12, Math.max(9.5, 12 - Math.max(0, buckets.length - 6) * 0.1));
-  const scale = buildRealizedPnlChartScale(buckets.map(bucket => bucket.realizedPnl));
+  const minimumSlotWidth = 62;
+  const plotInset = 32;
+  const contentWidth = Math.max(availableWidth, buckets.length * minimumSlotWidth + plotInset * 2);
+  const scrolls = contentWidth > availableWidth + 1;
+  const slotWidth = (contentWidth - plotInset * 2) / buckets.length;
+  const barWidth = Math.min(58, Math.max(5, slotWidth * 0.62));
+  const labelFontSize = 10;
+  const metricValues = buckets.map(bucket => getRealizedHistoryMetricValue(bucket, metric));
+  const scale = buildRealizedHistoryChartScale(metricValues);
   const range = scale.max - scale.min || 1;
   const zeroTop = scale.zeroRatio * 100;
-  const labelStep = Math.max(1, Math.ceil(buckets.length / Math.max(2, Math.floor(availableWidth / 72))));
-  const chartTitle = `Realized P&L by Expiration ${period === 'month' ? 'Month' : period === 'quarter' ? 'Quarter' : 'Year'}`;
+  const metricLabel = metric === 'realizedPnl' ? 'Realized P&L' : 'Blended Capture';
+  const periodLabel = period === 'month' ? 'Month' : period === 'quarter' ? 'Quarter' : 'Year';
+  const chartTitle = `${metricLabel} by Expiration ${periodLabel}`;
   return (
     <section className="portfolio-realized-pnl-chart mb-2 min-w-0 rounded-lg p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-      <div className="portfolio-realized-pnl-chart__header"><h3>{chartTitle}</h3><label><span>Period</span><select aria-label="Realized P&L period" value={period} onChange={event => setPeriod(event.target.value as RealizedPnlPeriod)}><option value="month">Month</option><option value="quarter">Quarter</option><option value="year">Year</option></select></label></div>
-      <div ref={plotRef} className={`portfolio-realized-pnl-chart__plot ${scrolls ? 'is-scrollable' : ''}`} data-bucket-count={buckets.length} data-scroll-mode={scrolls ? 'contained' : 'fit'}>
-        <div className="portfolio-realized-pnl-chart__canvas" style={{ width: scrolls ? `${bandWidth * buckets.length}px` : '100%', gridTemplateColumns: `repeat(${buckets.length}, minmax(0, 1fr))` }}>
-          <div className="portfolio-realized-pnl-chart__baseline" style={{ top: `${zeroTop}%` }} aria-hidden="true" />
+      <div className="portfolio-realized-pnl-chart__header"><h3>{chartTitle}</h3><div className="portfolio-realized-pnl-chart__controls"><label><span>Metric</span><select aria-label="Realized history metric" value={metric} onChange={event => setMetric(event.target.value as RealizedHistoryMetric)}><option value="realizedPnl">Realized P&L</option><option value="blendedCapture">Blended Capture</option></select></label><label><span>Period</span><select aria-label={`${metricLabel} period`} value={period} onChange={event => setPeriod(event.target.value as RealizedPnlPeriod)}><option value="month">Month</option><option value="quarter">Quarter</option><option value="year">Year</option></select></label></div></div>
+      <div ref={plotRef} className={`portfolio-realized-pnl-chart__plot ${scrolls ? 'is-scrollable' : ''}`} data-bucket-count={buckets.length} data-scroll-mode={scrolls ? 'contained' : 'fit'} data-chart-metric={metric}>
+        <div className="portfolio-realized-pnl-chart__canvas" style={{ width: `${contentWidth}px`, gridTemplateColumns: `repeat(${buckets.length}, minmax(0, 1fr))` }}>
+          <div className="portfolio-realized-pnl-chart__baseline" style={{ top: `${zeroTop}%`, left: `${plotInset}px`, right: `${plotInset}px` }} aria-hidden="true" />
           {buckets.map((bucket, index) => {
-            const valueTop = (scale.max - bucket.realizedPnl) / range * 100;
-            const top = Math.min(valueTop, zeroTop);
-            const height = Math.max(1.5, Math.abs(valueTop - zeroTop));
-            const valueLabel = formatMonthlyRealizedPnlLabel(bucket.realizedPnl);
-            const showAxisLabel = index === 0 || index === buckets.length - 1 || index % labelStep === 0;
-            const showValue = buckets.length <= 15 || showAxisLabel;
-            const edgeClass = index === 0 ? 'is-first' : index === buckets.length - 1 ? 'is-last' : '';
+            const value = metricValues[index];
+            const valueTop = value == null ? null : (scale.max - value) / range * 100;
+            const top = valueTop == null ? null : Math.min(valueTop, zeroTop);
+            const height = valueTop == null ? 0 : Math.max(1.5, Math.abs(valueTop - zeroTop));
+            const valueLabel = formatRealizedHistoryValueLabel(value, metric);
+            const nearZero = value != null && Math.abs(value) <= range * 0.02;
+            const positive = value != null && value >= 0;
+            const valueLabelTop = top == null ? undefined : nearZero
+              ? `calc(${zeroTop}% - 14px)`
+              : positive ? `calc(${top}% - 14px)` : `calc(${top + height}% + 3px)`;
+            const valueClass = positive ? 'portfolio-realized-pnl-chart__value--positive' : 'portfolio-realized-pnl-chart__value--negative';
             return <div key={bucket.periodKey} className="portfolio-realized-pnl-chart__slot" title={`${bucket.label}\nPeriod: ${bucket.startDate} to ${bucket.endDate}\nTrades: ${bucket.tradeCount}\nPremium: ${formatCurrency(bucket.premium, 0)}\nRealized P&L: ${formatCurrency(bucket.realizedPnl, 0)}\nCaptured: ${formatPctValue(bucket.captured)}`}>
-              {bucket.realizedPnl !== 0 && <div className={`portfolio-realized-pnl-chart__bar ${bucket.realizedPnl > 0 ? 'is-positive' : 'is-negative'}`} style={{ top: `${top}%`, height: `${height}%`, width: `${barWidth}px` }} />}
-              {showValue && valueLabel && <span data-chart-pnl-label className={`portfolio-realized-pnl-chart__value ${edgeClass} ${bucket.realizedPnl >= 0 ? 'portfolio-realized-pnl-chart__value--positive' : 'portfolio-realized-pnl-chart__value--negative'}`} style={{ top: bucket.realizedPnl >= 0 ? `calc(${top}% - 14px)` : `calc(${top + height}% + 3px)`, fontSize: `${labelFontSize}px` }}>{valueLabel}</span>}
-              {showAxisLabel && <span data-chart-period-label className={`portfolio-realized-pnl-chart__month ${edgeClass}`} style={{ fontSize: `${labelFontSize}px` }}>{bucket.label}</span>}
+              {value != null && value !== 0 && top != null && <div className={`portfolio-realized-pnl-chart__bar ${value > 0 ? 'is-positive' : 'is-negative'}`} style={{ top: `${top}%`, height: `${height}%`, width: `${barWidth}px` }} />}
+              {valueLabel && valueLabelTop && <span data-chart-pnl-label data-chart-value-label className={`portfolio-realized-pnl-chart__value ${valueClass}`} style={{ top: valueLabelTop, fontSize: `${labelFontSize}px` }}>{valueLabel}</span>}
+              <span data-chart-period-label className="portfolio-realized-pnl-chart__month" style={{ fontSize: `${labelFontSize}px` }}>{bucket.label}</span>
             </div>;
           })}
         </div>
@@ -2848,7 +2870,9 @@ function ArchiveHistorySection({
   mobileLayout = false,
   rollingTrades,
   trades,
-  summary,
+  onlyShowEtfs,
+  onOnlyShowEtfsChange,
+  excludedUnknownTickers,
   resolvingIds,
   onRetryResolve,
   onManualExpirationClose,
@@ -2859,7 +2883,9 @@ function ArchiveHistorySection({
   mobileLayout?: boolean;
   rollingTrades: PortfolioTrade[];
   trades: PortfolioTrade[];
-  summary: ReturnType<typeof buildArchiveSummary>;
+  onlyShowEtfs: boolean;
+  onOnlyShowEtfsChange: (checked: boolean) => void;
+  excludedUnknownTickers: string[];
   resolvingIds: Set<string>;
   onRetryResolve: (trade: PortfolioTrade) => void;
   onManualExpirationClose: (trade: PortfolioTrade) => void;
@@ -2874,7 +2900,7 @@ function ArchiveHistorySection({
   const [historySortDir, setHistorySortDir] = useState<HistorySortDirection>('asc');
   const visibleTrades = useMemo(() => filterHistoryTrades(trades, outcomeFilter), [outcomeFilter, trades]);
   const visiblePositions = useMemo(() => buildHistoricalContractPositions(visibleTrades), [visibleTrades]);
-  const visibleSummary = useMemo(() => outcomeFilter === 'all' ? summary : buildArchiveSummary(visibleTrades), [outcomeFilter, summary, visibleTrades]);
+  const visibleSummary = useMemo(() => buildArchiveSummary(visibleTrades), [visibleTrades]);
   const visibleGroups = useMemo(() => buildHistoryGroups(visiblePositions, groupMode), [groupMode, visiblePositions]);
   const sortedHistoryGroups = useMemo(() => sortHistoryGroups(visibleGroups, historySortField, historySortDir), [historySortDir, historySortField, visibleGroups]);
   const visibleGrandTotals = useMemo(() => buildHistoryGroupAggregates(visibleTrades), [visibleTrades]);
@@ -2921,7 +2947,6 @@ function ArchiveHistorySection({
       </th>
     );
   };
-  if (trades.length === 0) return null;
   const mobileHistoryClass = mobileLayout ? '' : 'md:hidden';
   const desktopHistoryClass = mobileLayout ? 'hidden' : 'hidden md:block';
 
@@ -2930,6 +2955,11 @@ function ArchiveHistorySection({
       <div className="portfolio-history-header flex flex-col gap-2 mb-2 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--text-muted)' }}>Expired / Closed History</h2>
         <div className="portfolio-history-controls flex max-w-full flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-end">
+          <label className="portfolio-history-etf-toggle inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 text-[10px] font-semibold whitespace-nowrap sm:min-h-8" title="ETF-only scope contains instruments confirmed as ETFs by Put Scanner metadata. Unclassified instruments return when All is selected." style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+            <input type="checkbox" aria-label="Only Show ETFs" checked={onlyShowEtfs} onChange={event => onOnlyShowEtfsChange(event.target.checked)} style={{ accentColor: 'var(--accent)' }} />
+            <span>Only Show ETFs</span>
+          </label>
+          {onlyShowEtfs && excludedUnknownTickers.length > 0 && <span className="portfolio-history-etf-note shrink-0 text-[10px]" title="ETF-only scope contains instruments confirmed as ETFs by Put Scanner metadata. Unclassified instruments return when All is selected.">{excludedUnknownTickers.length} unclassified historical {excludedUnknownTickers.length === 1 ? 'ticker' : 'tickers'} excluded</span>}
           <div className="portfolio-history-control-group inline-flex max-w-full items-center gap-1 overflow-x-auto rounded-lg p-0.5" role="group" aria-label="Filter history by" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
             <span className="shrink-0 px-1.5 text-[9px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>View</span>
             {HISTORY_FILTERS.map(filter => <button type="button" key={filter.value} onClick={() => setOutcomeFilter(filter.value)} aria-pressed={outcomeFilter === filter.value} className="min-h-11 shrink-0 rounded-md px-2 py-1 text-[10px] font-semibold whitespace-nowrap sm:min-h-8" style={{ backgroundColor: outcomeFilter === filter.value ? 'var(--accent-bg)' : 'transparent', color: outcomeFilter === filter.value ? 'var(--accent-light)' : 'var(--text-muted)', border: `1px solid ${outcomeFilter === filter.value ? 'var(--accent-border)' : 'transparent'}` }}>{filter.label}</button>)}
@@ -2953,7 +2983,7 @@ function ArchiveHistorySection({
         <SummaryCard label="Realized P&L" value={formatCurrency(visibleSummary.realizedPnl)} color={pnlColor(visibleSummary.realizedPnl)} />
         <SummaryCard label="Total Realized IRR" value={formatPctValue(visibleSummary.totalRealizedIrr)} color={pnlColor(visibleSummary.totalRealizedIrr)} detail="Gross-Risk-weighted average of valid position Realized IRRs. Each position uses simple annualization of realized P&L over actual days held." />
         <SummaryCard label="Blended Capture" value={formatPctValue(visibleSummary.blendedCapture)} color={pnlColor(visibleSummary.blendedCapture)} />
-        <SummaryCard label="Total Historical Notional" value={formatCurrency(summary.totalHistoricalNotional, 0)} detail="Cumulative canonical Gross Risk across all closed and historical positions." />
+        <SummaryCard label="Total Historical Notional" value={formatCurrency(visibleSummary.totalHistoricalNotional, 0)} detail="Cumulative canonical Gross Risk across the currently visible closed and historical positions." />
         <SummaryCard label="Resolved Trades" value={String(visibleSummary.resolvedTrades)} />
         <SummaryCard label="Avg. Days Held" value={formatAverageDays(visibleSummary.averageDaysHeld)} />
         <SummaryCard label="Wtd. Avg. Entry Delta" value={formatDelta(visibleSummary.weightedAverageEntryDelta)} detail={visibleSummary.entryDeltaCoverage == null ? 'Entry Delta coverage is unavailable.' : `Based on ${(visibleSummary.entryDeltaCoverage * 100).toFixed(1)}% of historical Gross Risk with known Entry Delta.`} />
@@ -2962,7 +2992,7 @@ function ArchiveHistorySection({
       <div className="portfolio-history-outcome-bar mb-2 flex h-2 overflow-hidden rounded-full" style={{ backgroundColor: 'var(--surface-alt)' }} title={`Expired Worthless ${visibleSummary.counts.expired_worthless} · Closed ${visibleSummary.counts.closed} · Expired ITM ${visibleSummary.counts.expired_itm} · Assigned ${visibleSummary.counts.assigned}`}>
         {(['expired_worthless', 'closed', 'expired_itm', 'assigned'] as const).map((outcome, index) => <div key={outcome} style={{ width: `${visibleSummary.percentages[outcome] * 100}%`, backgroundColor: ['var(--green)', 'var(--accent)', 'var(--red)', 'var(--orange)'][index] }} />)}
       </div>
-      <MonthlyRealizedChart trades={visibleTrades} />
+      <RealizedHistoryChart trades={visibleTrades} />
       <div className={`${mobileHistoryClass} space-y-2`}>
         {sortedHistoryGroups.map(group => {
           const collapsed = isHistoryGroupCollapsed(group);

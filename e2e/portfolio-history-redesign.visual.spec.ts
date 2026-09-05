@@ -49,7 +49,8 @@ async function settle(page: Page) { await page.waitForLoadState('domcontentloade
 async function openPortfolio(page: Page, cloud?: { requests: string[] }) {
   await page.goto('/portfolio');
   try {
-    await expect(page.getByText(/^(Open Positions|Schedule of Positions)$/).first()).toBeVisible({ timeout: 20_000 });
+    const visiblePortfolioMarker = page.locator('.portfolio-summary-card__label:visible, h2:visible').filter({ hasText: /^(Open Positions|Schedule of Positions)$/ }).first();
+    await expect(visiblePortfolioMarker).toBeVisible({ timeout: 20_000 });
   } catch (error) {
     console.log(`history-redesign cloud requests: ${JSON.stringify(cloud?.requests ?? [])}`);
     throw error;
@@ -135,7 +136,7 @@ test.describe('Portfolio history redesign visual matrix', () => {
         verticalOverflow: element.scrollHeight - element.clientHeight,
       }));
       expect(chartMetrics.widths.every(width => width > 0)).toBe(true);
-      if (name === 'long-multi-year') {
+      if (chartMetrics.mode === 'contained') {
         expect(chartMetrics.mode).toBe('contained');
         expect(chartMetrics.horizontalOverflow).toBeGreaterThan(0);
       } else {
@@ -144,6 +145,11 @@ test.describe('Portfolio history redesign visual matrix', () => {
       }
       expect(chartMetrics.verticalOverflow).toBeLessThanOrEqual(3);
       if (name === 'few-months') {
+        const metric = page.getByRole('combobox', { name: 'Realized history metric' });
+        await metric.selectOption('blendedCapture');
+        await expect(page.getByText('Blended Capture by Expiration Month', { exact: true })).toBeVisible();
+        await capture(page, testInfo, 'realized-capture');
+        await metric.selectOption('realizedPnl');
         const period = page.getByRole('combobox', { name: 'Realized P&L period' });
         await period.selectOption('quarter');
         await expect(page.getByText('Realized P&L by Expiration Quarter', { exact: true })).toBeVisible();

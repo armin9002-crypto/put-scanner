@@ -124,10 +124,10 @@ async function assertRenderedHistoryDensity(page: Page) {
   const values = (await valueLabels.allTextContents()).map(value => value.trim());
   expect(values).toContain('$170');
   expect(values).toContain('($150)');
-  expect(values).not.toContain('$0');
+  expect(values).toContain('$0');
   expect(values.every(value => !/\.\d/.test(value))).toBe(true);
-  await expect(page.locator('.portfolio-realized-pnl-chart__value--positive:visible')).toHaveCount(1);
-  await expect(page.locator('.portfolio-realized-pnl-chart__value--negative:visible')).toHaveCount(2);
+  await expect(page.locator('.portfolio-realized-pnl-chart__value--positive:visible')).toHaveCount(2);
+  await expect(page.locator('.portfolio-realized-pnl-chart__value--negative:visible')).toHaveCount(1);
   const chartLabelSizes = await page.locator('[data-chart-period-label]:visible, [data-chart-pnl-label]:visible').evaluateAll(elements => elements.map(element => parseFloat(getComputedStyle(element).fontSize)));
   expect(chartLabelSizes.every(size => size >= 9 && size <= 12)).toBe(true);
   const activeRows = page.locator('.portfolio-schedule-surface tbody tr[data-trade-id]:visible');

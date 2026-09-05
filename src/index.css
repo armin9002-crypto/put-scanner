@@ -3982,6 +3982,20 @@ td {
   display: none;
 }
 
+.portfolio-history-etf-toggle {
+  cursor: pointer;
+}
+
+.portfolio-history-etf-toggle input {
+  width: 0.9rem;
+  height: 0.9rem;
+  margin: 0;
+}
+
+.portfolio-history-etf-note {
+  color: var(--text-tertiary);
+}
+
 .portfolio-history-table {
   table-layout: auto;
 }
@@ -4368,10 +4382,17 @@ td {
 
 .portfolio-realized-pnl-chart__header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
   margin-bottom: 0.45rem;
+}
+
+.portfolio-realized-pnl-chart__controls {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
 }
 
 .portfolio-realized-pnl-chart__header h3 {
@@ -4416,7 +4437,7 @@ td {
   display: grid;
   height: 9rem;
   min-width: 100%;
-  padding: 0.5rem 0 1.5rem;
+  padding: 0.5rem 2rem 1.5rem;
 }
 
 .portfolio-realized-pnl-chart__baseline {
@@ -4472,20 +4493,6 @@ td {
   left: 50%;
   transform: translateX(-50%);
   color: var(--text-tertiary);
-}
-
-.portfolio-realized-pnl-chart__month.is-first,
-.portfolio-realized-pnl-chart__value.is-first {
-  right: auto;
-  left: 0;
-  transform: none;
-}
-
-.portfolio-realized-pnl-chart__month.is-last,
-.portfolio-realized-pnl-chart__value.is-last {
-  right: 0;
-  left: auto;
-  transform: none;
 }
 
 .portfolio-realized-pnl-chart__value {

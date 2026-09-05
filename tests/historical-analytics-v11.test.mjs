@@ -9,8 +9,12 @@ import {
   buildPortfolioStateObservationDates,
 } from '../src/lib/portfolioHistoricalStateAnalytics.ts';
 import {
+  buildHistoryAnalytics,
+  buildHistoryInstrumentScope,
   buildExpirationPeriodRealizedPnl,
   buildRealizedPnlChartScale,
+  calculateBlendedCapture,
+  classifyHistoryInstrument,
   historyRealizedIrr,
 } from '../src/lib/portfolioHistoryAnalytics.ts';
 import { buildRollingHistoricalAnalyticsSeries } from '../src/lib/rollingHistoricalAnalytics.ts';
@@ -159,15 +163,37 @@ test('expiration-period P&L uses expiration only and reconciles aggregate premiu
   assert.equal(buildExpirationPeriodRealizedPnl(rows, 'year')[0].captured, 0.25);
 });
 
-test('P&L chart scale uses a proportional dynamic zero and UI contains bounded fit/scroll geometry', async () => {
+test('ETF-only History scope is metadata-confirmed, reversible, and capture remains blended', () => {
+  const etfWinner = trade({ id: 'etf-winner', ticker: 'SPY', status: 'closed', closeDate: '2026-01-05', closePrice: 0 });
+  const unknownLoser = trade({ id: 'unknown-loser', ticker: 'AAPL', status: 'closed', closeDate: '2026-01-05', soldPrice: 2, closePrice: 4 });
+  const rows = [etfWinner, unknownLoser];
+  assert.equal(classifyHistoryInstrument('SPY'), 'etf');
+  assert.equal(classifyHistoryInstrument('AAPL'), 'unknown');
+  const etfScope = buildHistoryInstrumentScope(rows, true);
+  assert.deepEqual(etfScope.trades.map(item => item.id), ['etf-winner']);
+  assert.deepEqual(etfScope.excludedUnknownTickers, ['AAPL']);
+  assert.deepEqual(buildHistoryInstrumentScope(rows, false).trades, rows);
+  assert.equal(buildHistoryAnalytics(etfScope.trades).realizedPnl, 200);
+  assert.equal(buildHistoryAnalytics(rows).realizedPnl, 0);
+  assert.equal(calculateBlendedCapture(1_000, 10_000), 0.1);
+  assert.equal(calculateBlendedCapture(-100, 100), -1);
+  assert.equal(calculateBlendedCapture(100, 0), null);
+});
+
+test('Realized chart scale uses a proportional dynamic zero and adaptive slot geometry', async () => {
   assert.ok(buildRealizedPnlChartScale([10, 100]).zeroRatio > 0.85);
   assert.ok(buildRealizedPnlChartScale([-100, -10]).zeroRatio < 0.15);
   assert.ok(Math.abs(buildRealizedPnlChartScale([-100, 100]).zeroRatio - 0.5) < 1e-12);
   const page = await readFile(path.join(root, 'src/pages/PortfolioPage.tsx'), 'utf8');
   const chart = await readFile(path.join(root, 'src/components/RollingHistoricalAnalyticsChart.tsx'), 'utf8');
-  assert.match(page, /buckets\.length > 30/);
+  assert.match(page, /const minimumSlotWidth = 62/);
+  assert.match(page, /const contentWidth = Math\.max\(availableWidth, buckets\.length \* minimumSlotWidth \+ plotInset \* 2\)/);
+  assert.match(page, /const scrolls = contentWidth > availableWidth \+ 1/);
   assert.match(page, /data-scroll-mode=\{scrolls \? 'contained' : 'fit'\}/);
-  assert.match(page, /Realized P&L period/);
+  assert.match(page, /getRealizedHistoryMetricValue/);
+  assert.match(page, /data-chart-metric=\{metric\}/);
+  assert.match(page, /Realized history metric/);
+  assert.match(page, /Blended Capture/);
   assert.match(chart, /rolling-historical-analytics__line--\$\{segment\.kind\}/);
   assert.match(chart, /kind: 'solid' \| 'partial' \| 'gap'/);
   assert.match(chart, /selectedPoint\.fullWindow/);

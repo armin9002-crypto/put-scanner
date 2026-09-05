@@ -13,11 +13,18 @@ import {
   canonicalHistoricalPremium,
   canonicalHistoricalRealizedPnl,
 } from './portfolioRealizedEconomics.ts';
+import { getSymbolMetadata, normalizeSymbolTicker } from '../../shared/symbolRegistry.js';
 import type { PortfolioTrade } from './portfolioStorage';
 
 export type HistoryOutcome = 'all' | 'expired_worthless' | 'closed' | 'expired_itm' | 'assigned';
 export type HistoryGroupMode = 'year' | 'expiration' | 'underlying' | 'none';
 export type RealizedPnlPeriod = 'month' | 'quarter' | 'year';
+export type HistoryInstrumentClass = 'etf' | 'stock' | 'unknown';
+
+export interface HistoryInstrumentScope {
+  trades: PortfolioTrade[];
+  excludedUnknownTickers: string[];
+}
 
 export interface ExpirationPeriodRealizedPnl {
   periodKey: string;
@@ -39,6 +46,8 @@ export interface RealizedPnlChartScale {
   max: number;
   zeroRatio: number;
 }
+
+export type RealizedHistoryMetric = 'realizedPnl' | 'blendedCapture';
 
 export interface HistoryCashFlow {
   date: string;
@@ -74,6 +83,37 @@ export interface HistoryGrossRiskWeightedMetric {
   coverage: number | null;
   knownGrossRisk: number;
   totalGrossRisk: number;
+}
+
+/** Classifies History instruments from the canonical local registry only. */
+export function classifyHistoryInstrument(ticker: string): HistoryInstrumentClass {
+  const metadata = getSymbolMetadata(ticker);
+  if (metadata?.assetType === 'etf') return 'etf';
+  if (metadata?.assetType === 'stock') return 'stock';
+  return 'unknown';
+}
+
+/** Applies the transient ETF-only History scope and reports distinct unknown tickers. */
+export function buildHistoryInstrumentScope(
+  trades: readonly PortfolioTrade[],
+  onlyShowEtfs: boolean,
+): HistoryInstrumentScope {
+  if (!onlyShowEtfs) return { trades: [...trades], excludedUnknownTickers: [] };
+  const excludedUnknownTickers = new Set<string>();
+  const scopedTrades = trades.filter(trade => {
+    const instrumentClass = classifyHistoryInstrument(trade.ticker);
+    if (instrumentClass === 'etf') return true;
+    if (instrumentClass === 'unknown') {
+      const metadata = getSymbolMetadata(trade.ticker);
+      excludedUnknownTickers.add(metadata?.ticker ?? (normalizeSymbolTicker(trade.ticker) || 'Unknown'));
+    }
+    return false;
+  });
+  return { trades: scopedTrades, excludedUnknownTickers: [...excludedUnknownTickers].sort((left, right) => left.localeCompare(right)) };
+}
+
+export function calculateBlendedCapture(realizedPnl: number, premium: number): number | null {
+  return isFiniteNumber(realizedPnl) && isFiniteNumber(premium) && premium > 0 ? realizedPnl / premium : null;
 }
 
 type HistoricalPositionMetric =
@@ -429,7 +469,7 @@ export function buildHistoryAnalytics(trades: PortfolioTrade[]) {
     resolvedTrades: resolved.length,
     realizedPnl: resolved.length ? realizedPnl : null,
     premiumCollected: resolved.length ? premiumCollected : null,
-    blendedCapture: premiumCollected > 0 ? realizedPnl / premiumCollected : null,
+    blendedCapture: calculateBlendedCapture(realizedPnl, premiumCollected),
     averageDaysHeld: dayValues.length ? dayValues.reduce((sum, value) => sum + value, 0) / dayValues.length : null,
     averageOriginalAy: originalAyItems.length ? originalAyItems.reduce((sum, value) => sum + value, 0) / originalAyItems.length : null,
     totalRealizedIrr: calculateHistoryTotalRealizedIrr(trades),
@@ -497,22 +537,32 @@ export function buildExpirationPeriodRealizedPnl(
     .sort((left, right) => left.startDate.localeCompare(right.startDate))
     .map(bucket => ({
       ...bucket,
-      captured: bucket.premium > 0 ? bucket.realizedPnl / bucket.premium : null,
+      captured: calculateBlendedCapture(bucket.realizedPnl, bucket.premium),
       trades: bucket.tradeCount,
       premiumCollected: bucket.premium,
     }));
 }
 
-export function buildRealizedPnlChartScale(values: readonly number[]): RealizedPnlChartScale {
+export function buildRealizedHistoryChartScale(values: readonly (number | null | undefined)[]): RealizedPnlChartScale {
   const finite = values.filter(isFiniteNumber);
   const rawMin = Math.min(0, ...finite);
   const rawMax = Math.max(0, ...finite);
   const rawSpan = rawMax - rawMin;
   const reference = rawSpan > 0 ? rawSpan : Math.max(Math.abs(rawMax), Math.abs(rawMin), 1);
-  const padding = reference * 0.08;
+  const padding = reference * 0.16;
   const min = rawMin - padding;
   const max = rawMax + padding;
   return { min, max, zeroRatio: (max - 0) / (max - min) };
+}
+
+/** Backward-compatible export for existing callers and tests. */
+export const buildRealizedPnlChartScale = buildRealizedHistoryChartScale;
+
+export function getRealizedHistoryMetricValue(
+  bucket: ExpirationPeriodRealizedPnl,
+  metric: RealizedHistoryMetric,
+): number | null {
+  return metric === 'realizedPnl' ? bucket.realizedPnl : bucket.captured;
 }
 
 /** Backward-compatible month view; new callers should use buildExpirationPeriodRealizedPnl. */
