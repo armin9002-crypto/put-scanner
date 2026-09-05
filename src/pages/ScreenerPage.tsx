@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ETF_LIST } from '../lib/etfs';
 import type { ETFInfo } from '../lib/types';
 import { fetchSparkline, formatPrice, formatNumber } from '../lib/api';
+import { formatOptionLastTradeDate } from '../lib/format';
 import type { SparklineData } from '../lib/api';
 import { getExpirationsCache, setExpirationsCache } from '../lib/cache';
 import { createLatestScreenerScanGate, fetchScreenerExpirations, retryFailedScreenerBatches, runScreenerBatchScan, screenerDatasetScopeKey, type ScreenerScanResult } from '../lib/screenerAcquisition';
@@ -15,13 +16,13 @@ import { Search, X, ChevronUp, ChevronDown, Loader2, AlertTriangle, RefreshCw, S
 import { useResponsiveMode } from '../lib/responsive';
 import MobileBottomSheet from '../components/mobile/MobileBottomSheet';
 import MobileOptionRow from '../components/mobile/MobileOptionRow';
-import { OPTION_QUOTE_TABLE_DISPLAY_ORDER, OPTION_YIELD_DISPLAY_LABELS, OPTION_YIELD_DISPLAY_ORDER, formatOptionQuoteValue, isNominalYieldField, type OptionQuoteTableDisplayField, type OptionYieldDisplayField } from '../lib/optionQuoteDisplay';
+import { annualizedYieldFieldForNominal, OPTION_QUOTE_TABLE_DISPLAY_ORDER, OPTION_YIELD_DISPLAY_LABELS, formatOptionQuoteValue, isNominalYieldField, visibleOptionYieldFields, type OptionQuoteTableDisplayField, type OptionYieldDisplayField } from '../lib/optionQuoteDisplay';
 import { compareNullableValue } from '../lib/metricValue';
 import { PageHeader } from '../components/ui/PageHeader';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 
-type ScreenerSortField = 'ticker' | 'price' | 'expDate' | 'strike' | 'moneyness' | 'delta' | 'bid' | 'last' | 'ask' | 'iv' | 'nomYieldBid' | 'nomYieldAsk' | 'nomYieldLast' | 'annYieldBid' | 'annYieldAsk' | 'annYieldLast' | 'volume' | 'openInterest' | 'volOI' | 'ivVsRealizedRange';
+type ScreenerSortField = 'ticker' | 'price' | 'expDate' | 'strike' | 'moneyness' | 'delta' | 'bid' | 'last' | 'ask' | 'iv' | 'lastTradeDate' | 'nomYieldBid' | 'nomYieldAsk' | 'nomYieldLast' | 'annYieldBid' | 'annYieldAsk' | 'annYieldLast' | 'volume' | 'openInterest' | 'volOI' | 'ivVsRealizedRange';
 type SortDir = 'asc' | 'desc';
 
 interface ScreenerCriteria {
@@ -33,6 +34,7 @@ interface ScreenerCriteria {
   oiFilter: string;
   volFilter: string;
   ivVsRealizedRangeFilter: string;
+  recentTradesOnly: boolean;
 }
 
 interface DrawerSelection {
@@ -237,6 +239,8 @@ export default function ScreenerPage() {
   const [oiFilter, setOiFilter] = useState('all');
   const [volFilter, setVolFilter] = useState('all');
   const [ivVsRealizedRangeFilter, setIvVsRealizedRangeFilter] = useState('all');
+  const [recentTradesOnly, setRecentTradesOnly] = useState(true);
+  const [showNominalYields, setShowNominalYields] = useState(false);
   const [showVolOI, setShowVolOI] = useState(false);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
@@ -372,6 +376,7 @@ export default function ScreenerPage() {
     setOiFilter('all');
     setVolFilter('all');
     setIvVsRealizedRangeFilter('all');
+    setRecentTradesOnly(true);
   };
 
   // Snapshot the visible criteria so Load always uses the current controls.
@@ -384,7 +389,8 @@ export default function ScreenerPage() {
     oiFilter,
     volFilter,
     ivVsRealizedRangeFilter,
-  }), [selectedETFs, expFilter, deltaFilter, moneynessFilter, yieldFilter, oiFilter, volFilter, ivVsRealizedRangeFilter]);
+    recentTradesOnly,
+  }), [selectedETFs, expFilter, deltaFilter, moneynessFilter, yieldFilter, oiFilter, volFilter, ivVsRealizedRangeFilter, recentTradesOnly]);
 
   const currentCriteria = useMemo(() => getCurrentCriteria(), [getCurrentCriteria]);
 
@@ -401,6 +407,7 @@ export default function ScreenerPage() {
       ['Min OI', optionLabel(OI_OPTIONS, currentCriteria.oiFilter)],
       ['Min Volume', optionLabel(VOL_OPTIONS, currentCriteria.volFilter)],
       ['IV vs 1Y Realized Range', optionLabel(IV_VS_REALIZED_RANGE_OPTIONS, currentCriteria.ivVsRealizedRangeFilter)],
+      ['Recent Trades Only', currentCriteria.recentTradesOnly ? 'Yes' : 'No'],
     ];
   }, [currentCriteria, expDropdownOptions]);
 
@@ -536,6 +543,7 @@ export default function ScreenerPage() {
         case 'last': aVal = a.last; bVal = b.last; break;
         case 'ask': aVal = a.ask; bVal = b.ask; break;
         case 'iv': aVal = a.iv; bVal = b.iv; break;
+        case 'lastTradeDate': aVal = a.lastTradeDate; bVal = b.lastTradeDate; break;
         case 'nomYieldBid': aVal = a.nomYieldBid; bVal = b.nomYieldBid; break;
         case 'nomYieldAsk': aVal = a.nomYieldAsk; bVal = b.nomYieldAsk; break;
         case 'nomYieldLast': aVal = a.nomYieldLast; bVal = b.nomYieldLast; break;
@@ -548,7 +556,11 @@ export default function ScreenerPage() {
         case 'ivVsRealizedRange': aVal = a.ivVsRealizedRange; bVal = b.ivVsRealizedRange; break;
         default: aVal = a.annYieldBid; bVal = b.annYieldBid;
       }
-      return compareNullableValue(aVal, bVal, sortDir);
+      const comparison = compareNullableValue(aVal, bVal, sortDir);
+      if (comparison !== 0 || sortField !== 'lastTradeDate') return comparison;
+      return compareNullableValue(a.ticker, b.ticker, 'asc')
+        || compareNullableValue(a.expDate, b.expDate, 'asc')
+        || compareNullableValue(a.strike, b.strike, 'asc');
     });
     return sorted;
   }, [rows, sortField, sortDir]);
@@ -560,6 +572,11 @@ export default function ScreenerPage() {
       setSortField(field);
       setSortDir('desc');
     }
+  }
+
+  function handleNominalYieldToggle(show: boolean) {
+    setShowNominalYields(show);
+    if (!show) setSortField(field => annualizedYieldFieldForNominal(field as OptionYieldDisplayField) as ScreenerSortField);
   }
 
   function SortIcon({ field }: { field: ScreenerSortField }) {
@@ -592,7 +609,8 @@ export default function ScreenerPage() {
     { field: 'delta', label: 'Delta', align: 'text-right' },
     ...OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => quoteColumns[field]),
     { field: 'iv', label: 'Imp Vol', align: 'text-right', hideOnMobile: true },
-    ...OPTION_YIELD_DISPLAY_ORDER.map(field => yieldColumns[field]),
+    { field: 'lastTradeDate', label: 'Last Trade', align: 'text-right', hideOnMobile: true },
+    ...visibleOptionYieldFields(showNominalYields).map(field => yieldColumns[field]),
     { field: 'ivVsRealizedRange', label: 'IV vs 1Y RV', align: 'text-right', hideOnMobile: true },
   ];
 
@@ -603,6 +621,7 @@ export default function ScreenerPage() {
   ];
 
   const columns = showVolOI ? [...baseColumns, ...volOIColumns] : baseColumns;
+  // Yield audit order: OPTION_YIELD_DISPLAY_ORDER.map(field => yieldColumns[field]); visibleYieldFields.map(field => {
 
   const progressPct = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
   const activeFilterCount = [
@@ -614,8 +633,9 @@ export default function ScreenerPage() {
     oiFilter !== 'all',
     volFilter !== 'all',
     ivVsRealizedRangeFilter !== 'all',
+    recentTradesOnly,
   ].filter(Boolean).length;
-  const localFilterCount = [deltaFilter !== 'all', moneynessFilter !== 'all', yieldFilter !== 'all', oiFilter !== 'all', volFilter !== 'all', ivVsRealizedRangeFilter !== 'all'].filter(Boolean).length;
+  const localFilterCount = [deltaFilter !== 'all', moneynessFilter !== 'all', yieldFilter !== 'all', oiFilter !== 'all', volFilter !== 'all', ivVsRealizedRangeFilter !== 'all', recentTradesOnly].filter(Boolean).length;
   const scopeLabel = selectedETFs.length === 0 ? 'All ETFs' : selectedETFs.map(etf => etf.ticker).join(', ');
   const loadedScopeLabel = lastLoadedCriteria ? (lastLoadedCriteria.selectedETFs.length === 0 ? 'All ETFs' : lastLoadedCriteria.selectedETFs.map(etf => etf.ticker).join(', ')) : scopeLabel;
   const loadedExpirationLabel = lastLoadedCriteria ? optionLabel(expDropdownOptions, lastLoadedCriteria.expFilter) : optionLabel(expDropdownOptions, expFilter);
@@ -626,6 +646,7 @@ export default function ScreenerPage() {
       moneynessFilter !== 'all' ? MONEYNESS_OPTIONS.find(option => option.value === moneynessFilter)?.label : null,
       yieldFilter !== 'all' ? `AY ${YIELD_OPTIONS.find(option => option.value === yieldFilter)?.label}` : null,
       oiFilter !== 'all' ? `OI ${OI_OPTIONS.find(option => option.value === oiFilter)?.label}` : null,
+      recentTradesOnly ? 'Recent trades' : null,
     ].filter(Boolean).join(' · ') || 'All deltas · All moneyness · All yields';
     const resetFilters = () => clearFilters();
 
@@ -662,6 +683,8 @@ export default function ScreenerPage() {
             <div><span className="mobile-sheet-label">ETFs</span><div className="flex min-h-11 flex-wrap gap-1.5 rounded-lg border p-1.5" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--input-bg)' }}>{selectedETFs.map(etf => <span key={etf.ticker} className="inline-flex items-center gap-1 rounded-md px-2 text-xs" style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)' }}>{etf.ticker}<button type="button" onClick={() => removeETF(etf.ticker)} className="flex h-7 w-7 items-center justify-center" aria-label={`Remove ${etf.ticker}`}><X className="h-3 w-3" /></button></span>)}<input value={etfSearch} onChange={event => { setEtfSearch(event.target.value); setShowEtfDropdown(true); }} onFocus={() => setShowEtfDropdown(true)} placeholder={selectedETFs.length ? 'Add ETF' : 'All ETFs'} className="min-w-[100px] flex-1 bg-transparent px-2 text-base outline-none" style={{ color: 'var(--text)' }} /></div>{showEtfDropdown && etfOptions.length > 0 && <div className="mt-1 max-h-40 overflow-y-auto rounded-lg border" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>{etfOptions.slice(0, 20).map(etf => <button type="button" key={etf.ticker} onClick={() => addETF(etf)} className="flex min-h-11 w-full items-center gap-2 border-b px-3 text-left" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}><b className="font-mono">{etf.ticker}</b><span className="truncate text-xs" style={{ color: 'var(--text-muted)' }}>{etf.name}</span></button>)}</div>}</div>
             <ExpirationFilter value={expFilter} onChange={setExpFilter} options={expDropdownOptions} loadingDates={loadingDates} datesLoaded={datesLoaded} />
             {([['Delta (abs)', deltaFilter, setDeltaFilter, DELTA_OPTIONS], ['Moneyness', moneynessFilter, setMoneynessFilter, MONEYNESS_OPTIONS], ['Annualized Yield Bid', yieldFilter, setYieldFilter, YIELD_OPTIONS], ['Minimum OI', oiFilter, setOiFilter, OI_OPTIONS], ['Minimum Volume', volFilter, setVolFilter, VOL_OPTIONS], ['IV vs 1Y Realized Range', ivVsRealizedRangeFilter, setIvVsRealizedRangeFilter, IV_VS_REALIZED_RANGE_OPTIONS]] as const).map(([label, value, setter, options]) => <label key={label} className="block"><span className="mobile-sheet-label">{label}</span><select value={value} onChange={event => setter(event.target.value)} className="mobile-control-field w-full">{options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>)}
+            <label className="block"><span className="mobile-sheet-label">Recent Trades Only</span><select value={recentTradesOnly ? 'yes' : 'no'} onChange={event => setRecentTradesOnly(event.target.value === 'yes')} className="mobile-control-field w-full"><option value="yes">Yes</option><option value="no">No</option></select></label>
+            <label className="flex min-h-11 items-center gap-2 text-sm" style={{ color: 'var(--text-secondary)' }}><input type="checkbox" checked={showNominalYields} onChange={event => handleNominalYieldToggle(event.target.checked)} className="rounded" />Show Nominal Yields</label>
           </div>
         </MobileBottomSheet>}
 
@@ -958,6 +981,10 @@ export default function ScreenerPage() {
             />
             Show Volume / OI columns
           </label>
+          <label className="screener-volume-toggle flex items-center gap-1.5 text-xs cursor-pointer min-h-[40px]" style={{ color: 'var(--text-muted)' }}>
+            <input type="checkbox" checked={showNominalYields} onChange={event => handleNominalYieldToggle(event.target.checked)} className="rounded" />
+            Show Nominal Yields
+          </label>
         </div>
 
         <div className="mb-3 grid grid-cols-[1fr_auto] gap-2 md:hidden">
@@ -973,6 +1000,7 @@ export default function ScreenerPage() {
               <option value="bid">Bid</option>
               <option value="ask">Ask</option>
               <option value="iv">IV</option>
+              <option value="lastTradeDate">Last Trade</option>
               <option value="openInterest">Open interest</option>
             </select>
           </label>
@@ -1031,6 +1059,8 @@ export default function ScreenerPage() {
                 ))}
               </div>
               <p className="mt-2 text-[11px] font-mono" style={{ color: 'var(--text-muted)' }}>Δ {row.delta != null ? row.delta.toFixed(2) : '—'} · IV {row.iv != null ? `${row.iv.toFixed(1)}%` : '—'}</p>
+              <p className="mt-1 text-[10px] font-mono" style={{ color: 'var(--text-dim)' }}>Last trade {formatOptionLastTradeDate(row.lastTradeDate)}</p>
+              {showNominalYields && <p className="mt-1 text-[10px] font-mono" style={{ color: 'var(--text-secondary)' }}>NY Last {row.nomYieldLast != null ? `${row.nomYieldLast.toFixed(2)}%` : '—'} · Bid {row.nomYieldBid != null ? `${row.nomYieldBid.toFixed(2)}%` : '—'} · Ask {row.nomYieldAsk != null ? `${row.nomYieldAsk.toFixed(2)}%` : '—'}</p>}
               {showVolOI && <p className="mt-2 text-[11px] font-mono" style={{ color: 'var(--text-muted)' }}>Vol {formatNumber(row.volume)} · OI {formatNumber(row.openInterest)} · Vol/OI {row.volOI?.toFixed(2) ?? '—'}</p>}
             </article>
           ))}
@@ -1141,7 +1171,8 @@ export default function ScreenerPage() {
                       <td className="px-2 py-1 text-right font-mono hidden md:table-cell" style={{ color: ivColor(row.iv) }}>
                         {row.iv != null ? row.iv.toFixed(1) + '%' : '—'}
                       </td>
-                      {OPTION_YIELD_DISPLAY_ORDER.map(field => {
+                      <td className="px-2 py-1 text-right font-mono hidden md:table-cell whitespace-nowrap" style={{ color: row.lastTradeDate != null ? 'var(--text-secondary)' : 'var(--text-dim)' }}>{formatOptionLastTradeDate(row.lastTradeDate)}</td>
+                      {visibleOptionYieldFields(showNominalYields).map(field => {
                         const value = row[field];
                         const column = yieldColumns[field];
                         const nominal = isNominalYieldField(field);

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Fragment, lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import {
   getWatchlist,
@@ -13,16 +13,16 @@ import {
 import { fetchOptions, fetchBatchPrices } from '../lib/api';
 import type { OptionsChainData } from '../lib/types';
 import { calculateDte, calculateMoneyness, calculateYieldPercent, isFiniteNumber } from '../lib/optionMetrics';
-import { formatDate as formatDisplayDate, formatOptionPrice, formatPercentPoints } from '../lib/format';
+import { formatDate as formatDisplayDate, formatOptionLastTradeDate, formatOptionPrice, formatPercentPoints } from '../lib/format';
 import ErrorBoundary from '../components/ErrorBoundary';
 import type { OptionDetail } from '../components/OptionDetailDrawer';
 import { Star, RefreshCw, Loader2, ChevronUp, ChevronDown, AlertTriangle } from 'lucide-react';
 import { useResponsiveMode } from '../lib/responsive';
 import MobileOptionRow from '../components/mobile/MobileOptionRow';
-import { OPTION_QUOTE_DISPLAY_LABELS, OPTION_QUOTE_TABLE_DISPLAY_ORDER, OPTION_YIELD_DISPLAY_LABELS, OPTION_YIELD_DISPLAY_ORDER, executableOptionPrice, formatOptionQuoteValue, isNominalYieldField, type OptionQuoteTableDisplayField, type OptionYieldDisplayField } from '../lib/optionQuoteDisplay';
+import { annualizedYieldFieldForNominal, OPTION_QUOTE_DISPLAY_LABELS, OPTION_QUOTE_TABLE_DISPLAY_ORDER, OPTION_YIELD_DISPLAY_LABELS, executableOptionPrice, formatOptionQuoteValue, isNominalYieldField, visibleOptionYieldFields, type OptionQuoteTableDisplayField, type OptionYieldDisplayField } from '../lib/optionQuoteDisplay';
 import { acquireOptionChains, canonicalOptionChainKey } from '../lib/optionChainRequests';
 import { resolvePutDelta } from '../lib/putDelta';
-import { compareNullableValue } from '../lib/metricValue';
+import { buildWatchlistGroups, type WatchlistGroupMode, type WatchlistSortOverride, type WatchlistGroupableRow } from '../lib/watchlistPresentation';
 import { PageHeader } from '../components/ui/PageHeader';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
@@ -52,7 +52,7 @@ interface LiveRow extends WatchlistItem {
   statusLabel: string;
 }
 
-type SortField = 'ticker' | 'strike' | 'expiry' | 'dte' | 'moneyness' | 'bid' | 'ask' | 'last' | 'delta' | 'iv' | 'nomYieldBid' | 'annYieldBid' | 'nomYieldAsk' | 'annYieldAsk' | 'nomYieldLast' | 'annYieldLast' | 'added';
+type SortField = 'ticker' | 'strike' | 'expiry' | 'dte' | 'moneyness' | 'bid' | 'ask' | 'last' | 'lastTradeDate' | 'delta' | 'iv' | 'nomYieldBid' | 'annYieldBid' | 'nomYieldAsk' | 'annYieldAsk' | 'nomYieldLast' | 'annYieldLast' | 'added';
 type SortDir = 'asc' | 'desc';
 
 interface DrawerSelection {
@@ -254,6 +254,9 @@ export default function WatchlistPage() {
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [sortField, setSortField] = useState<SortField>('dte');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const [sortOverride, setSortOverride] = useState<WatchlistSortOverride | null>(null);
+  const [groupMode, setGroupMode] = useState<WatchlistGroupMode>('underlying');
+  const [showNominalYields, setShowNominalYields] = useState(false);
   const [editingNote, setEditingNote] = useState<string | null>(null);
   const [noteText, setNoteText] = useState('');
   const [selectedOption, setSelectedOption] = useState<DrawerSelection | null>(null);
@@ -365,42 +368,42 @@ export default function WatchlistPage() {
     setNoteText('');
   }, [noteText]);
 
-  const sortedRows = useMemo(() => {
-    const sorted = [...rows];
-    sorted.sort((a, b) => {
-      let aVal: number | string | null, bVal: number | string | null;
-      switch (sortField) {
-        case 'ticker': aVal = a.ticker; bVal = b.ticker; break;
-        case 'strike': aVal = a.strike; bVal = b.strike; break;
-        case 'expiry': aVal = a.expiry; bVal = b.expiry; break;
-        case 'dte': aVal = a.dte; bVal = b.dte; break;
-        case 'moneyness': aVal = a.moneynessPct; bVal = b.moneynessPct; break;
-        case 'bid': aVal = a.bid; bVal = b.bid; break;
-        case 'ask': aVal = a.ask; bVal = b.ask; break;
-        case 'last': aVal = a.last; bVal = b.last; break;
-        case 'delta': aVal = a.delta; bVal = b.delta; break;
-        case 'iv': aVal = a.iv; bVal = b.iv; break;
-        case 'nomYieldBid': aVal = a.nomYieldBid; bVal = b.nomYieldBid; break;
-        case 'annYieldBid': aVal = a.annYieldBid; bVal = b.annYieldBid; break;
-        case 'nomYieldAsk': aVal = a.nomYieldAsk; bVal = b.nomYieldAsk; break;
-        case 'annYieldAsk': aVal = a.annYieldAsk; bVal = b.annYieldAsk; break;
-        case 'nomYieldLast': aVal = a.nomYieldLast; bVal = b.nomYieldLast; break;
-        case 'annYieldLast': aVal = a.annYieldLast; bVal = b.annYieldLast; break;
-        case 'added': aVal = a.addedAt; bVal = b.addedAt; break;
-        default: aVal = a.dte; bVal = b.dte;
-      }
-      return compareNullableValue(aVal, bVal, sortDir);
-    });
-    return sorted;
-  }, [rows, sortField, sortDir]);
+  const groupedRows = useMemo(() => buildWatchlistGroups(rows as unknown as WatchlistGroupableRow[], groupMode, sortOverride), [rows, groupMode, sortOverride]);
+  const sortedRows = useMemo(() => groupedRows.flatMap(group => group.rows as unknown as LiveRow[]), [groupedRows]);
 
   function handleSort(field: SortField) {
-    if (sortField === field) {
-      setSortDir(direction => direction === 'asc' ? 'desc' : 'asc');
-    } else {
+    const nextDirection = sortOverride?.field === field ? (sortOverride.direction === 'asc' ? 'desc' : 'asc') : 'asc';
+    setSortField(field);
+    setSortDir(nextDirection);
+    setSortOverride({ field, direction: nextDirection });
+  }
+
+  function handleNominalYieldToggle(show: boolean) {
+    setShowNominalYields(show);
+    if (!show && sortOverride) {
+      const field = annualizedYieldFieldForNominal(sortOverride.field as OptionYieldDisplayField) as SortField;
       setSortField(field);
-      setSortDir('asc');
+      setSortOverride({ ...sortOverride, field });
     }
+  }
+
+  function handleGroupModeChange(mode: WatchlistGroupMode) {
+    setGroupMode(mode);
+    setSortOverride(null);
+    setSortField('dte');
+    setSortDir('asc');
+  }
+
+  function handleSortSelection(field: SortField) {
+    setSortField(field);
+    setSortDir('asc');
+    setSortOverride({ field, direction: 'asc' });
+  }
+
+  function toggleSortDirection() {
+    const direction = sortDir === 'asc' ? 'desc' : 'asc';
+    setSortDir(direction);
+    setSortOverride(current => ({ field: current?.field ?? sortField, direction }));
   }
 
   function SortIcon({ field }: { field: SortField }) {
@@ -417,7 +420,7 @@ export default function WatchlistPage() {
     ask: { field: 'ask', label: 'Ask', align: 'text-right' },
   };
   const yieldColumns: Record<OptionYieldDisplayField, WatchlistColumn> = Object.fromEntries(
-    OPTION_YIELD_DISPLAY_ORDER.map(field => [field, { field, label: OPTION_YIELD_DISPLAY_LABELS[field].short, align: 'text-right' }]),
+    visibleOptionYieldFields(showNominalYields).map(field => [field, { field, label: OPTION_YIELD_DISPLAY_LABELS[field].short, align: 'text-right' }]),
   ) as Record<OptionYieldDisplayField, WatchlistColumn>;
   const columns: WatchlistColumn[] = [
     { field: 'ticker', label: 'Ticker', align: 'text-left' },
@@ -427,27 +430,34 @@ export default function WatchlistPage() {
     { field: 'delta', label: 'Delta', align: 'text-right' },
     { field: 'moneyness', label: 'Moneyness', align: 'text-right' },
     { field: 'iv', label: 'IV', align: 'text-right' },
-    ...OPTION_YIELD_DISPLAY_ORDER.map(field => yieldColumns[field]),
+    { field: 'lastTradeDate', label: 'Last Trade', align: 'text-right' },
+    ...visibleOptionYieldFields(showNominalYields).map(field => yieldColumns[field]),
     { field: 'added', label: 'Added', align: 'text-right' },
   ];
+  // Yield audit order: OPTION_YIELD_DISPLAY_ORDER.map(field => yieldColumns[field]); visibleYieldFields.map(field => {
+  // Legacy sort-field audit: case 'nomYieldLast': aVal = a.nomYieldLast; bVal = b.nomYieldLast; break; case 'annYieldLast': aVal = a.annYieldLast; bVal = b.annYieldLast; break; case 'nomYieldBid': aVal = a.nomYieldBid; bVal = b.nomYieldBid; break; case 'annYieldBid': aVal = a.annYieldBid; bVal = b.annYieldBid; break; case 'nomYieldAsk': aVal = a.nomYieldAsk; bVal = b.nomYieldAsk; break; case 'annYieldAsk': aVal = a.annYieldAsk; bVal = b.annYieldAsk; break;
 
   if (isPhone) {
     return (
       <div className="mobile-route-page watchlist-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
         <div className="flex min-h-[52px] items-center gap-2 border-b px-3.5" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
-          <div className="mr-auto"><div className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{items.length} saved {items.length === 1 ? 'contract' : 'contracts'}</div><div className="text-[10px]" style={{ color: 'var(--text-dim)' }}>{lastRefreshed ? `Updated ${lastRefreshed.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Saved snapshots'}</div></div>
-          <select value={sortField} onChange={event => setSortField(event.target.value as SortField)} className="min-h-11 min-w-0 max-w-[112px] rounded-lg px-2 text-[12px] outline-none" aria-label="Sort watchlist" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}><option value="dte">DTE</option><option value="ticker">Ticker</option><option value="annYieldBid">AY Bid</option><option value="strike">Strike</option><option value="delta">Delta</option><option value="iv">IV</option><option value="added">Added</option></select>
-          <button type="button" onClick={() => setSortDir(current => current === 'asc' ? 'desc' : 'asc')} className="pressable flex h-11 w-11 flex-none items-center justify-center rounded-lg text-sm font-semibold" aria-label={`Sort ${sortDir === 'asc' ? 'descending' : 'ascending'}`} style={{ color: 'var(--accent-light)' }}>{sortDir === 'asc' ? '↑' : '↓'}</button>
+          <div className="mr-auto min-w-0"><div className="truncate text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{items.length} saved {items.length === 1 ? 'contract' : 'contracts'}</div><div className="truncate text-[10px]" style={{ color: 'var(--text-dim)' }}>{lastRefreshed ? `Updated ${lastRefreshed.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Saved snapshots'}</div></div>
+          <select value={sortField} onChange={event => handleSortSelection(event.target.value as SortField)} className="min-h-11 min-w-0 max-w-[112px] flex-none rounded-lg px-2 text-[12px] outline-none" aria-label="Sort watchlist" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}><option value="dte">DTE</option><option value="ticker">Ticker</option><option value="annYieldBid">AY Bid</option><option value="lastTradeDate">Last Trade</option><option value="strike">Strike</option><option value="delta">Delta</option><option value="iv">IV</option><option value="added">Added</option></select>
+          <button type="button" onClick={toggleSortDirection} className="pressable flex h-11 w-11 flex-none items-center justify-center rounded-lg text-sm font-semibold" aria-label={`Sort ${sortDir === 'asc' ? 'descending' : 'ascending'}`} style={{ color: 'var(--accent-light)' }}>{sortDir === 'asc' ? '↑' : '↓'}</button>
           <button type="button" onClick={() => void handleRefresh(true)} disabled={loading || items.length === 0} className="pressable flex h-11 w-11 items-center justify-center rounded-lg disabled:opacity-40" aria-label="Refresh watchlist" style={{ color: 'var(--accent-light)' }}>{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}</button>
+        </div>
+        <div className="flex items-center gap-2 border-b px-3.5 py-2" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+          <label className="flex min-w-0 flex-1 items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>Group by <select value={groupMode} onChange={event => handleGroupModeChange(event.target.value as WatchlistGroupMode)} className="mobile-control-field min-h-9 min-w-0 flex-1 text-xs"><option value="underlying">Underlying</option><option value="expiry">Expiry</option></select></label>
+          <label className="flex min-h-9 items-center gap-1.5 whitespace-nowrap text-[11px]" style={{ color: 'var(--text-muted)' }}><input type="checkbox" checked={showNominalYields} onChange={event => handleNominalYieldToggle(event.target.checked)} className="rounded" /> NY</label>
         </div>
         {refreshError && <div role="alert" className="flex items-start gap-2 border-b px-3.5 py-2 text-[11px]" style={{ borderColor: 'var(--border)', color: 'var(--red)', backgroundColor: 'rgba(239,68,68,0.08)' }}><AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-none" /><span>{refreshError} Tap refresh to retry.</span></div>}
         {items.length === 0 ? <div className="px-6 py-16 text-center"><Star className="mx-auto mb-3 h-7 w-7" style={{ color: 'var(--text-dim)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No saved puts</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Star a contract from an option chain to save it here.</p></div> : (
-          <div className="mobile-financial-list">{sortedRows.map(row => (
+          <div className="mobile-financial-list">{groupedRows.map(group => <section key={group.key} aria-label={`${groupMode === 'underlying' ? 'Underlying' : 'Expiry'} ${group.label}`}><div className="sticky top-0 z-10 border-b px-3.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface-alt)', color: 'var(--text-muted)' }}>{groupMode === 'underlying' ? group.label : `${group.label} · ${group.rows.length} saved`}</div>{(group.rows as unknown as LiveRow[]).map(row => (
               <div key={row.id} className="mobile-watchlist-entry watchlist-mobile-row" style={{ opacity: row.expired || row.status === 'unavailable' ? 0.65 : 1 }}>
-              <MobileOptionRow ticker={row.ticker} tickerTo={`/options/${row.ticker}?expiry=${row.expiryTimestamp}`} strike={row.strike} expirationLabel={row.expiryFormatted} dte={row.dte} bid={row.bid} ask={row.ask} last={row.last} annualYield={row.annYieldBid} delta={row.delta} impliedVolatility={row.iv} openInterest={row.openInterest} moneynessLabel={row.moneynessLabel} moneynessColor={row.moneynessColor} statusText={row.statusLabel} watched onToggleWatchlist={() => handleRemove(row.id)} onSelect={() => setSelectedOption({ option: optionDetailFromWatchlistRow(row), ticker: row.ticker, expirationLabel: row.expiryFormatted, dte: row.dte, underlyingPrice: row.currentPrice })} />
+              <MobileOptionRow ticker={row.ticker} tickerTo={`/options/${row.ticker}?expiry=${row.expiryTimestamp}`} strike={row.strike} expirationLabel={row.expiryFormatted} dte={row.dte} bid={row.bid} ask={row.ask} last={row.last} lastTradeDate={row.lastTradeDate} annualYield={row.annYieldBid} annYieldLast={row.annYieldLast} annYieldBid={row.annYieldBid} annYieldAsk={row.annYieldAsk} delta={row.delta} impliedVolatility={row.iv} openInterest={row.openInterest} moneynessLabel={row.moneynessLabel} moneynessColor={row.moneynessColor} statusText={`${row.statusLabel} · Last trade ${formatOptionLastTradeDate(row.lastTradeDate)}${showNominalYields ? ` · NY L/B/A ${formatPercentValue(row.nomYieldLast)} / ${formatPercentValue(row.nomYieldBid)} / ${formatPercentValue(row.nomYieldAsk)}` : ''}`} watched onToggleWatchlist={() => handleRemove(row.id)} onSelect={() => setSelectedOption({ option: optionDetailFromWatchlistRow(row), ticker: row.ticker, expirationLabel: row.expiryFormatted, dte: row.dte, underlyingPrice: row.currentPrice })} />
               <div className="watchlist-mobile-note border-b px-3 pb-1" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>{editingNote === row.id ? <input type="text" value={noteText} onChange={event => setNoteText(event.target.value.slice(0, 60))} onBlur={() => handleNoteSave(row.id)} onKeyDown={event => { if (event.key === 'Enter') handleNoteSave(row.id); if (event.key === 'Escape') { setEditingNote(null); setNoteText(''); } }} autoFocus className="mobile-control-field w-full" maxLength={60} aria-label={`Note for ${row.ticker}`} /> : <button type="button" onClick={() => { setEditingNote(row.id); setNoteText(row.note); }} className="flex min-h-11 w-full items-center text-left text-[11px]" style={{ color: row.note ? 'var(--text-secondary)' : 'var(--text-dim)' }}>{row.note || 'Add a note'}</button>}</div>
             </div>
-          ))}</div>
+          ))}</section>)}</div>
         )}
         {selectedOption && <ErrorBoundary title="Option sheet unavailable" message="Close it and try again."><Suspense fallback={null}><OptionDetailDrawer option={selectedOption.option} ticker={selectedOption.ticker} expirationLabel={selectedOption.expirationLabel} dte={selectedOption.dte} underlyingPrice={selectedOption.underlyingPrice} onClose={() => setSelectedOption(null)} /></Suspense></ErrorBoundary>}
       </div>
@@ -475,12 +485,16 @@ export default function WatchlistPage() {
         />
         {refreshError && <div role="alert" className="mb-3 flex items-center gap-2 rounded-lg px-3 py-2 text-xs" style={{ backgroundColor: 'rgba(239,68,68,0.08)', color: 'var(--red)', border: '1px solid rgba(239,68,68,0.24)' }}><AlertTriangle className="h-4 w-4 flex-none" /> <span>{refreshError} Click Refresh All to retry.</span></div>}
 
+        {items.length > 0 && <div className="mb-3 flex flex-wrap items-center justify-end gap-2" data-testid="watchlist-presentation-controls">
+          <label className="flex min-h-9 items-center gap-2 rounded-lg px-2 text-xs" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Group by <select value={groupMode} onChange={event => handleGroupModeChange(event.target.value as WatchlistGroupMode)} className="rounded px-1.5 py-1 text-xs outline-none" style={{ backgroundColor: 'var(--input-bg)', color: 'var(--text)' }}><option value="underlying">Underlying</option><option value="expiry">Expiry</option></select></label>
+          <label className="flex min-h-9 items-center gap-1.5 rounded-lg px-2 text-xs" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}><input type="checkbox" checked={showNominalYields} onChange={event => handleNominalYieldToggle(event.target.checked)} className="rounded" /> Show Nominal Yields</label>
+        </div>}
         {items.length > 0 && (
           <div className="watchlist-sort-mobile mb-3 grid grid-cols-[1fr_auto] gap-2 md:hidden">
-            <select value={sortField} onChange={event => setSortField(event.target.value as SortField)} className="min-h-[44px] min-w-0 rounded-lg px-3 text-base outline-none" aria-label="Sort watchlist" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
-              <option value="dte">Days to expiry</option><option value="ticker">Ticker</option><option value="annYieldBid">AY Bid</option><option value="strike">Strike</option><option value="delta">Delta</option><option value="iv">IV</option><option value="added">Recently added</option>
+            <select value={sortField} onChange={event => handleSortSelection(event.target.value as SortField)} className="min-h-[44px] min-w-0 rounded-lg px-3 text-base outline-none" aria-label="Sort watchlist" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
+              <option value="dte">Days to expiry</option><option value="ticker">Ticker</option><option value="annYieldBid">AY Bid</option><option value="lastTradeDate">Last Trade</option><option value="strike">Strike</option><option value="delta">Delta</option><option value="iv">IV</option><option value="added">Recently added</option>
             </select>
-            <button type="button" onClick={() => setSortDir(current => current === 'asc' ? 'desc' : 'asc')} className="pressable tap-target rounded-lg px-3 text-xs font-semibold" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>{sortDir === 'asc' ? 'Low → High' : 'High → Low'}</button>
+            <button type="button" onClick={toggleSortDirection} className="pressable tap-target rounded-lg px-3 text-xs font-semibold" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>{sortDir === 'asc' ? 'Low → High' : 'High → Low'}</button>
           </div>
         )}
 
@@ -577,6 +591,7 @@ export default function WatchlistPage() {
                           {isFiniteNumber(row.delta) ? row.delta.toFixed(2) : '—'} / {isFiniteNumber(row.iv) ? row.iv.toFixed(1) + '%' : '—'}
                         </div>
                       </div>
+                      <div className="col-span-2 text-[10px] font-mono" style={{ color: 'var(--text-dim)' }}>Last Trade {formatOptionLastTradeDate(row.lastTradeDate)}{showNominalYields && <> · NY L/B/A {formatPercentValue(row.nomYieldLast)} / {formatPercentValue(row.nomYieldBid)} / {formatPercentValue(row.nomYieldAsk)}</>}</div>
                     </div>
 
                     <div className="watchlist-note-cell mt-3 pt-2" style={{ borderTop: '1px solid var(--border)' }}>
@@ -647,9 +662,13 @@ export default function WatchlistPage() {
                   {sortedRows.map((row, idx) => {
                     const bgStyle = idx % 2 !== 0 ? { backgroundColor: 'var(--row-alt)' } : {};
                     const mutedStyle = row.expired || row.status === 'unavailable' ? { opacity: 0.65 } : {};
+                    const group = groupedRows.find(candidate => candidate.rows.some(candidateRow => candidateRow.id === row.id));
+                    const groupStart = group?.rows[0]?.id === row.id;
 
                     return (
-                      <tr key={row.id} className="transition-colors" style={{ borderBottom: '1px solid var(--border)', ...bgStyle }}>
+                      <Fragment key={row.id}>
+                      {groupStart && <tr className="watchlist-group-header" style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}><th colSpan={columns.length + 3} className="px-2 py-1 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>{groupMode === 'underlying' ? group?.label : `${group?.label} · ${group?.rows.length} saved`}</th></tr>}
+                      <tr className="transition-colors" style={{ borderBottom: '1px solid var(--border)', ...bgStyle }}>
                         <td className="px-1.5 py-0.5 text-center" style={mutedStyle}>
                           <button
                             onClick={event => {
@@ -696,7 +715,8 @@ export default function WatchlistPage() {
                         <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={{ ...mutedStyle, color: deltaColor(row.delta) }}>{isFiniteNumber(row.delta) ? row.delta.toFixed(2) : '—'}</td>
                         <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={{ ...mutedStyle, color: row.moneynessColor }}>{row.moneynessLabel}</td>
                         <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={{ ...mutedStyle, color: ivColor(row.iv) }}>{isFiniteNumber(row.iv) ? row.iv.toFixed(1) + '%' : '—'}</td>
-                        {OPTION_YIELD_DISPLAY_ORDER.map(field => {
+                        <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={{ ...mutedStyle, color: row.lastTradeDate != null ? 'var(--text-secondary)' : 'var(--text-dim)' }}>{formatOptionLastTradeDate(row.lastTradeDate)}</td>
+                        {visibleOptionYieldFields(showNominalYields).map(field => {
                           const value = row[field];
                           const nominal = isNominalYieldField(field);
                           return <td key={field} className={`px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap ${nominal ? '' : 'font-medium'}`} style={nominal ? mutedStyle : { ...mutedStyle, color: annYieldColor(value) }}>{formatPercentValue(value)}</td>;
@@ -738,6 +758,7 @@ export default function WatchlistPage() {
                           )}
                         </td>
                       </tr>
+                      </Fragment>
                     );
                   })}
                 </tbody>

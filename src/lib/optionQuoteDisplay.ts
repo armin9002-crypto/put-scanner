@@ -11,6 +11,15 @@ export const OPTION_YIELD_DISPLAY_ORDER = [
   'annYieldAsk',
 ] as const;
 
+export const OPTION_NOMINAL_TO_ANNUALIZED_YIELD_FIELD: Record<
+  Extract<OptionYieldDisplayField, `nomYield${string}`>,
+  Extract<OptionYieldDisplayField, `annYield${string}`>
+> = {
+  nomYieldLast: 'annYieldLast',
+  nomYieldBid: 'annYieldBid',
+  nomYieldAsk: 'annYieldAsk',
+};
+
 export type OptionQuoteDisplayField = typeof OPTION_QUOTE_DISPLAY_ORDER[number];
 export type OptionQuoteTableDisplayField = typeof OPTION_QUOTE_TABLE_DISPLAY_ORDER[number];
 export type OptionYieldDisplayField = typeof OPTION_YIELD_DISPLAY_ORDER[number];
@@ -39,6 +48,20 @@ export const OPTION_YIELD_DISPLAY_LABELS: Record<OptionYieldDisplayField, { shor
 
 export function isNominalYieldField(field: OptionYieldDisplayField): boolean {
   return field.startsWith('nomYield');
+}
+
+export function visibleOptionYieldFields(showNominalYields: boolean): OptionYieldDisplayField[] {
+  return showNominalYields
+    ? [...OPTION_YIELD_DISPLAY_ORDER]
+    : OPTION_YIELD_DISPLAY_ORDER.filter(field => !isNominalYieldField(field));
+}
+
+export function annualizedYieldFieldForNominal(
+  field: OptionYieldDisplayField,
+): OptionYieldDisplayField {
+  return isNominalYieldField(field)
+    ? OPTION_NOMINAL_TO_ANNUALIZED_YIELD_FIELD[field as keyof typeof OPTION_NOMINAL_TO_ANNUALIZED_YIELD_FIELD]
+    : field;
 }
 
 export function orderedOptionQuoteEntries<T>(

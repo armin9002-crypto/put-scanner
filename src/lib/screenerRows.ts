@@ -2,6 +2,8 @@ import { resolvePutDelta } from './putDelta.ts';
 import { canonicalOptionChainKey } from './optionChainRequests.ts';
 import { calculateMoneyness, calculateYieldPercent } from './optionMetrics.ts';
 import { executableOptionPrice } from './optionQuoteDisplay.ts';
+import { elapsedUsEquityTradingSessions, isUsEquityTradingSession } from './usMarketCalendar.ts';
+import { usMarketDateIso } from './portfolioEntryDelta.ts';
 import type { OptionsChainData } from './types.ts';
 
 export interface ScreenerRow {
@@ -39,6 +41,7 @@ export interface ScreenerFilterCriteria {
   oiFilter: string;
   volFilter: string;
   ivVsRealizedRangeFilter: string;
+  recentTradesOnly?: boolean;
 }
 
 export interface ScreenerAcquiredData {
@@ -144,13 +147,48 @@ function matchIvVsRealizedRange(value: number | null, filter: string): boolean {
   }
 }
 
-export function applyScreenerFilters(rows: ScreenerRow[], criteria: ScreenerFilterCriteria): ScreenerRow[] {
+function normalizedLastTradeMarketDate(value: unknown): string | null {
+  const numeric = typeof value === 'number'
+    ? value
+    : typeof value === 'string' && value.trim() !== '' && /^[-+]?\d+(?:\.\d+)?$/.test(value.trim())
+      ? Number(value)
+      : null;
+  const timestamp = numeric != null
+    ? numeric < 10_000_000_000 ? numeric * 1_000 : numeric
+    : value instanceof Date ? value.getTime() : typeof value === 'string' ? Date.parse(value) : NaN;
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return null;
+  const marketDate = usMarketDateIso(new Date(timestamp));
+  return marketDate && isUsEquityTradingSession(marketDate) ? marketDate : null;
+}
+
+export function isRecentScreenerTrade(
+  row: Pick<ScreenerRow, 'lastTradeDate'>,
+  currentMarketDate: string | Date | number = new Date(),
+): boolean {
+  const lastTradeMarketDate = normalizedLastTradeMarketDate(row.lastTradeDate);
+  const currentDate = typeof currentMarketDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(currentMarketDate)
+    ? currentMarketDate
+    : usMarketDateIso(currentMarketDate instanceof Date
+      ? currentMarketDate
+      : typeof currentMarketDate === 'number'
+        ? currentMarketDate < 10_000_000_000 ? currentMarketDate * 1_000 : currentMarketDate
+        : new Date());
+  if (!lastTradeMarketDate || !currentDate || lastTradeMarketDate > currentDate) return false;
+  return elapsedUsEquityTradingSessions(lastTradeMarketDate, currentDate) <= 15;
+}
+
+export function applyScreenerFilters(
+  rows: ScreenerRow[],
+  criteria: ScreenerFilterCriteria,
+  options: { currentMarketDate?: string | Date | number } = {},
+): ScreenerRow[] {
   return rows.filter(row => matchDeltaAbs(row.delta, criteria.deltaFilter)
     && matchMoneyness(row.moneynessPct, criteria.moneynessFilter)
     && matchYield(row.annYieldBid, criteria.yieldFilter)
     && matchMinimum(row.openInterest, criteria.oiFilter)
     && matchMinimum(row.volume, criteria.volFilter)
-    && matchIvVsRealizedRange(row.ivVsRealizedRange, criteria.ivVsRealizedRangeFilter));
+    && matchIvVsRealizedRange(row.ivVsRealizedRange, criteria.ivVsRealizedRangeFilter)
+    && (!criteria.recentTradesOnly || isRecentScreenerTrade(row, options.currentMarketDate)));
 }
 
 export function getExpsToFetchForFilter(allExps: ScreenerExpirationCandidate[], expFilter: string): ScreenerExpirationCandidate[] {
