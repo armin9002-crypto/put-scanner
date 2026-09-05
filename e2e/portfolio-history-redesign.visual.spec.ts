@@ -44,6 +44,7 @@ const fewPortfolio = [anchor, ...monthlyHistory(8)];
 const balancedPortfolio = [anchor, ...monthlyHistory(15).map((item, index) => ({ ...item, realizedPnl: index % 2 === 0 ? 180 : -180 }))];
 const mediumPortfolio = [anchor, ...monthlyHistory(28)];
 const longHistory = [anchor, ...monthlyHistory(35)];
+const mixedPortfolio = [...basePortfolio, trade('redesign-unknown', { ticker: 'AAPL', soldDate: '2024-05-15', expiration: '2024-06-21', closeDate: '2024-06-10', realizedPnl: 50 })];
 
 async function settle(page: Page) { await page.waitForLoadState('domcontentloaded'); await page.waitForTimeout(350); }
 async function openPortfolio(page: Page, cloud?: { requests: string[] }) {
@@ -107,6 +108,47 @@ test.describe('Portfolio history redesign visual matrix', () => {
       localStorage.removeItem('put_scanner_watchlist');
     });
   });
+
+  test('keeps ETF scope controls stable when the unknown-ticker status changes', async ({ page }, testInfo) => {
+    test.skip(!(phase === 'after' && suite === 'history-redesign'), 'Run with UI_OVERHAUL_CAPTURE=after UI_OVERHAUL_SUITE=history-redesign.');
+    await installDeterministicMarketApi(page);
+    const cloud = await installDeterministicCloudAccount(page, { portfolio: mixedPortfolio, watchlist: [], preferences: { portfolioMarkBasis: 'ask', portfolioGroupMode: 'expiration' } });
+    await openPortfolio(page, cloud);
+    await ensureHistoryOpen(page);
+    const toolbar = page.locator('.portfolio-history-controls:visible').first();
+    const toggle = toolbar.locator('.portfolio-history-etf-toggle:visible').first();
+    const checkbox = toggle.getByRole('checkbox', { name: 'Only Show ETFs' });
+    const status = toolbar.locator('.portfolio-history-etf-status.has-status:visible').first();
+    const statusSlot = toolbar.locator('.portfolio-history-etf-status').first();
+    const view = toolbar.getByRole('group', { name: 'Filter history by' });
+    await expect(checkbox).toBeChecked();
+    await expect(status).toContainText('1 unclassified historical ticker excluded');
+    const requestsBeforeToggle = cloud.requests.length;
+    const before = { toggle: (await toggle.boundingBox())?.x ?? -1, view: (await view.boundingBox())?.x ?? -1 };
+    expect(before.toggle).toBeGreaterThan(0);
+    const viewportWidth = testInfo.project.use.viewport?.width ?? 0;
+    if (viewportWidth >= 768) {
+      expect(before.view).toBeGreaterThan(before.toggle);
+      expect((await status.boundingBox())?.x ?? Number.POSITIVE_INFINITY).toBeLessThan(before.toggle);
+    } else {
+      expect((await status.boundingBox())?.y ?? Number.POSITIVE_INFINITY).toBeLessThan(await toggle.boundingBox().then(box => box?.y ?? Number.POSITIVE_INFINITY));
+    }
+    await capture(page, testInfo, 'scope-controls-on');
+
+    await checkbox.uncheck();
+    await expect(checkbox).not.toBeChecked();
+    await expect(statusSlot.locator('span')).not.toHaveClass(/is-visible/);
+    const after = { toggle: (await toggle.boundingBox())?.x ?? -1, view: (await view.boundingBox())?.x ?? -1 };
+    if (viewportWidth >= 768) {
+      expect(Math.abs(after.toggle - before.toggle)).toBeLessThanOrEqual(2);
+      expect(Math.abs(after.view - before.view)).toBeLessThanOrEqual(2);
+    }
+    await capture(page, testInfo, 'scope-controls-off');
+    await checkbox.check();
+    expect(cloud.requests.length).toBe(requestsBeforeToggle);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
+  });
+
   test('captures rolling analytics, realized P&L density, and History states', async ({ page }, testInfo) => {
     test.setTimeout(180_000);
     await installDeterministicMarketApi(page);

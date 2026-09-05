@@ -1511,9 +1511,10 @@ export default function PortfolioPage() {
   const summary = useMemo(() => calculatePortfolioSummary(trades), [trades]);
   const openTrades = useMemo(() => trades.filter(trade => trade.status === 'open'), [trades]);
   const openPositions = useMemo(() => buildOpenContractPositions(openTrades, markBasis), [markBasis, openTrades]);
-  const archivedTrades = useMemo(() => trades.filter(isArchivedTrade).sort((a, b) => b.expiration.localeCompare(a.expiration)), [trades]);
-  const archivedHistoryScope = useMemo(() => buildHistoryInstrumentScope(archivedTrades, onlyShowEtfs), [archivedTrades, onlyShowEtfs]);
-  const scopedArchivedTrades = archivedHistoryScope.trades;
+  const allArchivedTrades = useMemo(() => trades.filter(isArchivedTrade).sort((a, b) => b.expiration.localeCompare(a.expiration)), [trades]);
+  const historyInstrumentScope = useMemo(() => buildHistoryInstrumentScope(trades, onlyShowEtfs), [onlyShowEtfs, trades]);
+  const scopedHistoryTrades = historyInstrumentScope.trades;
+  const scopedArchivedTrades = useMemo(() => scopedHistoryTrades.filter(isArchivedTrade).sort((a, b) => b.expiration.localeCompare(a.expiration)), [scopedHistoryTrades]);
   const archiveSummary = useMemo(() => buildArchiveSummary(scopedArchivedTrades), [scopedArchivedTrades]);
   const markSummary = useMemo(() => calculatePortfolioMarkSummary(openTrades, markBasis), [openTrades, markBasis]);
   const maintenanceAssessment = useMemo(() => assessPortfolioMaintenance(trades), [trades]);
@@ -2174,7 +2175,7 @@ export default function PortfolioPage() {
 
             {openPositions.length > 0 && <section className="portfolio-analytics-section border-t px-3.5 py-2" style={{ borderColor: 'var(--border)' }}><button type="button" onClick={() => setAnalyticsExpanded(expanded => !expanded)} aria-expanded={analyticsExpanded} aria-controls="portfolio-analytics-content" className="portfolio-analytics-disclosure pressable flex min-h-11 w-full items-center justify-between text-left"><span><h2 className="text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Portfolio Analytics</h2><span className="portfolio-analytics-disclosure__hint">Concentration, timing, and policy signals</span></span><ChevronDown className={`h-4 w-4 transition-transform ${analyticsExpanded ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} aria-hidden="true" /></button><div id="portfolio-analytics-content">{analyticsExpanded && <div className="portfolio-analytics-content pb-2"><MobileSegmentedControl value={mobileAnalytics} onChange={setMobileAnalytics} label="Portfolio analytics" options={[{ value: 'maturity', label: 'Maturity' }, { value: 'ticker', label: 'Exposure' }, { value: 'attention', label: 'Attention' }, { value: 'close', label: 'Close' }]} /><div className="mt-2">{mobileAnalytics === 'maturity' && <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openPositions, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." onGroupClick={drillToExpiration} />}{mobileAnalytics === 'ticker' && <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openPositions, markBasis)} totalGrossRisk={sumValues(openPositions.map(calculateEquityAtRisk))} maxItems={8} onGroupClick={drillToTicker} />}{mobileAnalytics === 'attention' && <NeedsAttentionList items={buildNeedsAttention(openPositions).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} />}{mobileAnalytics === 'close' && <CloseCandidatesCard candidates={buildCloseCandidates(openPositions, markBasis).slice(0, 5)} onNavigate={drillToTrade} />}</div></div>}</div></section>}
 
-            {archivedTrades.length > 0 && <section className="border-t px-3.5 py-3" style={{ borderColor: 'var(--border)' }}><button type="button" onClick={() => setMobileHistoryOpen(current => !current)} className="pressable flex min-h-11 w-full items-center justify-between text-left" aria-expanded={mobileHistoryOpen}><span><b className="block text-[15px]" style={{ color: 'var(--text)' }}>History</b><span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{buildHistoricalContractPositions(scopedArchivedTrades).length} positions · {scopedArchivedTrades.length} entries · {formatCurrency(archiveSummary.realizedPnl, 0)} realized</span></span><ChevronDown className={`h-4 w-4 transition-transform ${mobileHistoryOpen ? 'rotate-180' : ''}`} /></button>{mobileHistoryOpen && <ArchiveHistorySection mobileLayout rollingTrades={trades} trades={scopedArchivedTrades} onlyShowEtfs={onlyShowEtfs} onOnlyShowEtfsChange={setOnlyShowEtfs} excludedUnknownTickers={archivedHistoryScope.excludedUnknownTickers} resolvingIds={resolvingArchiveIds} onRetryResolve={handleRetryResolve} onManualExpirationClose={handleManualExpirationClose} onRequestWorthlessConfirmation={setWorthlessConfirmationTrade} onEdit={editContractPosition} onDelete={handleDeleteTrade} />}</section>}
+            {allArchivedTrades.length > 0 && <section className="border-t px-3.5 py-3" style={{ borderColor: 'var(--border)' }}><button type="button" onClick={() => setMobileHistoryOpen(current => !current)} className="pressable flex min-h-11 w-full items-center justify-between text-left" aria-expanded={mobileHistoryOpen}><span><b className="block text-[15px]" style={{ color: 'var(--text)' }}>History</b><span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{buildHistoricalContractPositions(scopedArchivedTrades).length} positions · {scopedArchivedTrades.length} entries · {formatCurrency(archiveSummary.realizedPnl, 0)} realized</span></span><ChevronDown className={`h-4 w-4 transition-transform ${mobileHistoryOpen ? 'rotate-180' : ''}`} /></button>{mobileHistoryOpen && <ArchiveHistorySection mobileLayout rollingTrades={scopedHistoryTrades} trades={scopedArchivedTrades} onlyShowEtfs={onlyShowEtfs} onOnlyShowEtfsChange={setOnlyShowEtfs} excludedUnknownTickers={historyInstrumentScope.excludedUnknownTickers} resolvingIds={resolvingArchiveIds} onRetryResolve={handleRetryResolve} onManualExpirationClose={handleManualExpirationClose} onRequestWorthlessConfirmation={setWorthlessConfirmationTrade} onEdit={editContractPosition} onDelete={handleDeleteTrade} />}</section>}
           </>
         )}
 
@@ -2632,12 +2633,12 @@ export default function PortfolioPage() {
               Resolved entries: {summary.totalClosedTrades} · Current mark-dependent metrics use the selected {markBasis.toUpperCase()} basis and show {DASH} when that mark is unavailable.
             </div>
 
-            {archivedTrades.length > 0 && <ArchiveHistorySection
-              rollingTrades={trades}
+            {allArchivedTrades.length > 0 && <ArchiveHistorySection
+              rollingTrades={scopedHistoryTrades}
               trades={scopedArchivedTrades}
               onlyShowEtfs={onlyShowEtfs}
               onOnlyShowEtfsChange={setOnlyShowEtfs}
-              excludedUnknownTickers={archivedHistoryScope.excludedUnknownTickers}
+              excludedUnknownTickers={historyInstrumentScope.excludedUnknownTickers}
               resolvingIds={resolvingArchiveIds}
               onRetryResolve={handleRetryResolve}
               onManualExpirationClose={handleManualExpirationClose}
@@ -2955,11 +2956,15 @@ function ArchiveHistorySection({
       <div className="portfolio-history-header flex flex-col gap-2 mb-2 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--text-muted)' }}>Expired / Closed History</h2>
         <div className="portfolio-history-controls flex max-w-full flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-end">
+          <div className={`portfolio-history-etf-status ${onlyShowEtfs && excludedUnknownTickers.length > 0 ? 'has-status' : ''}`} aria-live="polite">
+            <span className={onlyShowEtfs && excludedUnknownTickers.length > 0 ? 'is-visible' : ''}>
+              {onlyShowEtfs && excludedUnknownTickers.length > 0 ? `${excludedUnknownTickers.length} unclassified historical ${excludedUnknownTickers.length === 1 ? 'ticker' : 'tickers'} excluded` : 'No unclassified historical tickers excluded'}
+            </span>
+          </div>
           <label className="portfolio-history-etf-toggle inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 text-[10px] font-semibold whitespace-nowrap sm:min-h-8" title="ETF-only scope contains instruments confirmed as ETFs by Put Scanner metadata. Unclassified instruments return when All is selected." style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
             <input type="checkbox" aria-label="Only Show ETFs" checked={onlyShowEtfs} onChange={event => onOnlyShowEtfsChange(event.target.checked)} style={{ accentColor: 'var(--accent)' }} />
             <span>Only Show ETFs</span>
           </label>
-          {onlyShowEtfs && excludedUnknownTickers.length > 0 && <span className="portfolio-history-etf-note shrink-0 text-[10px]" title="ETF-only scope contains instruments confirmed as ETFs by Put Scanner metadata. Unclassified instruments return when All is selected.">{excludedUnknownTickers.length} unclassified historical {excludedUnknownTickers.length === 1 ? 'ticker' : 'tickers'} excluded</span>}
           <div className="portfolio-history-control-group inline-flex max-w-full items-center gap-1 overflow-x-auto rounded-lg p-0.5" role="group" aria-label="Filter history by" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
             <span className="shrink-0 px-1.5 text-[9px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>View</span>
             {HISTORY_FILTERS.map(filter => <button type="button" key={filter.value} onClick={() => setOutcomeFilter(filter.value)} aria-pressed={outcomeFilter === filter.value} className="min-h-11 shrink-0 rounded-md px-2 py-1 text-[10px] font-semibold whitespace-nowrap sm:min-h-8" style={{ backgroundColor: outcomeFilter === filter.value ? 'var(--accent-bg)' : 'transparent', color: outcomeFilter === filter.value ? 'var(--accent-light)' : 'var(--text-muted)', border: `1px solid ${outcomeFilter === filter.value ? 'var(--accent-border)' : 'transparent'}` }}>{filter.label}</button>)}

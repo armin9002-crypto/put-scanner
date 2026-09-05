@@ -3992,8 +3992,41 @@ td {
   margin: 0;
 }
 
-.portfolio-history-etf-note {
+.portfolio-history-etf-status {
+  min-width: 0;
   color: var(--text-tertiary);
+}
+
+.portfolio-history-etf-status > span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  visibility: hidden;
+}
+
+.portfolio-history-etf-status > span.is-visible {
+  visibility: visible;
+}
+
+@media (min-width: 768px) {
+  .portfolio-history-controls {
+    display: grid;
+    flex: 1 1 auto;
+    grid-template-columns: minmax(12rem, 1fr) max-content minmax(0, max-content) minmax(0, max-content) max-content;
+    align-items: center;
+  }
+
+  .portfolio-history-etf-status {
+    min-width: 12rem;
+    max-width: 18rem;
+  }
+}
+
+@media (max-width: 767px) {
+  .portfolio-history-etf-status:not(.has-status) {
+    display: none;
+  }
 }
 
 .portfolio-history-table {

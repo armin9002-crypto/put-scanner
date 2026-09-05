@@ -5,10 +5,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { calculateOriginalAnnualizedYield, calculateOriginalDte } from '../src/lib/portfolioMetrics.ts';
-import { historyRealizedIrr } from '../src/lib/portfolioHistoryAnalytics.ts';
+import { buildHistoryInstrumentScope, historyRealizedIrr } from '../src/lib/portfolioHistoryAnalytics.ts';
 import { canonicalHistoricalRealizedDate } from '../src/lib/portfolioRealizedEconomics.ts';
 import { REQUEST_BUDGET_LEDGER } from '../src/lib/requestBudgets.ts';
-import { PORTFOLIO_HISTORICAL_STATE_METRIC_CONFIGS } from '../src/lib/portfolioHistoricalStateAnalytics.ts';
+import { buildPortfolioHistoricalStateSeries, PORTFOLIO_HISTORICAL_STATE_METRIC_CONFIGS } from '../src/lib/portfolioHistoricalStateAnalytics.ts';
 import {
   ROLLING_HISTORICAL_METRIC_CONFIGS,
   ROLLING_WINDOW_MONTHS,
@@ -292,6 +292,35 @@ test('the calculation engine remains local, derived, raw-number-only, and free o
   });
 });
 
+test('Portfolio History uses one instrument-scoped population for rolling and state analytics', async () => {
+  const portfolio = await readFile(path.join(root, 'src/pages/PortfolioPage.tsx'), 'utf8');
+  assert.match(portfolio, /const historyInstrumentScope = useMemo\(\(\) => buildHistoryInstrumentScope\(trades, onlyShowEtfs\)/);
+  assert.match(portfolio, /rollingTrades=\{scopedHistoryTrades\}/);
+  assert.doesNotMatch(portfolio, /rollingTrades=\{trades\}/);
+
+  const rows = [
+    trade({ id: 'common-stock', ticker: 'AAPL', soldDate: '2020-06-01', expiration: '2020-12-18' }),
+    trade({ id: 'etf', ticker: 'SPY', soldDate: '2021-01-15', expiration: '2021-07-16' }),
+  ];
+  const scoped = buildHistoryInstrumentScope(rows, true).trades;
+  const all = buildHistoryInstrumentScope(rows, false).trades;
+  assert.deepEqual(scoped.map(row => row.id), ['etf']);
+  for (const metric of ROLLING_HISTORICAL_METRIC_CONFIGS.map(config => config.key)) {
+    const scopedSeries = buildRollingHistoricalAnalyticsSeries(scoped, metric, 3, new Date('2021-03-01T17:00:00.000Z'));
+    const allSeries = buildRollingHistoricalAnalyticsSeries(all, metric, 3, new Date('2021-03-01T17:00:00.000Z'));
+    assert.equal(scopedSeries.domain.startDate, '2021-01-15', `${metric} uses the ETF strategy start`);
+    assert.equal(allSeries.domain.startDate, '2020-06-01', `${metric} restores the full strategy start`);
+  }
+  for (const metric of ['grossRiskExposure', 'averageRemainingDte']) {
+    const scopedSeries = buildPortfolioHistoricalStateSeries(scoped, metric, new Date('2021-03-01T17:00:00.000Z'));
+    const allSeries = buildPortfolioHistoricalStateSeries(all, metric, new Date('2021-03-01T17:00:00.000Z'));
+    assert.equal(scopedSeries.domain.startDate, '2021-01-15', `${metric} uses the ETF strategy start`);
+    assert.equal(allSeries.domain.startDate, '2020-06-01', `${metric} restores the full strategy start`);
+    assert.equal(scopedSeries.coverage.sourceTrades, 1);
+    assert.equal(allSeries.coverage.sourceTrades, 2);
+  }
+});
+
 test('Portfolio renders the configured rolling chart below History with local controls and accessible touch inspection', async () => {
   const chart = await readFile(path.join(root, 'src/components/RollingHistoricalAnalyticsChart.tsx'), 'utf8');
   const portfolio = await readFile(path.join(root, 'src/pages/PortfolioPage.tsx'), 'utf8');
@@ -299,7 +328,7 @@ test('Portfolio renders the configured rolling chart below History with local co
   const docs = await readFile(path.join(root, 'docs/UI_ROLLING_HISTORICAL_ANALYTICS.md'), 'utf8');
 
   assert.match(portfolio, /RollingHistoricalAnalyticsChart/);
-  assert.match(portfolio, /rollingTrades=\{trades\}/);
+  assert.match(portfolio, /rollingTrades=\{scopedHistoryTrades\}/);
   assert.match(portfolio, /<RollingHistoricalAnalyticsChart trades=\{rollingTrades\} \/>/);
   assert.match(chart, /buildRollingHistoricalAnalyticsSeries\(trades, metric, windowMonths\)/);
   assert.match(chart, /useState<HistoricalMetric>\('entryAy'\)/);

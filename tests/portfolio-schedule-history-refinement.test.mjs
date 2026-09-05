@@ -106,6 +106,10 @@ test('History defaults grouped views collapsed and keeps the requested headline 
   assert.match(source, /aria-label=\{`\$\{metricLabel\} period`\}/);
   assert.match(source, /Only Show ETFs/);
   assert.match(source, /buildHistoryInstrumentScope/);
+  assert.match(source, /portfolio-history-etf-status/);
+  const toolbar = source.slice(source.indexOf('portfolio-history-controls'), source.indexOf('portfolio-history-summary-grid'));
+  assert.ok(toolbar.indexOf('portfolio-history-etf-status') < toolbar.indexOf('portfolio-history-etf-toggle'));
+  assert.ok(toolbar.indexOf('portfolio-history-etf-toggle') < toolbar.indexOf('aria-label="Filter history by"'));
   assert.match(source, /visibleSummary\.totalHistoricalNotional/);
   assert.doesNotMatch(source, /\{months\.length\} months/);
   assert.match(source, /visibleSummary\.counts\.expired_worthless/);
