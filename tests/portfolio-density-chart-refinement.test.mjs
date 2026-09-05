@@ -45,10 +45,10 @@ test('Realized History chart renders both metrics with adaptive, collision-safe 
   assert.match(source, /data-scroll-mode=\{scrolls \? 'contained' : 'fit'\}/);
   assert.match(source, /style=\{\{ width: `\$\{contentWidth\}px`/);
   assert.match(source, /style=\{\{ top: `\$\{top\}%`, height: `\$\{height\}%`, width: `\$\{barWidth\}px`/);
-  assert.match(source, /style=\{\{ fontSize: `\$\{labelFontSize\}px` \}\}/);
+  assert.match(source, /style=\{\{ fontSize: uiTextCssPx\(labelFontSize\) \}\}/);
   assert.doesNotMatch(source, /const showValue/);
   assert.doesNotMatch(source, /is-first|is-last/);
-  assert.match(styles, /\.portfolio-realized-pnl-chart__month,[\s\S]*font-size: 0\.625rem/);
+  assert.match(styles, /\.portfolio-realized-pnl-chart__month,[\s\S]*font-size: var\(--font-micro\)/);
   assert.match(styles, /\.portfolio-realized-pnl-chart__value--positive \{[\s\S]*color: var\(--positive\)/);
   assert.match(styles, /\.portfolio-realized-pnl-chart__value--negative \{[\s\S]*color: var\(--negative\)/);
   assert.match(styles, /\.portfolio-realized-pnl-chart__canvas \{[\s\S]*padding: 0\.5rem 2rem 1\.5rem/);

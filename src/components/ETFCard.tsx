@@ -309,8 +309,8 @@ export default function ETFCard({
       <div className="instrument-card__body pointer-events-none relative z-10 flex flex-row gap-2 pr-1 min-w-0">
         <div className="instrument-card__primary flex flex-col justify-between flex-shrink-0 w-[50%] min-w-0">
           <div>
-            <div className="flex min-w-0 items-start justify-between gap-1.5">
-              <div className="flex min-w-0 items-center gap-1.5">
+            <div className="instrument-card__quote-line flex min-w-0 items-start justify-between gap-1.5">
+              <div className="instrument-card__identity flex min-w-0 items-center gap-1.5">
                 <span className="text-lg font-bold font-mono tracking-tight leading-none flex-shrink-0" style={{ color: 'var(--text)' }}>{etf.ticker}</span>
                 <span className="instrument-card__leverage pointer-events-none shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold leading-none" style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)', border: '1px solid var(--accent-border)' }}>{etf.leverage}</span>
               </div>

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { uiTextCssPx } from '../lib/uiTextSizePreference';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Activity, AlertTriangle, Loader2, RefreshCw, X, SlidersHorizontal, ChevronDown } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { buildEtfPulseRows, getEtfPulseUniverse, type EtfPulseLoadResult, type EtfPulseProgress } from '../lib/etfPulseData';
@@ -416,16 +417,16 @@ function MomentumQuadrant({ rows, period }: { rows: EtfPulseRow[]; period: Visua
         <line x1={zeroX} x2={zeroX} y1={padding.top} y2={padding.top + plotHeight} stroke="var(--border)" />
         <line x1={padding.left} x2={padding.left + plotWidth} y1={rsi50Y} y2={rsi50Y} stroke="var(--border)" />
         <rect x={padding.left} y={padding.top} width={plotWidth} height={plotHeight} fill="none" stroke="var(--border)" />
-        <text x={padding.left + 8} y={padding.top + 16} fontSize="10" fill="var(--text-dim)">Mixed / Defensive</text>
-        <text x={padding.left + plotWidth - 118} y={padding.top + 16} fontSize="10" fill="var(--text-dim)">Strength / Extended</text>
-        <text x={padding.left + 8} y={padding.top + plotHeight - 8} fontSize="10" fill="var(--text-dim)">Weak / Oversold</text>
-        <text x={padding.left + plotWidth - 104} y={padding.top + plotHeight - 8} fontSize="10" fill="var(--text-dim)">Bounce / Improving</text>
-        <text x={padding.left} y={height - 14} fontSize="11" fill="var(--text-muted)">{period} return</text>
-        <text x={8} y={padding.top + 10} fontSize="11" fill="var(--text-muted)">RSI</text>
-        <text x={padding.left - 28} y={scaleY(70) + 4} fontSize="10" fill="var(--text-dim)">70</text>
-        <text x={padding.left - 28} y={scaleY(50) + 4} fontSize="10" fill="var(--text-dim)">50</text>
-        <text x={padding.left - 28} y={scaleY(35) + 4} fontSize="10" fill="var(--text-dim)">35</text>
-        <text x={scaleX(0) + 4} y={height - 14} fontSize="10" fill="var(--text-dim)">0%</text>
+        <text x={padding.left + 8} y={padding.top + 16} style={{ fontSize: uiTextCssPx(10) }} fill="var(--text-dim)">Mixed / Defensive</text>
+        <text x={padding.left + plotWidth - 118} y={padding.top + 16} style={{ fontSize: uiTextCssPx(10) }} fill="var(--text-dim)">Strength / Extended</text>
+        <text x={padding.left + 8} y={padding.top + plotHeight - 8} style={{ fontSize: uiTextCssPx(10) }} fill="var(--text-dim)">Weak / Oversold</text>
+        <text x={padding.left + plotWidth - 104} y={padding.top + plotHeight - 8} style={{ fontSize: uiTextCssPx(10) }} fill="var(--text-dim)">Bounce / Improving</text>
+        <text x={padding.left} y={height - 14} style={{ fontSize: uiTextCssPx(11) }} fill="var(--text-muted)">{period} return</text>
+        <text x={8} y={padding.top + 10} style={{ fontSize: uiTextCssPx(11) }} fill="var(--text-muted)">RSI</text>
+        <text x={padding.left - 28} y={scaleY(70) + 4} style={{ fontSize: uiTextCssPx(10) }} fill="var(--text-dim)">70</text>
+        <text x={padding.left - 28} y={scaleY(50) + 4} style={{ fontSize: uiTextCssPx(10) }} fill="var(--text-dim)">50</text>
+        <text x={padding.left - 28} y={scaleY(35) + 4} style={{ fontSize: uiTextCssPx(10) }} fill="var(--text-dim)">35</text>
+        <text x={scaleX(0) + 4} y={height - 14} style={{ fontSize: uiTextCssPx(10) }} fill="var(--text-dim)">0%</text>
         {points.map(({ row, x, y }) => {
           const trend = trendStyle(row);
           const radius = Math.max(4, Math.min(9, 4 + ((row.realizedVolatility20 ?? 0) * 7)));
@@ -461,7 +462,7 @@ function MomentumQuadrant({ rows, period }: { rows: EtfPulseRow[]; period: Visua
           );
         })}
         {hoveredPoint && (
-          <foreignObject x={tooltipX} y={tooltipY} width={tooltipWidth} height={tooltipHeight} pointerEvents="none">
+          <foreignObject className="pulse-momentum-tooltip" style={{ '--pulse-tooltip-y': `${tooltipY}px` } as CSSProperties} x={tooltipX} y={tooltipY} width={tooltipWidth} height={tooltipHeight} pointerEvents="none">
             <div
               className="rounded-lg p-2.5 text-[11px] shadow-xl"
               style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}

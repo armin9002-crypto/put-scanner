@@ -2,6 +2,74 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Device-local typography only: never change the root rem or geometric tokens. */
+:root {
+  --ui-text-scale: 1;
+  --font-body: calc(14px * var(--ui-text-scale));
+  --font-caption: calc(0.75rem * var(--ui-text-scale));
+  --font-micro: calc(0.625rem * var(--ui-text-scale));
+  --font-control: calc(0.875rem * var(--ui-text-scale));
+  --font-table: calc(0.68rem * var(--ui-text-scale));
+  --font-title: calc(clamp(1.25rem, 1.7vw, 1.5rem) * var(--ui-text-scale));
+  --font-hero: calc(1.55rem * var(--ui-text-scale));
+}
+:root[data-text-size="medium"] { --ui-text-scale: 1.08; }
+:root[data-text-size="large"] { --ui-text-scale: 1.16; }
+
+:root:is([data-text-size="medium"], [data-text-size="large"]) .instrument-card__quote-line {
+  flex-wrap: wrap;
+}
+
+:root:is([data-text-size="medium"], [data-text-size="large"]) .instrument-card__identity {
+  flex-shrink: 0;
+}
+
+/* The nine tooltip metrics need room inside the unchanged 360-unit SVG. */
+:root:is([data-text-size="medium"], [data-text-size="large"]) .pulse-momentum-tooltip {
+  height: 280px;
+  y: min(var(--pulse-tooltip-y), 72px);
+}
+
+/* At larger sizes the narrow phone identity column needs its own watch action
+   line. Let dates/status wrap instead of losing strike digits to ellipses. */
+@media (max-width: 767px) {
+  :root:is([data-text-size="medium"], [data-text-size="large"]) .mobile-option-chain-cell--strike {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  :root:is([data-text-size="medium"], [data-text-size="large"]) :is(.mobile-option-chain-cell, .mobile-option-chain-cell__context, .mobile-option-chain-cell__expiry) {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  :root:is([data-text-size="medium"], [data-text-size="large"]) .mobile-position-row__identity {
+    flex-wrap: wrap;
+  }
+
+  :root:is([data-text-size="medium"], [data-text-size="large"]) .mobile-position-row__identity > * {
+    flex-shrink: 0;
+    max-width: 100%;
+  }
+}
+
+/* Keep arbitrary utilities in Tailwind's utility layer so responsive variants
+   retain normal ordering and the existing component/iOS overrides still win. */
+@layer utilities {
+  .text-\[9px\] { font-size: calc(9px * var(--ui-text-scale)); }
+  .text-\[10px\] { font-size: calc(10px * var(--ui-text-scale)); }
+  .text-\[11px\] { font-size: calc(11px * var(--ui-text-scale)); }
+  .text-\[12px\] { font-size: calc(12px * var(--ui-text-scale)); }
+  .text-\[13px\] { font-size: calc(13px * var(--ui-text-scale)); }
+  .text-\[15px\] { font-size: calc(15px * var(--ui-text-scale)); }
+  .text-\[16px\] { font-size: calc(16px * var(--ui-text-scale)); }
+  .text-\[17px\] { font-size: calc(17px * var(--ui-text-scale)); }
+  .text-\[18px\] { font-size: calc(18px * var(--ui-text-scale)); }
+  .text-\[20px\] { font-size: calc(20px * var(--ui-text-scale)); }
+  .text-\[21px\] { font-size: calc(21px * var(--ui-text-scale)); }
+  .text-\[26px\] { font-size: calc(26px * var(--ui-text-scale)); }
+}
+
+
 .scanner-snapshot-tooltip {
   display: none;
 }
@@ -204,7 +272,7 @@ body {
   background-color: var(--bg);
   color: var(--text);
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: var(--font-body);
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -281,7 +349,7 @@ table,
 
 .page-header__title {
   color: var(--text-primary);
-  font-size: clamp(1.25rem, 1.7vw, 1.5rem);
+  font-size: var(--font-title);
   font-weight: 680;
   letter-spacing: -0.025em;
   line-height: 1.15;
@@ -290,7 +358,7 @@ table,
 .page-header__description {
   margin-top: 0.2rem;
   color: var(--text-tertiary);
-  font-size: 0.75rem;
+  font-size: var(--font-caption);
 }
 
 .section-header {
@@ -300,7 +368,7 @@ table,
   justify-content: space-between;
   gap: 0.75rem;
   color: var(--text-secondary);
-  font-size: 0.68rem;
+  font-size: var(--font-table);
   font-weight: 650;
   letter-spacing: 0.075em;
   text-transform: uppercase;
@@ -367,7 +435,7 @@ table,
   padding-inline: 0.5rem;
   background: color-mix(in srgb, var(--bg-elevated) 72%, transparent);
   color: var(--text-tertiary);
-  font-size: 0.65rem;
+  font-size: calc(0.65rem * var(--ui-text-scale));
   font-weight: 560;
   line-height: 1;
 }
@@ -419,7 +487,7 @@ table,
   height: 34px;
   border-bottom: 1px solid var(--border-default);
   color: var(--text-tertiary) !important;
-  font-size: 0.625rem !important;
+  font-size: var(--font-micro) !important;
   font-weight: 640 !important;
   letter-spacing: 0.045em;
   text-transform: uppercase;
@@ -560,7 +628,7 @@ table,
 .mobile-account-sheet select,
 .mobile-account-sheet textarea {
   max-width: 100%;
-  font-size: 16px;
+  font-size: calc(16px * var(--ui-text-scale));
 }
 
 .conflict-confirmation-layer {
@@ -593,7 +661,7 @@ table,
   border-radius: var(--radius-md);
   padding: 0 0.625rem;
   color: var(--text-muted);
-  font-size: 0.75rem;
+  font-size: var(--font-caption);
   font-weight: 650;
   white-space: nowrap;
 }
@@ -654,7 +722,7 @@ table,
   gap: 0.4rem;
   border-radius: var(--radius-md);
   padding: 0.45rem 0.75rem;
-  font-size: 0.75rem;
+  font-size: var(--font-caption);
 }
 
 .recommendations-page button:disabled {
@@ -667,7 +735,7 @@ table,
   flex-wrap: wrap;
   gap: 0.25rem 0.75rem;
   color: var(--text-muted);
-  font-size: 0.68rem;
+  font-size: var(--font-table);
 }
 
 .recommendations-header-actions {
@@ -686,7 +754,7 @@ table,
   padding: 0.4rem 0.65rem;
   color: var(--text-secondary);
   background: var(--surface);
-  font-size: 0.7rem;
+  font-size: calc(0.7rem * var(--ui-text-scale));
   white-space: nowrap;
 }
 
@@ -706,7 +774,7 @@ table,
   padding: 0.5rem 0.7rem;
   color: var(--yellow);
   background: color-mix(in srgb, var(--yellow) 5%, var(--surface));
-  font-size: 0.7rem;
+  font-size: calc(0.7rem * var(--ui-text-scale));
 }
 
 .recommendations-ready-state {
@@ -722,7 +790,7 @@ table,
 .recommendation-card__eyebrow,
 .recommendation-evidence-section__title {
   color: var(--text-dim);
-  font-size: 0.62rem;
+  font-size: calc(0.62rem * var(--ui-text-scale));
   font-weight: 700;
   letter-spacing: 0.11em;
   text-transform: uppercase;
@@ -731,7 +799,7 @@ table,
 .recommendations-ready-state h2 {
   margin-top: 0.4rem;
   color: var(--text);
-  font-size: clamp(1.1rem, 2vw, 1.45rem);
+  font-size: calc(clamp(1.1rem, 2vw, 1.45rem) * var(--ui-text-scale));
   font-weight: 650;
 }
 
@@ -739,7 +807,7 @@ table,
   margin-top: 0.45rem;
   max-width: 48rem;
   color: var(--text-muted);
-  font-size: 0.82rem;
+  font-size: calc(0.82rem * var(--ui-text-scale));
   line-height: 1.55;
 }
 
@@ -756,7 +824,7 @@ table,
   padding: 0.28rem 0.6rem;
   background: var(--surface-alt);
   color: var(--text-secondary);
-  font-size: 0.68rem;
+  font-size: var(--font-table);
 }
 
 .recommendations-market-line {
@@ -767,7 +835,7 @@ table,
   padding: 0.6rem 0.8rem;
   border: 1px solid var(--border);
   color: var(--text-muted);
-  font-size: 0.74rem;
+  font-size: calc(0.74rem * var(--ui-text-scale));
 }
 
 .recommendations-market-line strong {
@@ -779,7 +847,7 @@ table,
 .recommendations-market-line__label {
   margin-right: 0.2rem;
   color: var(--text-dim);
-  font-size: 0.6rem;
+  font-size: calc(0.6rem * var(--ui-text-scale));
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -810,7 +878,7 @@ table,
 
 .recommendations-verdict-strip__label {
   color: var(--text);
-  font-size: 0.82rem;
+  font-size: calc(0.82rem * var(--ui-text-scale));
   font-weight: 760;
   letter-spacing: 0.045em;
 }
@@ -819,7 +887,7 @@ table,
   margin-top: 0.15rem;
   max-width: 58rem;
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: calc(0.72rem * var(--ui-text-scale));
   line-height: 1.45;
 }
 
@@ -837,7 +905,7 @@ table,
   padding: 0.22rem 0.5rem;
   background: var(--surface-alt);
   color: var(--text-muted);
-  font-size: 0.62rem;
+  font-size: calc(0.62rem * var(--ui-text-scale));
   white-space: nowrap;
 }
 
@@ -878,7 +946,7 @@ table,
   overflow: hidden;
   color: var(--text);
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.88rem;
+  font-size: calc(0.88rem * var(--ui-text-scale));
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -886,7 +954,7 @@ table,
 
 .recommendation-card__identity span {
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: calc(0.72rem * var(--ui-text-scale));
   font-weight: 500;
 }
 
@@ -894,7 +962,7 @@ table,
   margin-top: 0.2rem;
   color: var(--text-secondary);
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.68rem;
+  font-size: var(--font-table);
   font-variant-numeric: tabular-nums;
 }
 
@@ -908,14 +976,14 @@ table,
 .recommendation-card__hero-metric strong {
   color: var(--text);
   font-family: var(--font-data);
-  font-size: 1.45rem;
+  font-size: calc(1.45rem * var(--ui-text-scale));
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.04em;
 }
 
 .recommendation-card__hero-metric span {
   color: var(--text-tertiary);
-  font-size: 0.64rem;
+  font-size: calc(0.64rem * var(--ui-text-scale));
 }
 
 .recommendation-card__metrics span {
@@ -926,7 +994,7 @@ table,
 .recommendation-card__discovery {
   margin-top: 0.16rem;
   color: var(--text-tertiary);
-  font-size: 0.63rem;
+  font-size: calc(0.63rem * var(--ui-text-scale));
   line-height: 1.25;
 }
 
@@ -960,7 +1028,7 @@ table,
   padding: 0.12rem 0.42rem;
   background: var(--surface-alt);
   color: var(--text-muted);
-  font-size: 0.58rem;
+  font-size: calc(0.58rem * var(--ui-text-scale));
   font-weight: 750;
   letter-spacing: 0.045em;
   white-space: nowrap;
@@ -999,12 +1067,12 @@ table,
   border-bottom: 1px solid var(--border);
   padding: 0.2rem 0;
   color: var(--text-muted);
-  font-size: 0.64rem;
+  font-size: calc(0.64rem * var(--ui-text-scale));
 }
 
 .recommendation-lens-row strong {
   color: var(--text-secondary);
-  font-size: 0.58rem;
+  font-size: calc(0.58rem * var(--ui-text-scale));
   letter-spacing: 0.035em;
 }
 
@@ -1024,13 +1092,13 @@ table,
 
 .recommendation-card__copy strong {
   color: var(--text);
-  font-size: 0.65rem;
+  font-size: calc(0.65rem * var(--ui-text-scale));
 }
 
 .recommendation-card__copy p {
   margin-top: 0.12rem;
   color: var(--text-muted);
-  font-size: 0.67rem;
+  font-size: calc(0.67rem * var(--ui-text-scale));
   line-height: 1.45;
 }
 
@@ -1043,7 +1111,7 @@ table,
   padding-top: 0.5rem;
   color: var(--text-muted);
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.64rem;
+  font-size: calc(0.64rem * var(--ui-text-scale));
 }
 
 .recommendation-conditional-strip strong {
@@ -1060,7 +1128,7 @@ table,
 .recommendation-card__actions button {
   min-height: 34px;
   padding: 0.3rem 0.6rem;
-  font-size: 0.67rem;
+  font-size: calc(0.67rem * var(--ui-text-scale));
 }
 
 .recommendations-board-section,
@@ -1079,7 +1147,7 @@ table,
   align-items: center;
   gap: 0.4rem;
   color: var(--text-muted);
-  font-size: 0.66rem;
+  font-size: calc(0.66rem * var(--ui-text-scale));
 }
 
 .recommendations-board-sort select {
@@ -1157,7 +1225,7 @@ table,
 .recommendations-frontier-empty {
   padding: 0.65rem 2.7rem;
   color: var(--text-muted);
-  font-size: 0.68rem;
+  font-size: var(--font-table);
 }
 
 .recommendations-near-misses {
@@ -1177,7 +1245,7 @@ table,
   gap: 0.75rem;
   border-bottom: 1px solid var(--border);
   color: var(--text-muted);
-  font-size: 0.71rem;
+  font-size: calc(0.71rem * var(--ui-text-scale));
   text-align: left;
 }
 
@@ -1198,14 +1266,14 @@ table,
 
 .recommendations-how__heading > div > span {
   color: var(--text);
-  font-size: 0.8rem;
+  font-size: calc(0.8rem * var(--ui-text-scale));
   font-weight: 700;
 }
 
 .recommendations-how__heading p {
   margin-top: 0.12rem;
   color: var(--text-tertiary);
-  font-size: 0.68rem;
+  font-size: var(--font-table);
 }
 
 .recommendations-how__pipeline {
@@ -1239,20 +1307,20 @@ table,
   border-radius: 999px;
   color: var(--accent-light);
   background: var(--accent-soft);
-  font-size: 0.55rem;
+  font-size: calc(0.55rem * var(--ui-text-scale));
   font-weight: 750;
 }
 
 .recommendations-how__pipeline strong {
   color: var(--text);
   font-family: var(--font-data);
-  font-size: 0.9rem;
+  font-size: calc(0.9rem * var(--ui-text-scale));
 }
 
 .recommendations-how__pipeline span {
   overflow: hidden;
   color: var(--text-tertiary);
-  font-size: 0.59rem;
+  font-size: calc(0.59rem * var(--ui-text-scale));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1269,7 +1337,7 @@ table,
 
 .recommendations-why-section > p {
   color: var(--text-tertiary);
-  font-size: 0.7rem;
+  font-size: calc(0.7rem * var(--ui-text-scale));
 }
 
 .recommendations-why-section button {
@@ -1281,7 +1349,7 @@ table,
   gap: 0.75rem;
   border-bottom: 1px solid var(--border);
   color: var(--text-secondary);
-  font-size: 0.72rem;
+  font-size: calc(0.72rem * var(--ui-text-scale));
   text-align: left;
 }
 
@@ -1300,7 +1368,7 @@ table,
   padding: 0.18rem 0.45rem;
   color: var(--text-tertiary);
   background: var(--surface);
-  font-size: 0.6rem;
+  font-size: calc(0.6rem * var(--ui-text-scale));
 }
 
 .recommendations-board-show-all {
@@ -1313,7 +1381,7 @@ table,
   border-top: 1px solid var(--border);
   color: var(--text-secondary);
   background: var(--surface-alt);
-  font-size: 0.7rem;
+  font-size: calc(0.7rem * var(--ui-text-scale));
   font-weight: 650;
 }
 
@@ -1350,14 +1418,14 @@ table,
 
 .recommendation-methodology-modal > header span {
   color: var(--accent-light);
-  font-size: 0.58rem;
+  font-size: calc(0.58rem * var(--ui-text-scale));
   font-weight: 750;
   letter-spacing: 0.1em;
 }
 
 .recommendation-methodology-modal > header h2 {
   margin-top: 0.1rem;
-  font-size: 1rem;
+  font-size: calc(1rem * var(--ui-text-scale));
   font-weight: 700;
 }
 
@@ -1387,7 +1455,7 @@ table,
   padding: 0.55rem 0.65rem;
   color: var(--text-secondary);
   background: var(--surface-alt);
-  font-size: 0.72rem;
+  font-size: calc(0.72rem * var(--ui-text-scale));
   line-height: 1.45;
 }
 
@@ -1405,13 +1473,13 @@ table,
 }
 
 .recommendation-methodology-grid strong {
-  font-size: 0.7rem;
+  font-size: calc(0.7rem * var(--ui-text-scale));
 }
 
 .recommendation-methodology-grid p {
   margin-top: 0.2rem;
   color: var(--text-tertiary);
-  font-size: 0.66rem;
+  font-size: calc(0.66rem * var(--ui-text-scale));
   line-height: 1.45;
 }
 
@@ -1434,13 +1502,13 @@ table,
 }
 
 .recommendations-decision-trace > summary span {
-  font-size: 0.72rem;
+  font-size: calc(0.72rem * var(--ui-text-scale));
   font-weight: 700;
 }
 
 .recommendations-decision-trace > summary small {
   color: var(--text-tertiary);
-  font-size: 0.62rem;
+  font-size: calc(0.62rem * var(--ui-text-scale));
 }
 
 .recommendations-decision-trace[open] > summary svg {
@@ -1473,13 +1541,13 @@ table,
 
 .recommendations-decision-trace__stages strong {
   font-family: var(--font-data);
-  font-size: 0.82rem;
+  font-size: calc(0.82rem * var(--ui-text-scale));
 }
 
 .recommendations-decision-trace__stages span,
 .recommendations-decision-trace__coverage strong,
 .recommendations-decision-trace__rejections strong {
-  font-size: 0.62rem;
+  font-size: calc(0.62rem * var(--ui-text-scale));
   font-weight: 700;
 }
 
@@ -1488,7 +1556,7 @@ table,
 .recommendations-decision-trace__rejections p,
 .recommendations-decision-trace__rejections > span {
   color: var(--text-tertiary);
-  font-size: 0.58rem;
+  font-size: calc(0.58rem * var(--ui-text-scale));
   line-height: 1.35;
 }
 
@@ -1499,7 +1567,7 @@ table,
   border-top: 1px solid var(--border);
   padding-top: 0.28rem;
   color: var(--text-secondary);
-  font-size: 0.62rem;
+  font-size: calc(0.62rem * var(--ui-text-scale));
 }
 
 .recommendation-evidence-drawer {
@@ -1543,7 +1611,7 @@ table,
 
 @media (max-width: 767px) {
   .mobile-bottom-nav__item {
-    font-size: 0.59rem;
+    font-size: calc(0.59rem * var(--ui-text-scale));
   }
 
   .mobile-bottom-nav__item svg {
@@ -1567,7 +1635,7 @@ table,
 
   .recommendations-page .page-header__description {
     margin-top: 0;
-    font-size: 0.72rem;
+    font-size: calc(0.72rem * var(--ui-text-scale));
   }
 
   .recommendations-page .page-header > :last-child,
@@ -1622,11 +1690,11 @@ table,
   }
 
   .recommendation-card__identity {
-    font-size: 0.8rem;
+    font-size: calc(0.8rem * var(--ui-text-scale));
   }
 
   .recommendation-card__hero-metric strong {
-    font-size: 1.15rem;
+    font-size: calc(1.15rem * var(--ui-text-scale));
   }
 
   .recommendation-card__metrics {
@@ -1734,13 +1802,13 @@ table,
 
   .recommendations-board-mobile-row__summary span {
     color: var(--text);
-    font-size: 0.68rem;
+    font-size: var(--font-table);
   }
 
   .recommendations-board-mobile-row__summary small {
     margin-top: 0.05rem;
     color: var(--text-dim);
-    font-size: 0.57rem;
+    font-size: calc(0.57rem * var(--ui-text-scale));
   }
 
   .recommendations-board-mobile-row[data-hard-fail="true"] .recommendations-board-mobile-row__summary {
@@ -1756,7 +1824,7 @@ table,
     grid-template-columns: 7rem minmax(0, 1fr) auto;
     gap: 0.45rem;
     min-height: 38px;
-    font-size: 0.6rem;
+    font-size: calc(0.6rem * var(--ui-text-scale));
   }
 
   .recommendations-frontier-empty {
@@ -1772,7 +1840,7 @@ table,
 @media (orientation: landscape) and (max-height: 520px) and (max-width: 950px) {
   .mobile-bottom-nav.is-phone-landscape .mobile-bottom-nav__item {
     gap: 0.18rem;
-    font-size: 0.58rem;
+    font-size: calc(0.58rem * var(--ui-text-scale));
   }
 
   .mobile-bottom-nav.is-phone-landscape .mobile-bottom-nav__item svg {
@@ -1825,7 +1893,7 @@ table,
   background: var(--bg-inset);
   color: var(--text-tertiary);
   font-family: var(--font-data);
-  font-size: 0.56rem;
+  font-size: calc(0.56rem * var(--ui-text-scale));
   font-weight: 700;
   letter-spacing: 0.02em;
   line-height: 1;
@@ -1865,7 +1933,7 @@ table,
   min-width: 0;
   overflow: hidden;
   padding-inline: 0.18rem;
-  font-size: 0.62rem;
+  font-size: calc(0.62rem * var(--ui-text-scale));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1877,7 +1945,7 @@ table,
   align-items: center;
   gap: 0.1rem;
   overflow: visible;
-  font-size: 0.73rem;
+  font-size: calc(0.73rem * var(--ui-text-scale));
 }
 
 .mobile-option-chain-cell__identity {
@@ -1892,7 +1960,7 @@ table,
   grid-column: 1 / -1;
   min-width: 0;
   color: var(--accent-light);
-  font-size: 0.58rem;
+  font-size: calc(0.58rem * var(--ui-text-scale));
   line-height: 1.05;
 }
 
@@ -1915,7 +1983,7 @@ table,
   overflow: hidden;
   color: var(--text-tertiary);
   font-family: var(--font-data);
-  font-size: 0.55rem;
+  font-size: calc(0.55rem * var(--ui-text-scale));
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1926,7 +1994,7 @@ table,
   overflow: hidden;
   color: var(--yellow);
   font-family: var(--font-data);
-  font-size: 0.54rem;
+  font-size: calc(0.54rem * var(--ui-text-scale));
   font-weight: 650;
   line-height: 1;
   text-overflow: ellipsis;
@@ -2000,13 +2068,13 @@ table,
 .mobile-position-row__identity {
   overflow: hidden;
   color: var(--text-tertiary);
-  font-size: 0.63rem;
+  font-size: calc(0.63rem * var(--ui-text-scale));
   white-space: nowrap;
 }
 
 .mobile-position-row__identity strong {
   color: var(--text-primary);
-  font-size: 0.76rem;
+  font-size: calc(0.76rem * var(--ui-text-scale));
 }
 
 .mobile-position-row__identity span {
@@ -2028,13 +2096,13 @@ table,
 
 .mobile-position-row__primary small {
   color: var(--text-tertiary);
-  font-size: 0.52rem;
+  font-size: calc(0.52rem * var(--ui-text-scale));
   line-height: 1;
   white-space: nowrap;
 }
 
 .mobile-position-row__primary b {
-  font-size: 0.7rem;
+  font-size: calc(0.7rem * var(--ui-text-scale));
   line-height: 1.1;
   white-space: nowrap;
 }
@@ -2046,7 +2114,7 @@ table,
 
 .mobile-position-row__health {
   flex: none;
-  font-size: 0.53rem;
+  font-size: calc(0.53rem * var(--ui-text-scale));
   line-height: 1;
 }
 
@@ -2059,7 +2127,7 @@ table,
 .mobile-position-row__meta {
   margin-bottom: 0.4rem;
   color: var(--text-tertiary);
-  font-size: 0.6rem;
+  font-size: calc(0.6rem * var(--ui-text-scale));
 }
 
 .mobile-position-row__metrics {
@@ -2067,7 +2135,7 @@ table,
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.45rem;
   color: var(--text-tertiary);
-  font-size: 0.58rem;
+  font-size: calc(0.58rem * var(--ui-text-scale));
   line-height: 1.3;
 }
 
@@ -2123,7 +2191,7 @@ table,
   outline: none;
   background: var(--input-bg);
   color: var(--text);
-  font-size: 16px;
+  font-size: calc(16px * var(--ui-text-scale));
 }
 
 .mobile-control-field:focus {
@@ -2142,7 +2210,7 @@ table,
   padding: 0 0.85rem;
   background: var(--accent-bg);
   color: var(--accent-light);
-  font-size: 0.8rem;
+  font-size: calc(0.8rem * var(--ui-text-scale));
   font-weight: 650;
   white-space: nowrap;
 }
@@ -2151,7 +2219,7 @@ table,
   display: block;
   margin-bottom: 0.45rem;
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: calc(0.72rem * var(--ui-text-scale));
   font-weight: 650;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -2164,7 +2232,7 @@ table,
   padding: 0.35rem 0.65rem;
   background: var(--surface);
   color: var(--text-muted);
-  font-size: 0.8rem;
+  font-size: calc(0.8rem * var(--ui-text-scale));
   font-weight: 650;
 }
 
@@ -2182,7 +2250,7 @@ table,
   gap: 0.4rem;
   border-radius: var(--radius-md);
   padding-inline: 1rem;
-  font-size: 0.85rem;
+  font-size: calc(0.85rem * var(--ui-text-scale));
   font-weight: 700;
 }
 
@@ -2265,7 +2333,7 @@ input, select, textarea, button {
   input,
   select,
   textarea {
-    font-size: 16px;
+    font-size: calc(16px * var(--ui-text-scale));
   }
 
   .mobile-static-sticky {
@@ -2309,11 +2377,11 @@ input, select, textarea, button {
   }
 
   .is-phone-chart .chart-modal-header h2 {
-    font-size: 1rem;
+    font-size: calc(1rem * var(--ui-text-scale));
   }
 
   .is-phone-chart .chart-modal-header .text-2xl {
-    font-size: 1.35rem;
+    font-size: calc(1.35rem * var(--ui-text-scale));
   }
 
   .is-phone-chart .chart-modal-header > div:last-child button:first-child {
@@ -2444,7 +2512,7 @@ td {
     gap: 0.125rem;
     border-radius: var(--radius-md);
     color: var(--text-dim);
-    font-size: 0.65rem;
+    font-size: calc(0.65rem * var(--ui-text-scale));
     font-weight: 650;
     line-height: 1;
     -webkit-tap-highlight-color: transparent;
@@ -2478,7 +2546,7 @@ td {
   }
 
   .mobile-page-header h1 {
-    font-size: 1rem;
+    font-size: calc(1rem * var(--ui-text-scale));
   }
 
   .mobile-page-header > div:last-child button {
@@ -2505,7 +2573,7 @@ td {
     flex-direction: row;
     gap: 0.3rem;
     color: var(--text-dim);
-    font-size: 0.65rem;
+    font-size: calc(0.65rem * var(--ui-text-scale));
   }
 
   .mobile-bottom-nav.is-phone-landscape .mobile-bottom-nav__item.is-active {
@@ -2554,7 +2622,7 @@ td {
 
   .mobile-scanner-analyze > div:first-child {
     margin-bottom: 0.35rem;
-    font-size: 0.7rem;
+    font-size: calc(0.7rem * var(--ui-text-scale));
   }
 
   .mobile-scanner-filter-row {
@@ -2574,7 +2642,7 @@ td {
   }
 
   .mobile-scanner-results-header h2 {
-    font-size: 0.85rem;
+    font-size: calc(0.85rem * var(--ui-text-scale));
   }
 
   .mobile-etf-row {
@@ -2600,7 +2668,7 @@ td {
   }
 
   .portfolio-mobile-headline .font-mono.text-\[28px\] {
-    font-size: 1.45rem;
+    font-size: calc(1.45rem * var(--ui-text-scale));
   }
 
   .portfolio-mobile-metrics {
@@ -2679,7 +2747,7 @@ td {
   }
 
   .is-phone-landscape-chart .chart-modal-header span[class*="text-2xl"] {
-    font-size: 1rem;
+    font-size: calc(1rem * var(--ui-text-scale));
   }
 
   .is-phone-landscape-chart .chart-modal-body {
@@ -2867,7 +2935,7 @@ td {
 
 .scanner-market-rail__eyebrow {
   color: var(--accent-light);
-  font-size: 0.62rem;
+  font-size: calc(0.62rem * var(--ui-text-scale));
   font-weight: 700;
   letter-spacing: 0.09em;
   text-transform: uppercase;
@@ -2876,7 +2944,7 @@ td {
 .scanner-market-rail__title {
   margin-top: 0.1rem;
   color: var(--text-primary);
-  font-size: 0.86rem;
+  font-size: calc(0.86rem * var(--ui-text-scale));
   font-weight: 650;
 }
 
@@ -2918,7 +2986,7 @@ td {
 
 .scanner-control-plane__eyebrow {
   color: var(--accent-light);
-  font-size: 0.62rem;
+  font-size: calc(0.62rem * var(--ui-text-scale));
   font-weight: 700;
   letter-spacing: 0.09em;
   text-transform: uppercase;
@@ -2927,14 +2995,14 @@ td {
 .scanner-control-plane__title {
   margin-top: 0.1rem;
   color: var(--text-primary);
-  font-size: 0.9rem;
+  font-size: calc(0.9rem * var(--ui-text-scale));
   font-weight: 650;
 }
 
 .scanner-control-plane__summary,
 .scanner-results-count {
   color: var(--text-tertiary);
-  font-size: 0.7rem;
+  font-size: calc(0.7rem * var(--ui-text-scale));
   font-variant-numeric: tabular-nums;
 }
 
@@ -2973,7 +3041,7 @@ td {
 
 .scanner-control-plane__expiration label {
   margin-bottom: 0.2rem;
-  font-size: 9px;
+  font-size: calc(9px * var(--ui-text-scale));
 }
 
 .scanner-control-plane__expiration select,
@@ -2982,7 +3050,7 @@ td {
   height: 32px;
   border-radius: var(--radius-md);
   padding: 0 0.45rem;
-  font-size: 11px;
+  font-size: calc(11px * var(--ui-text-scale));
 }
 
 .scanner-control-plane__expiration select {
@@ -3007,7 +3075,7 @@ td {
 
 .scanner-status-line__error {
   color: var(--negative);
-  font-size: 0.68rem;
+  font-size: var(--font-table);
 }
 
 .scanner-results-grid {
@@ -3094,7 +3162,7 @@ td {
   content: 'Expiry';
   flex: none;
   color: var(--text-tertiary);
-  font-size: 0.62rem;
+  font-size: calc(0.62rem * var(--ui-text-scale));
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -3121,14 +3189,14 @@ td {
 
 .option-chain-header__title {
   color: var(--text-primary);
-  font-size: 0.82rem;
+  font-size: calc(0.82rem * var(--ui-text-scale));
   font-weight: 680;
 }
 
 .option-chain-header__meta {
   margin-top: 0.12rem;
   color: var(--text-tertiary);
-  font-size: 0.66rem;
+  font-size: calc(0.66rem * var(--ui-text-scale));
 }
 
 .option-chain-surface .financial-table tbody tr {
@@ -3175,7 +3243,7 @@ td {
 
 .drawer-section > h3 {
   color: var(--text-tertiary) !important;
-  font-size: 0.62rem;
+  font-size: calc(0.62rem * var(--ui-text-scale));
   letter-spacing: 0.09em;
 }
 
@@ -3195,18 +3263,18 @@ td {
 .option-detail-mobile-group > h3 {
   margin-bottom: 0.4rem;
   color: var(--text-tertiary);
-  font-size: 0.64rem;
+  font-size: calc(0.64rem * var(--ui-text-scale));
   font-weight: 700;
   letter-spacing: 0.085em;
   text-transform: uppercase;
 }
 
 .option-detail-mobile-selected-price > span {
-  font-size: 0.78rem;
+  font-size: calc(0.78rem * var(--ui-text-scale));
 }
 
 .option-detail-mobile-selected-price > strong {
-  font-size: 1.55rem;
+  font-size: var(--font-hero);
   font-weight: 700;
   line-height: 1;
 }
@@ -3247,13 +3315,13 @@ td {
 .option-detail-mobile-metric > span {
   margin-bottom: 0.15rem;
   color: var(--text-tertiary);
-  font-size: 0.64rem;
+  font-size: calc(0.64rem * var(--ui-text-scale));
   line-height: 1.1;
 }
 
 .option-detail-mobile-metric > b {
   color: var(--text-primary);
-  font-size: 0.76rem;
+  font-size: calc(0.76rem * var(--ui-text-scale));
   font-weight: 650;
 }
 
@@ -3367,7 +3435,7 @@ td {
   }
 
   .mobile-scanner-analyze .control-field {
-    font-size: 16px;
+    font-size: calc(16px * var(--ui-text-scale));
   }
 
   .mobile-scanner-results-header {
@@ -3376,7 +3444,7 @@ td {
   }
 
   .mobile-scanner-results-header h2 {
-    font-size: 0.875rem;
+    font-size: var(--font-control);
   }
 
   .mobile-etf-row {
@@ -3425,7 +3493,7 @@ td {
   }
 
   .mobile-scanner-results-header h2 {
-    font-size: 0.85rem;
+    font-size: calc(0.85rem * var(--ui-text-scale));
   }
 
   .mobile-etf-row {
@@ -3479,7 +3547,7 @@ td {
 
 .watchlist-table-toolbar h2 {
   color: var(--text-primary);
-  font-size: 0.78rem;
+  font-size: calc(0.78rem * var(--ui-text-scale));
   font-weight: 680;
   letter-spacing: -0.01em;
 }
@@ -3487,13 +3555,13 @@ td {
 .watchlist-table-toolbar p {
   margin-top: 0.12rem;
   color: var(--text-tertiary);
-  font-size: 0.64rem;
+  font-size: calc(0.64rem * var(--ui-text-scale));
 }
 
 .watchlist-table-toolbar > span {
   color: var(--text-tertiary);
   font-family: var(--font-data);
-  font-size: 0.64rem;
+  font-size: calc(0.64rem * var(--ui-text-scale));
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -3549,7 +3617,7 @@ td {
 .watchlist-table-scroll-hint {
   display: none;
   color: var(--text-tertiary) !important;
-  font-size: 0.6rem !important;
+  font-size: calc(0.6rem * var(--ui-text-scale)) !important;
   font-weight: 500 !important;
   letter-spacing: 0.01em !important;
   text-transform: none !important;
@@ -3671,7 +3739,7 @@ td {
 }
 
 .portfolio-summary-grid > :nth-child(5) > div:last-child {
-  font-size: 0.95rem;
+  font-size: calc(0.95rem * var(--ui-text-scale));
   font-weight: 700;
 }
 
@@ -3703,7 +3771,7 @@ td {
 .portfolio-mobile-metric-label {
   min-height: 0;
   overflow: hidden;
-  font-size: 0.6rem;
+  font-size: calc(0.6rem * var(--ui-text-scale));
   font-weight: 650;
   line-height: 1.1;
   text-overflow: ellipsis;
@@ -3713,14 +3781,14 @@ td {
 .portfolio-mobile-metric-value {
   margin-top: 0.2rem;
   overflow: hidden;
-  font-size: 0.78rem;
+  font-size: calc(0.78rem * var(--ui-text-scale));
   line-height: 1.1;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .portfolio-mobile-metric[data-primary="true"] .portfolio-mobile-metric-value {
-  font-size: 0.84rem;
+  font-size: calc(0.84rem * var(--ui-text-scale));
   font-weight: 700;
 }
 
@@ -3731,7 +3799,7 @@ td {
 
 .portfolio-mobile-mark-label b {
   color: var(--text-secondary);
-  font-size: 0.72rem;
+  font-size: calc(0.72rem * var(--ui-text-scale));
   font-weight: 650;
 }
 
@@ -3739,7 +3807,7 @@ td {
   max-width: 5.25rem;
   margin-top: 0.1rem;
   color: var(--text-tertiary);
-  font-size: 0.58rem;
+  font-size: calc(0.58rem * var(--ui-text-scale));
   line-height: 1.1;
 }
 
@@ -3747,7 +3815,7 @@ td {
   border-left: 2px solid var(--warning);
   padding: 0.35rem 0.55rem;
   color: var(--text-tertiary);
-  font-size: 0.64rem;
+  font-size: calc(0.64rem * var(--ui-text-scale));
   line-height: 1.35;
 }
 
@@ -3783,7 +3851,7 @@ td {
 
 .portfolio-priority-card__header h2 {
   color: var(--text-primary);
-  font-size: 0.78rem;
+  font-size: calc(0.78rem * var(--ui-text-scale));
   font-weight: 680;
   letter-spacing: -0.01em;
 }
@@ -3791,7 +3859,7 @@ td {
 .portfolio-priority-card__header p {
   margin-top: 0.12rem;
   color: var(--text-tertiary);
-  font-size: 0.62rem;
+  font-size: calc(0.62rem * var(--ui-text-scale));
 }
 
 .portfolio-priority-list {
@@ -3826,7 +3894,7 @@ td {
   overflow: hidden;
   color: var(--text-primary);
   font-family: var(--font-data);
-  font-size: 0.7rem;
+  font-size: calc(0.7rem * var(--ui-text-scale));
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3835,7 +3903,7 @@ td {
 .portfolio-priority-item__identity small {
   overflow: hidden;
   color: var(--text-tertiary);
-  font-size: 0.6rem;
+  font-size: calc(0.6rem * var(--ui-text-scale));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3843,7 +3911,7 @@ td {
 .portfolio-priority-item__value {
   flex: none;
   font-family: var(--font-data);
-  font-size: 0.68rem;
+  font-size: var(--font-table);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -3852,7 +3920,7 @@ td {
   border-top: 1px solid var(--border-subtle);
   padding-top: 0.35rem;
   color: var(--text-tertiary);
-  font-size: 0.68rem;
+  font-size: var(--font-table);
 }
 
 .portfolio-analytics-section {
@@ -3863,7 +3931,7 @@ td {
 .portfolio-analytics-disclosure__hint {
   margin-top: 0.15rem;
   color: var(--text-tertiary);
-  font-size: 0.62rem;
+  font-size: calc(0.62rem * var(--ui-text-scale));
 }
 
 .portfolio-analytics-disclosure {
@@ -3948,7 +4016,7 @@ td {
 
 .portfolio-paired-metric__status {
   color: var(--yellow);
-  font-size: 0.58rem;
+  font-size: calc(0.58rem * var(--ui-text-scale));
   font-weight: 650;
   letter-spacing: 0.01em;
 }
@@ -4063,7 +4131,7 @@ td {
   padding: 0 0.5rem;
   line-height: 1;
   color: var(--text-primary);
-  font-size: 0.68rem;
+  font-size: var(--font-table);
   font-weight: 680;
   text-align: left;
   transition: background-color var(--transition-ui), color var(--transition-ui);
@@ -4071,7 +4139,7 @@ td {
 
 .portfolio-history-group-toggle small {
   color: var(--text-tertiary);
-  font-size: 0.62rem;
+  font-size: calc(0.62rem * var(--ui-text-scale));
   font-weight: 540;
 }
 
@@ -4107,7 +4175,7 @@ td {
 .portfolio-history-group-subtotal td:first-child small {
   margin-left: 0.15rem;
   color: var(--text-tertiary);
-  font-size: 0.62rem;
+  font-size: calc(0.62rem * var(--ui-text-scale));
   font-weight: 520;
 }
 
@@ -4191,7 +4259,7 @@ td {
 .portfolio-history-mobile-group-header strong {
   overflow: hidden;
   color: var(--text-primary);
-  font-size: 0.76rem;
+  font-size: calc(0.76rem * var(--ui-text-scale));
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4199,7 +4267,7 @@ td {
 
 .portfolio-history-mobile-group-header small {
   color: var(--text-tertiary);
-  font-size: 0.62rem;
+  font-size: calc(0.62rem * var(--ui-text-scale));
   font-weight: 540;
 }
 
@@ -4221,7 +4289,7 @@ td {
   margin-top: 0.2rem;
   color: var(--text-tertiary);
   font-family: var(--font-mono);
-  font-size: 0.62rem;
+  font-size: calc(0.62rem * var(--ui-text-scale));
   line-height: 1.25;
   white-space: normal;
   overflow-wrap: anywhere;
@@ -4268,13 +4336,13 @@ td {
 .portfolio-history-mobile-row__identity {
   overflow: hidden;
   color: var(--text-tertiary);
-  font-size: 0.58rem;
+  font-size: calc(0.58rem * var(--ui-text-scale));
   white-space: nowrap;
 }
 
 .portfolio-history-mobile-row__identity strong {
   color: var(--accent-light);
-  font-size: 0.72rem;
+  font-size: calc(0.72rem * var(--ui-text-scale));
 }
 
 .portfolio-history-mobile-row__identity > span:not(.portfolio-history-group-chevron) {
@@ -4296,13 +4364,13 @@ td {
 
 .portfolio-history-mobile-row__primary small {
   color: var(--text-tertiary);
-  font-size: 0.5rem;
+  font-size: calc(0.5rem * var(--ui-text-scale));
   line-height: 1;
   white-space: nowrap;
 }
 
 .portfolio-history-mobile-row__primary b {
-  font-size: 0.66rem;
+  font-size: calc(0.66rem * var(--ui-text-scale));
   line-height: 1.1;
   white-space: nowrap;
 }
@@ -4316,7 +4384,7 @@ td {
 .portfolio-history-mobile-row__meta {
   margin-bottom: 0.35rem;
   color: var(--text-tertiary);
-  font-size: 0.58rem;
+  font-size: calc(0.58rem * var(--ui-text-scale));
 }
 
 .portfolio-history-mobile-row__metrics {
@@ -4362,7 +4430,7 @@ td {
 
 .portfolio-history-mobile-grand-total small {
   color: var(--text-tertiary);
-  font-size: 0.5rem;
+  font-size: calc(0.5rem * var(--ui-text-scale));
   line-height: 1;
   white-space: nowrap;
 }
@@ -4370,7 +4438,7 @@ td {
 .portfolio-history-mobile-grand-total strong {
   color: var(--text-primary);
   font-family: var(--font-mono);
-  font-size: 0.68rem;
+  font-size: var(--font-table);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -4384,19 +4452,19 @@ td {
   border-top: 1px solid var(--border-subtle);
   color: var(--text-tertiary);
   font-family: var(--font-mono);
-  font-size: 0.55rem;
+  font-size: calc(0.55rem * var(--ui-text-scale));
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .portfolio-history-mobile-group-header__totals strong {
   font-family: var(--font-mono);
-  font-size: 0.72rem;
+  font-size: calc(0.72rem * var(--ui-text-scale));
   font-variant-numeric: tabular-nums;
 }
 
 .portfolio-history-mobile-group-header__pnl strong {
-  font-size: 0.8rem;
+  font-size: calc(0.8rem * var(--ui-text-scale));
   font-weight: 760;
 }
 
@@ -4430,7 +4498,7 @@ td {
 
 .portfolio-realized-pnl-chart__header h3 {
   color: var(--text-secondary);
-  font-size: 0.75rem;
+  font-size: var(--font-caption);
   font-weight: 650;
 }
 
@@ -4439,7 +4507,7 @@ td {
   align-items: center;
   gap: 0.35rem;
   color: var(--text-tertiary);
-  font-size: 0.62rem;
+  font-size: calc(0.62rem * var(--ui-text-scale));
 }
 
 .portfolio-realized-pnl-chart__header select {
@@ -4449,7 +4517,7 @@ td {
   padding: 0.2rem 1.6rem 0.2rem 0.5rem;
   color: var(--text);
   background: var(--surface-alt);
-  font-size: 0.68rem;
+  font-size: var(--font-table);
 }
 
 .portfolio-realized-pnl-chart__plot {
@@ -4514,7 +4582,7 @@ td {
 .portfolio-realized-pnl-chart__month,
 .portfolio-realized-pnl-chart__value {
   font-family: var(--font-data);
-  font-size: 0.625rem;
+  font-size: var(--font-micro);
   font-variant-numeric: tabular-nums;
   line-height: 1;
   white-space: nowrap;
@@ -4564,7 +4632,7 @@ td {
 .rolling-historical-analytics__eyebrow {
   margin-bottom: 0.2rem;
   color: var(--accent-light);
-  font-size: 0.58rem;
+  font-size: calc(0.58rem * var(--ui-text-scale));
   font-weight: 760;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -4584,7 +4652,7 @@ td {
 .rolling-historical-analytics__heading h3 {
   margin: 0;
   color: var(--text);
-  font-size: 0.86rem;
+  font-size: calc(0.86rem * var(--ui-text-scale));
   font-weight: 700;
   letter-spacing: -0.01em;
 }
@@ -4593,7 +4661,7 @@ td {
   flex: 0 0 auto;
   color: var(--text);
   font-family: var(--font-data);
-  font-size: 1.15rem;
+  font-size: calc(1.15rem * var(--ui-text-scale));
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.03em;
 }
@@ -4602,7 +4670,7 @@ td {
   max-width: 52rem;
   margin: 0.25rem 0 0;
   color: var(--text-tertiary);
-  font-size: 0.68rem;
+  font-size: var(--font-table);
   line-height: 1.35;
 }
 
@@ -4613,7 +4681,7 @@ td {
 .rolling-historical-analytics__metadata {
   color: var(--text-tertiary) !important;
   font-family: var(--font-data);
-  font-size: 0.62rem !important;
+  font-size: calc(0.62rem * var(--ui-text-scale)) !important;
   font-variant-numeric: tabular-nums;
 }
 
@@ -4628,7 +4696,7 @@ td {
   display: grid;
   gap: 0.18rem;
   color: var(--text-tertiary);
-  font-size: 0.6rem;
+  font-size: calc(0.6rem * var(--ui-text-scale));
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -4642,7 +4710,7 @@ td {
   padding: 0.25rem 1.8rem 0.25rem 0.55rem;
   color: var(--text);
   background: var(--surface-alt);
-  font-size: 0.72rem;
+  font-size: calc(0.72rem * var(--ui-text-scale));
   font-weight: 600;
 }
 
@@ -4664,7 +4732,7 @@ td {
   color: var(--text-tertiary);
   background: transparent;
   font-family: var(--font-data);
-  font-size: 0.68rem;
+  font-size: var(--font-table);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -4695,7 +4763,7 @@ td {
   padding: 0.25rem 0.6rem;
   color: var(--text-tertiary);
   background: var(--surface-alt);
-  font-size: 0.6rem;
+  font-size: calc(0.6rem * var(--ui-text-scale));
   font-weight: 750;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -4777,7 +4845,7 @@ td {
 .rolling-historical-analytics__x-label {
   fill: var(--text-tertiary);
   font-family: var(--font-data);
-  font-size: 11px;
+  font-size: calc(11px * var(--ui-text-scale));
   font-variant-numeric: tabular-nums;
 }
 
@@ -4788,7 +4856,7 @@ td {
   stroke-width: 3px;
   paint-order: stroke;
   font-family: var(--font-data);
-  font-size: 10px;
+  font-size: calc(10px * var(--ui-text-scale));
   font-variant-numeric: tabular-nums;
 }
 
@@ -4811,7 +4879,7 @@ td {
   color: var(--text-secondary);
   background: color-mix(in srgb, var(--surface-alt) 94%, transparent);
   box-shadow: var(--shadow-sm, 0 8px 20px rgba(0, 0, 0, 0.18));
-  font-size: 0.64rem;
+  font-size: calc(0.64rem * var(--ui-text-scale));
   line-height: 1.25;
   pointer-events: none;
 }
@@ -4819,7 +4887,7 @@ td {
 .rolling-historical-analytics__tooltip strong {
   color: var(--text);
   font-family: var(--font-data);
-  font-size: 0.68rem;
+  font-size: var(--font-table);
   font-variant-numeric: tabular-nums;
 }
 
@@ -4831,7 +4899,7 @@ td {
   position: absolute;
   inset: 44% 0 auto;
   color: var(--text-tertiary);
-  font-size: 0.72rem;
+  font-size: calc(0.72rem * var(--ui-text-scale));
   text-align: center;
 }
 
@@ -4898,7 +4966,7 @@ td {
   }
 
   .portfolio-analytics-disclosure__hint {
-    font-size: 0.58rem;
+    font-size: calc(0.58rem * var(--ui-text-scale));
   }
 
   .portfolio-history-section {
@@ -4919,7 +4987,7 @@ td {
   }
 
   .portfolio-history-summary-grid .portfolio-summary-card__value {
-    font-size: 0.78rem;
+    font-size: calc(0.78rem * var(--ui-text-scale));
   }
 
   .portfolio-history-section article {
@@ -4945,7 +5013,7 @@ td {
   }
 
   .rolling-historical-analytics__heading p {
-    font-size: 0.63rem;
+    font-size: calc(0.63rem * var(--ui-text-scale));
   }
 
   .rolling-historical-analytics__controls {
@@ -4973,12 +5041,12 @@ td {
 
   .rolling-historical-analytics__tooltip {
     max-width: calc(100% - 0.25rem);
-    font-size: 0.6rem;
+    font-size: calc(0.6rem * var(--ui-text-scale));
   }
 
   .rolling-historical-analytics__y-label,
   .rolling-historical-analytics__x-label {
-    font-size: 10px;
+    font-size: calc(10px * var(--ui-text-scale));
   }
 }
 
@@ -5004,7 +5072,7 @@ td {
 
   .mobile-expiration-group > button > span > span:nth-child(2),
   .mobile-expiration-group > button > span > span:nth-child(3) {
-    font-size: 0.58rem;
+    font-size: calc(0.58rem * var(--ui-text-scale));
   }
 }
 
@@ -5044,7 +5112,7 @@ td {
   flex-wrap: wrap;
   gap: 0.55rem;
   color: var(--text-tertiary);
-  font-size: 0.66rem;
+  font-size: calc(0.66rem * var(--ui-text-scale));
 }
 
 .screener-filter-surface {
@@ -5067,7 +5135,7 @@ td {
 .screener-results-kicker,
 .pulse-control-label {
   color: var(--text-tertiary);
-  font-size: 0.62rem;
+  font-size: calc(0.62rem * var(--ui-text-scale));
   font-weight: 650;
   letter-spacing: 0.075em;
   text-transform: uppercase;
@@ -5076,7 +5144,7 @@ td {
 .screener-filter-heading h2 {
   margin-top: 0.16rem;
   color: var(--text-primary);
-  font-size: 0.98rem;
+  font-size: calc(0.98rem * var(--ui-text-scale));
   font-weight: 680;
   letter-spacing: -0.015em;
 }
@@ -5084,7 +5152,7 @@ td {
 .screener-filter-heading p {
   margin-top: 0.18rem;
   color: var(--text-tertiary);
-  font-size: 0.69rem;
+  font-size: calc(0.69rem * var(--ui-text-scale));
 }
 
 .screener-scope-badge {
@@ -5101,14 +5169,14 @@ td {
 .screener-scope-badge span,
 .screener-scope-badge small {
   color: var(--text-tertiary);
-  font-size: 0.6rem;
+  font-size: calc(0.6rem * var(--ui-text-scale));
 }
 
 .screener-scope-badge strong {
   overflow: hidden;
   color: var(--text-primary);
   font-family: var(--font-data);
-  font-size: 0.72rem;
+  font-size: calc(0.72rem * var(--ui-text-scale));
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -5135,7 +5203,7 @@ td {
 
 .screener-filter-group-tag strong {
   color: var(--accent-light);
-  font-size: 0.62rem;
+  font-size: calc(0.62rem * var(--ui-text-scale));
   font-weight: 680;
   letter-spacing: 0.045em;
   text-transform: uppercase;
@@ -5143,7 +5211,7 @@ td {
 
 .screener-filter-group-tag span {
   color: var(--text-dim);
-  font-size: 0.58rem;
+  font-size: calc(0.58rem * var(--ui-text-scale));
   font-weight: 500;
   letter-spacing: 0;
   text-transform: none;
@@ -5213,7 +5281,7 @@ input[type="number"] {
 .pulse-title-context {
   margin-top: 0.25rem;
   color: var(--text-tertiary);
-  font-size: 0.68rem;
+  font-size: var(--font-table);
 }
 
 .pulse-filter-surface {
@@ -5249,13 +5317,13 @@ input[type="number"] {
 .pulse-result-context {
   justify-content: flex-end;
   color: var(--text-tertiary);
-  font-size: 0.68rem;
+  font-size: var(--font-table);
 }
 
 .pulse-result-context strong {
   color: var(--text-primary);
   font-family: var(--font-data);
-  font-size: 0.77rem;
+  font-size: calc(0.77rem * var(--ui-text-scale));
 }
 
 .pulse-sort-context {
@@ -5417,7 +5485,7 @@ input[type="number"] {
   }
 
   .mobile-etf-row__identity-line > span:first-child {
-    font-size: 0.95rem !important;
+    font-size: calc(0.95rem * var(--ui-text-scale)) !important;
   }
 
   .mobile-etf-row__name {
@@ -5439,7 +5507,7 @@ input[type="number"] {
 
   .mobile-etf-row__performance > span {
     overflow: hidden;
-    font-size: 0.62rem !important;
+    font-size: calc(0.62rem * var(--ui-text-scale)) !important;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -5447,7 +5515,7 @@ input[type="number"] {
   .mobile-etf-row__footer {
     margin-top: 0.15rem !important;
     padding-top: 0.15rem !important;
-    font-size: 0.61rem !important;
+    font-size: calc(0.61rem * var(--ui-text-scale)) !important;
     line-height: 1.05;
   }
 
@@ -5488,14 +5556,14 @@ input[type="number"] {
 
   .mobile-pulse-list-item__performance > span {
     overflow: hidden;
-    font-size: 0.62rem !important;
+    font-size: calc(0.62rem * var(--ui-text-scale)) !important;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .mobile-pulse-list-item__footer {
     margin-top: 0.15rem !important;
-    font-size: 0.6rem !important;
+    font-size: calc(0.6rem * var(--ui-text-scale)) !important;
     line-height: 1.05;
   }
 
@@ -5554,7 +5622,7 @@ input[type="number"] {
   .mobile-option-chain-cell__ticker {
     flex: none;
     width: auto;
-    font-size: 0.56rem;
+    font-size: calc(0.56rem * var(--ui-text-scale));
   }
 
   .mobile-option-chain-cell__expiry {

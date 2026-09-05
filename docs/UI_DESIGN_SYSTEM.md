@@ -67,6 +67,12 @@ The application uses a native system sans stack on desktop and mobile. This elim
 
 `.font-mono` remains as a compatibility class but now uses the system data face with `tabular-nums lining-nums`. This preserves column stability without making every value look like source code. Do not use bold as the only hierarchy signal.
 
+Text size is a device-local presentation preference: Small (the original UI), Medium (1.08), and Large (1.16). The `Aa` utility immediately before Theme cycles these values and stores `put_scanner_text_size`. `UiTextSizeProvider` sets `data-text-size` on the document before paint; only the utility subscribes to its React context.
+
+Use the semantic font tokens in `src/index.css`: `--font-micro`, `--font-caption`, `--font-table`, `--font-body`, `--font-control`, `--font-title`, and `--font-hero`. Standard Tailwind font utilities already scale through `tailwind.config.js`, including their responsive variants and default line heights. The finite arbitrary pixel utilities are centralized in `@layer utilities`; add a newly required arbitrary size there instead of adding route-specific size overrides. For precise legacy sizes, use `calc(<existing size> * var(--ui-text-scale))` without rounding the base value. For computed chart labels, use `uiTextCssPx(basePx)`; CSS updates them without rerunning chart calculations.
+
+Never scale the root font, spacing tokens, icons, chart dimensions, or touch targets for this preference. Preserve the existing CSS cascade, especially 16px phone fields and explicit line-height utilities. Larger type may wrap content where necessary; Small retains the original typography and content geometry.
+
 ## Shared primitives
 
 - `PageHeader` and `SectionHeader` in `src/components/ui/PageHeader.tsx` define compact title, context, meta, and action alignment.

@@ -1,3 +1,4 @@
+import { uiTextCssPx } from '../lib/uiTextSizePreference';
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AlertTriangle, Briefcase, ChevronDown, ChevronRight, Download, Edit2, FileImage, FileSpreadsheet, Loader2, MoreHorizontal, Plus, RefreshCw, SlidersHorizontal, Trash2, Wrench } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -2796,8 +2797,8 @@ function RealizedHistoryChart({ trades }: { trades: PortfolioTrade[] }) {
             const valueClass = positive ? 'portfolio-realized-pnl-chart__value--positive' : 'portfolio-realized-pnl-chart__value--negative';
             return <div key={bucket.periodKey} className="portfolio-realized-pnl-chart__slot" title={`${bucket.label}\nPeriod: ${bucket.startDate} to ${bucket.endDate}\nTrades: ${bucket.tradeCount}\nPremium: ${formatCurrency(bucket.premium, 0)}\nRealized P&L: ${formatCurrency(bucket.realizedPnl, 0)}\nCaptured: ${formatPctValue(bucket.captured)}`}>
               {value != null && value !== 0 && top != null && <div className={`portfolio-realized-pnl-chart__bar ${value > 0 ? 'is-positive' : 'is-negative'}`} style={{ top: `${top}%`, height: `${height}%`, width: `${barWidth}px` }} />}
-              {valueLabel && valueLabelTop && <span data-chart-pnl-label data-chart-value-label className={`portfolio-realized-pnl-chart__value ${valueClass}`} style={{ top: valueLabelTop, fontSize: `${labelFontSize}px` }}>{valueLabel}</span>}
-              <span data-chart-period-label className="portfolio-realized-pnl-chart__month" style={{ fontSize: `${labelFontSize}px` }}>{bucket.label}</span>
+              {valueLabel && valueLabelTop && <span data-chart-pnl-label data-chart-value-label className={`portfolio-realized-pnl-chart__value ${valueClass}`} style={{ top: valueLabelTop, fontSize: uiTextCssPx(labelFontSize) }}>{valueLabel}</span>}
+              <span data-chart-period-label className="portfolio-realized-pnl-chart__month" style={{ fontSize: uiTextCssPx(labelFontSize) }}>{bucket.label}</span>
             </div>;
           })}
         </div>

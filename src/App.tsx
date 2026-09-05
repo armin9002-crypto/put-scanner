@@ -2,6 +2,8 @@ import { Suspense, lazy, useEffect, useState, type CSSProperties } from 'react';
 import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom';
 import { ScanLine, BarChart3, Moon, MoonStar, Sun, BookOpen, Star, Briefcase, Activity, Target } from 'lucide-react';
 import { ThemeProvider, useTheme } from './lib/theme';
+import { UiTextSizeProvider } from './lib/uiTextSize';
+import TextSizeControl from './components/TextSizeControl';
 import { AuthProvider } from './lib/auth';
 import { useResponsiveMode } from './lib/responsive';
 import AccountControl from './components/AccountControl';
@@ -72,7 +74,7 @@ function NavBar() {
             : 'Scanner';
 
     return (
-      <MobilePageHeader title={title} action={<div className="flex items-center"><ThemeToggle /><AccountControl /></div>} />
+      <MobilePageHeader title={title} action={<div className="flex items-center"><TextSizeControl /><ThemeToggle /><AccountControl /></div>} />
     );
   }
 
@@ -165,6 +167,7 @@ function NavBar() {
           </NavLink>
         </div>
         <div className="app-nav-utilities ml-auto flex flex-shrink-0 items-center">
+          <TextSizeControl />
           <ThemeToggle />
           <AccountControl />
         </div>
@@ -353,7 +356,7 @@ function LayoutDiagnosticsPanel() {
 function AppBody() {
   return (
     <ThemeProvider>
-      <AppContent />
+      <UiTextSizeProvider><AppContent /></UiTextSizeProvider>
     </ThemeProvider>
   );
 }
@@ -366,7 +369,7 @@ export default function App() {
     return (
       <ThemeProvider>
         <Suspense fallback={null}>
-          <DevAccountUiTestFixture requestedState={accountUiFixture} />
+          <UiTextSizeProvider><DevAccountUiTestFixture requestedState={accountUiFixture} /></UiTextSizeProvider>
         </Suspense>
       </ThemeProvider>
     );
