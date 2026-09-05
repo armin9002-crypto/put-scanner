@@ -169,6 +169,50 @@ test('Recommendations loads with zero market calls, refreshes through the bounde
   expect(consoleErrors, consoleErrors.join('\n')).toEqual([]);
 });
 
+test('production-scale Recommendations keeps painting through Decision, refreshes twice, and cancels without replacing the prior run', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop-1440x900', 'one deterministic production-scale responsiveness scenario');
+  test.setTimeout(180_000);
+  await page.unroute('**/api/**');
+  marketHarness = await installDeterministicMarketApi(page, { optionCount: 36 });
+  await page.addInitScript(() => {
+    const state = { beats: 0, maximumGapMs: 0, lastBeat: performance.now(), decisionPaints: 0 };
+    (window as typeof window & { __recommendationHeartbeat?: typeof state }).__recommendationHeartbeat = state;
+    window.setInterval(() => {
+      const now = performance.now();
+      state.maximumGapMs = Math.max(state.maximumGapMs, now - state.lastBeat);
+      state.lastBeat = now;
+      state.beats += 1;
+      if (document.body.textContent?.includes('Applying deterministic policy')) state.decisionPaints += 1;
+    }, 20);
+  });
+  await page.goto('/recommendations');
+
+  await page.getByRole('button', { name: 'Refresh Recommendations' }).click();
+  await expect(page.getByRole('button', { name: 'Applying deterministic policy' })).toBeVisible({ timeout: 120_000 });
+  await page.keyboard.press('Tab');
+  await expect(page.locator('.recommendations-verdict-strip')).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByRole('heading', { name: 'Full Opportunity Board / Audit' })).toBeVisible();
+  const firstUpdated = await page.locator('.recommendations-header-meta').textContent();
+  const heartbeat = await page.evaluate(() => (window as typeof window & { __recommendationHeartbeat: { beats: number; maximumGapMs: number; decisionPaints: number } }).__recommendationHeartbeat);
+  expect(heartbeat.beats).toBeGreaterThan(2);
+  expect(heartbeat.decisionPaints).toBeGreaterThan(0);
+
+  await page.getByRole('button', { name: 'Refresh Recommendations' }).click();
+  await expect(page.getByRole('button', { name: 'Applying deterministic policy' })).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByRole('button', { name: 'Refresh Recommendations' })).toBeVisible({ timeout: 120_000 });
+  await expect(page.locator('.recommendations-verdict-strip')).toBeVisible();
+
+  marketHarness.delays.set('screener-batch', 500);
+  await page.getByText('Only evaluate options ≥60 DTE').click();
+  await page.getByRole('button', { name: 'Refresh Recommendations' }).click();
+  await expect(page.getByRole('button', { name: 'Cancel' })).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.getByRole('button', { name: 'Refresh Recommendations' })).toBeVisible();
+  await expect(page.locator('.recommendations-header-meta')).toContainText(firstUpdated?.split(' · ')[0] ?? 'Updated');
+  await expect(page.locator('.recommendations-verdict-strip')).toBeVisible();
+  expect(consoleErrors, consoleErrors.join('\n')).toEqual([]);
+});
+
 test('Scanner filtering and exact-expiry navigation remain request-bounded', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop-1440x900', 'one deterministic desktop request-graph scenario');
   test.setTimeout(120_000);

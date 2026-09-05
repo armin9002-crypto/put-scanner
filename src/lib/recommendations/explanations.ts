@@ -63,7 +63,7 @@ export function buildCandidateExplanation(candidate: RecommendationCandidate): {
       ? `The ${pct(range.low)}–${pct(range.high)} indicative AY range reaches a ${pct(candidate.minimumAttractiveCredit.requiredAnnualizedYieldPct)} hurdle`
       : 'Pricing evidence does not establish qualifying seller compensation';
   const deltaEvidence = candidate.economics.delta == null ? 'unavailable Delta' : `${Math.abs(candidate.economics.delta).toFixed(2)} absolute Delta`;
-  const durationReason = candidate.comparisons.flatMap(comparison => comparison.reasonCodes)
+  const durationReason = candidate.comparisonSummary.reasonCodes
     .find(code => code === 'LONGER_DURATION_DEFENSIVE_VALUE' || code === 'SHORTER_DURATION_EFFICIENT');
   const technicalState = candidate.underlying.technicalAssessment.state;
   const technicalEvidence = technicalState === 'CONSTRUCTIVE_PULLBACK'
@@ -87,7 +87,7 @@ export function buildCandidateExplanation(candidate: RecommendationCandidate): {
           ? reasonCopy('COHERENT_PRICE_BRACKET')
           : reasonCopy('INSUFFICIENT_PRICE_DISCOVERY');
   const why = `${compensation}; ${deltaEvidence} and ${pct(candidate.economics.moneynessPct)} OTM are assessed against a ${candidate.underlying.setup.toLowerCase()} underlying setup. ${technicalEvidence} ${discoveryEvidence}${durationReason ? ` ${reasonCopy(durationReason)}` : ''}`;
-  const durationTradeoff = candidate.comparisons.flatMap(comparison => comparison.reasonCodes).find(code => code === 'DURATION_NOT_COMPENSATED');
+  const durationTradeoff = candidate.comparisonSummary.reasonCodes.find(code => code === 'DURATION_NOT_COMPENSATED');
   const tradeoff = reasonCopy(durationTradeoff ?? candidate.skeptic.code);
   return { why, tradeoff };
 }

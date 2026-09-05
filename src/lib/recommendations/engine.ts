@@ -9,7 +9,7 @@ import type { TradePosture } from '../marketRead/types.ts';
 import type { RecommendationPolicy } from './policy.ts';
 import { RECOMMENDATION_POLICY } from './policy.ts';
 import { assessUnderlyingUniverse } from './underlying.ts';
-import { discoverContractPricing } from './pricing.ts';
+import { discoverContractPricing, prepareRecommendationPricingChain, type PreparedRecommendationPricingChain } from './pricing.ts';
 import { assignRecommendationRanks, buildRankedRecommendationShortlist, compareRecommendationCandidates } from './ranking.ts';
 import { buildCandidateExplanation, buildNearMissText, reasonCopy } from './explanations.ts';
 import {
@@ -34,6 +34,14 @@ const BAND_RANK: Record<RecommendationBand, number> = { WEAK: 0, MIXED: 1, GOOD:
 const CONFIDENCE_RANK: Record<PricingConfidence, number> = { LOW: 0, MODERATE: 1, HIGH: 2 };
 const ACTIONABILITY_RANK: Record<Actionability, number> = { LOW: 0, MODERATE: 1, HIGH: 2 };
 const EVIDENCE_RANK: Record<RecommendationEvidenceQuality, number> = { LOW: 0, MODERATE: 1, HIGH: 2 };
+
+export interface RecommendationEngineDiagnostics {
+  phaseMs: Record<string, number>;
+  dominancePairVisits: number;
+  relativeHurdlePairVisits: number;
+  outrankingPairs: number;
+  rankFactorComputations: number;
+}
 
 function finitePositive(value: unknown): value is number {
   return isFiniteNumber(value) && value > 0;
@@ -153,8 +161,8 @@ function candidateEvidenceQuality(input: {
   return 'HIGH';
 }
 
-function chainFor(snapshot: RecommendationSnapshot, ticker: string, expiration: number) {
-  return snapshot.chains.find(chain => chain.ticker === ticker && chain.expiration === expiration)?.data ?? null;
+function chainKey(ticker: string, expiration: number): string {
+  return `${ticker.trim().toUpperCase()}|${expiration}`;
 }
 
 function initialPolicyChecks(input: {
@@ -189,12 +197,20 @@ function buildCandidate(
   row: RecommendationSnapshot['screenerRows'][number],
   underlying: UnderlyingAssessment,
   policy: RecommendationPolicy,
+  chainByKey: Map<string, RecommendationSnapshot['chains'][number]['data']>,
+  preparedPricingByKey: Map<string, PreparedRecommendationPricingChain>,
 ): RecommendationCandidate {
-  const chain = chainFor(snapshot, row.ticker, row.expDate);
+  const lookupKey = chainKey(row.ticker, row.expDate);
+  const chain = chainByKey.get(lookupKey) ?? null;
+  let prepared = preparedPricingByKey.get(`${lookupKey}|${row.dte}`);
+  if (chain && !prepared) {
+    prepared = prepareRecommendationPricingChain({ chain, dte: row.dte, asOf: snapshot.asOf });
+    preparedPricingByKey.set(`${lookupKey}|${row.dte}`, prepared);
+  }
   const validCore = finitePositive(row.currentPrice) && finitePositive(row.strike) && Number.isInteger(row.expDate) && row.expDate > 0 && Number.isInteger(row.dte) && row.dte > 0;
   const quoteCorrupt = row.bid != null && row.ask != null && row.bid > row.ask;
   const pricing = chain
-    ? discoverContractPricing({ strike: row.strike, dte: row.dte, chain, asOf: snapshot.asOf, policy })
+    ? discoverContractPricing({ strike: row.strike, dte: row.dte, chain, asOf: snapshot.asOf, policy, prepared })
     : {
       provenance: 'INSUFFICIENT_PRICING_EVIDENCE' as const,
       directBid: null,
@@ -277,6 +293,16 @@ function buildCandidate(
     dominatedBy: [],
     dominates: [],
     comparisons: [],
+    comparisonSummary: {
+      totalCount: 0,
+      retainedDetailCount: 0,
+      relationshipCounts: { OUTRANKS: 0, OUTRANKED_BY: 0, EFFECTIVE_TIE: 0, TRADEOFF: 0 },
+      retainedRelationshipCounts: { OUTRANKS: 0, OUTRANKED_BY: 0, EFFECTIVE_TIE: 0, TRADEOFF: 0 },
+      outranksCandidateIds: [],
+      outrankedByCandidateIds: [],
+      reasonCodes: [],
+      outrankedByReasonCodes: [],
+    },
     skeptic: { code: 'DOWNSIDE_TAIL_RISK', message: reasonCopy('DOWNSIDE_TAIL_RISK'), veto: false },
     robustness: { classification: 'LOW', stableScenarios: 0, totalScenarios: 0, reasonCodes: [] },
     verdict: 'PASS',
@@ -317,27 +343,53 @@ function materialDominates(left: RecommendationCandidate, right: RecommendationC
   return noDisadvantage && advantage;
 }
 
-function applyDominanceAndRelativeHurdles(candidates: RecommendationCandidate[], policy: RecommendationPolicy): void {
-  for (const left of candidates) {
-    for (const right of candidates) {
-      if (left.id === right.id || !materialDominates(left, right, policy)) continue;
-      if (!right.dominatedBy.includes(left.id)) right.dominatedBy.push(left.id);
-      if (!left.dominates.includes(right.id)) left.dominates.push(right.id);
+function applyDominanceAndRelativeHurdles(candidates: RecommendationCandidate[], policy: RecommendationPolicy, diagnostics?: RecommendationEngineDiagnostics): void {
+  const candidatesByTicker = new Map<string, RecommendationCandidate[]>();
+  candidates.forEach(candidate => {
+    const group = candidatesByTicker.get(candidate.ticker) ?? [];
+    group.push(candidate);
+    candidatesByTicker.set(candidate.ticker, group);
+  });
+  const comparableWindowByCandidate = new Map<string, { group: RecommendationCandidate[]; start: number; end: number }>();
+  candidatesByTicker.forEach(group => {
+    let start = 0;
+    let end = 0;
+    group.forEach((candidate, index) => {
+      while (candidate.dte - group[start].dte > policy.comparison.similarDteDays) start += 1;
+      if (end < index + 1) end = index + 1;
+      while (end < group.length && group[end].dte - candidate.dte <= policy.comparison.similarDteDays) end += 1;
+      comparableWindowByCandidate.set(candidate.id, { group, start, end });
+    });
+  });
+  for (const group of candidatesByTicker.values()) {
+    for (const left of group) {
+      const window = comparableWindowByCandidate.get(left.id) as { group: RecommendationCandidate[]; start: number; end: number };
+      for (let index = window.start; index < window.end; index += 1) {
+        const right = window.group[index];
+        if (diagnostics) diagnostics.dominancePairVisits += 1;
+        if (left.id === right.id || !materialDominates(left, right, policy)) continue;
+        if (!right.dominatedBy.includes(left.id)) right.dominatedBy.push(left.id);
+        if (!left.dominates.includes(right.id)) left.dominates.push(right.id);
+      }
     }
   }
   candidates.forEach(candidate => {
     const candidateDelta = candidate.economics.delta == null ? null : Math.abs(candidate.economics.delta);
     const candidateCushion = candidate.economics.breakevenCushionAtBasis;
-    const safer = candidates.filter(other => {
-      if (other.id === candidate.id || !comparable(candidate, other, policy)) return false;
-      if (!blockingPolicyChecksPass(other)) return false;
+    const window = comparableWindowByCandidate.get(candidate.id) as { group: RecommendationCandidate[]; start: number; end: number };
+    const safer: RecommendationCandidate[] = [];
+    for (let index = window.start; index < window.end; index += 1) {
+      const other = window.group[index];
+      if (diagnostics) diagnostics.relativeHurdlePairVisits += 1;
+      if (other.id === candidate.id || !comparable(candidate, other, policy)) continue;
+      if (!blockingPolicyChecksPass(other)) continue;
       const otherAy = candidateAnnualizedYieldPct(other);
       const otherDelta = other.economics.delta == null ? null : Math.abs(other.economics.delta);
       const otherCushion = other.economics.breakevenCushionAtBasis;
-      if (otherAy == null || candidateDelta == null || otherDelta == null || candidateCushion == null || otherCushion == null) return false;
-      return otherDelta <= candidateDelta - policy.comparison.materialDeltaDifference
-        || otherCushion >= candidateCushion + policy.comparison.materialCushionDifference;
-    });
+      if (otherAy == null || candidateDelta == null || otherDelta == null || candidateCushion == null || otherCushion == null) continue;
+      if (otherDelta <= candidateDelta - policy.comparison.materialDeltaDifference
+        || otherCushion >= candidateCushion + policy.comparison.materialCushionDifference) safer.push(other);
+    }
     const frontierRequiredAy = safer.reduce((maximum, other) => {
       const ay = candidateAnnualizedYieldPct(other);
       return ay == null ? maximum : Math.max(maximum, ay / 100 + policy.compensation.relativeRiskAnnualizedYieldPremium);
@@ -353,6 +405,36 @@ function applyDominanceAndRelativeHurdles(candidates: RecommendationCandidate[],
     const ay = candidateAnnualizedYieldPct(candidate);
     candidate.lenses.compensation = compensationBand(ay, candidate.minimumAttractiveCredit.requiredAnnualizedYieldPct, policy);
   });
+}
+
+const MAX_RETAINED_COMPARISON_DETAILS_PER_RELATIONSHIP = 2;
+
+function comparisonDetailPriority(comparison: CandidateComparison): number {
+  if (comparison.reasonCodes.some(code => code === 'LONGER_DURATION_DEFENSIVE_VALUE' || code === 'SHORTER_DURATION_EFFICIENT' || code === 'DURATION_NOT_COMPENSATED')) return 3;
+  if (comparison.relationship === 'OUTRANKS' || comparison.relationship === 'OUTRANKED_BY') return 2;
+  if (comparison.relationship === 'EFFECTIVE_TIE') return 1;
+  return 0;
+}
+
+function recordCandidateComparison(candidate: RecommendationCandidate, comparison: CandidateComparison): void {
+  const summary = candidate.comparisonSummary;
+  summary.totalCount += 1;
+  summary.relationshipCounts[comparison.relationship] += 1;
+  if (comparison.relationship === 'OUTRANKS') summary.outranksCandidateIds.push(comparison.otherCandidateId);
+  if (comparison.relationship === 'OUTRANKED_BY') summary.outrankedByCandidateIds.push(comparison.otherCandidateId);
+  comparison.reasonCodes.forEach(code => {
+    if (!summary.reasonCodes.includes(code)) summary.reasonCodes.push(code);
+    if (comparison.relationship === 'OUTRANKED_BY' && !summary.outrankedByReasonCodes.includes(code)) summary.outrankedByReasonCodes.push(code);
+  });
+  const retainedForRelationship = summary.retainedRelationshipCounts[comparison.relationship];
+  if (retainedForRelationship < MAX_RETAINED_COMPARISON_DETAILS_PER_RELATIONSHIP) {
+    candidate.comparisons.push(comparison);
+    summary.retainedRelationshipCounts[comparison.relationship] += 1;
+  } else if (comparisonDetailPriority(comparison) === 3) {
+    const replaceIndex = candidate.comparisons.findIndex(retained => retained.relationship === comparison.relationship && comparisonDetailPriority(retained) < 3);
+    if (replaceIndex >= 0) candidate.comparisons[replaceIndex] = comparison;
+  }
+  summary.retainedDetailCount = candidate.comparisons.length;
 }
 
 function riskPolicyClears(candidate: RecommendationCandidate, posture: TradePosture, deltaTolerance = 0, cushionTolerance = 0): boolean {
@@ -412,7 +494,7 @@ function classifyRobustness(candidate: RecommendationCandidate, snapshot: Recomm
     : share >= policy.robustness.moderateMinimumStableShare
       ? 'MODERATE'
       : 'LOW';
-  const effectiveTie = candidate.comparisons.some(comparison => comparison.relationship === 'EFFECTIVE_TIE');
+  const effectiveTie = candidate.comparisonSummary.relationshipCounts.EFFECTIVE_TIE > 0;
   if (effectiveTie && classification === 'HIGH') classification = 'MODERATE';
   return {
     classification,
@@ -439,9 +521,9 @@ function selectSkeptic(candidate: RecommendationCandidate, snapshot: Recommendat
     code = candidate.economics.delta == null ? 'MISSING_DELTA' : 'INSUFFICIENT_CUSHION';
     veto = true;
   } else if (candidate.dominatedBy.length > 0) {
-    code = candidate.comparisons.some(comparison => comparison.reasonCodes.includes('DURATION_NOT_COMPENSATED'))
+    code = candidate.comparisonSummary.reasonCodes.includes('DURATION_NOT_COMPENSATED')
       ? 'DURATION_NOT_COMPENSATED'
-      : candidate.comparisons.some(comparison => comparison.reasonCodes.includes('LONGER_DURATION_DEFENSIVE_VALUE'))
+      : candidate.comparisonSummary.reasonCodes.includes('LONGER_DURATION_DEFENSIVE_VALUE')
         ? 'LONGER_DURATION_DEFENSIVE_VALUE'
         : 'POOR_RELATIVE_VALUE';
     veto = true;
@@ -454,7 +536,7 @@ function selectSkeptic(candidate: RecommendationCandidate, snapshot: Recommendat
   } else if (candidate.pricing.confidence === 'LOW') {
     code = 'PRICING_UNCERTAINTY';
     veto = true;
-  } else if (candidate.comparisons.some(comparison => comparison.relationship === 'EFFECTIVE_TIE')) {
+  } else if (candidate.comparisonSummary.relationshipCounts.EFFECTIVE_TIE > 0) {
     code = 'NO_CLEAR_LEADER';
   } else if (candidate.pricing.actionability === 'LOW') {
     code = 'WEAK_ACTIONABILITY';
@@ -555,10 +637,13 @@ function comparisonReasonCodes(
   return reasonCodes.length > 0 ? reasonCodes : ['MARGINAL_COMPENSATION'];
 }
 
-function applyOutranking(candidates: RecommendationCandidate[], snapshot: RecommendationSnapshot, policy: RecommendationPolicy): void {
+function applyOutranking(candidates: RecommendationCandidate[], snapshot: RecommendationSnapshot, policy: RecommendationPolicy, diagnostics?: RecommendationEngineDiagnostics): Set<string> {
   const finalists = candidates.filter(candidate => isSeriousFinalist(candidate, snapshot));
+  const effectiveTiePairs = new Set<string>();
+  const pairKey = (left: RecommendationCandidate, right: RecommendationCandidate) => left.id < right.id ? `${left.id}\n${right.id}` : `${right.id}\n${left.id}`;
   for (let leftIndex = 0; leftIndex < finalists.length; leftIndex += 1) {
     for (let rightIndex = leftIndex + 1; rightIndex < finalists.length; rightIndex += 1) {
+      if (diagnostics) diagnostics.outrankingPairs += 1;
       const left = finalists[leftIndex];
       const right = finalists[rightIndex];
       const leftFacts = dimensionFacts(left, right, policy);
@@ -588,8 +673,8 @@ function applyOutranking(candidates: RecommendationCandidate[], snapshot: Recomm
           shorterFacts.disadvantages.push('less defensive value than the longer tenor');
           if (!shorter.dominatedBy.includes(longer.id)) shorter.dominatedBy.push(longer.id);
           if (!longer.dominates.includes(shorter.id)) longer.dominates.push(shorter.id);
-          longer.comparisons.push({ otherCandidateId: shorter.id, relationship: 'OUTRANKS', reasonCodes: ['LONGER_DURATION_DEFENSIVE_VALUE'], ...longerFacts });
-          shorter.comparisons.push({ otherCandidateId: longer.id, relationship: 'OUTRANKED_BY', reasonCodes: ['LONGER_DURATION_DEFENSIVE_VALUE', 'POOR_RELATIVE_VALUE'], ...shorterFacts });
+          recordCandidateComparison(longer, { otherCandidateId: shorter.id, relationship: 'OUTRANKS', reasonCodes: ['LONGER_DURATION_DEFENSIVE_VALUE'], ...longerFacts });
+          recordCandidateComparison(shorter, { otherCandidateId: longer.id, relationship: 'OUTRANKED_BY', reasonCodes: ['LONGER_DURATION_DEFENSIVE_VALUE', 'POOR_RELATIVE_VALUE'], ...shorterFacts });
           continue;
         }
         if (!durationCompensatedByYield && !defensiveGain) {
@@ -597,15 +682,15 @@ function applyOutranking(candidates: RecommendationCandidate[], snapshot: Recomm
           longerFacts.disadvantages.push('longer duration is not compensated by yield or defensive value');
           if (!longer.dominatedBy.includes(shorter.id)) longer.dominatedBy.push(shorter.id);
           if (!shorter.dominates.includes(longer.id)) shorter.dominates.push(longer.id);
-          shorter.comparisons.push({ otherCandidateId: longer.id, relationship: 'OUTRANKS', reasonCodes: ['SHORTER_DURATION_EFFICIENT'], ...shorterFacts });
-          longer.comparisons.push({ otherCandidateId: shorter.id, relationship: 'OUTRANKED_BY', reasonCodes: ['DURATION_NOT_COMPENSATED', 'POOR_RELATIVE_VALUE'], ...longerFacts });
+          recordCandidateComparison(shorter, { otherCandidateId: longer.id, relationship: 'OUTRANKS', reasonCodes: ['SHORTER_DURATION_EFFICIENT'], ...shorterFacts });
+          recordCandidateComparison(longer, { otherCandidateId: shorter.id, relationship: 'OUTRANKED_BY', reasonCodes: ['DURATION_NOT_COMPENSATED', 'POOR_RELATIVE_VALUE'], ...longerFacts });
           continue;
         }
         const durationFact = `${longer.dte - shorter.dte}-day tenor difference carries explicit duration tradeoffs`;
         shorterFacts.disadvantages.push(durationFact);
         longerFacts.disadvantages.push(durationFact);
-        shorter.comparisons.push({ otherCandidateId: longer.id, relationship: 'TRADEOFF', reasonCodes: ['MARGINAL_COMPENSATION'], ...shorterFacts });
-        longer.comparisons.push({ otherCandidateId: shorter.id, relationship: 'TRADEOFF', reasonCodes: ['HIGHER_COMPENSATION_JUSTIFIED'], ...longerFacts });
+        recordCandidateComparison(shorter, { otherCandidateId: longer.id, relationship: 'TRADEOFF', reasonCodes: ['MARGINAL_COMPENSATION'], ...shorterFacts });
+        recordCandidateComparison(longer, { otherCandidateId: shorter.id, relationship: 'TRADEOFF', reasonCodes: ['HIGHER_COMPENSATION_JUSTIFIED'], ...longerFacts });
         continue;
       }
       if (materiallyDifferentDte) {
@@ -620,6 +705,7 @@ function applyOutranking(candidates: RecommendationCandidate[], snapshot: Recomm
       if (leftFacts.advantages.length === 0 && leftFacts.disadvantages.length === 0) {
         leftRelationship = 'EFFECTIVE_TIE';
         rightRelationship = 'EFFECTIVE_TIE';
+        effectiveTiePairs.add(pairKey(left, right));
       } else if (!materiallyDifferentDte && leftFacts.advantages.length >= 2 && !leftCriticalDisadvantage) {
         leftRelationship = 'OUTRANKS';
         rightRelationship = 'OUTRANKED_BY';
@@ -627,10 +713,11 @@ function applyOutranking(candidates: RecommendationCandidate[], snapshot: Recomm
         leftRelationship = 'OUTRANKED_BY';
         rightRelationship = 'OUTRANKS';
       }
-      left.comparisons.push({ otherCandidateId: right.id, relationship: leftRelationship, reasonCodes: comparisonReasonCodes(leftRelationship, leftFacts), ...leftFacts });
-      right.comparisons.push({ otherCandidateId: left.id, relationship: rightRelationship, reasonCodes: comparisonReasonCodes(rightRelationship, rightFacts), ...rightFacts });
+      recordCandidateComparison(left, { otherCandidateId: right.id, relationship: leftRelationship, reasonCodes: comparisonReasonCodes(leftRelationship, leftFacts), ...leftFacts });
+      recordCandidateComparison(right, { otherCandidateId: left.id, relationship: rightRelationship, reasonCodes: comparisonReasonCodes(rightRelationship, rightFacts), ...rightFacts });
     }
   }
+  return effectiveTiePairs;
 }
 
 function buildDecisionTrace(
@@ -681,7 +768,7 @@ function buildDecisionTrace(
     const reasons = new Set<RecommendationReasonCode>();
     candidate.policyChecks.filter(check => check.severity === 'BLOCKING' && !check.passed).forEach(check => reasons.add(check.code));
     candidate.pricing.surface.reasonCodes.filter(code => pricingRejectionCodes.has(code)).forEach(code => reasons.add(code));
-    candidate.comparisons.filter(comparison => comparison.relationship === 'OUTRANKED_BY').forEach(comparison => comparison.reasonCodes.forEach(code => reasons.add(code)));
+    candidate.comparisonSummary.outrankedByReasonCodes.forEach(code => reasons.add(code));
     candidate.robustness.reasonCodes.forEach(code => reasons.add(code));
     if (candidate.skeptic.veto || (candidate.verdict !== 'ACTIONABLE' && candidate.verdict !== 'CONDITIONAL')) reasons.add(candidate.skeptic.code);
     if (policySurvivors.includes(candidate) && !surfacedCandidateIds.has(candidate.id)) reasons.add('SHORTLIST_CAP');
@@ -697,13 +784,21 @@ function buildDecisionTrace(
 export function runRecommendationEngine(
   snapshot: RecommendationSnapshot,
   policy: RecommendationPolicy = RECOMMENDATION_POLICY,
+  diagnostics?: RecommendationEngineDiagnostics,
 ): RecommendationRun {
   if (snapshot.engineVersion !== RECOMMENDATION_ENGINE_VERSION || snapshot.policyVersion !== RECOMMENDATION_POLICY_VERSION || policy.version !== RECOMMENDATION_POLICY_VERSION) {
     throw new Error('Unsupported recommendation engine or policy version.');
   }
+  let phaseStarted = performance.now();
+  const recordPhase = (name: string) => {
+    if (diagnostics) diagnostics.phaseMs[name] = performance.now() - phaseStarted;
+    phaseStarted = performance.now();
+  };
   const underlyingAssessments = assessUnderlyingUniverse(snapshot.underlyings, snapshot.market.regime, policy);
   const universe = snapshot.universe ?? recommendationUniverse(false);
   const underlyingByTicker = new Map(underlyingAssessments.map(assessment => [assessment.ticker, assessment]));
+  const chainByKey = new Map(snapshot.chains.map(chain => [chainKey(chain.ticker, chain.expiration), chain.data]));
+  const preparedPricingByKey = new Map<string, PreparedRecommendationPricingChain>();
   const seenContracts = new Set<string>();
   const candidates = [...snapshot.screenerRows]
     .filter(row => row.dte >= universe.minimumDte && row.dte <= universe.maximumDte)
@@ -713,11 +808,14 @@ export function runRecommendationEngine(
       if (seenContracts.has(id)) return [];
       seenContracts.add(id);
       const underlying = underlyingByTicker.get(row.ticker);
-      return underlying ? [buildCandidate(snapshot, row, underlying, policy)] : [];
+      return underlying ? [buildCandidate(snapshot, row, underlying, policy, chainByKey, preparedPricingByKey)] : [];
     });
+  recordPhase('candidateConstruction');
 
-  applyDominanceAndRelativeHurdles(candidates, policy);
-  applyOutranking(candidates, snapshot, policy);
+  applyDominanceAndRelativeHurdles(candidates, policy, diagnostics);
+  recordPhase('dominanceAndRelativeHurdles');
+  const effectiveTiePairs = applyOutranking(candidates, snapshot, policy, diagnostics);
+  recordPhase('outranking');
   candidates.forEach(candidate => {
     candidate.skeptic = selectSkeptic(candidate, snapshot);
     candidate.robustness = classifyRobustness(candidate, snapshot, policy);
@@ -747,8 +845,14 @@ export function runRecommendationEngine(
     candidate.why = copy.why;
     candidate.tradeoff = copy.tradeoff;
   });
-  assignRecommendationRanks(candidates);
-  const selection = buildRankedRecommendationShortlist(candidates, policy);
+  recordPhase('robustnessSkepticVerdict');
+  assignRecommendationRanks(candidates, diagnostics);
+  recordPhase('rankAssignment');
+  const selection = buildRankedRecommendationShortlist(candidates, policy, (leftId, rightId) => {
+    const key = leftId < rightId ? `${leftId}\n${rightId}` : `${rightId}\n${leftId}`;
+    return effectiveTiePairs.has(key);
+  });
+  recordPhase('shortlist');
   if (selection.noClearLeader) {
     candidates.filter(candidate => candidate.verdict === 'ACTIONABLE' || candidate.verdict === 'CONDITIONAL').forEach(candidate => {
       if (!candidate.tradeoffReasonCodes.includes('NO_CLEAR_LEADER')) candidate.tradeoffReasonCodes.push('NO_CLEAR_LEADER');
@@ -778,12 +882,18 @@ export function runRecommendationEngine(
     })
     .slice(0, 3)
     .map(candidate => ({ candidateId: candidate.id, reasonCode: candidate.skeptic.code, text: buildNearMissText(candidate) }));
+  const rankedCandidatesByTicker = new Map<string, RecommendationCandidate[]>();
+  candidates.forEach(candidate => {
+    const group = rankedCandidatesByTicker.get(candidate.ticker) ?? [];
+    group.push(candidate);
+    rankedCandidatesByTicker.set(candidate.ticker, group);
+  });
   const frontiers = [...new Set(underlyingAssessments.map(assessment => assessment.ticker))]
     .sort()
     .map(ticker => ({
       ticker,
-      candidateIds: candidates
-        .filter(candidate => candidate.ticker === ticker && candidate.dominatedBy.length === 0)
+      candidateIds: (rankedCandidatesByTicker.get(ticker) ?? [])
+        .filter(candidate => candidate.dominatedBy.length === 0)
         .sort(compareRecommendationCandidates)
         .map(candidate => candidate.id),
     }));
@@ -791,6 +901,7 @@ export function runRecommendationEngine(
   if (!hasOpportunities) reasonCodes.push('WEAK_OPPORTUNITY_SET');
   if (selection.noClearLeader) reasonCodes.push('NO_CLEAR_LEADER');
   const decisionTrace = buildDecisionTrace(snapshot, candidates, selection, policy);
+  recordPhase('frontiersAndDecisionTrace');
 
   return {
     engineVersion: RECOMMENDATION_ENGINE_VERSION,

@@ -110,6 +110,22 @@ function statusLabel(progress: RecommendationRefreshProgress): string {
   return 'Applying deterministic policy';
 }
 
+function serializeRecommendationRun(run: RecommendationRun): Promise<Blob> {
+  if (typeof Worker === 'undefined') return Promise.resolve(new Blob([`${JSON.stringify(run, null, 2)}\n`], { type: 'application/json' }));
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL('../lib/recommendations/export.worker.ts', import.meta.url), { type: 'module' });
+    worker.onmessage = (event: MessageEvent<Blob>) => {
+      worker.terminate();
+      resolve(event.data);
+    };
+    worker.onerror = event => {
+      worker.terminate();
+      reject(new Error(event.message || 'Recommendation export failed.'));
+    };
+    worker.postMessage({ run });
+  });
+}
+
 function VerdictBadge({ verdict }: { verdict: CandidateVerdict }) {
   return <span className="recommendation-verdict-badge" data-verdict={verdict}>{verdict}</span>;
 }
@@ -311,6 +327,13 @@ export default function RecommendationsPage() {
     }
   }, [onlyEvaluateAtLeast60Dte]);
 
+  const handleCancel = useCallback(() => {
+    refreshGateRef.current.cancel();
+    setLoading(false);
+    setError('');
+    setProgress({ stage: 'UNDERLYINGS', completed: 0, total: 0 });
+  }, []);
+
   const candidateById = useMemo(() => new Map(run?.candidates.map(candidate => [candidate.id, candidate]) ?? []), [run]);
   const surfaced = useMemo(() => {
     const seen = new Set<string>();
@@ -332,15 +355,19 @@ export default function RecommendationsPage() {
     setWatchIds(new Set(stored.map(saved => saved.id)));
   }, [watchIds]);
 
-  const exportSnapshot = useCallback(() => {
+  const exportSnapshot = useCallback(async () => {
     if (!run) return;
-    const blob = new Blob([`${JSON.stringify(run, null, 2)}\n`], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `put-scanner-recommendations-v${run.engineVersion}-${run.asOf.slice(0, 10)}.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+    try {
+      const blob = await serializeRecommendationRun(run);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `put-scanner-recommendations-v${run.engineVersion}-${run.asOf.slice(0, 10)}.json`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (exportError) {
+      setError(exportError instanceof Error ? exportError.message : 'Recommendation export failed.');
+    }
   }, [run]);
 
   const openContract = (candidate: RecommendationCandidate) => {
@@ -371,7 +398,7 @@ export default function RecommendationsPage() {
           title="Recommendations"
           description="A deterministic, skeptical market assessment that is comfortable returning no trade."
           meta={run ? <div className="recommendations-header-meta"><span>Updated {formatDateTime(Date.parse(run.asOf))}</span><span>{run.coverage.trackedUnderlyings.length} tracked → {run.coverage.requestedForOptionScan.length} qualified → {run.coverage.contractsEvaluated.toLocaleString()} contracts → {surfaced.length} surfaced</span></div> : <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>No market scan runs on page load.</span>}
-          actions={<div className="recommendations-header-actions"><button type="button" className="button-secondary recommendations-methodology-trigger" onClick={() => setShowMethodology(true)} disabled={!run}><Info className="h-4 w-4" />Methodology</button><label className="recommendations-dte-toggle"><input type="checkbox" checked={onlyEvaluateAtLeast60Dte} onChange={event => updateMinimumDtePreference(event.target.checked)} /><span>Only evaluate options ≥60 DTE</span></label><button type="button" className="button-primary" onClick={() => void handleRefresh()}>{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}{loading ? statusLabel(progress) : 'Refresh Recommendations'}</button></div>}
+          actions={<div className="recommendations-header-actions"><button type="button" className="button-secondary recommendations-methodology-trigger" onClick={() => setShowMethodology(true)} disabled={!run}><Info className="h-4 w-4" />Methodology</button><label className="recommendations-dte-toggle"><input type="checkbox" checked={onlyEvaluateAtLeast60Dte} onChange={event => updateMinimumDtePreference(event.target.checked)} /><span>Only evaluate options ≥60 DTE</span></label><button type="button" className="button-primary" onClick={() => void handleRefresh()} disabled={loading}>{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}{loading ? statusLabel(progress) : 'Refresh Recommendations'}</button>{loading && <button type="button" className="button-secondary" onClick={handleCancel}>Cancel</button>}</div>}
         />
 
         {error && <div role="alert" className="mb-3 flex items-start gap-2 rounded-lg border p-3 text-sm" style={{ color: 'var(--yellow)', borderColor: 'color-mix(in srgb, var(--yellow) 35%, var(--border))', backgroundColor: 'var(--surface)' }}><AlertTriangle className="mt-0.5 h-4 w-4 flex-none" /><div><strong>Refresh failed.</strong> {error} Successful prior in-memory results remain unchanged.</div></div>}

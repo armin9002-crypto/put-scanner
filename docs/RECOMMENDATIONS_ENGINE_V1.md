@@ -121,3 +121,11 @@ Pricing tests cover: a 422-calendar-day/>60-session exact trade without proxy; o
 Ranking tests cover: 8–15 surfaces when qualified, the 15 cap, no minimum/two returns two, determinism, verdict order, price discovery before AY, veto preservation, duplicate removal, tier-bounded diversity, badge independence, and all Opportunity Board sorts/representatives.
 
 The complete project verification includes unit/integration tests, request ledger, responsive checks, build/lint, workflow E2E, and the request-free Recommendations visual matrix across Dark, Dark Blue, Light, and Sepia at desktop, tablet, portrait, and landscape viewports.
+
+## Refresh stability representation
+
+Refresh keeps the same acquisition universe and financial policy. Candidate construction indexes each ticker/expiration chain once and reuses immutable prepared pricing evidence. Dominance and relative hurdles are evaluated only inside the exact same-ticker/similar-DTE comparison windows; global cross-underlying finalist outranking remains intact.
+
+Every finalist relationship is still counted. Complete `OUTRANKS` and `OUTRANKED_BY` candidate IDs, aggregate relationship counts, and decision reason-code sets are exported on `comparisonSummary`. The rich prose/fact payload in `comparisons` is a deterministic evidence sample capped at two records per relationship type, with cross-duration decision evidence preferred. This avoids retaining a rich object twice for every global pair while keeping rank, robustness, skeptic, verdict, Decision Trace, and surfaced output equivalent.
+
+The deterministic decision engine and full-run export serialization execute in dedicated workers after the Decision progress state receives a browser paint opportunity. Cancel terminates the active generation and retains the last successful run. No provider request, cache, DTE, threshold, or explanation policy is changed.

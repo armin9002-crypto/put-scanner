@@ -209,6 +209,17 @@ export interface CandidateComparison {
   disadvantages: string[];
 }
 
+export interface CandidateComparisonSummary {
+  totalCount: number;
+  retainedDetailCount: number;
+  relationshipCounts: Record<CandidateComparison['relationship'], number>;
+  retainedRelationshipCounts: Record<CandidateComparison['relationship'], number>;
+  outranksCandidateIds: string[];
+  outrankedByCandidateIds: string[];
+  reasonCodes: RecommendationReasonCode[];
+  outrankedByReasonCodes: RecommendationReasonCode[];
+}
+
 export interface RecommendationCandidate {
   id: string;
   ticker: string;
@@ -256,6 +267,7 @@ export interface RecommendationCandidate {
   dominatedBy: string[];
   dominates: string[];
   comparisons: CandidateComparison[];
+  comparisonSummary: CandidateComparisonSummary;
   skeptic: { code: RecommendationReasonCode; message: string; veto: boolean };
   robustness: {
     classification: RobustnessClassification;

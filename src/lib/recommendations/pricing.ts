@@ -35,6 +35,16 @@ export function recommendationTradingSessionAge(lastTradeDate: number | null | u
   return elapsedUsEquityTradingSessions(tradeDate, evaluationDate);
 }
 
+type BasePriceEvidence = Omit<PriceNeighborEvidence, 'side' | 'strikeDistanceRatio' | 'recentTransaction'>;
+
+export interface PreparedRecommendationPricingChain {
+  options: OptionContract[];
+  optionIndexByStrike: Map<number, number>;
+  evidenceByStrike: Map<number, BasePriceEvidence>;
+  ageMs: number | null;
+  source: string;
+}
+
 function transactionRecency(age: number | null, policy: RecommendationPolicy): TransactionRecency {
   if (age == null) return 'UNAVAILABLE';
   if (age <= policy.pricing.recentTransactionMaximumTradingSessions) return 'RECENT';
@@ -73,35 +83,24 @@ function dedupeByStrike(options: readonly OptionContract[]): OptionContract[] {
     .map(([, duplicates]) => [...duplicates].sort(compareQuality)[0]);
 }
 
-function evidenceFor(
+function baseEvidenceFor(
   option: OptionContract,
-  side: PriceNeighborEvidence['side'],
   chain: OptionsChainData,
   dte: number,
   asOf: string,
-  candidateStrike: number,
-  policy: RecommendationPolicy,
-): PriceNeighborEvidence {
+): BasePriceEvidence {
   const bid = quote(option.bid);
   const ask = quote(option.ask);
   const last = quote(option.last);
   const lastTradeDate = positiveQuote(option.lastTradeDate);
   const tradingSessionAge = recommendationTradingSessionAge(lastTradeDate, asOf);
-  const strikeDistanceRatio = Math.abs(option.strike - candidateStrike) / candidateStrike;
   return {
     strike: option.strike,
-    side,
     bid,
     ask,
     last,
     lastTradeDate,
     tradingSessionAge,
-    strikeDistanceRatio,
-    recentTransaction: side !== 'CANDIDATE'
-      && last != null
-      && tradingSessionAge != null
-      && tradingSessionAge <= policy.pricing.recentTransactionMaximumTradingSessions
-      && strikeDistanceRatio <= policy.pricing.maximumNearbyStrikeDistanceRatio,
     delta: resolvePutDelta({
       providerDelta: option.delta,
       underlyingPrice: chain.currentPrice,
@@ -113,6 +112,25 @@ function evidenceFor(
     openInterest: quote(option.openInterest),
     volume: quote(option.volume),
     spreadPercent: calculateBidAskSpreadPercent(bid, ask),
+  };
+}
+
+function evidenceFor(
+  base: BasePriceEvidence,
+  side: PriceNeighborEvidence['side'],
+  candidateStrike: number,
+  policy: RecommendationPolicy,
+): PriceNeighborEvidence {
+  const strikeDistanceRatio = Math.abs(base.strike - candidateStrike) / candidateStrike;
+  return {
+    ...base,
+    side,
+    strikeDistanceRatio,
+    recentTransaction: side !== 'CANDIDATE'
+      && base.last != null
+      && base.tradingSessionAge != null
+      && base.tradingSessionAge <= policy.pricing.recentTransactionMaximumTradingSessions
+      && strikeDistanceRatio <= policy.pricing.maximumNearbyStrikeDistanceRatio,
   };
 }
 
@@ -160,6 +178,21 @@ function chainAgeMs(chain: OptionsChainData, asOf: string): number | null {
   const asOfMs = Date.parse(asOf);
   if (!isFiniteNumber(fetchedAt) || !Number.isFinite(asOfMs)) return null;
   return Math.max(0, asOfMs - fetchedAt);
+}
+
+export function prepareRecommendationPricingChain(input: {
+  chain: OptionsChainData;
+  dte: number;
+  asOf: string;
+}): PreparedRecommendationPricingChain {
+  const options = dedupeByStrike(input.chain.puts);
+  return {
+    options,
+    optionIndexByStrike: new Map(options.map((option, index) => [option.strike, index])),
+    evidenceByStrike: new Map(options.map(option => [option.strike, baseEvidenceFor(option, input.chain, input.dte, input.asOf)])),
+    ageMs: chainAgeMs(input.chain, input.asOf),
+    source: input.chain.chainMeta?.source ?? 'unknown',
+  };
 }
 
 function indicativeRange(input: {
@@ -212,12 +245,15 @@ export function discoverContractPricing(input: {
   chain: OptionsChainData;
   asOf: string;
   policy?: RecommendationPolicy;
+  prepared?: PreparedRecommendationPricingChain;
 }): RecommendationPricing {
   const policy = input.policy ?? RECOMMENDATION_POLICY;
-  const options = dedupeByStrike(input.chain.puts);
-  const option = options.find(contract => contract.strike === input.strike);
-  const ageMs = chainAgeMs(input.chain, input.asOf);
-  const source = input.chain.chainMeta?.source ?? 'unknown';
+  const prepared = input.prepared ?? prepareRecommendationPricingChain(input);
+  const options = prepared.options;
+  const optionIndex = prepared.optionIndexByStrike.get(input.strike);
+  const option = optionIndex == null ? undefined : options[optionIndex];
+  const ageMs = prepared.ageMs;
+  const source = prepared.source;
   const chainStale = source === 'stale'
     || input.chain.chainMeta?.freshness === 'stale'
     || (ageMs != null && ageMs > policy.pricing.maximumStaleAgeMs);
@@ -227,7 +263,7 @@ export function discoverContractPricing(input: {
     source,
     stale: chainStale,
   };
-  if (!option) {
+  if (optionIndex == null || !option) {
     return {
       provenance: 'INSUFFICIENT_PRICING_EVIDENCE', directBid: null, directAsk: null, last: null, lastTradeDate: null,
       exactTradeSessionAge: null, exactTradeRecency: 'UNAVAILABLE', discoveryTier: 'INSUFFICIENT_PRICE_DISCOVERY', nearbyTransactionProxy: 'NONE',
@@ -237,15 +273,14 @@ export function discoverContractPricing(input: {
     };
   }
 
-  const candidate = evidenceFor(option, 'CANDIDATE', input.chain, input.dte, input.asOf, input.strike, policy);
+  const candidate = evidenceFor(prepared.evidenceByStrike.get(option.strike) as BasePriceEvidence, 'CANDIDATE', input.strike, policy);
   const lowerEvidence = options
-    .filter(contract => contract.strike < input.strike)
-    .sort((left, right) => right.strike - left.strike)
-    .map(contract => evidenceFor(contract, 'LOWER', input.chain, input.dte, input.asOf, input.strike, policy));
+    .slice(0, optionIndex)
+    .reverse()
+    .map(contract => evidenceFor(prepared.evidenceByStrike.get(contract.strike) as BasePriceEvidence, 'LOWER', input.strike, policy));
   const upperEvidence = options
-    .filter(contract => contract.strike > input.strike)
-    .sort((left, right) => left.strike - right.strike)
-    .map(contract => evidenceFor(contract, 'UPPER', input.chain, input.dte, input.asOf, input.strike, policy));
+    .slice(optionIndex + 1)
+    .map(contract => evidenceFor(prepared.evidenceByStrike.get(contract.strike) as BasePriceEvidence, 'UPPER', input.strike, policy));
   const lower = lowerEvidence.find(point => hasUsableMarket(point, policy.pricing.maximumNeighborSpreadPercent)) ?? null;
   const upper = upperEvidence.find(point => hasUsableMarket(point, policy.pricing.maximumNeighborSpreadPercent)) ?? null;
   const surfacePoints = [...lowerEvidence.slice(0, 2).reverse(), candidate, ...upperEvidence.slice(0, 2)];

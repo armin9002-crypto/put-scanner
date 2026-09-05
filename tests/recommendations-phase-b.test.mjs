@@ -30,6 +30,16 @@ function candidate(ticker, index, overrides = {}) {
   item.dominatedBy = [];
   item.dominates = [];
   item.comparisons = [];
+  item.comparisonSummary = {
+    totalCount: 0,
+    retainedDetailCount: 0,
+    relationshipCounts: { OUTRANKS: 0, OUTRANKED_BY: 0, EFFECTIVE_TIE: 0, TRADEOFF: 0 },
+    retainedRelationshipCounts: { OUTRANKS: 0, OUTRANKED_BY: 0, EFFECTIVE_TIE: 0, TRADEOFF: 0 },
+    outranksCandidateIds: [],
+    outrankedByCandidateIds: [],
+    reasonCodes: [],
+    outrankedByReasonCodes: [],
+  };
   item.economics.annualizedYieldBidPct = 20;
   item.economics.breakevenCushionAtBasis = 0.4;
   item.economics.delta = -0.1;

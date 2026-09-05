@@ -47,6 +47,39 @@ const defaultDependencies: RecommendationAcquisitionDependencies = {
   now: Date.now,
 };
 
+async function yieldForDecisionPaint(signal?: AbortSignal): Promise<void> {
+  if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') return;
+  await new Promise<void>(resolve => window.requestAnimationFrame(() => window.setTimeout(resolve, 0)));
+  if (signal?.aborted) throw signal.reason ?? new DOMException('Operation aborted', 'AbortError');
+}
+
+function runDecisionEngine(snapshot: RecommendationSnapshot, signal?: AbortSignal): Promise<RecommendationRun> {
+  if (typeof Worker === 'undefined') return Promise.resolve(runRecommendationEngine(snapshot));
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL('./engine.worker.ts', import.meta.url), { type: 'module' });
+    const cleanup = () => {
+      signal?.removeEventListener('abort', handleAbort);
+      worker.terminate();
+    };
+    const handleAbort = () => {
+      cleanup();
+      reject(signal?.reason ?? new DOMException('Operation aborted', 'AbortError'));
+    };
+    worker.onmessage = (event: MessageEvent<{ run?: RecommendationRun; error?: string }>) => {
+      cleanup();
+      if (event.data.run) resolve(event.data.run);
+      else reject(new Error(event.data.error ?? 'Recommendation analysis failed.'));
+    };
+    worker.onerror = event => {
+      cleanup();
+      reject(new Error(event.message || 'Recommendation analysis failed.'));
+    };
+    signal?.addEventListener('abort', handleAbort, { once: true });
+    if (signal?.aborted) handleAbort();
+    else worker.postMessage({ snapshot });
+  });
+}
+
 let inMemoryRun: RecommendationRun | null = null;
 
 export function getInMemoryRecommendationRun(): RecommendationRun | null {
@@ -142,6 +175,7 @@ export async function refreshRecommendations(options: {
   });
   if (options.signal?.aborted) throw options.signal.reason ?? new DOMException('Operation aborted', 'AbortError');
   options.onProgress?.({ stage: 'DECISION', completed: 0, total: 1 });
+  await yieldForDecisionPaint(options.signal);
   const built = buildScreenerRows(scan, 'all');
   const chains = chainSnapshots(scan);
   const expirationPlansByTicker = scan.expirationPlansByTicker ?? new Map(
@@ -207,7 +241,7 @@ export async function refreshRecommendations(options: {
       },
     },
   };
-  const run = runRecommendationEngine(snapshot);
+  const run = await runDecisionEngine(snapshot, options.signal);
   options.onProgress?.({ stage: 'DECISION', completed: 1, total: 1 });
   return { snapshot, run };
 }

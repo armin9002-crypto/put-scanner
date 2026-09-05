@@ -129,7 +129,14 @@ function EvidenceContent({ candidate, run }: { candidate: RecommendationCandidat
         <div className="grid grid-cols-2 gap-2 text-[11px]">
           <KeyFigure label="Dominates" value={candidate.dominates.length ? candidate.dominates.join(', ') : 'None'} />
           <KeyFigure label="Dominated By" value={candidate.dominatedBy.length ? candidate.dominatedBy.join(', ') : 'None'} />
+          <KeyFigure label="Outranks / loses" value={`${candidate.comparisonSummary.relationshipCounts.OUTRANKS} / ${candidate.comparisonSummary.relationshipCounts.OUTRANKED_BY}`} />
+          <KeyFigure label="Ties / tradeoffs" value={`${candidate.comparisonSummary.relationshipCounts.EFFECTIVE_TIE} / ${candidate.comparisonSummary.relationshipCounts.TRADEOFF}`} />
         </div>
+        {candidate.comparisonSummary.totalCount > candidate.comparisonSummary.retainedDetailCount && (
+          <p className="mt-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            Showing {candidate.comparisonSummary.retainedDetailCount} decision-prioritized details from {candidate.comparisonSummary.totalCount} exact pairwise relationships. Complete decisive IDs and aggregate relationship counts remain in the exported audit.
+          </p>
+        )}
         {candidate.comparisons.length > 0 ? (
           <div className="mt-2 space-y-1.5">
             {candidate.comparisons.map(comparison => (

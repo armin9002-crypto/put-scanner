@@ -59,6 +59,7 @@ function candidateAnnualizedYieldPct(candidate: RecommendationCandidate): number
 function relativeLossCount(candidate: RecommendationCandidate): number {
   return new Set([
     ...candidate.dominatedBy,
+    ...(candidate.comparisonSummary?.outrankedByCandidateIds ?? []),
     ...candidate.comparisons.filter(comparison => comparison.relationship === 'OUTRANKED_BY').map(comparison => comparison.otherCandidateId),
   ]).size;
 }
@@ -110,9 +111,13 @@ function factors(candidate: RecommendationCandidate) {
   };
 }
 
+function rankFactors(candidate: RecommendationCandidate) {
+  return candidate.rank ?? factors(candidate);
+}
+
 export function compareRecommendationCandidates(left: RecommendationCandidate, right: RecommendationCandidate): number {
-  const a = factors(left);
-  const b = factors(right);
+  const a = rankFactors(left);
+  const b = rankFactors(right);
   return a.verdictRank - b.verdictRank
     || a.priceDiscoveryRank - b.priceDiscoveryRank
     || a.pricingActionabilityRank - b.pricingActionabilityRank
@@ -129,8 +134,8 @@ export function compareRecommendationCandidates(left: RecommendationCandidate, r
 }
 
 export function compareMaterialRecommendationRank(left: RecommendationCandidate, right: RecommendationCandidate): number {
-  const a = factors(left);
-  const b = factors(right);
+  const a = rankFactors(left);
+  const b = rankFactors(right);
   return a.verdictRank - b.verdictRank
     || a.priceDiscoveryRank - b.priceDiscoveryRank
     || a.pricingActionabilityRank - b.pricingActionabilityRank
@@ -145,10 +150,14 @@ export function compareMaterialRecommendationRank(left: RecommendationCandidate,
     || compareNullableAscending(a.absoluteDelta, b.absoluteDelta);
 }
 
-export function assignRecommendationRanks(candidates: RecommendationCandidate[]): void {
+export function assignRecommendationRanks(candidates: RecommendationCandidate[], diagnostics?: { rankFactorComputations: number }): void {
+  candidates.forEach(candidate => {
+    const computed = factors(candidate);
+    candidate.rank = { ordinal: 0, ...computed } satisfies RecommendationRankMetadata;
+    if (diagnostics) diagnostics.rankFactorComputations += 1;
+  });
   [...candidates].sort(compareRecommendationCandidates).forEach((candidate, index) => {
-    const rankFactors = factors(candidate);
-    candidate.rank = { ordinal: index + 1, ...rankFactors } satisfies RecommendationRankMetadata;
+    (candidate.rank as RecommendationRankMetadata).ordinal = index + 1;
   });
 }
 
@@ -169,9 +178,9 @@ function applyTierBoundedDiversity(candidates: RecommendationCandidate[], perTic
   const result: RecommendationCandidate[] = [];
   let start = 0;
   while (start < candidates.length) {
-    const tier = factors(candidates[start]).majorTierKey;
+    const tier = rankFactors(candidates[start]).majorTierKey;
     let end = start + 1;
-    while (end < candidates.length && factors(candidates[end]).majorTierKey === tier) end += 1;
+    while (end < candidates.length && rankFactors(candidates[end]).majorTierKey === tier) end += 1;
     result.push(...diversityWithinMajorTier(candidates.slice(start, end), perTickerBeforeDiversity));
     start = end;
   }
@@ -187,15 +196,22 @@ function addDistinction(byCandidate: Map<string, RecommendationDistinction[]>, c
 export function buildRankedRecommendationShortlist(
   candidates: RecommendationCandidate[],
   policy: RecommendationPolicy = RECOMMENDATION_POLICY,
+  isEffectiveTie?: (leftCandidateId: string, rightCandidateId: string) => boolean,
 ): { selections: RecommendationSelection[]; noClearLeader: boolean; policySurvivorCount: number; capExcluded: number } {
   const qualifying = [...candidates]
     .filter(candidate => (candidate.verdict === 'ACTIONABLE' || candidate.verdict === 'CONDITIONAL') && !candidate.skeptic.veto)
     .sort(compareRecommendationCandidates);
-  const unique = qualifying.filter((candidate, index) => qualifying.findIndex(other => other.id === candidate.id) === index);
+  const seen = new Set<string>();
+  const unique = qualifying.filter(candidate => {
+    if (seen.has(candidate.id)) return false;
+    seen.add(candidate.id);
+    return true;
+  });
   const diversified = applyTierBoundedDiversity(unique, policy.selection.sameTickerContractsBeforeDiversity);
   const selected = diversified.slice(0, policy.selection.maximumShortlistSize);
   const noClearLeader = selected.length > 1 && (
     compareMaterialRecommendationRank(selected[0], selected[1]) === 0
+    || isEffectiveTie?.(selected[0].id, selected[1].id) === true
     || selected[0].comparisons.some(comparison => comparison.otherCandidateId === selected[1].id && comparison.relationship === 'EFFECTIVE_TIE')
     || selected[1].comparisons.some(comparison => comparison.otherCandidateId === selected[0].id && comparison.relationship === 'EFFECTIVE_TIE')
   );
@@ -219,6 +235,7 @@ export function buildRankedRecommendationShortlist(
       const ay = candidateAnnualizedYieldPct(candidate);
       return candidate.id !== reference.id && ay != null && referenceAy != null
         && ay >= referenceAy + policy.compensation.materialAnnualizedYieldDifference * 100
+        && !candidate.comparisonSummary?.outrankedByCandidateIds.includes(reference.id)
         && !candidate.comparisons.some(comparison => comparison.otherCandidateId === reference.id && comparison.relationship === 'OUTRANKED_BY');
     });
     if (higherCompensation) addDistinction(distinctions, higherCompensation.id, 'HIGHER_COMPENSATION');
