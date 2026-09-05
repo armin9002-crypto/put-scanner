@@ -87,6 +87,29 @@ test('viewport workflow is deterministic, cloud-authoritative, and usable', asyn
   expect(consoleErrors, consoleErrors.join('\n')).toEqual([]);
 });
 
+test('ETF Pulse performance window is shared by table and visuals without another request', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop-1440x900', 'one deterministic desktop ETF Pulse interaction scenario');
+  test.setTimeout(120_000);
+  await page.goto('/pulse');
+  await expect(page.getByText('ETF Pulse Visuals')).toBeVisible({ timeout: 30_000 });
+
+  const topSelector = page.locator('.pulse-period-control');
+  const bottomSelector = page.locator('.pulse-visual-period-control');
+  await expect(topSelector.locator('button[aria-pressed="true"]')).toHaveText('30D');
+  await expect(bottomSelector.locator('button[aria-pressed="true"]')).toHaveText('30D');
+  const requestsBefore = [...marketHarness.counts.values()].reduce((sum, count) => sum + count, 0);
+
+  await bottomSelector.getByRole('button', { name: '6M', exact: true }).click();
+  await expect(topSelector.locator('button[aria-pressed="true"]')).toHaveText('6M');
+  await expect(bottomSelector.locator('button[aria-pressed="true"]')).toHaveText('6M');
+
+  await topSelector.getByRole('button', { name: '30D', exact: true }).click();
+  await expect(bottomSelector.locator('button[aria-pressed="true"]')).toHaveText('30D');
+  await expect(page.locator('svg[aria-label="Momentum quadrant using 30D return and RSI"]:visible')).toBeVisible();
+  await expect(page.locator('a[title*="30D:"]:visible').first()).toBeVisible();
+  expect([...marketHarness.counts.values()].reduce((sum, count) => sum + count, 0)).toBe(requestsBefore);
+});
+
 test('Screener retries failed batches only and preserves successful rows', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop-1440x900', 'one deterministic desktop request-count scenario');
   test.setTimeout(120_000);

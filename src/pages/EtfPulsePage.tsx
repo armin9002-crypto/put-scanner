@@ -300,6 +300,7 @@ function VisualPeriodSelector({ value, onChange }: { value: VisualPeriod; onChan
           key={period}
           type="button"
           onClick={() => onChange(period)}
+          aria-pressed={value === period}
           className="pressable min-h-[44px] flex-none px-3 py-1.5 text-[11px] font-medium transition-colors sm:min-h-0"
           style={{
             backgroundColor: value === period ? 'var(--accent-bg)' : 'var(--surface)',
@@ -935,6 +936,10 @@ export default function EtfPulsePage() {
               <div>
                 <h2 className="text-base font-semibold" style={{ color: 'var(--text)' }}>ETF Pulse Visuals</h2>
                 <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Heatmap and momentum quadrant use the currently filtered ETF Pulse rows.</p>
+              </div>
+              <div className="pulse-visual-period-control flex flex-col items-start gap-1 sm:items-end">
+                <span className="pulse-control-label">Performance window</span>
+                <VisualPeriodSelector value={selectedVisualPeriod} onChange={setSelectedVisualPeriod} />
               </div>
             </div>
             <div className="mb-2 grid grid-cols-2 gap-1 rounded-xl p-1 md:hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }} role="tablist" aria-label="ETF Pulse visual">
