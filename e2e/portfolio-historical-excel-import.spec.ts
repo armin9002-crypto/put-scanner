@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 import * as XLSX from 'xlsx';
 import { installDeterministicCloudAccount } from './fixtures/cloudAccount';
 
@@ -30,19 +31,19 @@ const existingPortfolio = [{
   soldPrice: 1.25, soldDate: '2026-08-13', status: 'open', createdAt: '2026-08-13T15:00:00.000Z', updatedAt: '2026-08-13T15:00:00.000Z',
 }];
 
-async function openHistoricalImport(page: Page) {
+async function openHistoricalImportExport(page: Page) {
   await page.goto('/portfolio');
   await expect(page.getByRole('heading', { name: 'Portfolio', exact: true })).toBeVisible();
   const mobileActions = page.getByRole('button', { name: 'Portfolio actions' });
-  const desktopImport = page.getByRole('button', { name: 'Import Historical Excel' }).first();
+  const desktopImport = page.getByRole('button', { name: 'Import / Export Historical Excel' }).first();
   await expect.poll(async () => await mobileActions.isVisible() || await desktopImport.isVisible()).toBe(true);
   if (await mobileActions.isVisible()) {
     await mobileActions.click();
-    await page.getByRole('dialog', { name: 'Portfolio actions' }).getByRole('button', { name: 'Import Historical Excel' }).click();
+    await page.getByRole('dialog', { name: 'Portfolio actions' }).getByRole('button', { name: 'Import / Export Historical Excel' }).click();
   } else {
     await desktopImport.click();
   }
-  return page.getByRole('dialog', { name: 'Import Historical Excel' });
+  return page.getByRole('dialog', { name: 'Import / Export Historical Excel' });
 }
 
 test('historical Excel audit is responsive, starts unchecked, and separates option close from underlying context', async ({ page }, testInfo) => {
@@ -64,7 +65,7 @@ test('historical Excel audit is responsive, starts unchecked, and separates opti
     const points = ['2025-05-01', '2025-05-02'].map((date, index) => ({ timestamp: Date.parse(`${date}T20:00:00Z`) / 1000, date, price: 20 + index }));
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ticker: '^VIX', timeframe: 'custom', points, fetchedAt: Date.now(), metadata: { interval: '1d' } }) });
   });
-  const modal = await openHistoricalImport(page);
+  const modal = await openHistoricalImportExport(page);
   await expect(modal).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
   await modal.locator('input[type="file"]').setInputFiles({
@@ -124,4 +125,31 @@ test('historical Excel audit is responsive, starts unchecked, and separates opti
     expect(cloud.rows.find(row => row.namespace === 'watchlist')?.revision).toBe(watchlistRevisionBeforeCommit);
     expect(cloud.rows.find(row => row.namespace === 'preferences')?.revision).toBe(preferencesRevisionBeforeCommit);
   }
+});
+
+test('Portfolio CSV export is compact, lot-grain, and request/write silent', async ({ page }, testInfo) => {
+  test.skip(!['desktop-1440x900', 'portrait-390x844', 'landscape-844x390'].includes(testInfo.project.name), 'Requested export responsive matrix only.');
+  const cloud = await installDeterministicCloudAccount(page, { portfolio: existingPortfolio, watchlist: [], preferences: { portfolioGroupMode: 'none' } });
+  const modal = await openHistoricalImportExport(page);
+  await modal.getByRole('tab', { name: 'Export CSV' }).click();
+  await expect(modal.getByRole('region', { name: 'Portfolio CSV export' })).toBeVisible();
+  await expect(modal.getByText('Open lots').locator('..')).toContainText('1');
+  await expect(modal.getByText('Resolved lots').locator('..')).toContainText('0');
+  await expect(modal.getByText('Total lots').locator('..')).toContainText('1');
+  await expect(modal.getByText('Current-market coverage').locator('..')).toContainText('0/1');
+  await expect(modal.getByText('Refresh Open Trades first if you want fresher marks.')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
+
+  const requestsBeforeExport = [...cloud.requests];
+  const downloadPromise = page.waitForEvent('download');
+  await modal.getByRole('button', { name: 'Export CSV' }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/^put-scanner-portfolio-\d{4}-\d{2}-\d{2}\.csv$/);
+  const path = await download.path();
+  expect(path).not.toBeNull();
+  const csv = await readFile(path!, 'utf8');
+  expect(csv.charCodeAt(0)).toBe(0xfeff);
+  expect(csv.split('\r\n')[0]).toContain('Ticker,Expiration,Strike,Contracts,Sold Price (Net)');
+  expect(csv).toContain('existing-lot');
+  expect(cloud.requests).toEqual(requestsBeforeExport);
 });

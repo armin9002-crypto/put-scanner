@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
-import { AlertTriangle, CheckCircle2, FileSpreadsheet, Loader2, ShieldCheck, Upload, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, Loader2, ShieldCheck, Upload, X } from 'lucide-react';
 import { useAccountState } from '../lib/cloudState/accountStateContext.ts';
 import {
   enrichHistoricalExcelEntryVix,
@@ -11,10 +11,16 @@ import {
   type StagedHistoricalExcelLot,
 } from '../lib/portfolioHistoricalExcelImport.ts';
 import { toDurablePortfolioState, type PortfolioTrade } from '../lib/portfolioStorage.ts';
+import {
+  buildPortfolioHistoricalCsvExport,
+  downloadPortfolioHistoricalCsvExport,
+} from '../lib/portfolioHistoricalCsvExport.ts';
+import type { MarkBasis } from '../lib/portfolioMetrics.ts';
 import { downloadPutScannerBackup } from '../lib/userDataBackup.ts';
 
 interface Props {
   trades: PortfolioTrade[];
+  markBasis: MarkBasis;
   onClose: () => void;
   onImported: () => void;
 }
@@ -61,7 +67,7 @@ function rowIssueText(row: StagedHistoricalExcelLot): string {
   return 'No issues.';
 }
 
-export default function PortfolioHistoricalExcelImportModal({ trades, onClose, onImported }: Props) {
+export default function PortfolioHistoricalExcelImportModal({ trades, markBasis, onClose, onImported }: Props) {
   const account = useAccountState();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -73,6 +79,7 @@ export default function PortfolioHistoricalExcelImportModal({ trades, onClose, o
   const [busy, setBusy] = useState<'parsing' | 'importing' | null>(null);
   const [error, setError] = useState('');
   const [receipt, setReceipt] = useState<ImportReceipt | null>(null);
+  const [mode, setMode] = useState<'import' | 'export'>('import');
   const accountReady = account.phase === 'ready' && account.cloud !== null && account.userId !== null;
 
   useEffect(() => {
@@ -94,6 +101,16 @@ export default function PortfolioHistoricalExcelImportModal({ trades, onClose, o
   const summary = useMemo(() => result ? summarizeHistoricalExcelImport(result) : null, [result]);
   const visibleRows = useMemo(() => result?.rows.filter(row => !showProblemsOnly || row.state !== 'ready') ?? [], [result, showProblemsOnly]);
   const selectedRows = useMemo(() => result?.rows.filter(row => row.proposedTrade && selectedIds.has(row.stagingId)) ?? [], [result, selectedIds]);
+  const exportOutput = useMemo(() => buildPortfolioHistoricalCsvExport(trades, markBasis), [markBasis, trades]);
+
+  const exportCsv = () => {
+    setError('');
+    try {
+      downloadPortfolioHistoricalCsvExport(exportOutput);
+    } catch (exportError) {
+      setError(exportError instanceof Error ? exportError.message : 'The CSV could not be downloaded.');
+    }
+  };
 
   const stageWorkbook = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -186,15 +203,19 @@ export default function PortfolioHistoricalExcelImportModal({ trades, onClose, o
       <section className="flex max-h-[96dvh] w-full flex-col overflow-hidden rounded-t-2xl shadow-2xl md:max-w-[98vw] md:rounded-2xl" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }} role="dialog" aria-modal="true" aria-labelledby="historical-excel-title">
         <header className="flex flex-none items-start justify-between gap-3 border-b px-4 py-3 md:px-5" style={{ borderColor: 'var(--border)' }}>
           <div className="min-w-0">
-            <div className="flex items-center gap-2"><FileSpreadsheet className="h-5 w-5" style={{ color: 'var(--accent-light)' }} /><h2 id="historical-excel-title" className="text-base font-semibold" style={{ color: 'var(--text)' }}>Import Historical Excel</h2></div>
-            <p className="mt-1 text-xs leading-5" style={{ color: 'var(--text-muted)' }}>V5 historical lots only. The workbook stays in this browser session and is never uploaded.</p>
+            <div className="flex items-center gap-2"><FileSpreadsheet className="h-5 w-5" style={{ color: 'var(--accent-light)' }} /><h2 id="historical-excel-title" className="text-base font-semibold" style={{ color: 'var(--text)' }}>Import / Export Historical Excel</h2></div>
+            <p className="mt-1 text-xs leading-5" style={{ color: 'var(--text-muted)' }}>{mode === 'import' ? 'V5 historical lots only. The workbook stays in this browser session and is never uploaded.' : 'Export every canonical Portfolio lot without changing account data or refreshing markets.'}</p>
           </div>
-          <button ref={closeButtonRef} type="button" onClick={onClose} disabled={busy !== null} className="pressable flex h-11 w-11 flex-none items-center justify-center rounded-full disabled:opacity-40" aria-label="Close historical Excel import" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }}><X className="h-5 w-5" /></button>
+          <button ref={closeButtonRef} type="button" onClick={onClose} disabled={busy !== null} className="pressable flex h-11 w-11 flex-none items-center justify-center rounded-full disabled:opacity-40" aria-label="Close historical Excel import or export" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }}><X className="h-5 w-5" /></button>
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-5">
-          {!accountReady && <div className="rounded-lg border px-3 py-2 text-xs leading-5" role="alert" style={{ color: 'var(--yellow)', borderColor: 'color-mix(in srgb, var(--yellow) 35%, var(--border))' }}>Historical Excel Import is available only after a signed-in cloud account is fully loaded and idle.</div>}
+          <div className="mb-4 grid grid-cols-2 rounded-lg p-1" role="tablist" aria-label="Historical Excel mode" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
+            {([['import', 'Import Excel'], ['export', 'Export CSV']] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={mode === value} onClick={() => { setMode(value); setError(''); }} disabled={busy !== null} className="pressable min-h-10 rounded-md px-3 text-xs font-semibold disabled:opacity-40" style={mode === value ? { color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)', border: '1px solid var(--accent-border)' } : { color: 'var(--text-muted)', border: '1px solid transparent' }}>{label}</button>)}
+          </div>
           {error && <div className="mb-3 rounded-lg border px-3 py-2 text-xs leading-5" role="alert" style={{ color: 'var(--red)', backgroundColor: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.28)' }}>{error}</div>}
+          {mode === 'import' ? <>
+          {!accountReady && <div className="rounded-lg border px-3 py-2 text-xs leading-5" role="alert" style={{ color: 'var(--yellow)', borderColor: 'color-mix(in srgb, var(--yellow) 35%, var(--border))' }}>Historical Excel Import is available only after a signed-in cloud account is fully loaded and idle.</div>}
           {receipt && summary && (
             <section className="mb-4 rounded-xl border p-4" style={{ backgroundColor: 'rgba(34,197,94,0.08)', borderColor: 'rgba(34,197,94,0.3)' }} aria-label="Historical import receipt">
               <div className="flex items-center gap-2"><CheckCircle2 className="h-5 w-5" style={{ color: 'var(--green)' }} /><h3 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Authoritative cloud import confirmed</h3></div>
@@ -282,9 +303,24 @@ export default function PortfolioHistoricalExcelImportModal({ trades, onClose, o
               })}</div>
             </>
           )}
+          </> : (
+            <section className="mx-auto max-w-3xl rounded-xl border p-4 sm:p-5" aria-label="Portfolio CSV export" style={{ backgroundColor: 'var(--surface-alt)', borderColor: 'var(--border)' }}>
+              <div className="flex items-start gap-3">
+                <Download className="mt-0.5 h-5 w-5 flex-none" style={{ color: 'var(--accent-light)' }} />
+                <div className="min-w-0"><h3 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Export canonical Portfolio lots</h3><p className="mt-1 text-xs leading-5" style={{ color: 'var(--text-muted)' }}>One CSV row per independently tracked lot, including open and resolved entries. Export is read-only.</p></div>
+              </div>
+              <dl className="mt-4 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                {[['Open lots', exportOutput.summary.openLots], ['Resolved lots', exportOutput.summary.resolvedLots], ['Total lots', exportOutput.summary.totalLots]].map(([label, value]) => <div key={label} className="rounded-lg px-3 py-2.5" style={{ backgroundColor: 'var(--surface)' }}><dt style={{ color: 'var(--text-dim)' }}>{label}</dt><dd className="mt-1 font-mono text-base font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{value}</dd></div>)}
+                <div className="rounded-lg px-3 py-2.5" style={{ backgroundColor: 'var(--surface)' }}><dt style={{ color: 'var(--text-dim)' }}>Current-market coverage</dt><dd className="mt-1 font-mono text-base font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{exportOutput.summary.currentMarketCoveredLots}/{exportOutput.summary.openLots}</dd></div>
+              </dl>
+              <p className="mt-4 rounded-lg border px-3 py-2 text-xs leading-5" style={{ color: 'var(--text-muted)', borderColor: 'var(--border)' }}>Current-market columns use currently loaded Portfolio data. Refresh Open Trades first if you want fresher marks.</p>
+              <p className="mt-2 text-[11px] leading-4" style={{ color: 'var(--text-dim)' }}>Yields, volatility, capture, IRR, and distance percentages are exported as percentage-point numbers. Missing values are blank.</p>
+              <button type="button" onClick={exportCsv} disabled={exportOutput.summary.totalLots === 0} className="button-primary pressable mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg px-5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto" style={{ backgroundColor: 'var(--accent)' }}><Download className="h-4 w-4" /> Export CSV</button>
+            </section>
+          )}
         </div>
 
-        {result && summary && <footer className="flex flex-none flex-col gap-2 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between md:px-5" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+        {mode === 'import' && result && summary && <footer className="flex flex-none flex-col gap-2 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between md:px-5" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
           <div className="flex items-start gap-2 text-[11px] leading-4" style={{ color: 'var(--text-muted)' }}><AlertTriangle className="mt-0.5 h-4 w-4 flex-none" style={{ color: 'var(--yellow)' }} /><span>This import is additive. Existing Portfolio/history will not be replaced. The backup step confirms download initiation, not physical saving by the operating system.</span></div>
           <button type="button" disabled={!accountReady || busy !== null || selectedRows.length === 0 || Boolean(receipt)} onClick={() => void commitImport()} className="button-primary pressable flex min-h-11 flex-none items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40" style={{ backgroundColor: 'var(--accent)' }}>{busy === 'importing' ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}{receipt ? 'Import Verified' : busy === 'importing' ? 'Backing up and importing…' : `Download Safety Backup & Import ${selectedRows.length} Selected ${selectedRows.length === 1 ? 'Lot' : 'Lots'}`}</button>
         </footer>}

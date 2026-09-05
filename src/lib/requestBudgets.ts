@@ -10,6 +10,7 @@ export type RequestBudgetWorkflow =
   | 'portfolio-manual-worthless-confirmation'
   | 'portfolio-entry-vix-maintenance'
   | 'portfolio-historical-excel-import'
+  | 'portfolio-historical-csv-export'
   | 'portfolio-lifecycle-maintenance'
   | 'ticker-detail'
   | 'expiration-change'
@@ -100,6 +101,12 @@ export const REQUEST_BUDGET_LEDGER: Record<RequestBudgetWorkflow, RequestBudgetL
     ceiling: { browserRequests: 1, functionInvocations: 1, providerAcquisitions: 1 },
     providerHttpAttemptCeiling: 6,
     fixture: 'one staged V5 workbook: zero expiration-price acquisitions and at most one cache-first Entry VIX date-range acquisition for all rows',
+  },
+  'portfolio-historical-csv-export': {
+    expected: { browserRequests: 0, functionInvocations: 0, providerAcquisitions: 0 },
+    ceiling: { browserRequests: 0, functionInvocations: 0, providerAcquisitions: 0 },
+    providerHttpAttemptCeiling: 0,
+    fixture: 'one lot-fidelity CSV built only from currently loaded Portfolio data',
   },
   'portfolio-lifecycle-maintenance': {
     expected: { browserRequests: 1, functionInvocations: 1, providerAcquisitions: 1 },
