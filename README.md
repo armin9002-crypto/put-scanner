@@ -1,7 +1,5 @@
 # put-scanner
 
-[![Open in Bolt](https://bolt.new/static/open-in-bolt.svg)](https://bolt.new/~/sb1-zbhgn797)
-
 ## Usage / Vercel safety
 
 - The app does not poll market data automatically; refreshes and scans are user-initiated.
