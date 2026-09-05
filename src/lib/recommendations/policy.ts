@@ -1,7 +1,7 @@
 import type { RegimeLabel } from '../marketRead/types.ts';
 
-export interface RecommendationPolicyV1 {
-  version: 2;
+export interface RecommendationPolicy {
+  version: 3;
   compensation: {
     minimumAnnualizedYieldByRegime: Record<RegimeLabel, number>;
     shortDtePremium: number;
@@ -34,6 +34,14 @@ export interface RecommendationPolicyV1 {
     maximumIvGapPct: number;
     maximumDeltaGap: number;
     quoteTick: number;
+    recentTransactionMaximumTradingSessions: number;
+    veryStaleTransactionTradingSessions: number;
+    maximumNearbyStrikeDistanceRatio: number;
+    veryCloseNearbyStrikeDistanceRatio: number;
+  };
+  selection: {
+    maximumShortlistSize: number;
+    sameTickerContractsBeforeDiversity: number;
   };
   robustness: {
     hurdlePerturbation: number;
@@ -44,8 +52,8 @@ export interface RecommendationPolicyV1 {
   };
 }
 
-export const RECOMMENDATION_POLICY_V1: RecommendationPolicyV1 = Object.freeze({
-  version: 2,
+export const RECOMMENDATION_POLICY: RecommendationPolicy = Object.freeze({
+  version: 3,
   compensation: {
     minimumAnnualizedYieldByRegime: {
       'Complacent Risk-On': 0.16,
@@ -86,6 +94,14 @@ export const RECOMMENDATION_POLICY_V1: RecommendationPolicyV1 = Object.freeze({
     maximumIvGapPct: 40,
     maximumDeltaGap: 0.18,
     quoteTick: 0.01,
+    recentTransactionMaximumTradingSessions: 10,
+    veryStaleTransactionTradingSessions: 60,
+    maximumNearbyStrikeDistanceRatio: 0.1,
+    veryCloseNearbyStrikeDistanceRatio: 0.05,
+  },
+  selection: {
+    maximumShortlistSize: 15,
+    sameTickerContractsBeforeDiversity: 2,
   },
   robustness: {
     hurdlePerturbation: 0.02,

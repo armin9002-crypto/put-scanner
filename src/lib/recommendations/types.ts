@@ -4,17 +4,20 @@ import type { ScreenerRow } from '../screenerRows.ts';
 import type { OptionsChainData } from '../types.ts';
 import type { UnderlyingTechnicalAssessment } from '../underlyingTechnical.ts';
 
-export const RECOMMENDATION_ENGINE_VERSION = 3 as const;
-export const RECOMMENDATION_POLICY_VERSION = 2 as const;
+export const RECOMMENDATION_ENGINE_VERSION = 4 as const;
+export const RECOMMENDATION_POLICY_VERSION = 3 as const;
 
 export type RecommendationBand = 'STRONG' | 'GOOD' | 'MIXED' | 'WEAK';
 export type RecommendationEvidenceQuality = 'HIGH' | 'MODERATE' | 'LOW';
 export type PricingConfidence = 'HIGH' | 'MODERATE' | 'LOW';
 export type Actionability = 'HIGH' | 'MODERATE' | 'LOW';
 export type PricingProvenance = 'DIRECT_MARKET' | 'INDICATIVE_RANGE' | 'INSUFFICIENT_PRICING_EVIDENCE';
+export type PriceDiscoveryTier = 'DIRECT_RECENT' | 'RECENT_NEARBY_CONFIRMED' | 'QUOTED_TRANSACTION_STALE' | 'INDICATIVE_SURFACE' | 'INSUFFICIENT_PRICE_DISCOVERY';
+export type TransactionRecency = 'RECENT' | 'STALE' | 'VERY_STALE' | 'UNAVAILABLE';
+export type NearbyTransactionProxy = 'TWO_SIDED_RECENT' | 'ONE_VERY_CLOSE_RECENT' | 'ONE_DISTANT_RECENT' | 'NONE';
 export type UnderlyingQualification = 'ELIGIBLE' | 'WATCH' | 'HARD_FAIL';
 export type CandidateVerdict = 'ACTIONABLE' | 'CONDITIONAL' | 'WATCH' | 'PASS';
-export type RecommendationClass = 'BEST_OVERALL' | 'MORE_DEFENSIVE' | 'HIGHER_COMPENSATION' | 'CONDITIONAL_PRICE_OPPORTUNITY';
+export type RecommendationDistinction = 'BEST_OVERALL' | 'MORE_DEFENSIVE' | 'HIGHER_COMPENSATION';
 export type RecommendationOperationalStatus = 'COMPLETE' | 'INCOMPLETE';
 export type RecommendationRunVerdict = 'OPPORTUNITIES_FOUND' | 'NO_TRADE';
 export type RobustnessClassification = 'HIGH' | 'MODERATE' | 'LOW';
@@ -25,13 +28,16 @@ export type RecommendationReasonCode =
   | 'BROKEN_TREND'
   | 'CLEAN_DIRECT_MARKET'
   | 'COHERENT_PRICE_BRACKET'
+  | 'CONSTRUCTIVE_PULLBACK_CONTEXT'
   | 'DEFENSIVE_TRADEOFF_FAVORABLE'
   | 'DURATION_NOT_COMPENSATED'
   | 'DOWNSIDE_TAIL_RISK'
   | 'DTE_OUTSIDE_POSTURE'
+  | 'DETERIORATING_UNDERLYING'
   | 'EVIDENCE_GAPS'
   | 'HIGHER_COMPENSATION_JUSTIFIED'
   | 'INDICATIVE_BELOW_HURDLE'
+  | 'INSUFFICIENT_PRICE_DISCOVERY'
   | 'INSUFFICIENT_CUSHION'
   | 'INVALID_CONTRACT'
   | 'MARGINAL_COMPENSATION'
@@ -39,15 +45,22 @@ export type RecommendationReasonCode =
   | 'LONGER_DURATION_DEFENSIVE_VALUE'
   | 'NO_CLEAR_LEADER'
   | 'NO_DIRECT_BID'
+  | 'OVERSOLD_INTACT_CONTEXT'
   | 'POOR_RELATIVE_VALUE'
   | 'PRICING_UNCERTAINTY'
   | 'REGIME_INCOMPATIBLE'
+  | 'RECENT_DIRECT_TRANSACTION'
+  | 'RECENT_NEARBY_TRANSACTION_PROXY'
+  | 'RECOVERY_CONTEXT'
   | 'RELATIVE_HURDLE_CLEARED'
   | 'ROBUSTNESS_LOW'
-  | 'STALE_EVIDENCE'
+  | 'SHORTLIST_CAP'
+  | 'STALE_TRANSACTION_EVIDENCE'
   | 'SHORTER_DURATION_EFFICIENT'
   | 'STRONG_CUSHION'
   | 'SUPPORTIVE_UNDERLYING'
+  | 'EXTENDED_UNDERLYING'
+  | 'VERY_STALE_TRANSACTION_EVIDENCE'
   | 'VOLATILITY_NOT_RICH_ENOUGH'
   | 'WEAK_ACTIONABILITY'
   | 'WEAK_OPPORTUNITY_SET'
@@ -146,6 +159,9 @@ export interface PriceNeighborEvidence {
   ask: number | null;
   last: number | null;
   lastTradeDate: number | null;
+  tradingSessionAge: number | null;
+  strikeDistanceRatio: number;
+  recentTransaction: boolean;
   delta: number | null;
   iv: number | null;
   openInterest: number | null;
@@ -159,6 +175,20 @@ export interface RecommendationPricing {
   directAsk: number | null;
   last: number | null;
   lastTradeDate: number | null;
+  exactTradeSessionAge: number | null;
+  exactTradeRecency: TransactionRecency;
+  discoveryTier: PriceDiscoveryTier;
+  nearbyTransactionProxy: NearbyTransactionProxy;
+  recentNeighborCount: number;
+  closestRecentNeighborDistanceRatio: number | null;
+  recentLowerBracket: boolean;
+  recentUpperBracket: boolean;
+  chainEvidence: {
+    fetchedAt: number | null;
+    ageMs: number | null;
+    source: string;
+    stale: boolean;
+  };
   indicativeRange: { low: number; high: number } | null;
   confidence: PricingConfidence;
   actionability: Actionability;
@@ -238,11 +268,31 @@ export interface RecommendationCandidate {
   tradeoffReasonCodes: RecommendationReasonCode[];
   why: string;
   tradeoff: string;
+  rank: RecommendationRankMetadata | null;
 }
 
 export interface RecommendationSelection {
-  class: RecommendationClass;
   candidateId: string;
+  shortlistRank: number;
+  distinctions: RecommendationDistinction[];
+}
+
+export interface RecommendationRankMetadata {
+  ordinal: number;
+  verdictRank: number;
+  priceDiscoveryRank: number;
+  pricingActionabilityRank: number;
+  pricingConfidenceRank: number;
+  robustnessRank: number;
+  underlyingQualificationRank: number;
+  technicalStateRank: number;
+  skepticVetoRank: number;
+  relativeLossCount: number;
+  compensationMarginPctPoints: number | null;
+  breakevenCushionPct: number | null;
+  absoluteDelta: number | null;
+  majorTierKey: string;
+  canonicalTieBreak: string;
 }
 
 export interface RecommendationNearMiss {
@@ -254,14 +304,24 @@ export interface RecommendationNearMiss {
 export type RecommendationDecisionTraceStageKey =
   | 'TRACKED_UNDERLYINGS'
   | 'QUALIFIED_UNDERLYINGS'
+  | 'UNDERLYING_HARD_FAILS'
   | 'CHAINS_ACQUIRED'
   | 'CONTRACTS_EVALUATED'
-  | 'VALID_CONTRACTS'
-  | 'HURDLE_RISK_SURVIVORS'
-  | 'FRONTIER_CONTRACTS'
-  | 'SERIOUS_FINALISTS'
+  | 'INVALID_CONTRACTS'
+  | 'RISK_POLICY_FAILURES'
+  | 'COMPENSATION_FAILURES'
+  | 'PRICING_DISCOVERY_INSUFFICIENCY'
+  | 'STALE_TRANSACTION_EVIDENCE'
+  | 'ROBUSTNESS_FAILURES'
+  | 'SKEPTIC_VETOES'
+  | 'DOMINANCE_FRONTIER_LOSSES'
+  | 'ACTIONABLE'
+  | 'CONDITIONAL'
+  | 'WATCH'
+  | 'PASS'
   | 'POLICY_SURVIVORS'
-  | 'SURFACED_RECOMMENDATIONS';
+  | 'SURFACED_SHORTLIST'
+  | 'SURFACING_CAP_EXCLUDED';
 
 export interface RecommendationDecisionTrace {
   stages: Array<{

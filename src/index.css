@@ -922,6 +922,35 @@ table,
   color: var(--text-dim);
 }
 
+.recommendation-card__last-trade,
+.recommendation-card__discovery {
+  margin-top: 0.16rem;
+  color: var(--text-tertiary);
+  font-size: 0.63rem;
+  line-height: 1.25;
+}
+
+.recommendation-card__last-trade {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-variant-numeric: tabular-nums;
+}
+
+[data-recency="positive"] {
+  color: var(--green);
+}
+
+[data-recency="warning"] {
+  color: var(--yellow);
+}
+
+[data-recency="danger"] {
+  color: var(--red);
+}
+
+[data-recency="muted"] {
+  color: var(--text-dim);
+}
+
 .recommendation-verdict-badge {
   display: inline-flex;
   min-height: 20px;
@@ -1350,6 +1379,16 @@ table,
 .recommendation-methodology-modal__content {
   overflow-y: auto;
   padding: 0.85rem;
+}
+
+.recommendation-methodology-lead {
+  margin-bottom: 0.65rem;
+  border-left: 2px solid var(--accent);
+  padding: 0.55rem 0.65rem;
+  color: var(--text-secondary);
+  background: var(--surface-alt);
+  font-size: 0.72rem;
+  line-height: 1.45;
 }
 
 .recommendation-methodology-grid {

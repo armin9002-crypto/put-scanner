@@ -1,124 +1,123 @@
-# Recommendations Engine V1.1
+# Recommendations Engine V1.2 — Phase B
 
-## Scope and integrity contract
+## Integrity contract
 
-Recommendations is a deterministic Market-mode decision-support system. It can validly return **NO TRADE**. It uses no LLM, AI API, model key, paid inference, prediction, training, or automatic policy tuning. It has no Portfolio Fit lens and does not read or modify Portfolio data.
+Recommendations is deterministic Market-mode decision support. It uses no AI, LLM, inference API, prediction, training, automatic tuning, numerical opportunity score, recommendation quota, or Portfolio data. A complete run may correctly return **NO TRADE**.
 
-The current contract is `RECOMMENDATION_ENGINE_VERSION = 3` and `RECOMMENDATION_POLICY_VERSION = 2`. Engine V3 adds the versioned shared `UnderlyingTechnicalAssessment` to immutable ETF Pulse input and Recommendation evidence; pricing, compensation, selection, and policy V2 are unchanged. V1.1 previously changed both versions because its immutable input/output added the selected acquisition universe, per-ticker expiration plans, explicit policy-check classifications, cross-duration reasons, and Decision Trace. The same snapshot and policy produce the same ordered `RecommendationRun`.
+The immutable contract is `RECOMMENDATION_ENGINE_VERSION = 4` and `RECOMMENDATION_POLICY_VERSION = 3`. The same versioned snapshot and policy produce the same ordered `RecommendationRun`. Engine V4 adds explicit transaction price-discovery evidence, auditable rank metadata, a ranked shortlist, optional distinctions, and expanded overlapping diagnostics. Policy V3 adds Recommendation-specific 10/60 trading-session recency, ±10% nearby-strike eligibility, the 5% very-close threshold, and the maximum 15-contract shortlist.
 
-Earlier repository history contained an additive-score Trade Cockpit. V1 retained its useful manual acquisition, posture, diagnostics, and near-miss ideas but did not restore universal scores, Portfolio contamination, pre-ranking truncation, mandatory-bid qualification, or binary liquidity buckets.
+Phase A remains authoritative for ticker technicals. Both ETF Pulse and Recommendations consume the same versioned `UnderlyingTechnicalAssessment`; Recommendations does not reproduce its close-derived thresholds. Market Regime remains separate.
 
-## Modules and canonical reuse
+## Pipeline
 
-- `types.ts`: versioned snapshot, universe, run, evidence, comparison, trace, and verdict contracts.
-- `policy.ts`: all consequential thresholds.
-- `underlyingTechnical.ts`: shared close-derived ticker state, signals, metrics, evidence quality, reason codes, and thresholds used by ETF Pulse and Recommendations.
-- `underlying.ts`: maps that shared ticker assessment plus separate Market Regime context into pre-contract qualification and structured Recommendation evidence.
-- `pricing.ts`: same-expiration price discovery and quote provenance.
-- `engine.ts`: hurdles, comparisons, skeptic, robustness, verdicts, trace, and selections.
-- `explanations.ts`: centralized deterministic reason-code copy.
-- `acquisition.ts`: explicit-refresh orchestration and session-memory publication.
-- `visualFixtures.ts`: sanitized request-free UI states.
+Hard gates first, then deterministic relative ranking.
 
-The system reuses canonical Market Read, ETF Pulse, the [Underlying Technical Assessment V1](./UNDERLYING_TECHNICAL_ASSESSMENT_V1.md), Screener batches/rows, option-chain cache keys, option math, Watchlist, and Option Detail modules. It does not introduce a second option-data pipeline or duplicate NY, AY, Delta, IV, moneyness, breakeven, or ticker-technical definitions.
+1. Validate engine/policy versions and bind the saved DTE universe.
+2. Consume shared ticker technical assessments and preserve evidence gaps.
+3. Validate canonical contracts and risk-policy checks.
+4. Discover current price basis and exact/nearby transaction evidence from the already acquired same-expiration chain.
+5. Compute absolute and relative Annualized Yield hurdles without changing Phase A or existing compensation, Delta, or cushion thresholds.
+6. Apply local dominance and cross-tenor comparisons.
+7. Run the typed skeptic and bounded robustness grid.
+8. Assign `ACTIONABLE`, `CONDITIONAL`, `WATCH`, or `PASS`.
+9. Assign one canonical actionability rank to every candidate.
+10. Surface every genuine Actionable/Conditional contract in ranked order, up to 15, with no minimum and no filler.
 
-## Snapshot and decision pipeline
+Invalid price, identity, strike, DTE, underlying, or quote ordering fails closed. Missing fields remain `null`; they never silently become zero. Outputs do not serialize `NaN` or infinity.
 
-The snapshot contains `asOf`, engine/policy versions, the selected universe, exact regime/posture, Pulse rows, raw chains, canonical Screener rows, and explicit coverage/provenance. The run retains those facts plus assessments, candidates, frontiers, recommendation classes, near misses, Decision Trace, and reason codes.
+## Recommendation price discovery
 
-Execution order is:
+Recommendation transaction age uses `elapsedUsEquityTradingSessions()` rather than the generic option 2/7-calendar-day display thresholds:
 
-1. validate versions, bind the DTE universe, and stably sort canonical rows;
-2. qualify underlyings while preserving missing evidence;
-3. validate contracts and identify Direct, Indicative, or Insufficient pricing;
-4. compute absolute and relative compensation hurdles;
-5. prune only materially dominated local contracts;
-6. compare serious finalists, including explicit same-ticker cross-tenor cases;
-7. run the deterministic skeptic;
-8. test the bounded robustness grid;
-9. assign candidate and run verdicts;
-10. build Decision Trace counts and overlapping rejection reasons.
+- **Recent:** at most 10 U.S. equity trading sessions.
+- **Stale/intermediate:** 11–60 sessions.
+- **Very stale:** more than 60 sessions.
 
-Invalid price, strike, expiration, DTE, or quote ordering fails closed. Missing optional fields remain `null`, lower evidence quality, and never silently become zero. Outputs never serialize `NaN` or infinity.
+Chain/API age is recorded separately. A chain fetched today does not make the exact contract's Last recent.
 
-## Policy V2
+The versioned discovery tiers, strongest first, are:
 
-Required AY starts with a regime floor: 16% Complacent Risk-On, 13% Healthy Risk-On, 14% Healthy Pullback, 18% Choppy/Elevated Vol, 24% Risk-Off, 28% Oversold Panic, and 18% Mixed/No Edge. Additions are +4pp below 21 DTE, +1.5pp from 46–75 DTE, +3pp above 75 DTE, +3pp near minimum breakeven cushion, +1pp for moderate cushion, +2pp near maximum Delta, and +3pp for a Watch-quality underlying.
+1. `DIRECT_RECENT`
+2. `RECENT_NEARBY_CONFIRMED`
+3. `QUOTED_TRANSACTION_STALE`
+4. `INDICATIVE_SURFACE`
+5. `INSUFFICIENT_PRICE_DISCOVERY`
 
-`Minimum Attractive Credit` is the larger of the absolute policy credit and any relative frontier credit. The relative credit requires a riskier comparable contract to exceed a safer contract's AY by 2.5pp. It is a policy hurdle—not fair value, expected fill, or forecast.
+Candidate evidence includes exact `lastTradeDate`, exact trading-session age/recency, discovery tier, proxy strength, qualifying recent-neighbor count, closest distance, recent lower/upper bracket flags, independent chain provenance, quote surface, confidence, and actionability.
 
-Material comparison thresholds are 1.5pp AY, 0.03 absolute Delta, and 5pp breakeven cushion. Same-neighborhood dominance is limited to the same ticker within 21 DTE. Cross-duration comparison begins at a 45-day DTE difference; a longer tenor needs at least 2pp additional AY unless it adds material defensive value, for which at most 1.5pp AY give-up is accepted.
+Only an already loaded put from the same ticker and expiration may support a transaction proxy. Its strike distance must satisfy `abs(neighbor strike − candidate strike) / candidate strike <= 10%`, and its Last must be no more than 10 trading sessions old. A different expiration or a strike beyond 10% never rescues the candidate.
 
-Pricing thresholds are 25% of Ask for a tight spread, 55% for acceptable direct execution, and 80% for a usable neighbor. Fresh/stale ages are 30 minutes / 2 hours. Price brackets use a $0.02 or 5% monotonic tolerance, 3:1 maximum spacing, 40 percentage-point IV gap, 0.18 Delta gap, and $0.01 rounding.
+- Recent lower and upper neighbors inside 10%, with a coherent surface, form the strongest nearby proxy.
+- One recent neighbor inside 5%, plus a credible current direct candidate quote and coherent surface, forms a moderate proxy.
+- One recent neighbor 5–10% away is weak support only.
+- Among eligible neighbors, the closest strike is preferred.
 
-Robustness uses seven deterministic cases: basis; hurdle ±2pp; Delta/cushion boundary ±0.01/2pp; and supported low/high price bases. At least 80% stable is High, at least 50% is Moderate, otherwise Low. An effective tie caps High at Moderate.
+The proxy never bypasses spread limits, monotonicity, Delta continuity, IV continuity, quote-corruption checks, or chain freshness. A recent neighbor alone never guarantees High pricing.
 
-## Underlying, policy checks, and DTE
+## Executable and indicative economics
 
-Underlying lenses are Trend Integrity, Reset/Extension, Volatility Context, and Regime Fit. The first three consume the exact shared ETF Pulse assessment; Regime Fit remains separate broad-market context. Strong/Good setups with non-Low evidence are Eligible. Mixed but undamaged setups remain Watch. A materially damaged `BROKEN_TREND` remains a pre-chain Hard Fail, as does the prior Risk-Off/Oversold-Panic combination with price below both SMA50 and SMA200. The richer taxonomy does not broadly create new Hard Fails.
+A usable current Bid remains the canonical seller-credit basis and is labeled **AY at Bid**. Last is transaction evidence only; stale Last never becomes executable credit.
 
-Every candidate preserves six independent lenses: Compensation, Cushion, Volatility Opportunity, Underlying Setup, Pricing Confidence, and Actionability. They are qualitative and never summed into a universal score.
+If no direct Bid exists, a coherent same-expiration lower/upper bracket may produce a clearly labeled **Indicative AY Range**. It is not fair value, an expected fill, or an executable quote. If discovery is insufficient, the UI does not present one precise AY as executable economics.
 
-Policy checks explicitly carry `severity` and `phase`. Required identity/quote validity, Delta, strike cushion, breakeven cushion, and underlying qualification are **BLOCKING** checks. The Market Read posture DTE range is **INFORMATIONAL** `DURATION_CONTEXT`: it can explain and increase required compensation, but it cannot alone fail validity, risk policy, skeptic, or verdict. Blocking logic inspects classifications rather than array positions.
+Fresh exact transaction evidence plus a tight fresh direct market and coherent surface may be High. A stale exact trade with strong two-sided recent nearby evidence and a tight direct market can remain sufficiently credible. A stale exact trade with one very-close proxy is generally Moderate. Very stale exact evidence without a credible recent nearby proxy is Low and triggers a skeptic veto, so a large nominal AY cannot make it a strong Actionable idea.
 
-OI and volume are evidence, not universal vetoes.
+## Canonical actionability rank
 
-## Price discovery and actionability
+There is no 0–100 score and no hidden weighting. The lexicographic comparator uses, in order:
 
-`DIRECT_MARKET` preserves a positive Bid as the seller-credit basis and keeps Ask/Last as evidence. High confidence requires a fresh, two-sided, tight market and a credible monotonic same-expiration bracket. Other usable non-stale direct markets are Moderate. Last never becomes seller credit.
+1. verdict (`ACTIONABLE > CONDITIONAL > WATCH > PASS`);
+2. price-discovery tier;
+3. pricing actionability, then pricing confidence;
+4. robustness;
+5. underlying qualification, then shared technical state;
+6. skeptic veto state;
+7. meaningful comparison/dominance loss count;
+8. Annualized Yield margin above the required hurdle;
+9. breakeven/downside cushion;
+10. smaller absolute Delta;
+11. canonical contract ID as a stable tie-break.
 
-A zero/missing Bid is never replaced and can never be Actionable. The engine may form a labeled `INDICATIVE_RANGE` only from independently usable lower and upper strikes in the same expiration, subject to spread, spacing, monotonicity, Delta, IV, staleness, and candidate-Ask bounds. It is not fair value or an executable quote. Nearby expirations are never dollar-interpolated.
+Each candidate exports the exact rank fields and ordinal. Pricing ranks before nominal yield, so unreliable discovery cannot win merely by displaying a larger AY.
 
-Actionable requires a direct Bid clearing the hurdle plus blocking risk, evidence, skeptic, and robustness clearance. Conditional requires those non-execution gates but relies on a credible Ask or Moderate indicative range reaching the hurdle. Watch and Pass retain their distinct failure meanings.
+## Ranked shortlist and distinctions
 
-## Dominance and cross-duration comparison
+Every non-vetoed Actionable or Conditional candidate is a policy survivor. Exact duplicate contract IDs collapse. The ranked shortlist has a hard maximum of 15 and no minimum: two valid contracts produce two; eleven produce up to eleven; thirty produce the best fifteen.
 
-Within 21 DTE, A dominates B only with no material disadvantage in AY, Delta, breakeven cushion, Pricing Confidence, or Actionability and at least one material advantage. Small differences do not manufacture a winner.
+Rank remains primary. Diversity acts only within the same major tier—verdict, discovery, robustness, qualification, and shared technical state—where broader underlying representation is preferred before a third contract from the same ticker. It never discards a clearly superior third same-ticker contract solely to diversify.
 
-For same-ticker pairs at least 45 days apart:
+`BEST_OVERALL`, `MORE_DEFENSIVE`, and `HIGHER_COMPENSATION` are optional distinctions on selected candidates. They are not slots and do not determine eligibility. An effective tie suppresses a false Best Overall.
 
-- If the longer contract adds no material defensive value and does not provide 2pp additional AY, it receives `DURATION_NOT_COMPENSATED`; the shorter contract receives `SHORTER_DURATION_EFFICIENT`.
-- If the longer contract materially improves absolute Delta or breakeven cushion and gives up no more than 1.5pp AY, it receives `LONGER_DURATION_DEFENSIVE_VALUE` and can outrank the shorter tenor.
-- Otherwise both retain an explicit duration tradeoff.
+## Shared technical assessment, verdict, and explanations
 
-The comparison uses normalized yield/risk evidence; it never compares raw option dollars as if expirations were interchangeable. Stable ID order is display-only. Effective ties receive `NO_CLEAR_LEADER` and cannot produce a false Best Overall.
+Strong and constructive technical states support eligibility when evidence is adequate. Oversold-intact and recovery are context-sensitive, not automatic bullish passes. Extended or transition states remain skeptical/Watch contexts as policy dictates. Broken trend preserves the hard-fail philosophy. The existing `watchUnderlyingPremium` supplies extra compensation for Watch-quality underlyings; Phase B does not add a parallel premium system.
 
-## Verdict and operational semantics
+Every explanation is assembled from typed evidence/reason codes. This includes recent direct transactions, nearby confirmation, stale or very stale evidence, constructive pullback, recovery/oversold context, extension, and deterioration. Generic prose inference is not used.
 
-Recommendation classes are emitted only when supported: Best Overall, More Defensive, Higher Compensation, and Conditional Price Opportunity. Counts shown to users deduplicate candidate IDs so one contract in multiple classes is surfaced once.
+## Opportunity Board and product hierarchy
 
-A complete run with no Actionable/Conditional contract is the successful `NO_TRADE` conclusion. Any failed Pulse input, batch, or underlying makes the run `INCOMPLETE`; successful partial candidates remain visible, but an empty partial result cannot be mislabeled NO TRADE.
+Top Opportunity cards show rank/distinctions, ticker/strike/expiration, explicit AY basis, Delta, OTM, DTE, exact Last Trade plus trading-session age, discovery/confidence, shared technical setup, and the key trade-off. No card fetch occurs.
 
-## Recommendation universe and expiration planner
+The Opportunity Board defaults to **Actionability** and uses the same comparator. Each underlying's representative is its true best-ranked candidate from the full run, not merely a surfaced selection. Ticker and Setup remain request-free alternate sorts. Desktop and mobile show rank, technical setup, and discovery without adding a materially wider table.
 
-Opening `/recommendations` makes zero market requests. Only **Refresh Recommendations** starts acquisition. A later refresh aborts/supersedes the old generation; obsolete work cannot publish.
+The existing Methodology modal is opened by the header's **Info + Methodology** control before the DTE/Refresh area. The redundant lower button is removed. The useful Decision Trace remains in the main explanation section.
 
-The account-level **Only evaluate options ≥60 DTE** preference defaults checked. It is backward-compatible in the optional cloud Preferences namespace and backup format. Checked selects 60–365 DTE; unchecked selects 0–365 DTE. A toggle changes preference only. The displayed run retains its original universe and shows a mismatch notice until an explicit refresh.
+## Diagnostics
 
-The existing batch pipeline obtains one normal metadata/discovery chain per qualified ticker, filters unique expirations to the selected bounds, and selects at most three:
+Decision Trace separately exposes tracked/qualified underlyings, underlying hard-fails, chains, evaluated/invalid contracts, risk failures, compensation failures, discovery insufficiency, stale exact transactions, robustness failures, skeptic vetoes, dominance/frontier losses, every verdict, policy survivors, surfaced shortlist, and exclusions caused only by the cap.
 
-1. nearest eligible;
-2. lower-middle eligible;
-3. farthest eligible.
+Rejection reasons overlap by design. These counts are audit evidence, not a fake subtractive funnel. `POLICY_SURVIVORS` and `SURFACED_SHORTLIST` are deliberately distinct.
 
-If three or fewer qualify, all are selected. If none qualify, no chain is fabricated. A discovery response that already matches a selected tenor is reused. The run records available, eligible, selected, and discovery dates per ticker. Batching, two-batch client concurrency, three-operation server concurrency, cancellation, successful partial results, failed-batch retry, cache priming, and `INCOMPLETE` behavior are preserved.
+## Requests and acquisition
 
-## Measured request budget
+Opening `/recommendations` makes zero market calls. Only explicit Refresh runs the existing cache-aware Pulse pass and bounded Screener acquisition. Phase B performs zero additional option acquisitions: nearby discovery uses the already acquired same-expiration chain; Last Trade uses the already loaded candidate; rank, shortlist, badges, board sorting, evidence, methodology, Decision Trace, and export are local.
 
-The old two-standard-expiration cold ceiling was 15 browser requests, 15 function invocations, 170 logical provider acquisitions, and 240 conditional HTTP attempts.
+The 60+ DTE account preference, near/middle/far maximum-three expiration planner, batching, concurrency, cancellation, cache reuse, retry, and partial `INCOMPLETE` behavior are unchanged. The conservative cold request ceilings therefore remain those recorded by the request ledger.
 
-The conservative V1.1 cold full-universe ceiling is 15 browser requests, 15 functions, 254 logical acquisitions, and 324 conditional HTTP attempts. It comprises 44 Pulse histories plus, for up to 42 qualified ETFs, one discovery chain, at most three selected representative chains, and one volatility-context operation. A deterministic three-ETF worst-case fixture measures 12 option acquisitions—3 discovery plus 9 selected—and 3 volatility operations. Discovery reuse, hard fails, sparse calendars, and no-eligible cases lower this count.
+## Verification contract
 
-A compatible warm Pulse/batch cache creates zero provider acquisitions. The `etf_pulse_rows:v3` calculated-row cache includes shared assessment V1; compatible v2 rows upgrade locally without acquisition. Sorting, expansion, show-all, evidence, Decision Trace, near misses, methodology, hover, selection, and JSON export are 0 browser / 0 function / 0 provider requests. The bounded increase provides near/middle/far DTE representation without crawling all expirations.
+Pricing tests cover: a 422-calendar-day/>60-session exact trade without proxy; one very-close same-expiration proxy; >10% exclusion; different-expiration exclusion; exact recent evidence; weekend/holiday counting; fresh chain versus stale exact evidence; two-sided bracket strength; and non-monotonic rejection.
 
-## Product information hierarchy and evaluation
+Ranking tests cover: 8–15 surfaces when qualified, the 15 cap, no minimum/two returns two, determinism, verdict order, price discovery before AY, veto preservation, duplicate removal, tier-bounded diversity, badge independence, and all Opportunity Board sorts/representatives.
 
-The page order is Decision, Top Opportunities, How Recommendations Work, Why Only These / Near Misses, then Full Opportunity Board / Audit. The header shows update time, dynamic tracked → qualified → contracts → surfaced counts, the universe checkbox, and Refresh. It does not advertise internal versions or export as primary actions.
-
-Primary cards lead with AY and show all six lenses, a concise Why This, and Main Trade-off. Conditional presentation visibly separates Direct Bid, Ask, Indicative range, Minimum Attractive Credit, Pricing Confidence, and Actionability. How Recommendations Work exposes a five-stage explanation and a Full Methodology modal. The board is secondary and shows eight rows until request-free expansion.
-
-Decision Trace is collapsed by default. It defines and counts tracked/qualified underlyings, acquired chains, evaluated/valid contracts, hurdle+risk survivors, frontier contracts, serious finalists, policy survivors, and distinct surfaced contracts. Rejection reasons intentionally overlap: one candidate can fail several independent checks, so reason totals are not a partition of candidates.
-
-Evaluation export contains the versioned run, selected universe, timestamp, coverage/expiration plans, evidence, provenance, policy checks, reasons, comparisons, robustness, Decision Trace, and results. It adds no recommendation-history table and no automatic persistence.
-
-V1.1 still defers Portfolio Fit, correlation, outcome training, ML/prediction, auto-tuning, all-expiration crawling, cross-expiration dollar interpolation, order execution, and persistent recommendation history. Snapshot exports should be shadow-evaluated on a fixed cadence before policy thresholds are changed; any change requires an explicit versioned policy.
+The complete project verification includes unit/integration tests, request ledger, responsive checks, build/lint, workflow E2E, and the request-free Recommendations visual matrix across Dark, Dark Blue, Light, and Sepia at desktop, tablet, portrait, and landscape viewports.

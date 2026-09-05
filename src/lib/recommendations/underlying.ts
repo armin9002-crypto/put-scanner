@@ -1,8 +1,8 @@
 import type { EtfPulseRow } from '../etfPulseMetrics.ts';
 import type { RegimeAnalysis } from '../marketRead/types.ts';
 import { technicalStateLabel, type UnderlyingTechnicalAssessment } from '../underlyingTechnical.ts';
-import type { RecommendationPolicyV1 } from './policy.ts';
-import { RECOMMENDATION_POLICY_V1 } from './policy.ts';
+import type { RecommendationPolicy } from './policy.ts';
+import { RECOMMENDATION_POLICY } from './policy.ts';
 import type { RecommendationBand, RecommendationReasonCode, UnderlyingAssessment } from './types.ts';
 
 function finite(value: unknown): value is number {
@@ -58,7 +58,7 @@ function overallSetup(lenses: UnderlyingAssessment['lenses']): RecommendationBan
 export function assessUnderlying(
   row: EtfPulseRow,
   regime: RegimeAnalysis,
-  policy: RecommendationPolicyV1 = RECOMMENDATION_POLICY_V1,
+  policy: RecommendationPolicy = RECOMMENDATION_POLICY,
 ): UnderlyingAssessment {
   void policy;
   const technical = row.technicalAssessment;
@@ -117,7 +117,7 @@ export function assessUnderlying(
 export function assessUnderlyingUniverse(
   rows: readonly EtfPulseRow[],
   regime: RegimeAnalysis,
-  policy: RecommendationPolicyV1 = RECOMMENDATION_POLICY_V1,
+  policy: RecommendationPolicy = RECOMMENDATION_POLICY,
 ): UnderlyingAssessment[] {
   return [...rows]
     .sort((left, right) => left.ticker.localeCompare(right.ticker))

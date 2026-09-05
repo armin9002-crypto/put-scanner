@@ -6,10 +6,11 @@ import {
   isFiniteNumber,
 } from '../optionMetrics.ts';
 import type { TradePosture } from '../marketRead/types.ts';
-import type { RecommendationPolicyV1 } from './policy.ts';
-import { RECOMMENDATION_POLICY_V1 } from './policy.ts';
+import type { RecommendationPolicy } from './policy.ts';
+import { RECOMMENDATION_POLICY } from './policy.ts';
 import { assessUnderlyingUniverse } from './underlying.ts';
 import { discoverContractPricing } from './pricing.ts';
+import { assignRecommendationRanks, buildRankedRecommendationShortlist, compareRecommendationCandidates } from './ranking.ts';
 import { buildCandidateExplanation, buildNearMissText, reasonCopy } from './explanations.ts';
 import {
   RECOMMENDATION_ENGINE_VERSION,
@@ -24,7 +25,6 @@ import {
   type RecommendationEvidenceQuality,
   type RecommendationReasonCode,
   type RecommendationRun,
-  type RecommendationSelection,
   type RecommendationSnapshot,
   type RobustnessClassification,
   type UnderlyingAssessment,
@@ -67,6 +67,16 @@ function candidateAnnualizedYieldPct(candidate: RecommendationCandidate): number
   return range ? (range.low + range.high) / 2 : null;
 }
 
+function technicalContextReason(candidate: RecommendationCandidate): RecommendationReasonCode | null {
+  const state = candidate.underlying.technicalAssessment.state;
+  if (state === 'CONSTRUCTIVE_PULLBACK') return 'CONSTRUCTIVE_PULLBACK_CONTEXT';
+  if (state === 'RECOVERY_RECLAIM') return 'RECOVERY_CONTEXT';
+  if (state === 'OVERSOLD_INTACT') return 'OVERSOLD_INTACT_CONTEXT';
+  if (state === 'EXTENDED') return 'EXTENDED_UNDERLYING';
+  if (state === 'TRANSITION_DETERIORATING') return 'DETERIORATING_UNDERLYING';
+  return null;
+}
+
 function requiredAnnualizedYield(input: {
   regime: RecommendationSnapshot['market']['regime'];
   posture: TradePosture;
@@ -74,7 +84,7 @@ function requiredAnnualizedYield(input: {
   delta: number | null;
   cushion: number | null;
   underlying: UnderlyingAssessment;
-  policy: RecommendationPolicyV1;
+  policy: RecommendationPolicy;
 }): number {
   const { policy } = input;
   let required = policy.compensation.minimumAnnualizedYieldByRegime[input.regime.label];
@@ -94,7 +104,7 @@ function requiredAnnualizedYield(input: {
   return required;
 }
 
-function compensationBand(annualizedYieldPct: number | null, requiredPct: number, policy: RecommendationPolicyV1): RecommendationBand {
+function compensationBand(annualizedYieldPct: number | null, requiredPct: number, policy: RecommendationPolicy): RecommendationBand {
   if (annualizedYieldPct == null) return 'WEAK';
   const difference = (annualizedYieldPct - requiredPct) / 100;
   if (difference >= 0.05) return 'STRONG';
@@ -178,7 +188,7 @@ function buildCandidate(
   snapshot: RecommendationSnapshot,
   row: RecommendationSnapshot['screenerRows'][number],
   underlying: UnderlyingAssessment,
-  policy: RecommendationPolicyV1,
+  policy: RecommendationPolicy,
 ): RecommendationCandidate {
   const chain = chainFor(snapshot, row.ticker, row.expDate);
   const validCore = finitePositive(row.currentPrice) && finitePositive(row.strike) && Number.isInteger(row.expDate) && row.expDate > 0 && Number.isInteger(row.dte) && row.dte > 0;
@@ -191,10 +201,19 @@ function buildCandidate(
       directAsk: row.ask,
       last: row.last,
       lastTradeDate: row.lastTradeDate,
+      exactTradeSessionAge: null,
+      exactTradeRecency: 'UNAVAILABLE' as const,
+      discoveryTier: 'INSUFFICIENT_PRICE_DISCOVERY' as const,
+      nearbyTransactionProxy: 'NONE' as const,
+      recentNeighborCount: 0,
+      closestRecentNeighborDistanceRatio: null,
+      recentLowerBracket: false,
+      recentUpperBracket: false,
+      chainEvidence: { fetchedAt: null, ageMs: null, source: 'unavailable', stale: false },
       indicativeRange: null,
       confidence: 'LOW' as const,
       actionability: 'LOW' as const,
-      surface: { bracketed: false, monotonic: false, coherent: false, neighbors: [], reasonCodes: ['PRICING_UNCERTAINTY' as const] },
+      surface: { bracketed: false, monotonic: false, coherent: false, neighbors: [], reasonCodes: ['PRICING_UNCERTAINTY' as const, 'INSUFFICIENT_PRICE_DISCOVERY' as const] },
     };
   const credit = pricing.directBid ?? (pricing.indicativeRange ? (pricing.indicativeRange.low + pricing.indicativeRange.high) / 2 : null);
   const breakeven = calculateBreakeven(row.strike, credit);
@@ -265,16 +284,17 @@ function buildCandidate(
     tradeoffReasonCodes: [],
     why: '',
     tradeoff: '',
+    rank: null,
   };
   candidate.lenses.volatilityOpportunity = volatilityBand(row, underlying);
   return candidate;
 }
 
-function comparable(left: RecommendationCandidate, right: RecommendationCandidate, policy: RecommendationPolicyV1): boolean {
+function comparable(left: RecommendationCandidate, right: RecommendationCandidate, policy: RecommendationPolicy): boolean {
   return left.ticker === right.ticker && Math.abs(left.dte - right.dte) <= policy.comparison.similarDteDays;
 }
 
-function materialDominates(left: RecommendationCandidate, right: RecommendationCandidate, policy: RecommendationPolicyV1): boolean {
+function materialDominates(left: RecommendationCandidate, right: RecommendationCandidate, policy: RecommendationPolicy): boolean {
   if (!comparable(left, right, policy)) return false;
   if (!blockingPolicyChecksPass(left)) return false;
   const leftAy = candidateAnnualizedYieldPct(left);
@@ -297,7 +317,7 @@ function materialDominates(left: RecommendationCandidate, right: RecommendationC
   return noDisadvantage && advantage;
 }
 
-function applyDominanceAndRelativeHurdles(candidates: RecommendationCandidate[], policy: RecommendationPolicyV1): void {
+function applyDominanceAndRelativeHurdles(candidates: RecommendationCandidate[], policy: RecommendationPolicy): void {
   for (const left of candidates) {
     for (const right of candidates) {
       if (left.id === right.id || !materialDominates(left, right, policy)) continue;
@@ -363,7 +383,7 @@ function creditAtScenario(candidate: RecommendationCandidate, scenario: 'BASIS' 
   return basisCredit(candidate);
 }
 
-function classifyRobustness(candidate: RecommendationCandidate, snapshot: RecommendationSnapshot, policy: RecommendationPolicyV1): RecommendationCandidate['robustness'] {
+function classifyRobustness(candidate: RecommendationCandidate, snapshot: RecommendationSnapshot, policy: RecommendationPolicy): RecommendationCandidate['robustness'] {
   const scenarios: Array<{ hurdle: number; delta: number; cushion: number; price: 'BASIS' | 'LOW' | 'HIGH' }> = [
     { hurdle: 0, delta: 0, cushion: 0, price: 'BASIS' },
     { hurdle: policy.robustness.hurdlePerturbation, delta: 0, cushion: 0, price: 'BASIS' },
@@ -425,6 +445,12 @@ function selectSkeptic(candidate: RecommendationCandidate, snapshot: Recommendat
         ? 'LONGER_DURATION_DEFENSIVE_VALUE'
         : 'POOR_RELATIVE_VALUE';
     veto = true;
+  } else if (candidate.pricing.discoveryTier === 'INSUFFICIENT_PRICE_DISCOVERY') {
+    code = 'INSUFFICIENT_PRICE_DISCOVERY';
+    veto = true;
+  } else if (candidate.pricing.exactTradeRecency === 'VERY_STALE' && candidate.pricing.nearbyTransactionProxy === 'NONE') {
+    code = 'VERY_STALE_TRANSACTION_EVIDENCE';
+    veto = true;
   } else if (candidate.pricing.confidence === 'LOW') {
     code = 'PRICING_UNCERTAINTY';
     veto = true;
@@ -468,7 +494,7 @@ function assignVerdict(candidate: RecommendationCandidate, snapshot: Recommendat
   return candidate.lenses.compensation !== 'WEAK' || candidate.lenses.cushion !== 'WEAK' ? 'WATCH' : 'PASS';
 }
 
-function dimensionFacts(left: RecommendationCandidate, right: RecommendationCandidate, policy: RecommendationPolicyV1): { advantages: string[]; disadvantages: string[] } {
+function dimensionFacts(left: RecommendationCandidate, right: RecommendationCandidate, policy: RecommendationPolicy): { advantages: string[]; disadvantages: string[] } {
   const advantages: string[] = [];
   const disadvantages: string[] = [];
   const leftAy = candidateAnnualizedYieldPct(left);
@@ -529,7 +555,7 @@ function comparisonReasonCodes(
   return reasonCodes.length > 0 ? reasonCodes : ['MARGINAL_COMPENSATION'];
 }
 
-function applyOutranking(candidates: RecommendationCandidate[], snapshot: RecommendationSnapshot, policy: RecommendationPolicyV1): void {
+function applyOutranking(candidates: RecommendationCandidate[], snapshot: RecommendationSnapshot, policy: RecommendationPolicy): void {
   const finalists = candidates.filter(candidate => isSeriousFinalist(candidate, snapshot));
   for (let leftIndex = 0; leftIndex < finalists.length; leftIndex += 1) {
     for (let rightIndex = leftIndex + 1; rightIndex < finalists.length; rightIndex += 1) {
@@ -607,82 +633,58 @@ function applyOutranking(candidates: RecommendationCandidate[], snapshot: Recomm
   }
 }
 
-function selectRecommendations(candidates: RecommendationCandidate[], policy: RecommendationPolicyV1): { selections: RecommendationSelection[]; noClearLeader: boolean } {
-  const qualifying = candidates
-    .filter(candidate => candidate.verdict === 'ACTIONABLE' || candidate.verdict === 'CONDITIONAL')
-    .sort((left, right) => left.id.localeCompare(right.id));
-  if (qualifying.length === 0) return { selections: [], noClearLeader: false };
-  const wins = (candidate: RecommendationCandidate) => candidate.comparisons.filter(comparison => comparison.relationship === 'OUTRANKS').length;
-  const losses = (candidate: RecommendationCandidate) => candidate.comparisons.filter(comparison => comparison.relationship === 'OUTRANKED_BY').length;
-  const leaders = qualifying.filter(candidate => losses(candidate) === 0);
-  const topWins = Math.max(...leaders.map(wins));
-  const bestCandidates = leaders.filter(candidate => wins(candidate) === topWins);
-  const noClearLeader = qualifying.length > 1 && bestCandidates.length !== 1;
-  const selections: RecommendationSelection[] = [];
-  const best = bestCandidates.length === 1 ? bestCandidates[0] : qualifying.length === 1 ? qualifying[0] : null;
-  if (best?.verdict === 'ACTIONABLE') selections.push({ class: 'BEST_OVERALL', candidateId: best.id });
-
-  const reference = best ?? qualifying[0];
-  const referenceDelta = reference.economics.delta == null ? null : Math.abs(reference.economics.delta);
-  const defensive = qualifying.find(candidate => {
-    if (candidate.id === reference.id || candidate.economics.delta == null || referenceDelta == null) return false;
-    const candidateCushion = candidate.economics.breakevenCushionAtBasis;
-    const referenceCushion = reference.economics.breakevenCushionAtBasis;
-    return Math.abs(candidate.economics.delta) <= referenceDelta - policy.comparison.materialDeltaDifference
-      || (candidateCushion != null && referenceCushion != null && candidateCushion >= referenceCushion + policy.comparison.materialCushionDifference);
-  });
-  if (defensive) selections.push({ class: 'MORE_DEFENSIVE', candidateId: defensive.id });
-
-  const referenceAy = candidateAnnualizedYieldPct(reference);
-  const higherCompensation = qualifying.find(candidate => {
-    const ay = candidateAnnualizedYieldPct(candidate);
-    return candidate.id !== reference.id && ay != null && referenceAy != null
-      && ay >= referenceAy + policy.compensation.materialAnnualizedYieldDifference * 100
-      && !candidate.comparisons.some(comparison => comparison.otherCandidateId === reference.id && comparison.relationship === 'OUTRANKED_BY');
-  });
-  if (higherCompensation && !selections.some(selection => selection.candidateId === higherCompensation.id)) {
-    selections.push({ class: 'HIGHER_COMPENSATION', candidateId: higherCompensation.id });
-  }
-
-  const conditional = qualifying.find(candidate => candidate.verdict === 'CONDITIONAL' && !selections.some(selection => selection.candidateId === candidate.id));
-  if (conditional) selections.push({ class: 'CONDITIONAL_PRICE_OPPORTUNITY', candidateId: conditional.id });
-  return { selections, noClearLeader };
-}
-
 function buildDecisionTrace(
   snapshot: RecommendationSnapshot,
   candidates: RecommendationCandidate[],
-  selections: RecommendationSelection[],
+  selection: ReturnType<typeof buildRankedRecommendationShortlist>,
+  policy: RecommendationPolicy,
 ) {
-  const meetsHurdleAndRisk = (candidate: RecommendationCandidate) => {
+  const clearsCompensation = (candidate: RecommendationCandidate) => {
     const bestAvailable = candidate.pricing.directBid ?? candidate.pricing.indicativeRange?.high ?? candidate.pricing.directAsk;
-    return riskPolicyClears(candidate, snapshot.market.posture)
-      && bestAvailable != null
+    return bestAvailable != null
       && candidate.minimumAttractiveCredit.credit != null
       && bestAvailable >= candidate.minimumAttractiveCredit.credit;
   };
-  const surfacedCandidateIds = new Set(selections.map(selection => selection.candidateId));
+  const surfacedCandidateIds = new Set(selection.selections.map(item => item.candidateId));
+  const policySurvivors = candidates.filter(candidate => candidate.verdict === 'ACTIONABLE' || candidate.verdict === 'CONDITIONAL');
   const stages = [
     { key: 'TRACKED_UNDERLYINGS' as const, label: 'Tracked underlyings', count: snapshot.coverage.trackedUnderlyings.length, definition: 'Configured leveraged-ETF opportunity universe.' },
     { key: 'QUALIFIED_UNDERLYINGS' as const, label: 'Qualified underlyings', count: snapshot.coverage.requestedForOptionScan.length, definition: 'Underlyings not hard-failed before option acquisition.' },
+    { key: 'UNDERLYING_HARD_FAILS' as const, label: 'Underlying hard-fails', count: snapshot.coverage.hardFailedBeforeChainAcquisition.length, definition: 'Severe ticker-level damage rejected before option acquisition.' },
     { key: 'CHAINS_ACQUIRED' as const, label: 'Chains acquired', count: snapshot.coverage.expirationsCovered.reduce((sum, item) => sum + item.expirationDates.length, 0), definition: 'Selected representative expirations with usable chain responses.' },
     { key: 'CONTRACTS_EVALUATED' as const, label: 'Contracts evaluated', count: candidates.length, definition: 'Contracts inside the run’s bounded DTE universe.' },
-    { key: 'VALID_CONTRACTS' as const, label: 'Valid contracts', count: candidates.filter(validityCheckPasses).length, definition: 'Contracts with valid identity, DTE, underlying price, and quote ordering.' },
-    { key: 'HURDLE_RISK_SURVIVORS' as const, label: 'Hurdle + risk survivors', count: candidates.filter(meetsHurdleAndRisk).length, definition: 'Contracts clearing absolute compensation and blocking risk policy.' },
-    { key: 'FRONTIER_CONTRACTS' as const, label: 'Frontier contracts', count: candidates.filter(candidate => validityCheckPasses(candidate) && candidate.dominatedBy.length === 0).length, definition: 'Valid contracts not materially dominated by a comparable alternative.' },
-    { key: 'SERIOUS_FINALISTS' as const, label: 'Serious finalists', count: candidates.filter(candidate => isSeriousFinalist(candidate, snapshot)).length, definition: 'Frontier contracts with sufficient pricing, evidence, economics, and risk support.' },
-    { key: 'POLICY_SURVIVORS' as const, label: 'Actionable / conditional', count: candidates.filter(candidate => candidate.verdict === 'ACTIONABLE' || candidate.verdict === 'CONDITIONAL').length, definition: 'Contracts surviving skeptic and robustness checks.' },
-    { key: 'SURFACED_RECOMMENDATIONS' as const, label: 'Surfaced recommendations', count: surfacedCandidateIds.size, definition: 'Distinct contracts selected for the Top Opportunities surface.' },
+    { key: 'INVALID_CONTRACTS' as const, label: 'Invalid contracts', count: candidates.filter(candidate => !validityCheckPasses(candidate)).length, definition: 'Invalid identity, DTE, underlying price, or quote ordering evidence.' },
+    { key: 'RISK_POLICY_FAILURES' as const, label: 'Risk-policy failures', count: candidates.filter(candidate => candidate.policyChecks.some(check => check.phase === 'RISK' && check.severity === 'BLOCKING' && !check.passed)).length, definition: 'Delta, strike-cushion, or breakeven-cushion hard gates not cleared.' },
+    { key: 'COMPENSATION_FAILURES' as const, label: 'Compensation failures', count: candidates.filter(candidate => !clearsCompensation(candidate)).length, definition: 'Available bid, ask opportunity, or indicative upper bound does not reach the candidate hurdle.' },
+    { key: 'PRICING_DISCOVERY_INSUFFICIENCY' as const, label: 'Pricing discovery insufficient', count: candidates.filter(candidate => candidate.pricing.discoveryTier === 'INSUFFICIENT_PRICE_DISCOVERY').length, definition: 'Current and same-expiration transaction evidence cannot establish a usable pricing basis.' },
+    { key: 'STALE_TRANSACTION_EVIDENCE' as const, label: 'Stale exact transactions', count: candidates.filter(candidate => candidate.pricing.exactTradeRecency === 'STALE' || candidate.pricing.exactTradeRecency === 'VERY_STALE').length, definition: 'Exact-contract Last is older than the 10-trading-session recent window.' },
+    { key: 'ROBUSTNESS_FAILURES' as const, label: 'Robustness failures', count: candidates.filter(candidate => candidate.robustness.classification === 'LOW').length, definition: 'Conclusion fails too many bounded hurdle, risk, or price perturbations.' },
+    { key: 'SKEPTIC_VETOES' as const, label: 'Skeptic vetoes', count: candidates.filter(candidate => candidate.skeptic.veto).length, definition: 'Strongest typed objection is severe enough to veto promotion.' },
+    { key: 'DOMINANCE_FRONTIER_LOSSES' as const, label: 'Dominance / frontier losses', count: candidates.filter(candidate => candidate.dominatedBy.length > 0).length, definition: 'A comparable contract is materially better or a tenor is not compensated.' },
+    { key: 'ACTIONABLE' as const, label: 'Actionable', count: candidates.filter(candidate => candidate.verdict === 'ACTIONABLE').length, definition: 'Direct current economics clear every hard gate with adequate pricing actionability.' },
+    { key: 'CONDITIONAL' as const, label: 'Conditional', count: candidates.filter(candidate => candidate.verdict === 'CONDITIONAL').length, definition: 'A bounded price opportunity reaches policy without executable bid economics.' },
+    { key: 'WATCH' as const, label: 'Watch', count: candidates.filter(candidate => candidate.verdict === 'WATCH').length, definition: 'Some evidence is useful, but one or more promotion requirements are not met.' },
+    { key: 'PASS' as const, label: 'Pass', count: candidates.filter(candidate => candidate.verdict === 'PASS').length, definition: 'Invalid, hard-failed, or economically weak contract.' },
+    { key: 'POLICY_SURVIVORS' as const, label: 'Policy survivors', count: selection.policySurvivorCount, definition: 'All genuine Actionable and Conditional contracts before the shortlist cap.' },
+    { key: 'SURFACED_SHORTLIST' as const, label: 'Surfaced shortlist', count: surfacedCandidateIds.size, definition: 'Distinct ranked contracts shown in Top Opportunities.' },
+    { key: 'SURFACING_CAP_EXCLUDED' as const, label: 'Excluded only by cap', count: selection.capExcluded, definition: `Otherwise eligible policy survivors beyond the maximum ${policy.selection.maximumShortlistSize}-contract shortlist.` },
   ];
+  const pricingRejectionCodes = new Set<RecommendationReasonCode>([
+    'PRICING_UNCERTAINTY',
+    'NO_DIRECT_BID',
+    'INSUFFICIENT_PRICE_DISCOVERY',
+    'STALE_TRANSACTION_EVIDENCE',
+    'VERY_STALE_TRANSACTION_EVIDENCE',
+  ]);
   const rejectionCounts = new Map<RecommendationReasonCode, number>();
   candidates.forEach(candidate => {
-    if (candidate.verdict === 'ACTIONABLE' || candidate.verdict === 'CONDITIONAL') return;
     const reasons = new Set<RecommendationReasonCode>();
     candidate.policyChecks.filter(check => check.severity === 'BLOCKING' && !check.passed).forEach(check => reasons.add(check.code));
-    candidate.pricing.surface.reasonCodes.forEach(code => reasons.add(code));
+    candidate.pricing.surface.reasonCodes.filter(code => pricingRejectionCodes.has(code)).forEach(code => reasons.add(code));
     candidate.comparisons.filter(comparison => comparison.relationship === 'OUTRANKED_BY').forEach(comparison => comparison.reasonCodes.forEach(code => reasons.add(code)));
     candidate.robustness.reasonCodes.forEach(code => reasons.add(code));
-    reasons.add(candidate.skeptic.code);
+    if (candidate.skeptic.veto || (candidate.verdict !== 'ACTIONABLE' && candidate.verdict !== 'CONDITIONAL')) reasons.add(candidate.skeptic.code);
+    if (policySurvivors.includes(candidate) && !surfacedCandidateIds.has(candidate.id)) reasons.add('SHORTLIST_CAP');
     reasons.forEach(code => rejectionCounts.set(code, (rejectionCounts.get(code) ?? 0) + 1));
   });
   const topRejectionReasons = [...rejectionCounts.entries()]
@@ -694,7 +696,7 @@ function buildDecisionTrace(
 
 export function runRecommendationEngine(
   snapshot: RecommendationSnapshot,
-  policy: RecommendationPolicyV1 = RECOMMENDATION_POLICY_V1,
+  policy: RecommendationPolicy = RECOMMENDATION_POLICY,
 ): RecommendationRun {
   if (snapshot.engineVersion !== RECOMMENDATION_ENGINE_VERSION || snapshot.policyVersion !== RECOMMENDATION_POLICY_VERSION || policy.version !== RECOMMENDATION_POLICY_VERSION) {
     throw new Error('Unsupported recommendation engine or policy version.');
@@ -702,10 +704,14 @@ export function runRecommendationEngine(
   const underlyingAssessments = assessUnderlyingUniverse(snapshot.underlyings, snapshot.market.regime, policy);
   const universe = snapshot.universe ?? recommendationUniverse(false);
   const underlyingByTicker = new Map(underlyingAssessments.map(assessment => [assessment.ticker, assessment]));
+  const seenContracts = new Set<string>();
   const candidates = [...snapshot.screenerRows]
     .filter(row => row.dte >= universe.minimumDte && row.dte <= universe.maximumDte)
     .sort((left, right) => left.ticker.localeCompare(right.ticker) || left.expDate - right.expDate || left.strike - right.strike)
     .flatMap(row => {
+      const id = candidateId(row.ticker, row.expDate, row.strike);
+      if (seenContracts.has(id)) return [];
+      seenContracts.add(id);
       const underlying = underlyingByTicker.get(row.ticker);
       return underlying ? [buildCandidate(snapshot, row, underlying, policy)] : [];
     });
@@ -726,6 +732,7 @@ export function runRecommendationEngine(
       ...(hurdleCleared && candidate.minimumAttractiveCredit.relativeFrontierCredit != null ? ['RELATIVE_HURDLE_CLEARED' as const] : []),
       ...(candidate.underlying.qualification === 'ELIGIBLE' ? ['SUPPORTIVE_UNDERLYING' as const] : []),
       ...(candidate.lenses.cushion === 'STRONG' ? ['STRONG_CUSHION' as const] : []),
+      ...(technicalContextReason(candidate) ? [technicalContextReason(candidate) as RecommendationReasonCode] : []),
       ...candidate.pricing.surface.reasonCodes,
     ];
     candidate.tradeoffReasonCodes = [
@@ -740,7 +747,8 @@ export function runRecommendationEngine(
     candidate.why = copy.why;
     candidate.tradeoff = copy.tradeoff;
   });
-  const selection = selectRecommendations(candidates, policy);
+  assignRecommendationRanks(candidates);
+  const selection = buildRankedRecommendationShortlist(candidates, policy);
   if (selection.noClearLeader) {
     candidates.filter(candidate => candidate.verdict === 'ACTIONABLE' || candidate.verdict === 'CONDITIONAL').forEach(candidate => {
       if (!candidate.tradeoffReasonCodes.includes('NO_CLEAR_LEADER')) candidate.tradeoffReasonCodes.push('NO_CLEAR_LEADER');
@@ -774,12 +782,15 @@ export function runRecommendationEngine(
     .sort()
     .map(ticker => ({
       ticker,
-      candidateIds: candidates.filter(candidate => candidate.ticker === ticker && candidate.dominatedBy.length === 0).map(candidate => candidate.id),
+      candidateIds: candidates
+        .filter(candidate => candidate.ticker === ticker && candidate.dominatedBy.length === 0)
+        .sort(compareRecommendationCandidates)
+        .map(candidate => candidate.id),
     }));
   const reasonCodes: RecommendationReasonCode[] = [];
   if (!hasOpportunities) reasonCodes.push('WEAK_OPPORTUNITY_SET');
   if (selection.noClearLeader) reasonCodes.push('NO_CLEAR_LEADER');
-  const decisionTrace = buildDecisionTrace(snapshot, candidates, selection.selections);
+  const decisionTrace = buildDecisionTrace(snapshot, candidates, selection, policy);
 
   return {
     engineVersion: RECOMMENDATION_ENGINE_VERSION,

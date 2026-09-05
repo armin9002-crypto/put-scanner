@@ -1,6 +1,8 @@
 import { X } from 'lucide-react';
-import { formatCurrency, formatNumber, formatPercentPoints } from '../lib/format.ts';
+import { formatCurrency, formatDateTime, formatNumber, formatPercentPoints } from '../lib/format.ts';
 import { reasonCopy } from '../lib/recommendations/explanations.ts';
+import { recommendationLastTradeText, transactionRecencyTone } from '../lib/recommendations/presentation.ts';
+import { priceDiscoveryLabel } from '../lib/recommendations/ranking.ts';
 import type { RecommendationCandidate, RecommendationRun } from '../lib/recommendations/types.ts';
 import { useResponsiveMode } from '../lib/responsive.ts';
 import MobileBottomSheet from './mobile/MobileBottomSheet.tsx';
@@ -17,6 +19,8 @@ function EvidenceContent({ candidate, run }: { candidate: RecommendationCandidat
         <div className="recommendation-evidence-section__title">Decision basis</div>
         <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3">
           <EvidenceMetric label="Verdict" value={candidate.verdict} />
+          <EvidenceMetric label="Canonical rank" value={candidate.rank ? `#${candidate.rank.ordinal}` : '—'} />
+          <EvidenceMetric label="Discovery" value={priceDiscoveryLabel(candidate.pricing.discoveryTier)} />
           <EvidenceMetric label="Provenance" value={candidate.pricing.provenance.replace(/_/g, ' ')} />
           <EvidenceMetric label="Pricing" value={candidate.pricing.confidence} />
           <EvidenceMetric label="Actionability" value={candidate.pricing.actionability} />
@@ -32,13 +36,17 @@ function EvidenceContent({ candidate, run }: { candidate: RecommendationCandidat
         <p className="mt-2 text-[11px] leading-5" style={{ color: 'var(--text-muted)' }}>
           Attractive At is a policy hurdle, not fair value or an expected execution price. A missing bid is never replaced.
         </p>
+        <div className="mt-2 space-y-1 text-[11px]">
+          <div data-recency={transactionRecencyTone(candidate.pricing.exactTradeRecency)}>{recommendationLastTradeText(candidate.pricing, run.asOf)}</div>
+          <div style={{ color: 'var(--text-muted)' }}>Chain observed {candidate.pricing.chainEvidence.fetchedAt == null ? 'unavailable' : formatDateTime(candidate.pricing.chainEvidence.fetchedAt)} · {candidate.pricing.chainEvidence.source}{candidate.pricing.chainEvidence.stale ? ' · stale chain evidence' : ''}</div>
+        </div>
       </section>
 
       <section className="recommendation-evidence-section">
         <div className="recommendation-evidence-section__title">Same-expiration price surface</div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[560px] text-[11px] font-mono tabular-nums">
-            <thead><tr>{['Role', 'Strike', 'Bid', 'Ask', 'Last', 'Δ', 'IV', 'Spread', 'OI', 'Vol'].map(label => <th key={label} className="px-1.5 py-1 text-right first:text-left">{label}</th>)}</tr></thead>
+          <table className="w-full min-w-[680px] text-[11px] font-mono tabular-nums">
+            <thead><tr>{['Role', 'Strike', 'Bid', 'Ask', 'Last', 'Trade age', 'Distance', 'Δ', 'IV', 'Spread', 'OI', 'Vol'].map(label => <th key={label} className="px-1.5 py-1 text-right first:text-left">{label}</th>)}</tr></thead>
             <tbody>
               {candidate.pricing.surface.neighbors.map(neighbor => (
                 <tr key={`${neighbor.side}-${neighbor.strike}`} data-candidate={neighbor.side === 'CANDIDATE' ? 'true' : undefined}>
@@ -47,6 +55,8 @@ function EvidenceContent({ candidate, run }: { candidate: RecommendationCandidat
                   <td className="px-1.5 py-1 text-right">{formatCurrency(neighbor.bid)}</td>
                   <td className="px-1.5 py-1 text-right">{formatCurrency(neighbor.ask)}</td>
                   <td className="px-1.5 py-1 text-right">{formatCurrency(neighbor.last)}</td>
+                  <td className="px-1.5 py-1 text-right">{neighbor.tradingSessionAge == null ? '—' : `${neighbor.tradingSessionAge} td`}</td>
+                  <td className="px-1.5 py-1 text-right">{neighbor.side === 'CANDIDATE' ? '—' : `${(neighbor.strikeDistanceRatio * 100).toFixed(1)}%`}</td>
                   <td className="px-1.5 py-1 text-right">{valueOrDash(neighbor.delta)}</td>
                   <td className="px-1.5 py-1 text-right">{neighbor.iv == null ? '—' : formatPercentPoints(neighbor.iv, 1)}</td>
                   <td className="px-1.5 py-1 text-right">{neighbor.spreadPercent == null ? '—' : `${(neighbor.spreadPercent * 100).toFixed(0)}%`}</td>
@@ -61,6 +71,11 @@ function EvidenceContent({ candidate, run }: { candidate: RecommendationCandidat
           <AuditTag label={`Bracket ${candidate.pricing.surface.bracketed ? 'yes' : 'no'}`} />
           <AuditTag label={`Monotonic ${candidate.pricing.surface.monotonic ? 'yes' : 'no'}`} />
           <AuditTag label={`Coherent ${candidate.pricing.surface.coherent ? 'yes' : 'no'}`} />
+          <AuditTag label={`Recent neighbors ${candidate.pricing.recentNeighborCount}`} />
+          <AuditTag label={`Recent lower ${candidate.pricing.recentLowerBracket ? 'yes' : 'no'}`} />
+          <AuditTag label={`Recent upper ${candidate.pricing.recentUpperBracket ? 'yes' : 'no'}`} />
+          <AuditTag label={`Closest ${candidate.pricing.closestRecentNeighborDistanceRatio == null ? '—' : `${(candidate.pricing.closestRecentNeighborDistanceRatio * 100).toFixed(1)}%`}`} />
+          <AuditTag label={`Proxy ${candidate.pricing.nearbyTransactionProxy.replace(/_/g, ' ')}`} />
         </div>
         <div className="mt-2 space-y-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
           {[...new Set(candidate.pricing.surface.reasonCodes)].map(code => <div key={code}>{reasonCopy(code)}</div>)}
@@ -91,6 +106,22 @@ function EvidenceContent({ candidate, run }: { candidate: RecommendationCandidat
           <span className="font-semibold" style={{ color: 'var(--text)' }}>Skeptic: </span>
           <span style={{ color: 'var(--text-muted)' }}>{candidate.skeptic.message}</span>
         </div>
+      </section>
+
+      <section className="recommendation-evidence-section">
+        <div className="recommendation-evidence-section__title">Actionability rank audit</div>
+        {candidate.rank ? (
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3">
+            <EvidenceMetric label="Canonical order" value={`#${candidate.rank.ordinal}`} />
+            <EvidenceMetric label="Major tier" value={candidate.rank.majorTierKey} />
+            <EvidenceMetric label="Relative losses" value={candidate.rank.relativeLossCount.toString()} />
+            <EvidenceMetric label="AY margin" value={candidate.rank.compensationMarginPctPoints == null ? '—' : `${candidate.rank.compensationMarginPctPoints.toFixed(1)} pp`} />
+            <EvidenceMetric label="Breakeven cushion" value={candidate.rank.breakevenCushionPct == null ? '—' : `${candidate.rank.breakevenCushionPct.toFixed(1)}%`} />
+            <EvidenceMetric label="Absolute Delta" value={candidate.rank.absoluteDelta == null ? '—' : candidate.rank.absoluteDelta.toFixed(3)} />
+            <EvidenceMetric label="Tie-break" value={candidate.rank.canonicalTieBreak} />
+          </div>
+        ) : <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Rank unavailable.</p>}
+        <p className="mt-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>Hard gates first, then deterministic relative ranking. Pricing evidence precedes nominal yield.</p>
       </section>
 
       <section className="recommendation-evidence-section">

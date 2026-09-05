@@ -58,6 +58,8 @@ test.describe('Recommendations visual matrix', () => {
         const { context, page } = await openThemedPage(browser, theme, viewport.width, viewport.height);
         await loadFixture(page, 'actionable');
         await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+        await expect(page.locator('.recommendation-card__last-trade').first()).toContainText('Last trade');
+        await expect(page.locator('.recommendations-board-sort select')).toHaveValue('actionability');
         await assertNoHorizontalOverflow(page);
         await capture(page, theme, `${viewport.name}-actionable-recommendations`);
         await context.close();
@@ -86,7 +88,7 @@ test.describe('Recommendations visual matrix', () => {
       await expect(desktop.page.getByRole('dialog', { name: /recommendation evidence/i })).toBeVisible();
       await capture(desktop.page, theme, 'desktop-evidence-drawer');
       await desktop.page.getByRole('complementary').getByRole('button', { name: /Close recommendation evidence/i }).click();
-      await desktop.page.getByRole('button', { name: 'Full Methodology' }).click();
+      await desktop.page.getByRole('button', { name: 'Methodology' }).click();
       await expect(desktop.page.getByRole('dialog', { name: 'Full Methodology' })).toBeVisible();
       await capture(desktop.page, theme, 'desktop-methodology');
       await desktop.context.close();

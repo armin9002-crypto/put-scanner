@@ -136,8 +136,15 @@ export function buildRecommendationVisualFixture(name: RecommendationVisualFixtu
   const soxl = underlying('SOXL', { rsi14: 54, distance50: 0.03 });
   const labu = underlying('LABU', { distance20: -0.05, distance50: -0.04, distance200: 0.08, recentDrawdown30: -0.14 });
   const boil = underlying('BOIL', { distance20: -0.15, distance50: -0.18, distance200: -0.12, recentDrawdown30: -0.25, rsi14: 28 });
-  const actionable = chain('TQQQ', option(65, { bid: 1.45, ask: 1.56, last: 1.5, delta: -0.11, impliedVolatility: 82 }));
-  const conditional = chain('SOXL', option(60, { bid: 0, ask: 5, last: 4.4, delta: -0.1, impliedVolatility: 95 }));
+  const actionable = chain('TQQQ', option(65, { bid: 4.1, ask: 4.25, last: 4.15, delta: -0.11, impliedVolatility: 82 }));
+  const conditional = chain('SOXL', option(60, {
+    bid: 0,
+    ask: 5,
+    last: 4.4,
+    lastTradeDate: Math.floor(Date.parse('2025-07-09T15:00:00.000Z') / 1_000),
+    delta: -0.1,
+    impliedVolatility: 95,
+  }));
   const weak = chain('LABU', option(60, { bid: 0.18, ask: 0.28, last: 0.22, delta: -0.08, impliedVolatility: 45 }));
   if (name === 'conditional') return runRecommendationEngine(snapshot([soxl], [conditional]));
   if (name === 'no-trade') return runRecommendationEngine(snapshot([labu, boil], [weak]));

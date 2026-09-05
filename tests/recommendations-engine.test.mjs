@@ -6,7 +6,7 @@ import { calculateAnnualizedYield, calculateCreditForAnnualizedYield } from '../
 import { postureFromRegime } from '../src/lib/marketRead/posture.ts';
 import { buildScreenerRows } from '../src/lib/screenerRows.ts';
 import { runRecommendationEngine } from '../src/lib/recommendations/engine.ts';
-import { discoverContractPricing } from '../src/lib/recommendations/pricing.ts';
+import { discoverContractPricing, recommendationTradingSessionAge } from '../src/lib/recommendations/pricing.ts';
 import { assessUnderlying } from '../src/lib/recommendations/underlying.ts';
 import { clearInMemoryRecommendationRunForTests, getInMemoryRecommendationRun, publishInMemoryRecommendationRun, refreshRecommendations } from '../src/lib/recommendations/acquisition.ts';
 import { readOnlyEvaluateAtLeast60Dte, persistOnlyEvaluateAtLeast60Dte } from '../src/lib/recommendationPreferences.ts';
@@ -249,8 +249,7 @@ test('C: no bid with a coherent same-expiration bracket can be Conditional but n
   assert.equal(candidate.verdict, 'CONDITIONAL');
   assert.notEqual(candidate.verdict, 'ACTIONABLE');
   assert.ok(candidate.pricing.indicativeRange.high >= candidate.pricing.indicativeRange.low);
-  assert.ok(run.recommendations.some(selection => selection.class === 'CONDITIONAL_PRICE_OPPORTUNITY' && selection.candidateId === candidate.id));
-  assert.equal(run.recommendations.some(selection => selection.class === 'BEST_OVERALL'), false);
+  assert.ok(run.recommendations.some(selection => selection.candidateId === candidate.id));
 });
 
 test('D, P, Q: incoherent, monotonicity-broken, or unbracketed no-bid surfaces do not fabricate pricing', () => {
@@ -307,7 +306,7 @@ test('I and S: near-identical finalists are treated as an effective tie without 
   const b = candidateAt(run, 'BBB', 65);
   assert.ok(a.comparisons.some(comparison => comparison.otherCandidateId === b.id && comparison.relationship === 'EFFECTIVE_TIE'));
   assert.ok(run.reasonCodes.includes('NO_CLEAR_LEADER'));
-  assert.equal(run.recommendations.some(selection => selection.class === 'BEST_OVERALL'), false);
+  assert.equal(run.recommendations.some(selection => selection.distinctions.includes('BEST_OVERALL')), false);
   assert.notEqual(a.robustness.classification, 'HIGH');
   assert.notEqual(b.robustness.classification, 'HIGH');
 });
@@ -318,7 +317,8 @@ test('J: stale Last with no real market remains non-executable and insufficient'
   assert.equal(pricing.directBid, null);
   assert.equal(pricing.indicativeRange, null);
   assert.equal(pricing.provenance, 'INSUFFICIENT_PRICING_EVIDENCE');
-  assert.ok(pricing.surface.reasonCodes.includes('STALE_EVIDENCE'));
+  assert.equal(pricing.discoveryTier, 'INSUFFICIENT_PRICE_DISCOVERY');
+  assert.ok(pricing.surface.reasonCodes.includes('STALE_TRANSACTION_EVIDENCE'));
 });
 
 test('K: low OI and zero volume do not veto a coherent direct market', () => {
@@ -410,6 +410,150 @@ test('price discovery handles direct, one-sided, malformed, wide, duplicate, irr
   const upperBoundary = discoverContractPricing({ strike: 70, dte: DTE, chain: chain('TQQQ', surface()), asOf: AS_OF });
   assert.equal(lowerBoundary.surface.bracketed, false);
   assert.equal(upperBoundary.surface.bracketed, false);
+});
+
+test('pricing A: a >60-session exact trade with no recent nearby proxy stays Low and cannot be promoted by nominal AY', () => {
+  const veryStale = Math.floor(Date.parse('2025-07-07T15:00:00.000Z') / 1_000);
+  const market = chain('TQQQ', [
+    put(60, { bid: 3, ask: 3.2, delta: -0.07, lastTradeDate: veryStale }),
+    put(65, { bid: 5, ask: 5.2, delta: -0.12, lastTradeDate: veryStale }),
+    put(70, { bid: 7, ask: 7.25, delta: -0.17, lastTradeDate: veryStale }),
+  ]);
+  const run = runRecommendationEngine(snapshot({ chains: [market] }));
+  const candidate = candidateAt(run, 'TQQQ', 65);
+  assert.ok(candidate.pricing.exactTradeSessionAge > 60);
+  assert.equal(candidate.pricing.exactTradeRecency, 'VERY_STALE');
+  assert.equal(candidate.pricing.nearbyTransactionProxy, 'NONE');
+  assert.equal(candidate.pricing.actionability, 'LOW');
+  assert.notEqual(candidate.verdict, 'ACTIONABLE');
+});
+
+test('pricing B: one very-close recent same-expiration neighbor can improve stale exact discovery to Moderate', () => {
+  const stale = Math.floor(Date.parse('2026-08-03T15:00:00.000Z') / 1_000);
+  const recent = Math.floor(Date.parse('2026-09-01T15:00:00.000Z') / 1_000);
+  const result = discoverContractPricing({
+    strike: 65,
+    dte: DTE,
+    asOf: AS_OF,
+    chain: chain('TQQQ', [
+      put(62, { bid: 0.95, ask: 1.05, delta: -0.08, lastTradeDate: recent }),
+      put(65, { bid: 1.35, ask: 1.48, delta: -0.12, lastTradeDate: stale }),
+      put(70, { bid: 2.2, ask: 2.35, delta: -0.17, lastTradeDate: stale }),
+    ]),
+  });
+  assert.equal(result.exactTradeRecency, 'STALE');
+  assert.equal(result.nearbyTransactionProxy, 'ONE_VERY_CLOSE_RECENT');
+  assert.equal(result.discoveryTier, 'RECENT_NEARBY_CONFIRMED');
+  assert.equal(result.confidence, 'MODERATE');
+  assert.equal(result.actionability, 'MODERATE');
+});
+
+test('pricing C: a recent same-expiration trade beyond ±10% does not rescue stale exact discovery', () => {
+  const stale = Math.floor(Date.parse('2026-08-03T15:00:00.000Z') / 1_000);
+  const recent = Math.floor(Date.parse('2026-09-01T15:00:00.000Z') / 1_000);
+  const result = discoverContractPricing({
+    strike: 65,
+    dte: DTE,
+    asOf: AS_OF,
+    chain: chain('TQQQ', [
+      put(57, { bid: 0.45, ask: 0.55, delta: -0.05, lastTradeDate: recent }),
+      put(65, { bid: 1.35, ask: 1.48, delta: -0.12, lastTradeDate: stale }),
+      put(70, { bid: 2.2, ask: 2.35, delta: -0.17, lastTradeDate: stale }),
+    ]),
+  });
+  assert.equal(result.recentNeighborCount, 0);
+  assert.equal(result.nearbyTransactionProxy, 'NONE');
+  assert.equal(result.discoveryTier, 'QUOTED_TRANSACTION_STALE');
+});
+
+test('pricing D: recent transactions at a different expiration do not rescue the candidate expiration', () => {
+  const day = Math.floor(Date.parse('2026-09-02T00:00:00.000Z') / 1_000);
+  const stale = Math.floor(Date.parse('2026-08-03T15:00:00.000Z') / 1_000);
+  const sameExpiration = chainAt('TQQQ', surface(put(65, { bid: 3.4, ask: 3.55, lastTradeDate: stale }), {
+    60: { lastTradeDate: stale }, 70: { lastTradeDate: stale },
+  }), day + 90 * 86_400, 90);
+  const differentExpiration = chainAt('TQQQ', surface(put(65, { bid: 6.5, ask: 6.7 })), day + 180 * 86_400, 180);
+  const run = runRecommendationEngine(multiTenorSnapshot([sameExpiration, differentExpiration]));
+  const candidate = run.candidates.find(item => item.dte === 90 && item.strike === 65);
+  assert.ok(candidate);
+  assert.equal(candidate.pricing.exactTradeRecency, 'STALE');
+  assert.equal(candidate.pricing.recentNeighborCount, 0);
+  assert.equal(candidate.pricing.nearbyTransactionProxy, 'NONE');
+  assert.equal(candidate.pricing.discoveryTier, 'QUOTED_TRANSACTION_STALE');
+});
+
+test('pricing E and G: recent exact evidence can be High, while fresh chain metadata remains distinct from stale exact trade age', () => {
+  const recent = discoverContractPricing({ strike: 65, dte: DTE, chain: chain('TQQQ', surface()), asOf: AS_OF });
+  assert.equal(recent.discoveryTier, 'DIRECT_RECENT');
+  assert.equal(recent.confidence, 'HIGH');
+
+  const staleTimestamp = Math.floor(Date.parse('2026-08-03T15:00:00.000Z') / 1_000);
+  const stale = discoverContractPricing({
+    strike: 65,
+    dte: DTE,
+    chain: chain('TQQQ', surface(put(65, { bid: 1.35, ask: 1.48, lastTradeDate: staleTimestamp }), {
+      60: { lastTradeDate: staleTimestamp }, 70: { lastTradeDate: staleTimestamp },
+    })),
+    asOf: AS_OF,
+  });
+  assert.equal(stale.chainEvidence.ageMs, 0);
+  assert.equal(stale.chainEvidence.stale, false);
+  assert.equal(stale.exactTradeRecency, 'STALE');
+  assert.equal(stale.discoveryTier, 'QUOTED_TRANSACTION_STALE');
+});
+
+test('pricing F: weekend and Labor Day do not inflate Recommendation trading-session age', () => {
+  const friday = Math.floor(Date.parse('2026-09-04T15:00:00.000Z') / 1_000);
+  assert.equal(recommendationTradingSessionAge(friday, '2026-09-08T15:00:00.000Z'), 1);
+});
+
+test('pricing H: two recent neighbors bracketing a stale exact contract are stronger than one 5–10% neighbor', () => {
+  const stale = Math.floor(Date.parse('2026-08-03T15:00:00.000Z') / 1_000);
+  const recent = Math.floor(Date.parse('2026-09-01T15:00:00.000Z') / 1_000);
+  const twoSided = discoverContractPricing({
+    strike: 65,
+    dte: DTE,
+    asOf: AS_OF,
+    chain: chain('TQQQ', [
+      put(60, { bid: 0.8, ask: 0.9, delta: -0.07, lastTradeDate: recent }),
+      put(65, { bid: 1.35, ask: 1.48, delta: -0.12, lastTradeDate: stale }),
+      put(70, { bid: 2.2, ask: 2.35, delta: -0.17, lastTradeDate: recent }),
+    ]),
+  });
+  const oneDistant = discoverContractPricing({
+    strike: 65,
+    dte: DTE,
+    asOf: AS_OF,
+    chain: chain('TQQQ', [
+      put(60, { bid: 0.8, ask: 0.9, delta: -0.07, lastTradeDate: recent }),
+      put(65, { bid: 1.35, ask: 1.48, delta: -0.12, lastTradeDate: stale }),
+      put(70, { bid: 2.2, ask: 2.35, delta: -0.17, lastTradeDate: stale }),
+    ]),
+  });
+  assert.equal(twoSided.nearbyTransactionProxy, 'TWO_SIDED_RECENT');
+  assert.equal(twoSided.discoveryTier, 'RECENT_NEARBY_CONFIRMED');
+  assert.equal(twoSided.confidence, 'HIGH');
+  assert.equal(oneDistant.nearbyTransactionProxy, 'ONE_DISTANT_RECENT');
+  assert.equal(oneDistant.discoveryTier, 'QUOTED_TRANSACTION_STALE');
+});
+
+test('pricing I: a non-monotonic surface cannot be rescued merely by recent neighboring trades', () => {
+  const stale = Math.floor(Date.parse('2026-08-03T15:00:00.000Z') / 1_000);
+  const recent = Math.floor(Date.parse('2026-09-01T15:00:00.000Z') / 1_000);
+  const result = discoverContractPricing({
+    strike: 65,
+    dte: DTE,
+    asOf: AS_OF,
+    chain: chain('TQQQ', [
+      put(60, { bid: 2.4, ask: 2.55, delta: -0.07, lastTradeDate: recent }),
+      put(65, { bid: 1.35, ask: 1.48, delta: -0.12, lastTradeDate: stale }),
+      put(70, { bid: 2.2, ask: 2.35, delta: -0.17, lastTradeDate: recent }),
+    ]),
+  });
+  assert.equal(result.surface.monotonic, false);
+  assert.equal(result.nearbyTransactionProxy, 'TWO_SIDED_RECENT');
+  assert.equal(result.discoveryTier, 'QUOTED_TRANSACTION_STALE');
+  assert.notEqual(result.confidence, 'HIGH');
 });
 
 test('invalid candidate economics fail closed without serializing NaN or Infinity', () => {
@@ -561,16 +705,18 @@ test('decision trace exposes defined stage counts, distinct surfaced contracts, 
   ]);
   const run = runRecommendationEngine(snapshot({ chains: [weakPremium] }));
   assert.deepEqual(run.decisionTrace.stages.map(stage => stage.key), [
-    'TRACKED_UNDERLYINGS', 'QUALIFIED_UNDERLYINGS', 'CHAINS_ACQUIRED', 'CONTRACTS_EVALUATED', 'VALID_CONTRACTS',
-    'HURDLE_RISK_SURVIVORS', 'FRONTIER_CONTRACTS', 'SERIOUS_FINALISTS', 'POLICY_SURVIVORS', 'SURFACED_RECOMMENDATIONS',
+    'TRACKED_UNDERLYINGS', 'QUALIFIED_UNDERLYINGS', 'UNDERLYING_HARD_FAILS', 'CHAINS_ACQUIRED', 'CONTRACTS_EVALUATED',
+    'INVALID_CONTRACTS', 'RISK_POLICY_FAILURES', 'COMPENSATION_FAILURES', 'PRICING_DISCOVERY_INSUFFICIENCY',
+    'STALE_TRANSACTION_EVIDENCE', 'ROBUSTNESS_FAILURES', 'SKEPTIC_VETOES', 'DOMINANCE_FRONTIER_LOSSES',
+    'ACTIONABLE', 'CONDITIONAL', 'WATCH', 'PASS', 'POLICY_SURVIVORS', 'SURFACED_SHORTLIST', 'SURFACING_CAP_EXCLUDED',
   ]);
   assert.ok(run.decisionTrace.stages.every(stage => Number.isInteger(stage.count) && stage.count >= 0 && stage.definition.length > 0));
-  assert.equal(run.decisionTrace.stages.at(-1).count, new Set(run.recommendations.map(selection => selection.candidateId)).size);
+  assert.equal(run.decisionTrace.stages.find(stage => stage.key === 'SURFACED_SHORTLIST').count, new Set(run.recommendations.map(selection => selection.candidateId)).size);
   assert.ok(run.decisionTrace.topRejectionReasons.length > 0);
   assert.ok(run.decisionTrace.topRejectionReasons.reduce((sum, reason) => sum + reason.count, 0) >= run.candidates.length);
 });
 
-test('Recommendations V1.1 UI preserves the old run until explicit refresh and exposes the full audit workflow', () => {
+test('Recommendations Phase B UI preserves the old run, exposes header methodology, and defaults the Board to Actionability', () => {
   const source = readFileSync('src/pages/RecommendationsPage.tsx', 'utf8');
   assert.match(source, /Only evaluate options ≥60 DTE/);
   assert.match(source, /runPreferenceMismatch/);
@@ -581,6 +727,11 @@ test('Recommendations V1.1 UI preserves the old run until explicit refresh and e
   assert.match(source, /Full Opportunity Board \/ Audit/);
   assert.match(source, /Decision Trace/);
   assert.match(source, /Full Methodology/);
+  assert.match(source, /useState<RecommendationBoardSort>\('actionability'\)/);
+  assert.match(source, /recommendations-methodology-trigger/);
+  assert.match(source, /recommendation-card__last-trade/);
+  assert.match(source, /Hard gates first, then deterministic relative ranking\./);
+  assert.doesNotMatch(source, />Full Methodology<\/button>/);
   assert.doesNotMatch(source, /42 tracked|44 tracked/i);
 });
 
