@@ -59,6 +59,9 @@ test.describe('Recommendations visual matrix', () => {
         await loadFixture(page, 'actionable');
         await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
         await expect(page.locator('.recommendation-card__last-trade').first()).toContainText('Last trade');
+        await expect(page.locator('.recommendation-card__discovery').first()).toContainText('Execution');
+        await expect(page.locator('.recommendation-card__discovery').first()).toContainText('Integrity');
+        await expect(page.locator('.recommendations-market-line__closed')).toContainText('quotes are indicative until the next session');
         await expect(page.locator('.recommendations-board-sort select')).toHaveValue('actionability');
         await assertNoHorizontalOverflow(page);
         await capture(page, theme, `${viewport.name}-actionable-recommendations`);
@@ -68,6 +71,8 @@ test.describe('Recommendations visual matrix', () => {
       const desktop = await openThemedPage(browser, theme, 1440, 900);
       await loadFixture(desktop.page, 'conditional');
       await expect(desktop.page.getByText('CONDITIONAL', { exact: true }).first()).toBeVisible();
+      await expect(desktop.page.locator('.recommendation-conditional-strip')).toContainText('Execution quality');
+      await expect(desktop.page.locator('.recommendation-conditional-strip')).toContainText('Market gap');
       await capture(desktop.page, theme, 'desktop-conditional-opportunity');
 
       await loadFixture(desktop.page, 'no-trade');
@@ -86,6 +91,8 @@ test.describe('Recommendations visual matrix', () => {
 
       await desktop.page.getByRole('button', { name: 'Evidence', exact: true }).first().click();
       await expect(desktop.page.getByRole('dialog', { name: /recommendation evidence/i })).toBeVisible();
+      await expect(desktop.page.getByRole('dialog', { name: /recommendation evidence/i })).toContainText('Market integrity');
+      await expect(desktop.page.getByRole('dialog', { name: /recommendation evidence/i })).toContainText('Trusted Bid');
       await capture(desktop.page, theme, 'desktop-evidence-drawer');
       await desktop.page.getByRole('complementary').getByRole('button', { name: /Close recommendation evidence/i }).click();
       await desktop.page.getByRole('button', { name: 'Methodology' }).click();
@@ -95,6 +102,8 @@ test.describe('Recommendations visual matrix', () => {
 
       const mobile = await openThemedPage(browser, theme, 390, 844);
       await loadFixture(mobile.page, 'actionable');
+      await expect(mobile.page.locator('.recommendations-market-line__closed')).toBeVisible();
+      await assertNoHorizontalOverflow(mobile.page);
       await capture(mobile.page, theme, 'mobile-recommendations');
 
       const mobileBoard = mobile.page.getByRole('heading', { name: 'Full Opportunity Board / Audit' });

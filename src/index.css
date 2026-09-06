@@ -858,6 +858,12 @@ table,
   text-transform: uppercase;
 }
 
+.recommendations-market-line__closed {
+  margin-left: auto;
+  color: var(--yellow);
+  font-weight: 650;
+}
+
 .recommendations-verdict-strip {
   display: flex;
   align-items: center;
@@ -1677,6 +1683,11 @@ table,
 
   .recommendations-market-line__label {
     width: 100%;
+  }
+
+  .recommendations-market-line__closed {
+    width: 100%;
+    margin-left: 0;
   }
 
   .recommendations-verdict-strip {

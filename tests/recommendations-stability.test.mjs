@@ -42,9 +42,9 @@ test('production-scale Recommendation path is deterministic and structurally bou
   assert.equal(snapshot.screenerRows.length, 3_996);
   const firstProjection = financialProjection(first);
   assert.deepEqual(firstProjection, financialProjection(second));
-  // Captured from the unmodified 0b817fc engine after normalizing only the bounded comparison-detail representation.
+  // Captured after the Phase B integrity/execution-quality policy change and bounded comparison-detail normalization.
   assert.equal(createHash('sha256').update(JSON.stringify(firstProjection)).digest('hex'),
-    'd044d823086af57d7ca5cb3f8549296b3dfe4b910e34c3e9e59fa027ed33f113',
+    'c60367308955273988e4d05ebf4290b00c9dc4e97656ea10e5ee15508cda20e6',
     'the production-scale financial golden changed');
   assert.equal(firstDiagnostics.rankFactorComputations, first.candidates.length);
   assert.equal(firstDiagnostics.dominancePairVisits, firstDiagnostics.relativeHurdlePairVisits);

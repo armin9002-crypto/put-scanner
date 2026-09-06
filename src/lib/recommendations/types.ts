@@ -1,11 +1,11 @@
 import type { EtfPulseRow } from '../etfPulseMetrics.ts';
 import type { RegimeAnalysis, TradePosture } from '../marketRead/types.ts';
 import type { ScreenerRow } from '../screenerRows.ts';
-import type { OptionsChainData } from '../types.ts';
+import type { OptionIntegrityReasonCode, OptionIntegrityStatus, OptionsChainData } from '../types.ts';
 import type { UnderlyingTechnicalAssessment } from '../underlyingTechnical.ts';
 
-export const RECOMMENDATION_ENGINE_VERSION = 4 as const;
-export const RECOMMENDATION_POLICY_VERSION = 3 as const;
+export const RECOMMENDATION_ENGINE_VERSION = 5 as const;
+export const RECOMMENDATION_POLICY_VERSION = 4 as const;
 
 export type RecommendationBand = 'STRONG' | 'GOOD' | 'MIXED' | 'WEAK';
 export type RecommendationEvidenceQuality = 'HIGH' | 'MODERATE' | 'LOW';
@@ -28,6 +28,7 @@ export type RecommendationReasonCode =
   | 'BROKEN_TREND'
   | 'CLEAN_DIRECT_MARKET'
   | 'COHERENT_PRICE_BRACKET'
+  | 'CONDITIONAL_CREDIT_TOO_FAR'
   | 'CONSTRUCTIVE_PULLBACK_CONTEXT'
   | 'DEFENSIVE_TRADEOFF_FAVORABLE'
   | 'DURATION_NOT_COMPENSATED'
@@ -41,6 +42,7 @@ export type RecommendationReasonCode =
   | 'INSUFFICIENT_CUSHION'
   | 'INVALID_CONTRACT'
   | 'MARGINAL_COMPENSATION'
+  | 'MARKET_INTEGRITY_INVALID'
   | 'MISSING_DELTA'
   | 'LONGER_DURATION_DEFENSIVE_VALUE'
   | 'NO_CLEAR_LEADER'
@@ -167,9 +169,19 @@ export interface PriceNeighborEvidence {
   openInterest: number | null;
   volume: number | null;
   spreadPercent: number | null;
+  rawBid: number | null;
+  rawAsk: number | null;
+  rawLast: number | null;
+  integrityStatus: OptionIntegrityStatus;
+  integrityReasonCodes: OptionIntegrityReasonCode[];
 }
 
 export interface RecommendationPricing {
+  integrityStatus: OptionIntegrityStatus;
+  integrityReasonCodes: OptionIntegrityReasonCode[];
+  rawBid: number | null;
+  rawAsk: number | null;
+  rawLast: number | null;
   provenance: PricingProvenance;
   directBid: number | null;
   directAsk: number | null;
@@ -247,6 +259,7 @@ export interface RecommendationCandidate {
     relativeFrontierCredit: number | null;
     credit: number | null;
     requiredAnnualizedYieldPct: number;
+    conditionalCreditGapRatio: number | null;
   };
   lenses: {
     compensation: RecommendationBand;

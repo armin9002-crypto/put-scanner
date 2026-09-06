@@ -57,18 +57,19 @@ function roundQuote(value: number, tick: number): number {
   return Number((Math.round(value / tick) * tick).toFixed(2));
 }
 
-function optionQuality(option: OptionContract): [number, number, string] {
+function optionQuality(option: OptionContract): [number, number, number, string] {
+  const integrityRank = isOptionContractIntegrityInvalid(option) ? 1 : 0;
   const bid = quote(option.bid);
   const ask = quote(option.ask);
   const spread = bid != null && ask != null && ask >= bid ? ask - bid : Number.POSITIVE_INFINITY;
   const twoSidedRank = bid != null && bid > 0 && ask != null && ask >= bid ? 0 : 1;
-  return [twoSidedRank, spread, option.contractSymbol ?? ''];
+  return [integrityRank, twoSidedRank, spread, option.contractSymbol ?? ''];
 }
 
 function compareQuality(left: OptionContract, right: OptionContract): number {
   const a = optionQuality(left);
   const b = optionQuality(right);
-  return a[0] - b[0] || a[1] - b[1] || a[2].localeCompare(b[2]);
+  return a[0] - b[0] || a[1] - b[1] || a[2] - b[2] || a[3].localeCompare(b[3]);
 }
 
 function dedupeByStrike(options: readonly OptionContract[]): OptionContract[] {
@@ -91,6 +92,9 @@ function baseEvidenceFor(
   asOf: string,
 ): BasePriceEvidence {
   const integrityInvalid = isOptionContractIntegrityInvalid(option);
+  const rawBid = quote(option.bid);
+  const rawAsk = quote(option.ask);
+  const rawLast = quote(option.last);
   const bid = integrityInvalid ? null : quote(option.bid);
   const ask = integrityInvalid ? null : quote(option.ask);
   const last = integrityInvalid ? null : quote(option.last);
@@ -114,6 +118,11 @@ function baseEvidenceFor(
     openInterest: quote(option.openInterest),
     volume: quote(option.volume),
     spreadPercent: calculateBidAskSpreadPercent(bid, ask),
+    rawBid,
+    rawAsk,
+    rawLast,
+    integrityStatus: option.integrity?.status ?? 'clean',
+    integrityReasonCodes: option.integrity?.reasonCodes ?? [],
   };
 }
 
@@ -241,6 +250,29 @@ function discoveryReasonCodes(pricing: Pick<RecommendationPricing, 'discoveryTie
   return reasons;
 }
 
+export function conditionalExecutionAssessment(
+  pricing: Pick<RecommendationPricing, 'integrityStatus' | 'confidence' | 'actionability' | 'directBid' | 'directAsk' | 'indicativeRange'>,
+  hurdle: number | null,
+  policy: RecommendationPolicy = RECOMMENDATION_POLICY,
+): { eligible: boolean; marketReaches: boolean; withinProximity: boolean; gapRatio: number | null } {
+  const reference = pricing.directBid ?? pricing.indicativeRange?.low ?? null;
+  const ceiling = pricing.directAsk ?? pricing.indicativeRange?.high ?? null;
+  const marketReaches = hurdle != null && ceiling != null && ceiling >= hurdle;
+  const gapRatio = hurdle != null && reference != null && reference > 0 && hurdle > reference
+    ? (hurdle - reference) / reference
+    : null;
+  const withinProximity = gapRatio != null && gapRatio <= policy.pricing.maximumConditionalCreditGapRatio + 1e-12;
+  const executionEligible = pricing.integrityStatus !== 'invalid'
+    && pricing.confidence !== 'LOW'
+    && pricing.actionability !== 'LOW';
+  return {
+    eligible: executionEligible && marketReaches && withinProximity,
+    marketReaches,
+    withinProximity,
+    gapRatio,
+  };
+}
+
 export function discoverContractPricing(input: {
   strike: number;
   dte: number;
@@ -266,7 +298,10 @@ export function discoverContractPricing(input: {
     stale: chainStale,
   };
   if (optionIndex == null || !option) {
+    const chainIntegrity = input.chain.chainMeta?.integrity;
     return {
+      integrityStatus: chainIntegrity?.status ?? 'clean', integrityReasonCodes: chainIntegrity?.reasonCodes ?? [],
+      rawBid: null, rawAsk: null, rawLast: null,
       provenance: 'INSUFFICIENT_PRICING_EVIDENCE', directBid: null, directAsk: null, last: null, lastTradeDate: null,
       exactTradeSessionAge: null, exactTradeRecency: 'UNAVAILABLE', discoveryTier: 'INSUFFICIENT_PRICE_DISCOVERY', nearbyTransactionProxy: 'NONE',
       recentNeighborCount: 0, closestRecentNeighborDistanceRatio: null, recentLowerBracket: false, recentUpperBracket: false, chainEvidence,
@@ -353,7 +388,9 @@ export function discoverContractPricing(input: {
       actionability = strongProxy ? 'HIGH' : credibleDirectMarket ? 'MODERATE' : 'LOW';
     } else if (discoveryTier === 'QUOTED_TRANSACTION_STALE' && exactTradeRecency !== 'VERY_STALE') {
       confidence = directTwoSided ? 'MODERATE' : 'LOW';
-      actionability = credibleDirectMarket ? 'MODERATE' : 'LOW';
+      // A fresh retrieval cannot promote a stale exact transaction without a
+      // qualifying recent same-expiration proxy.
+      actionability = 'LOW';
     }
   } else if (provenance === 'INDICATIVE_RANGE' && !chainStale) {
     confidence = 'MODERATE';
@@ -362,6 +399,7 @@ export function discoverContractPricing(input: {
 
   const pricingForReasons = { discoveryTier, exactTradeRecency };
   const surfaceReasonCodes: RecommendationReasonCode[] = [
+    ...(candidate.integrityStatus === 'invalid' ? ['MARKET_INTEGRITY_INVALID' as const] : []),
     ...(provenance === 'DIRECT_MARKET' ? [coherent ? 'CLEAN_DIRECT_MARKET' as const : 'PRICING_UNCERTAINTY' as const] : []),
     ...(provenance === 'INDICATIVE_RANGE' ? ['COHERENT_PRICE_BRACKET' as const, 'NO_DIRECT_BID' as const] : []),
     ...(provenance === 'INSUFFICIENT_PRICING_EVIDENCE' ? ['PRICING_UNCERTAINTY' as const, 'NO_DIRECT_BID' as const] : []),
@@ -374,6 +412,11 @@ export function discoverContractPricing(input: {
   ]);
 
   return {
+    integrityStatus: candidate.integrityStatus,
+    integrityReasonCodes: candidate.integrityReasonCodes,
+    rawBid: candidate.rawBid,
+    rawAsk: candidate.rawAsk,
+    rawLast: candidate.rawLast,
     provenance,
     directBid: provenance === 'DIRECT_MARKET' ? directBid : null,
     directAsk,

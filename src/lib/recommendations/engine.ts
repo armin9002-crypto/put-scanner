@@ -9,7 +9,12 @@ import type { TradePosture } from '../marketRead/types.ts';
 import type { RecommendationPolicy } from './policy.ts';
 import { RECOMMENDATION_POLICY } from './policy.ts';
 import { assessUnderlyingUniverse } from './underlying.ts';
-import { discoverContractPricing, prepareRecommendationPricingChain, type PreparedRecommendationPricingChain } from './pricing.ts';
+import {
+  conditionalExecutionAssessment,
+  discoverContractPricing,
+  prepareRecommendationPricingChain,
+  type PreparedRecommendationPricingChain,
+} from './pricing.ts';
 import { assignRecommendationRanks, buildRankedRecommendationShortlist, compareRecommendationCandidates } from './ranking.ts';
 import { buildCandidateExplanation, buildNearMissText, reasonCopy } from './explanations.ts';
 import {
@@ -171,10 +176,21 @@ function initialPolicyChecks(input: {
   posture: TradePosture;
   breakevenCushion: number | null;
   valid: boolean;
+  integrityInvalid: boolean;
 }): RecommendationCandidate['policyChecks'] {
   const strikeCushion = input.row.moneynessPct / 100;
   const checks: RecommendationCandidate['policyChecks'] = [
-    { code: 'INVALID_CONTRACT', passed: input.valid, severity: 'BLOCKING', phase: 'VALIDITY', detail: input.valid ? 'Required contract fields and quote ordering are valid.' : 'Required contract fields or quote ordering are invalid.' },
+    {
+      code: input.integrityInvalid ? 'MARKET_INTEGRITY_INVALID' : 'INVALID_CONTRACT',
+      passed: input.valid && !input.integrityInvalid,
+      severity: 'BLOCKING',
+      phase: 'VALIDITY',
+      detail: input.integrityInvalid
+        ? 'Canonical Phase A market-integrity assessment rejected the contract quote.'
+        : input.valid
+          ? 'Required contract fields and trusted quote ordering are valid.'
+          : 'Required contract fields or trusted quote ordering are invalid.',
+    },
     { code: 'DTE_OUTSIDE_POSTURE', passed: input.row.dte >= input.posture.dteMin && input.row.dte <= input.posture.dteMax, severity: 'INFORMATIONAL', phase: 'DURATION_CONTEXT', detail: `${input.row.dte} DTE versus the contextual ${input.posture.dteMin}–${input.posture.dteMax} posture range; this is not a hard veto.` },
     { code: input.row.delta == null ? 'MISSING_DELTA' : 'INSUFFICIENT_CUSHION', passed: input.row.delta != null && Math.abs(input.row.delta) <= input.posture.maxDelta, severity: 'BLOCKING', phase: 'RISK', detail: input.row.delta == null ? 'Delta unavailable.' : `${Math.abs(input.row.delta).toFixed(3)} absolute Delta versus ${input.posture.maxDelta.toFixed(2)} maximum.` },
     { code: 'INSUFFICIENT_CUSHION', passed: strikeCushion >= input.posture.minDistanceToStrike, severity: 'BLOCKING', phase: 'RISK', detail: `${(strikeCushion * 100).toFixed(1)}% strike cushion versus ${(input.posture.minDistanceToStrike * 100).toFixed(0)}% minimum.` },
@@ -212,10 +228,15 @@ function buildCandidate(
   const pricing = chain
     ? discoverContractPricing({ strike: row.strike, dte: row.dte, chain, asOf: snapshot.asOf, policy, prepared })
     : {
+      integrityStatus: row.integrityStatus ?? 'clean',
+      integrityReasonCodes: row.integrityReasonCodes ?? [],
+      rawBid: row.bid,
+      rawAsk: row.ask,
+      rawLast: row.last,
       provenance: 'INSUFFICIENT_PRICING_EVIDENCE' as const,
       directBid: null,
-      directAsk: row.ask,
-      last: row.last,
+      directAsk: row.integrityStatus === 'invalid' ? null : row.ask,
+      last: row.integrityStatus === 'invalid' ? null : row.last,
       lastTradeDate: row.lastTradeDate,
       exactTradeSessionAge: null,
       exactTradeRecency: 'UNAVAILABLE' as const,
@@ -229,7 +250,17 @@ function buildCandidate(
       indicativeRange: null,
       confidence: 'LOW' as const,
       actionability: 'LOW' as const,
-      surface: { bracketed: false, monotonic: false, coherent: false, neighbors: [], reasonCodes: ['PRICING_UNCERTAINTY' as const, 'INSUFFICIENT_PRICE_DISCOVERY' as const] },
+      surface: {
+        bracketed: false,
+        monotonic: false,
+        coherent: false,
+        neighbors: [],
+        reasonCodes: [
+          ...(row.integrityStatus === 'invalid' ? ['MARKET_INTEGRITY_INVALID' as const] : []),
+          'PRICING_UNCERTAINTY' as const,
+          'INSUFFICIENT_PRICE_DISCOVERY' as const,
+        ],
+      },
     };
   const credit = pricing.directBid ?? (pricing.indicativeRange ? (pricing.indicativeRange.low + pricing.indicativeRange.high) / 2 : null);
   const breakeven = calculateBreakeven(row.strike, credit);
@@ -279,6 +310,7 @@ function buildCandidate(
       relativeFrontierCredit: null,
       credit: absoluteCredit == null ? null : priceRound(absoluteCredit),
       requiredAnnualizedYieldPct: requiredYield * 100,
+      conditionalCreditGapRatio: null,
     },
     lenses: {
       compensation: compensationBand(economicAy, requiredYield * 100, policy),
@@ -289,7 +321,14 @@ function buildCandidate(
       actionability: actionabilityBand(pricing.actionability),
     },
     evidenceQuality,
-    policyChecks: initialPolicyChecks({ row, underlying, posture: snapshot.market.posture, breakevenCushion, valid: validCore && !quoteCorrupt }),
+    policyChecks: initialPolicyChecks({
+      row,
+      underlying,
+      posture: snapshot.market.posture,
+      breakevenCushion,
+      valid: validCore && !quoteCorrupt,
+      integrityInvalid: row.integrityStatus === 'invalid' || pricing.integrityStatus === 'invalid',
+    }),
     dominatedBy: [],
     dominates: [],
     comparisons: [],
@@ -323,6 +362,7 @@ function comparable(left: RecommendationCandidate, right: RecommendationCandidat
 function materialDominates(left: RecommendationCandidate, right: RecommendationCandidate, policy: RecommendationPolicy): boolean {
   if (!comparable(left, right, policy)) return false;
   if (!blockingPolicyChecksPass(left)) return false;
+  if (left.pricing.integrityStatus === 'invalid' || left.pricing.confidence === 'LOW' || left.pricing.actionability === 'LOW') return false;
   const leftAy = candidateAnnualizedYieldPct(left);
   const rightAy = candidateAnnualizedYieldPct(right);
   const leftDelta = left.economics.delta == null ? null : Math.abs(left.economics.delta);
@@ -383,6 +423,7 @@ function applyDominanceAndRelativeHurdles(candidates: RecommendationCandidate[],
       if (diagnostics) diagnostics.relativeHurdlePairVisits += 1;
       if (other.id === candidate.id || !comparable(candidate, other, policy)) continue;
       if (!blockingPolicyChecksPass(other)) continue;
+      if (other.pricing.integrityStatus === 'invalid' || other.pricing.confidence === 'LOW' || other.pricing.actionability === 'LOW') continue;
       const otherAy = candidateAnnualizedYieldPct(other);
       const otherDelta = other.economics.delta == null ? null : Math.abs(other.economics.delta);
       const otherCushion = other.economics.breakevenCushionAtBasis;
@@ -507,15 +548,16 @@ function classifyRobustness(candidate: RecommendationCandidate, snapshot: Recomm
   };
 }
 
-function selectSkeptic(candidate: RecommendationCandidate, snapshot: RecommendationSnapshot): RecommendationCandidate['skeptic'] {
+function selectSkeptic(candidate: RecommendationCandidate, snapshot: RecommendationSnapshot, policy: RecommendationPolicy): RecommendationCandidate['skeptic'] {
   const allRiskChecks = riskPolicyClears(candidate, snapshot.market.posture);
+  const conditional = conditionalExecutionAssessment(candidate.pricing, candidate.minimumAttractiveCredit.credit, policy);
   let code: RecommendationReasonCode = 'DOWNSIDE_TAIL_RISK';
   let veto = false;
   if (candidate.underlying.qualification === 'HARD_FAIL' || candidate.underlying.setup === 'WEAK') {
     code = candidate.lenses.compensation === 'STRONG' ? 'YIELD_TRAP' : 'BROKEN_TREND';
     veto = true;
   } else if (!validityCheckPasses(candidate)) {
-    code = 'INVALID_CONTRACT';
+    code = candidate.policyChecks.find(check => check.phase === 'VALIDITY' && !check.passed)?.code ?? 'INVALID_CONTRACT';
     veto = true;
   } else if (!allRiskChecks) {
     code = candidate.economics.delta == null ? 'MISSING_DELTA' : 'INSUFFICIENT_CUSHION';
@@ -533,6 +575,9 @@ function selectSkeptic(candidate: RecommendationCandidate, snapshot: Recommendat
   } else if (candidate.pricing.exactTradeRecency === 'VERY_STALE' && candidate.pricing.nearbyTransactionProxy === 'NONE') {
     code = 'VERY_STALE_TRANSACTION_EVIDENCE';
     veto = true;
+  } else if (conditional.marketReaches && conditional.gapRatio != null && !conditional.withinProximity) {
+    code = 'CONDITIONAL_CREDIT_TOO_FAR';
+    veto = true;
   } else if (candidate.pricing.confidence === 'LOW') {
     code = 'PRICING_UNCERTAINTY';
     veto = true;
@@ -548,13 +593,13 @@ function selectSkeptic(candidate: RecommendationCandidate, snapshot: Recommendat
   return { code, message: reasonCopy(code), veto };
 }
 
-function assignVerdict(candidate: RecommendationCandidate, snapshot: RecommendationSnapshot): CandidateVerdict {
+function assignVerdict(candidate: RecommendationCandidate, snapshot: RecommendationSnapshot, policy: RecommendationPolicy): CandidateVerdict {
   const riskClear = riskPolicyClears(candidate, snapshot.market.posture);
   const hurdle = candidate.minimumAttractiveCredit.credit;
   const directMeets = hurdle != null && candidate.pricing.directBid != null && candidate.pricing.directBid >= hurdle;
-  const indicativeReaches = hurdle != null && candidate.pricing.indicativeRange != null && candidate.pricing.indicativeRange.high >= hurdle;
-  const askReaches = hurdle != null && candidate.pricing.directAsk != null && candidate.pricing.directAsk >= hurdle;
+  const conditional = conditionalExecutionAssessment(candidate.pricing, hurdle, policy);
   const permitsIndicativeConditional = snapshot.market.regime.label !== 'Risk-Off' && snapshot.market.regime.label !== 'Oversold Panic';
+  const conditionalAllowedByRegime = candidate.pricing.directBid != null || permitsIndicativeConditional;
   if (candidate.underlying.qualification === 'HARD_FAIL' || !validityCheckPasses(candidate)) return 'PASS';
   if (candidate.dominatedBy.length > 0) return 'WATCH';
   if (directMeets
@@ -569,8 +614,11 @@ function assignVerdict(candidate: RecommendationCandidate, snapshot: Recommendat
     && candidate.evidenceQuality !== 'LOW'
     && candidate.robustness.classification !== 'LOW'
     && candidate.pricing.confidence !== 'LOW'
+    && candidate.pricing.actionability !== 'LOW'
     && !candidate.skeptic.veto
-    && ((permitsIndicativeConditional && indicativeReaches) || (!directMeets && candidate.pricing.directBid != null && askReaches))) return 'CONDITIONAL';
+    && !directMeets
+    && conditionalAllowedByRegime
+    && conditional.eligible) return 'CONDITIONAL';
   const bestAvailable = candidate.pricing.directBid ?? candidate.pricing.indicativeRange?.high ?? candidate.pricing.directAsk;
   if (hurdle != null && bestAvailable != null && bestAvailable >= hurdle * 0.85) return 'WATCH';
   return candidate.lenses.compensation !== 'WEAK' || candidate.lenses.cushion !== 'WEAK' ? 'WATCH' : 'PASS';
@@ -611,15 +659,17 @@ function dimensionFacts(left: RecommendationCandidate, right: RecommendationCand
   return { advantages, disadvantages };
 }
 
-function isSeriousFinalist(candidate: RecommendationCandidate, snapshot: RecommendationSnapshot): boolean {
+function isSeriousFinalist(candidate: RecommendationCandidate, snapshot: RecommendationSnapshot, policy: RecommendationPolicy): boolean {
   const hurdle = candidate.minimumAttractiveCredit.credit;
-  const availableCredits = [candidate.pricing.directBid, candidate.pricing.indicativeRange?.high, candidate.pricing.directAsk]
-    .filter((credit): credit is number => credit != null);
+  const directMeets = hurdle != null && candidate.pricing.directBid != null && candidate.pricing.directBid >= hurdle;
+  const conditional = conditionalExecutionAssessment(candidate.pricing, hurdle, policy);
   return hurdle != null
-    && availableCredits.some(credit => credit >= hurdle)
+    && (directMeets || conditional.eligible)
     && candidate.dominatedBy.length === 0
     && candidate.evidenceQuality !== 'LOW'
     && candidate.pricing.confidence !== 'LOW'
+    && candidate.pricing.actionability !== 'LOW'
+    && candidate.pricing.integrityStatus !== 'invalid'
     && riskPolicyClears(candidate, snapshot.market.posture);
 }
 
@@ -638,7 +688,7 @@ function comparisonReasonCodes(
 }
 
 function applyOutranking(candidates: RecommendationCandidate[], snapshot: RecommendationSnapshot, policy: RecommendationPolicy, diagnostics?: RecommendationEngineDiagnostics): Set<string> {
-  const finalists = candidates.filter(candidate => isSeriousFinalist(candidate, snapshot));
+  const finalists = candidates.filter(candidate => isSeriousFinalist(candidate, snapshot, policy));
   const effectiveTiePairs = new Set<string>();
   const pairKey = (left: RecommendationCandidate, right: RecommendationCandidate) => left.id < right.id ? `${left.id}\n${right.id}` : `${right.id}\n${left.id}`;
   for (let leftIndex = 0; leftIndex < finalists.length; leftIndex += 1) {
@@ -727,10 +777,9 @@ function buildDecisionTrace(
   policy: RecommendationPolicy,
 ) {
   const clearsCompensation = (candidate: RecommendationCandidate) => {
-    const bestAvailable = candidate.pricing.directBid ?? candidate.pricing.indicativeRange?.high ?? candidate.pricing.directAsk;
-    return bestAvailable != null
-      && candidate.minimumAttractiveCredit.credit != null
-      && bestAvailable >= candidate.minimumAttractiveCredit.credit;
+    const hurdle = candidate.minimumAttractiveCredit.credit;
+    const directMeets = hurdle != null && candidate.pricing.directBid != null && candidate.pricing.directBid >= hurdle;
+    return directMeets || conditionalExecutionAssessment(candidate.pricing, hurdle, policy).eligible;
   };
   const surfacedCandidateIds = new Set(selection.selections.map(item => item.candidateId));
   const policySurvivors = candidates.filter(candidate => candidate.verdict === 'ACTIONABLE' || candidate.verdict === 'CONDITIONAL');
@@ -740,16 +789,16 @@ function buildDecisionTrace(
     { key: 'UNDERLYING_HARD_FAILS' as const, label: 'Underlying hard-fails', count: snapshot.coverage.hardFailedBeforeChainAcquisition.length, definition: 'Severe ticker-level damage rejected before option acquisition.' },
     { key: 'CHAINS_ACQUIRED' as const, label: 'Chains acquired', count: snapshot.coverage.expirationsCovered.reduce((sum, item) => sum + item.expirationDates.length, 0), definition: 'Selected representative expirations with usable chain responses.' },
     { key: 'CONTRACTS_EVALUATED' as const, label: 'Contracts evaluated', count: candidates.length, definition: 'Contracts inside the run’s bounded DTE universe.' },
-    { key: 'INVALID_CONTRACTS' as const, label: 'Invalid contracts', count: candidates.filter(candidate => !validityCheckPasses(candidate)).length, definition: 'Invalid identity, DTE, underlying price, or quote ordering evidence.' },
+    { key: 'INVALID_CONTRACTS' as const, label: 'Invalid contracts', count: candidates.filter(candidate => !validityCheckPasses(candidate)).length, definition: 'Invalid identity, DTE, underlying price, or canonical market-integrity evidence.' },
     { key: 'RISK_POLICY_FAILURES' as const, label: 'Risk-policy failures', count: candidates.filter(candidate => candidate.policyChecks.some(check => check.phase === 'RISK' && check.severity === 'BLOCKING' && !check.passed)).length, definition: 'Delta, strike-cushion, or breakeven-cushion hard gates not cleared.' },
-    { key: 'COMPENSATION_FAILURES' as const, label: 'Compensation failures', count: candidates.filter(candidate => !clearsCompensation(candidate)).length, definition: 'Available bid, ask opportunity, or indicative upper bound does not reach the candidate hurdle.' },
+    { key: 'COMPENSATION_FAILURES' as const, label: 'Compensation failures', count: candidates.filter(candidate => !clearsCompensation(candidate)).length, definition: 'Trusted executable pricing does not clear the hurdle or sit within the bounded Conditional proximity.' },
     { key: 'PRICING_DISCOVERY_INSUFFICIENCY' as const, label: 'Pricing discovery insufficient', count: candidates.filter(candidate => candidate.pricing.discoveryTier === 'INSUFFICIENT_PRICE_DISCOVERY').length, definition: 'Current and same-expiration transaction evidence cannot establish a usable pricing basis.' },
     { key: 'STALE_TRANSACTION_EVIDENCE' as const, label: 'Stale exact transactions', count: candidates.filter(candidate => candidate.pricing.exactTradeRecency === 'STALE' || candidate.pricing.exactTradeRecency === 'VERY_STALE').length, definition: 'Exact-contract Last is older than the 10-trading-session recent window.' },
     { key: 'ROBUSTNESS_FAILURES' as const, label: 'Robustness failures', count: candidates.filter(candidate => candidate.robustness.classification === 'LOW').length, definition: 'Conclusion fails too many bounded hurdle, risk, or price perturbations.' },
     { key: 'SKEPTIC_VETOES' as const, label: 'Skeptic vetoes', count: candidates.filter(candidate => candidate.skeptic.veto).length, definition: 'Strongest typed objection is severe enough to veto promotion.' },
     { key: 'DOMINANCE_FRONTIER_LOSSES' as const, label: 'Dominance / frontier losses', count: candidates.filter(candidate => candidate.dominatedBy.length > 0).length, definition: 'A comparable contract is materially better or a tenor is not compensated.' },
     { key: 'ACTIONABLE' as const, label: 'Actionable', count: candidates.filter(candidate => candidate.verdict === 'ACTIONABLE').length, definition: 'Direct current economics clear every hard gate with adequate pricing actionability.' },
-    { key: 'CONDITIONAL' as const, label: 'Conditional', count: candidates.filter(candidate => candidate.verdict === 'CONDITIONAL').length, definition: 'A bounded price opportunity reaches policy without executable bid economics.' },
+    { key: 'CONDITIONAL' as const, label: 'Conditional', count: candidates.filter(candidate => candidate.verdict === 'CONDITIONAL').length, definition: 'Trusted non-low execution evidence reaches policy within the configured market-proximity bound.' },
     { key: 'WATCH' as const, label: 'Watch', count: candidates.filter(candidate => candidate.verdict === 'WATCH').length, definition: 'Some evidence is useful, but one or more promotion requirements are not met.' },
     { key: 'PASS' as const, label: 'Pass', count: candidates.filter(candidate => candidate.verdict === 'PASS').length, definition: 'Invalid, hard-failed, or economically weak contract.' },
     { key: 'POLICY_SURVIVORS' as const, label: 'Policy survivors', count: selection.policySurvivorCount, definition: 'All genuine Actionable and Conditional contracts before the shortlist cap.' },
@@ -762,6 +811,8 @@ function buildDecisionTrace(
     'INSUFFICIENT_PRICE_DISCOVERY',
     'STALE_TRANSACTION_EVIDENCE',
     'VERY_STALE_TRANSACTION_EVIDENCE',
+    'CONDITIONAL_CREDIT_TOO_FAR',
+    'MARKET_INTEGRITY_INVALID',
   ]);
   const rejectionCounts = new Map<RecommendationReasonCode, number>();
   candidates.forEach(candidate => {
@@ -813,16 +864,23 @@ export function runRecommendationEngine(
   recordPhase('candidateConstruction');
 
   applyDominanceAndRelativeHurdles(candidates, policy, diagnostics);
+  candidates.forEach(candidate => {
+    candidate.minimumAttractiveCredit.conditionalCreditGapRatio = conditionalExecutionAssessment(
+      candidate.pricing,
+      candidate.minimumAttractiveCredit.credit,
+      policy,
+    ).gapRatio;
+  });
   recordPhase('dominanceAndRelativeHurdles');
   const effectiveTiePairs = applyOutranking(candidates, snapshot, policy, diagnostics);
   recordPhase('outranking');
   candidates.forEach(candidate => {
-    candidate.skeptic = selectSkeptic(candidate, snapshot);
+    candidate.skeptic = selectSkeptic(candidate, snapshot, policy);
     candidate.robustness = classifyRobustness(candidate, snapshot, policy);
     if (candidate.robustness.classification === 'LOW' && !candidate.skeptic.veto) {
       candidate.skeptic = { code: 'ROBUSTNESS_LOW', message: reasonCopy('ROBUSTNESS_LOW'), veto: true };
     }
-    candidate.verdict = assignVerdict(candidate, snapshot);
+    candidate.verdict = assignVerdict(candidate, snapshot, policy);
     const credit = candidate.pricing.directBid ?? candidate.pricing.indicativeRange?.high ?? null;
     const hurdleCleared = credit != null && candidate.minimumAttractiveCredit.credit != null && credit >= candidate.minimumAttractiveCredit.credit;
     candidate.whyReasonCodes = [

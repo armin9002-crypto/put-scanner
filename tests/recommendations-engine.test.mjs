@@ -5,8 +5,10 @@ import { canonicalOptionChainKey } from '../src/lib/optionChainRequests.ts';
 import { calculateAnnualizedYield, calculateCreditForAnnualizedYield } from '../src/lib/optionMetrics.ts';
 import { postureFromRegime } from '../src/lib/marketRead/posture.ts';
 import { buildScreenerRows } from '../src/lib/screenerRows.ts';
+import { assessPutOptionSurface } from '../src/lib/optionMarketIntegrity.ts';
 import { runRecommendationEngine } from '../src/lib/recommendations/engine.ts';
-import { discoverContractPricing, recommendationTradingSessionAge } from '../src/lib/recommendations/pricing.ts';
+import { conditionalExecutionAssessment, discoverContractPricing, recommendationTradingSessionAge } from '../src/lib/recommendations/pricing.ts';
+import { recommendationMarketClosedText } from '../src/lib/recommendations/presentation.ts';
 import { assessUnderlying } from '../src/lib/recommendations/underlying.ts';
 import { clearInMemoryRecommendationRunForTests, getInMemoryRecommendationRun, publishInMemoryRecommendationRun, refreshRecommendations } from '../src/lib/recommendations/acquisition.ts';
 import { readOnlyEvaluateAtLeast60Dte, persistOnlyEvaluateAtLeast60Dte } from '../src/lib/recommendationPreferences.ts';
@@ -239,17 +241,16 @@ test('B and H: strong setup with terrible compensation remains Watch/Pass and co
   assert.deepEqual(run.recommendations, []);
 });
 
-test('C: no bid with a coherent same-expiration bracket can be Conditional but never Actionable or High confidence', () => {
+test('C: no bid with Low execution quality cannot be Conditional or Actionable', () => {
   const noBid = chain('TQQQ', surface(put(65, { bid: 0, ask: 1.55, last: 1.42, delta: -0.12 })));
   const run = runRecommendationEngine(snapshot({ chains: [noBid] }));
   const candidate = candidateAt(run, 'TQQQ', 65);
   assert.equal(candidate.pricing.provenance, 'INDICATIVE_RANGE');
   assert.equal(candidate.pricing.confidence, 'MODERATE');
   assert.equal(candidate.pricing.actionability, 'LOW');
-  assert.equal(candidate.verdict, 'CONDITIONAL');
-  assert.notEqual(candidate.verdict, 'ACTIONABLE');
+  assert.ok(['WATCH', 'PASS'].includes(candidate.verdict));
   assert.ok(candidate.pricing.indicativeRange.high >= candidate.pricing.indicativeRange.low);
-  assert.ok(run.recommendations.some(selection => selection.candidateId === candidate.id));
+  assert.equal(run.recommendations.some(selection => selection.candidateId === candidate.id), false);
 });
 
 test('D, P, Q: incoherent, monotonicity-broken, or unbracketed no-bid surfaces do not fabricate pricing', () => {
@@ -362,11 +363,31 @@ test('N: inferable price below Minimum Attractive Credit does not become Conditi
 });
 
 test('O: a bid below Attractive At with a credible ask above it can be Conditional, never Actionable', () => {
-  const market = chain('TQQQ', surface(put(65, { bid: 1.0, ask: 1.35, delta: -0.1 })));
+  const market = chain('TQQQ', surface(put(65, { bid: 1.05, ask: 1.35, delta: -0.1 })));
   const candidate = candidateAt(runRecommendationEngine(snapshot({ chains: [market] })), 'TQQQ', 65);
   assert.ok(candidate.pricing.directBid < candidate.minimumAttractiveCredit.credit);
   assert.ok(candidate.pricing.directAsk >= candidate.minimumAttractiveCredit.credit);
+  assert.ok(candidate.minimumAttractiveCredit.conditionalCreditGapRatio <= 0.1);
   assert.equal(candidate.verdict, 'CONDITIONAL');
+});
+
+test('execution proximity: TECL-like market is Conditional-eligible while WEBL-like market is too far away', () => {
+  const base = { integrityStatus: 'clean', confidence: 'HIGH', actionability: 'HIGH', indicativeRange: null };
+  const tecl = conditionalExecutionAssessment({ ...base, directBid: 13, directAsk: 15.2 }, 13.13);
+  const webl = conditionalExecutionAssessment({ ...base, directBid: 0.05, directAsk: 3.4 }, 1.3);
+  assert.equal(tecl.eligible, true);
+  assert.ok(Math.abs(tecl.gapRatio - 0.01) < 1e-12);
+  assert.equal(webl.marketReaches, true);
+  assert.equal(webl.withinProximity, false);
+  assert.equal(webl.eligible, false);
+  assert.equal(webl.gapRatio, 25);
+
+  const boundary = conditionalExecutionAssessment({ ...base, directBid: 1, directAsk: 1.2 }, 1.1);
+  const outsideBoundary = conditionalExecutionAssessment({ ...base, directBid: 1, directAsk: 1.2 }, 1.1001);
+  assert.equal(boundary.withinProximity, true);
+  assert.equal(boundary.eligible, true);
+  assert.equal(outsideBoundary.withinProximity, false);
+  assert.equal(outsideBoundary.eligible, false);
 });
 
 test('T: missing technical context lowers evidence quality without silently substituting zero', () => {
@@ -500,6 +521,19 @@ test('pricing E and G: recent exact evidence can be High, while fresh chain meta
   assert.equal(stale.chainEvidence.stale, false);
   assert.equal(stale.exactTradeRecency, 'STALE');
   assert.equal(stale.discoveryTier, 'QUOTED_TRANSACTION_STALE');
+  assert.equal(stale.actionability, 'LOW');
+});
+
+test('pricing G2: fresh HTTP metadata alone cannot make a stale exact quote Actionable', () => {
+  const staleTimestamp = Math.floor(Date.parse('2026-08-03T15:00:00.000Z') / 1_000);
+  const staleMarket = chain('TQQQ', surface(put(65, { bid: 4, ask: 4.15, lastTradeDate: staleTimestamp }), {
+    60: { lastTradeDate: staleTimestamp }, 70: { lastTradeDate: staleTimestamp },
+  }));
+  const candidate = candidateAt(runRecommendationEngine(snapshot({ chains: [staleMarket] })), 'TQQQ', 65);
+  assert.equal(candidate.pricing.chainEvidence.stale, false);
+  assert.equal(candidate.pricing.nearbyTransactionProxy, 'NONE');
+  assert.equal(candidate.pricing.actionability, 'LOW');
+  assert.notEqual(candidate.verdict, 'ACTIONABLE');
 });
 
 test('pricing F: weekend and Labor Day do not inflate Recommendation trading-session age', () => {
@@ -554,6 +588,35 @@ test('pricing I: a non-monotonic surface cannot be rescued merely by recent neig
   assert.equal(result.nearbyTransactionProxy, 'TWO_SIDED_RECENT');
   assert.equal(result.discoveryTier, 'QUOTED_TRANSACTION_STALE');
   assert.notEqual(result.confidence, 'HIGH');
+});
+
+test('Phase A invalid exact and dirty neighbors retain raw audit evidence but cannot be promoted or rescue pricing', () => {
+  const assessed = assessPutOptionSurface([
+    put(105, { bid: 0.7, ask: 4.8, contractSymbol: null }),
+    put(106, { bid: 0.8, ask: 4.9, contractSymbol: null }),
+    put(107, { bid: 8, ask: 10.2, contractSymbol: null }),
+    put(108, { bid: 8.1, ask: 10.4, contractSymbol: null }),
+    put(109, { bid: 8.2, ask: 10.5, contractSymbol: null }),
+    put(110, { bid: 2.9, ask: 3.5, contractSymbol: null }),
+  ]);
+  const dirtyChain = chain('UPRO', assessed.puts, { integrity: assessed.integrity });
+  const run = runRecommendationEngine(snapshot({ pulseRows: [pulse('UPRO')], chains: [dirtyChain] }));
+  const candidate = candidateAt(run, 'UPRO', 107);
+  assert.equal(candidate.pricing.integrityStatus, 'invalid');
+  assert.equal(candidate.pricing.rawBid, 8);
+  assert.equal(candidate.pricing.rawAsk, 10.2);
+  assert.equal(candidate.pricing.directBid, null);
+  assert.equal(candidate.pricing.recentNeighborCount, 0);
+  assert.ok(candidate.policyChecks.some(check => check.code === 'MARKET_INTEGRITY_INVALID' && !check.passed));
+  assert.ok(!['ACTIONABLE', 'CONDITIONAL'].includes(candidate.verdict));
+  assert.equal(run.recommendations.some(selection => selection.candidateId === candidate.id), false);
+});
+
+test('market-session context is deterministic and request-free across desktop/mobile presentation', () => {
+  assert.equal(recommendationMarketClosedText('2026-09-02T15:00:00.000Z'), null);
+  assert.match(recommendationMarketClosedText('2026-09-06T15:00:00.000Z'), /Market closed/);
+  assert.match(recommendationMarketClosedText('2026-09-07T15:00:00.000Z'), /Market closed/);
+  assert.match(recommendationMarketClosedText('2026-09-08T12:00:00.000Z'), /Market closed/);
 });
 
 test('invalid candidate economics fail closed without serializing NaN or Infinity', () => {
@@ -716,7 +779,7 @@ test('decision trace exposes defined stage counts, distinct surfaced contracts, 
   assert.ok(run.decisionTrace.topRejectionReasons.reduce((sum, reason) => sum + reason.count, 0) >= run.candidates.length);
 });
 
-test('Recommendations Phase B UI preserves the old run, exposes header methodology, and defaults the Board to Actionability', () => {
+test('Recommendations Phase B UI preserves the old run and exposes execution/integrity context', () => {
   const source = readFileSync('src/pages/RecommendationsPage.tsx', 'utf8');
   assert.match(source, /Only evaluate options ≥60 DTE/);
   assert.match(source, /runPreferenceMismatch/);
@@ -730,7 +793,14 @@ test('Recommendations Phase B UI preserves the old run, exposes header methodolo
   assert.match(source, /useState<RecommendationBoardSort>\('actionability'\)/);
   assert.match(source, /recommendations-methodology-trigger/);
   assert.match(source, /recommendation-card__last-trade/);
+  assert.match(source, /Execution rank/);
+  assert.match(source, /recommendations-market-line__closed/);
+  assert.match(source, /conditionalCreditGapRatio/);
   assert.match(source, /Hard gates first, then deterministic relative ranking\./);
+  const evidence = readFileSync('src/components/RecommendationEvidenceDrawer.tsx', 'utf8');
+  assert.match(evidence, /Raw provider quote — audit only/);
+  assert.match(evidence, /Trusted Bid/);
+  assert.match(evidence, /Market integrity/);
   assert.doesNotMatch(source, />Full Methodology<\/button>/);
   assert.doesNotMatch(source, /42 tracked|44 tracked/i);
 });

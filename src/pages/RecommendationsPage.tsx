@@ -11,7 +11,7 @@ import { createLatestScreenerScanGate } from '../lib/screenerAcquisition.ts';
 import { getInMemoryRecommendationRun, publishInMemoryRecommendationRun, refreshRecommendations, type RecommendationRefreshProgress } from '../lib/recommendations/acquisition.ts';
 import { buildRecommendationBoardRows, type RecommendationBoardRow, type RecommendationBoardSort } from '../lib/recommendations/board.ts';
 import { RECOMMENDATION_POLICY } from '../lib/recommendations/policy.ts';
-import { recommendationLastTradeText, transactionRecencyTone } from '../lib/recommendations/presentation.ts';
+import { recommendationLastTradeText, recommendationMarketClosedText, transactionRecencyTone } from '../lib/recommendations/presentation.ts';
 import { priceDiscoveryLabel } from '../lib/recommendations/ranking.ts';
 import type { CandidateVerdict, RecommendationBand, RecommendationCandidate, RecommendationDistinction, RecommendationRun, RecommendationSelection } from '../lib/recommendations/types.ts';
 import { buildRecommendationVisualFixture, type RecommendationVisualFixture } from '../lib/recommendations/visualFixtures.ts';
@@ -22,7 +22,7 @@ const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer.t
 const DISTINCTION_LABEL: Record<RecommendationDistinction, string> = {
   BEST_OVERALL: 'BEST OVERALL',
   MORE_DEFENSIVE: 'MORE DEFENSIVE',
-  HIGHER_COMPENSATION: 'HIGHER COMPENSATION',
+  HIGHER_COMPENSATION: 'HIGHER QUOTED COMPENSATION',
 };
 
 function optionDetail(candidate: RecommendationCandidate): OptionDetail {
@@ -47,6 +47,8 @@ function optionDetail(candidate: RecommendationCandidate): OptionDetail {
     otmItmPct: row.moneynessPct,
     otmItmLabel: row.moneynessLabel,
     otmItmColor: row.moneynessColor,
+    integrityStatus: row.integrityStatus,
+    integrityReasonCodes: row.integrityReasonCodes,
   };
 }
 
@@ -91,6 +93,8 @@ function watchlistItem(candidate: RecommendationCandidate): WatchlistItem {
       annualizedYieldAsk: row.annYieldAsk,
       moneynessPct: row.moneynessPct,
       moneynessLabel: row.moneynessLabel,
+      integrityStatus: row.integrityStatus,
+      integrityReasonCodes: row.integrityReasonCodes,
     },
   };
 }
@@ -170,7 +174,7 @@ function RecommendationCard({
           <div className="recommendation-card__hero-metric"><strong>{headlineAy}</strong><span>{displaysExecutableBidAy ? 'AY at Bid' : ayRange ? 'Indicative AY Range' : 'AY unavailable'}</span></div>
           <div className="recommendation-card__metrics">{delta(candidate.economics.delta)} Δ <span>·</span> {percent(candidate.economics.moneynessPct, 0)} OTM <span>·</span> {candidate.dte} DTE</div>
           <div className="recommendation-card__last-trade" data-recency={transactionRecencyTone(candidate.pricing.exactTradeRecency)}>{recommendationLastTradeText(candidate.pricing, asOf)}</div>
-          <div className="recommendation-card__discovery">{priceDiscoveryLabel(candidate.pricing.discoveryTier)} · Confidence {candidate.pricing.confidence}</div>
+          <div className="recommendation-card__discovery">{priceDiscoveryLabel(candidate.pricing.discoveryTier)} · Execution {candidate.pricing.actionability} · Integrity {candidate.pricing.integrityStatus.toUpperCase()}</div>
         </div>
         <div className="flex flex-none items-center gap-2"><VerdictBadge verdict={candidate.verdict} /><ChevronRight className="h-4 w-4" style={{ color: 'var(--text-dim)' }} /></div>
       </button>
@@ -181,7 +185,7 @@ function RecommendationCard({
           <LensRow label="Volatility" value={candidate.lenses.volatilityOpportunity} />
           <LensRow label="Underlying" value={candidate.lenses.underlyingSetup} />
           <LensRow label="Pricing" value={candidate.lenses.pricingConfidence} />
-          <LensRow label="Actionability" value={candidate.lenses.actionability} />
+          <LensRow label="Execution" value={candidate.lenses.actionability} />
         </div>
         <div className="recommendation-card__copy">
           <div><strong>WHY THIS</strong><p>{candidate.why}</p></div>
@@ -193,8 +197,9 @@ function RecommendationCard({
             <span>Ask {formatCurrency(candidate.pricing.directAsk)}</span>
             <span>Indicative {range ? `${formatCurrency(range.low)}–${formatCurrency(range.high)}` : '—'}</span>
             <strong>Minimum {candidate.minimumAttractiveCredit.credit == null ? 'unavailable' : `≥ ${formatCurrency(candidate.minimumAttractiveCredit.credit)}`}</strong>
-            <span>Pricing Confidence {candidate.pricing.confidence}</span>
-            <span>Actionability {candidate.pricing.actionability}</span>
+            <span>Pricing confidence {candidate.pricing.confidence}</span>
+            <span>Execution quality {candidate.pricing.actionability}</span>
+            <span>Market gap {candidate.minimumAttractiveCredit.conditionalCreditGapRatio == null ? '—' : percent(candidate.minimumAttractiveCredit.conditionalCreditGapRatio * 100)} · max {percent(RECOMMENDATION_POLICY.pricing.maximumConditionalCreditGapRatio * 100, 0)}</span>
           </div>
         )}
       </div>
@@ -243,22 +248,22 @@ function MethodologyModal({ run, onClose, onExport }: { run: RecommendationRun; 
           <div className="recommendation-methodology-grid">
             <article><strong>1 · Market Regime</strong><p>{run.market.regime.label} · {run.market.posture.label}. Broad SPY/QQQ, breadth, and volatility context informs hurdles but remains separate from ticker technical state.</p></article>
             <article><strong>2 · Underlying Technical Assessment</strong><p>The shared deterministic Phase A state supplies structure, momentum, reset/extension, volatility stress, and evidence quality. Recommendations does not reimplement those thresholds.</p></article>
-            <article><strong>3 · Contract eligibility</strong><p>Identity, positive strike/underlying, DTE, and quote ordering must be valid. Severe underlying hard-fails remain vetoes.</p></article>
+            <article><strong>3 · Contract eligibility</strong><p>Identity, positive strike/underlying, DTE, and canonical Phase A option-market integrity must be valid. Invalid quotes remain visible for audit but cannot be Actionable, Conditional, or Top Opportunities.</p></article>
             <article><strong>4 · DTE</strong><p>{run.universe.onlyEvaluateAtLeast60Dte ? `Only ${run.universe.minimumDte}+ DTE is evaluated` : 'Shorter expirations are allowed'}, bounded at {run.universe.maximumDte} DTE. Posture DTE is context and compensation input, not a hard veto.</p></article>
             <article><strong>5 · Delta</strong><p>Absolute Delta must be available and no greater than the current posture maximum of {run.market.posture.maxDelta.toFixed(2)}.</p></article>
             <article><strong>6 · Strike cushion</strong><p>The strike must be at least {percent(run.market.posture.minDistanceToStrike * 100, 0)} below spot under the current posture.</p></article>
             <article><strong>7 · Breakeven cushion</strong><p>The canonical entry-price basis must leave at least {percent(run.market.posture.minDistanceToBreakeven * 100, 0)} downside cushion.</p></article>
             <article><strong>8 · IV / realized-vol compensation</strong><p>IV and IV-versus-realized context are independent qualitative evidence; missing evidence is not replaced with zero.</p></article>
             <article><strong>9 · Absolute AY hurdle</strong><p>The base {run.market.regime.label} hurdle is {percent(RECOMMENDATION_POLICY.compensation.minimumAnnualizedYieldByRegime[run.market.regime.label] * 100)} before versioned duration, cushion, Delta, WATCH, and relative-frontier premiums.</p></article>
-            <article><strong>10 · Pricing basis</strong><p>A usable direct Bid produces AY at Bid. A coherent no-bid bracket produces an Indicative AY Range. Last is never treated as current executable seller credit.</p></article>
+            <article><strong>10 · Pricing basis</strong><p>A trusted direct Bid produces AY at Bid. A coherent no-bid bracket produces an Indicative AY Range. Raw rejected quotes and Last remain audit evidence, never executable seller credit.</p></article>
             <article><strong>11 · Exact Last Trade recency</strong><p>Recent means ≤{RECOMMENDATION_POLICY.pricing.recentTransactionMaximumTradingSessions} U.S. equity trading sessions. {RECOMMENDATION_POLICY.pricing.recentTransactionMaximumTradingSessions + 1}–{RECOMMENDATION_POLICY.pricing.veryStaleTransactionTradingSessions} is stale/intermediate; &gt;{RECOMMENDATION_POLICY.pricing.veryStaleTransactionTradingSessions} is very stale.</p></article>
-            <article><strong>12 · Nearby-strike transaction proxy</strong><p>Only same-expiration puts within ±{percent(RECOMMENDATION_POLICY.pricing.maximumNearbyStrikeDistanceRatio * 100, 0)} and traded within {RECOMMENDATION_POLICY.pricing.recentTransactionMaximumTradingSessions} sessions qualify. Two-sided recent brackets are strongest; one neighbor within {percent(RECOMMENDATION_POLICY.pricing.veryCloseNearbyStrikeDistanceRatio * 100, 0)} is moderate with a credible direct market.</p></article>
-            <article><strong>13 · Spread, liquidity, and surface</strong><p>Tight/acceptable direct spreads are ≤{percent(RECOMMENDATION_POLICY.pricing.tightSpreadPercent * 100, 0)} / ≤{percent(RECOMMENDATION_POLICY.pricing.acceptableSpreadPercent * 100, 0)}. Monotonicity, Delta continuity, IV continuity, bracket spacing, and quote corruption remain explicit checks.</p></article>
+            <article><strong>12 · Nearby-strike transaction proxy</strong><p>Only Phase A-eligible same-expiration puts within ±{percent(RECOMMENDATION_POLICY.pricing.maximumNearbyStrikeDistanceRatio * 100, 0)} and traded within {RECOMMENDATION_POLICY.pricing.recentTransactionMaximumTradingSessions} sessions qualify. Dirty neighbors never corroborate or rescue another contract.</p></article>
+            <article><strong>13 · Spread, liquidity, and surface</strong><p>Tight/acceptable trusted spreads are ≤{percent(RECOMMENDATION_POLICY.pricing.tightSpreadPercent * 100, 0)} / ≤{percent(RECOMMENDATION_POLICY.pricing.acceptableSpreadPercent * 100, 0)}. Integrity, monotonicity, Delta/IV continuity, and bracket spacing remain explicit checks.</p></article>
             <article><strong>14 · Robustness</strong><p>Seven bounded scenarios perturb the AY hurdle, Delta/cushion boundaries, and available price. The result is High, Moderate, or Low—not a probability.</p></article>
             <article><strong>15 · Skeptic / veto</strong><p>The strongest typed objection is recorded. Broken trends, invalid/risk-failing contracts, insufficient discovery, serious dominance losses, and Low robustness can veto promotion.</p></article>
             <article><strong>16 · Comparison / dominance</strong><p>Comparable contracts and cross-tenor alternatives preserve material AY, Delta, cushion, pricing, actionability, and duration tradeoffs. Losses feed rank after stronger evidence tiers.</p></article>
-            <article><strong>17 · Verdict</strong><p>Actionable, Conditional, Watch, and Pass are hard-gate outcomes. Verdict is not rank and does not guarantee surfacing.</p></article>
-            <article><strong>18 · Actionability rank</strong><p>Verdict, price discovery, pricing actionability/confidence, robustness, shared technical state, skeptic, comparison losses, AY margin, cushion, Delta, then canonical contract identity are compared in that order.</p></article>
+            <article><strong>17 · Verdict</strong><p>Actionable requires trusted current bid economics. Conditional requires non-Low execution evidence and a hurdle no more than {percent(RECOMMENDATION_POLICY.pricing.maximumConditionalCreditGapRatio * 100, 0)} above the trusted Bid or indicative low, while the trusted market reaches it. A fresh HTTP response cannot rescue a stale exact trade by itself.</p></article>
+            <article><strong>18 · Execution-first rank</strong><p>Verdict, price discovery, execution quality/confidence, robustness, shared technical state, skeptic, comparison losses, AY margin, cushion, Delta, then canonical contract identity are compared in that order.</p></article>
             <article><strong>19 · Ranked shortlist</strong><p>Every genuine Actionable/Conditional candidate is ranked; at most {RECOMMENDATION_POLICY.selection.maximumShortlistSize} distinct contracts surface. Diversity can act only inside equal verdict + discovery + robustness + technical tiers, before a third same-ticker contract.</p></article>
             <article><strong>20 · Why fewer than 8–15 can be correct</strong><p>8–15 is not a quota. There is no minimum or filler: if only two contracts survive, two surface; if none survive, NO TRADE is the correct complete-run result.</p></article>
             <article><strong>Versions</strong><p>Engine v{run.engineVersion} · Policy v{run.policyVersion}. Snapshot, rank metadata, pricing evidence, provenance, diagnostics, and outputs are exportable and replayable.</p></article>
@@ -377,6 +382,7 @@ export default function RecommendationsPage() {
 
   const actionableCount = surfaced.filter(item => item.candidate.verdict === 'ACTIONABLE').length;
   const conditionalCount = surfaced.filter(item => item.candidate.verdict === 'CONDITIONAL').length;
+  const marketClosedText = recommendationMarketClosedText(Date.now());
   const runPreferenceMismatch = run != null && run.universe.onlyEvaluateAtLeast60Dte !== onlyEvaluateAtLeast60Dte;
   const recommendedTickers = new Set(surfaced.map(item => item.candidate.ticker));
   const boardSummary = {
@@ -416,6 +422,7 @@ export default function RecommendationsPage() {
             <section className="recommendations-market-line surface-card">
               <span className="recommendations-market-line__label">Market context</span>
               <strong>{run.market.regime.label}</strong><span>·</span><strong>{run.market.posture.label}</strong><span>·</span><span>{run.market.regime.putSellingImplication}</span>
+              {marketClosedText && <span className="recommendations-market-line__closed" role="status">{marketClosedText}</span>}
             </section>
 
             <section className="recommendations-verdict-strip" data-status={run.operationalStatus === 'INCOMPLETE' ? 'incomplete' : run.runVerdict === 'NO_TRADE' ? 'no-trade' : 'opportunities'}>
@@ -440,10 +447,10 @@ export default function RecommendationsPage() {
             </section>
 
             <section className="recommendations-board-section surface-card">
-              <SectionHeader title="Full Opportunity Board / Audit" description="One row per tracked underlying; representative selection and sorting use the canonical request-free rank." actions={<label className="recommendations-board-sort"><span>Sort</span><select value={boardSort} onChange={event => setBoardSort(event.target.value as RecommendationBoardSort)}><option value="actionability">Actionability</option><option value="ticker">Ticker</option><option value="setup">Setup</option></select></label>} />
+              <SectionHeader title="Full Opportunity Board / Audit" description="One row per tracked underlying; representative selection and sorting use the canonical request-free rank." actions={<label className="recommendations-board-sort"><span>Sort</span><select value={boardSort} onChange={event => setBoardSort(event.target.value as RecommendationBoardSort)}><option value="actionability">Execution rank</option><option value="ticker">Ticker</option><option value="setup">Setup</option></select></label>} />
               <div className="recommendations-board-summary"><span>{boardSummary.recommended} recommended</span><span>{boardSummary.watch} watch</span><span>{boardSummary.pass} pass</span><span>{boardSummary.hardFail} hard-fail</span></div>
               <div className="recommendations-board-desktop hidden md:block">
-                <table className="w-full text-[11px] tabular-nums"><thead><tr>{['', '#', 'Ticker', 'Technical', 'Setup', 'Representative', 'AY / Price Basis', 'Δ', 'OTM', 'Discovery / Action', 'Verdict'].map(label => <th key={label} className="px-2 py-2 text-right first:text-left nth-[3]:text-left">{label}</th>)}</tr></thead><tbody>{visibleBoardRows.map(row => <BoardDesktopRow key={row.underlying.ticker} row={row} expanded={expanded.has(row.underlying.ticker)} onToggle={() => setExpanded(current => { const next = new Set(current); if (next.has(row.underlying.ticker)) next.delete(row.underlying.ticker); else next.add(row.underlying.ticker); return next; })} onEvidence={setEvidenceCandidateId} run={run} />)}</tbody></table>
+                <table className="w-full text-[11px] tabular-nums"><thead><tr>{['', '#', 'Ticker', 'Technical', 'Setup', 'Representative', 'AY / Price Basis', 'Δ', 'OTM', 'Discovery / Execution', 'Verdict'].map(label => <th key={label} className="px-2 py-2 text-right first:text-left nth-[3]:text-left">{label}</th>)}</tr></thead><tbody>{visibleBoardRows.map(row => <BoardDesktopRow key={row.underlying.ticker} row={row} expanded={expanded.has(row.underlying.ticker)} onToggle={() => setExpanded(current => { const next = new Set(current); if (next.has(row.underlying.ticker)) next.delete(row.underlying.ticker); else next.add(row.underlying.ticker); return next; })} onEvidence={setEvidenceCandidateId} run={run} />)}</tbody></table>
               </div>
               <div className="recommendations-board-mobile md:hidden">{visibleBoardRows.map(row => <BoardMobileRow key={row.underlying.ticker} row={row} expanded={expanded.has(row.underlying.ticker)} onToggle={() => setExpanded(current => { const next = new Set(current); if (next.has(row.underlying.ticker)) next.delete(row.underlying.ticker); else next.add(row.underlying.ticker); return next; })} onEvidence={setEvidenceCandidateId} run={run} />)}</div>
               {boardRows.length > 8 && <button type="button" className="recommendations-board-show-all" onClick={() => setShowAllBoardRows(value => !value)}>{showAllBoardRows ? 'Show top 8' : `Show all ${boardRows.length}`}<ChevronDown className={`h-4 w-4 ${showAllBoardRows ? 'rotate-180' : ''}`} /></button>}

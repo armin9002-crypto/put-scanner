@@ -1,7 +1,7 @@
 import type { RegimeLabel } from '../marketRead/types.ts';
 
 export interface RecommendationPolicy {
-  version: 3;
+  version: 4;
   compensation: {
     minimumAnnualizedYieldByRegime: Record<RegimeLabel, number>;
     shortDtePremium: number;
@@ -38,6 +38,7 @@ export interface RecommendationPolicy {
     veryStaleTransactionTradingSessions: number;
     maximumNearbyStrikeDistanceRatio: number;
     veryCloseNearbyStrikeDistanceRatio: number;
+    maximumConditionalCreditGapRatio: number;
   };
   selection: {
     maximumShortlistSize: number;
@@ -53,7 +54,7 @@ export interface RecommendationPolicy {
 }
 
 export const RECOMMENDATION_POLICY: RecommendationPolicy = Object.freeze({
-  version: 3,
+  version: 4,
   compensation: {
     minimumAnnualizedYieldByRegime: {
       'Complacent Risk-On': 0.16,
@@ -98,6 +99,7 @@ export const RECOMMENDATION_POLICY: RecommendationPolicy = Object.freeze({
     veryStaleTransactionTradingSessions: 60,
     maximumNearbyStrikeDistanceRatio: 0.1,
     veryCloseNearbyStrikeDistanceRatio: 0.05,
+    maximumConditionalCreditGapRatio: 0.10,
   },
   selection: {
     maximumShortlistSize: 15,

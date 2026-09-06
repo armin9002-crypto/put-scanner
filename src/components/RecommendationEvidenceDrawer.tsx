@@ -23,19 +23,28 @@ function EvidenceContent({ candidate, run }: { candidate: RecommendationCandidat
           <EvidenceMetric label="Discovery" value={priceDiscoveryLabel(candidate.pricing.discoveryTier)} />
           <EvidenceMetric label="Provenance" value={candidate.pricing.provenance.replace(/_/g, ' ')} />
           <EvidenceMetric label="Pricing" value={candidate.pricing.confidence} />
-          <EvidenceMetric label="Actionability" value={candidate.pricing.actionability} />
+          <EvidenceMetric label="Execution quality" value={candidate.pricing.actionability} />
+          <EvidenceMetric label="Market integrity" value={candidate.pricing.integrityStatus.toUpperCase()} />
           <EvidenceMetric label="Evidence" value={candidate.evidenceQuality} />
           <EvidenceMetric label="Robustness" value={candidate.robustness.classification} />
         </div>
         <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <KeyFigure label="Bid" value={formatCurrency(candidate.pricing.directBid)} />
-          <KeyFigure label="Ask" value={formatCurrency(candidate.pricing.directAsk)} />
+          <KeyFigure label="Trusted Bid" value={formatCurrency(candidate.pricing.directBid)} />
+          <KeyFigure label="Trusted Ask" value={formatCurrency(candidate.pricing.directAsk)} />
           <KeyFigure label="Indicative Credit" value={range ? `${formatCurrency(range.low)}–${formatCurrency(range.high)}` : '—'} />
           <KeyFigure label="Attractive At" value={candidate.minimumAttractiveCredit.credit == null ? 'Unavailable' : `≥ ${formatCurrency(candidate.minimumAttractiveCredit.credit)}`} />
         </div>
         <p className="mt-2 text-[11px] leading-5" style={{ color: 'var(--text-muted)' }}>
           Attractive At is a policy hurdle, not fair value or an expected execution price. A missing bid is never replaced.
         </p>
+        {candidate.minimumAttractiveCredit.conditionalCreditGapRatio != null && (
+          <p className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>Conditional market gap {(candidate.minimumAttractiveCredit.conditionalCreditGapRatio * 100).toFixed(1)}%.</p>
+        )}
+        {candidate.pricing.integrityStatus === 'invalid' && (
+          <div className="mt-2 rounded-lg p-2.5 text-[11px]" style={{ color: 'var(--yellow)', backgroundColor: 'var(--surface-alt)', border: '1px solid color-mix(in srgb, var(--yellow) 35%, var(--border))' }}>
+            <strong>Raw provider quote — audit only:</strong> Bid {formatCurrency(candidate.pricing.rawBid)} · Ask {formatCurrency(candidate.pricing.rawAsk)} · Last {formatCurrency(candidate.pricing.rawLast)}. {candidate.pricing.integrityReasonCodes.join(', ') || 'Canonical integrity rejection.'}
+          </div>
+        )}
         <div className="mt-2 space-y-1 text-[11px]">
           <div data-recency={transactionRecencyTone(candidate.pricing.exactTradeRecency)}>{recommendationLastTradeText(candidate.pricing, run.asOf)}</div>
           <div style={{ color: 'var(--text-muted)' }}>Chain observed {candidate.pricing.chainEvidence.fetchedAt == null ? 'unavailable' : formatDateTime(candidate.pricing.chainEvidence.fetchedAt)} · {candidate.pricing.chainEvidence.source}{candidate.pricing.chainEvidence.stale ? ' · stale chain evidence' : ''}</div>
@@ -45,16 +54,17 @@ function EvidenceContent({ candidate, run }: { candidate: RecommendationCandidat
       <section className="recommendation-evidence-section">
         <div className="recommendation-evidence-section__title">Same-expiration price surface</div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[680px] text-[11px] font-mono tabular-nums">
-            <thead><tr>{['Role', 'Strike', 'Bid', 'Ask', 'Last', 'Trade age', 'Distance', 'Δ', 'IV', 'Spread', 'OI', 'Vol'].map(label => <th key={label} className="px-1.5 py-1 text-right first:text-left">{label}</th>)}</tr></thead>
+          <table className="w-full min-w-[780px] text-[11px] font-mono tabular-nums">
+            <thead><tr>{['Role', 'Strike', 'Raw Bid', 'Raw Ask', 'Raw Last', 'Integrity', 'Trade age', 'Distance', 'Δ', 'IV', 'Spread', 'OI', 'Vol'].map(label => <th key={label} className="px-1.5 py-1 text-right first:text-left">{label}</th>)}</tr></thead>
             <tbody>
               {candidate.pricing.surface.neighbors.map(neighbor => (
                 <tr key={`${neighbor.side}-${neighbor.strike}`} data-candidate={neighbor.side === 'CANDIDATE' ? 'true' : undefined}>
                   <td className="px-1.5 py-1 text-left">{neighbor.side}</td>
                   <td className="px-1.5 py-1 text-right">{formatCurrency(neighbor.strike)}</td>
-                  <td className="px-1.5 py-1 text-right">{formatCurrency(neighbor.bid)}</td>
-                  <td className="px-1.5 py-1 text-right">{formatCurrency(neighbor.ask)}</td>
-                  <td className="px-1.5 py-1 text-right">{formatCurrency(neighbor.last)}</td>
+                  <td className="px-1.5 py-1 text-right">{formatCurrency(neighbor.rawBid)}</td>
+                  <td className="px-1.5 py-1 text-right">{formatCurrency(neighbor.rawAsk)}</td>
+                  <td className="px-1.5 py-1 text-right">{formatCurrency(neighbor.rawLast)}</td>
+                  <td className="px-1.5 py-1 text-right" title={neighbor.integrityReasonCodes.join(', ')}>{neighbor.integrityStatus.toUpperCase()}</td>
                   <td className="px-1.5 py-1 text-right">{neighbor.tradingSessionAge == null ? '—' : `${neighbor.tradingSessionAge} td`}</td>
                   <td className="px-1.5 py-1 text-right">{neighbor.side === 'CANDIDATE' ? '—' : `${(neighbor.strikeDistanceRatio * 100).toFixed(1)}%`}</td>
                   <td className="px-1.5 py-1 text-right">{valueOrDash(neighbor.delta)}</td>
@@ -109,7 +119,7 @@ function EvidenceContent({ candidate, run }: { candidate: RecommendationCandidat
       </section>
 
       <section className="recommendation-evidence-section">
-        <div className="recommendation-evidence-section__title">Actionability rank audit</div>
+        <div className="recommendation-evidence-section__title">Execution-first rank audit</div>
         {candidate.rank ? (
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3">
             <EvidenceMetric label="Canonical order" value={`#${candidate.rank.ordinal}`} />
