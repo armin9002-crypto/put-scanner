@@ -2,7 +2,7 @@ import { mapWithConcurrency } from '../../shared/concurrency.js';
 import { ETF_PULSE_TICKERS } from '../../shared/etfPulseUniverse.js';
 import { fetchYahooChartHistory } from './chartHistory.js';
 
-export const ETF_PULSE_DATASET_VERSION = 1;
+export const ETF_PULSE_DATASET_VERSION = 2;
 export const ETF_PULSE_CONCURRENCY = 6;
 const HISTORY_CONFIG = { range: '2y', interval: '1d', maxPoints: 800 };
 

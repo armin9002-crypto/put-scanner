@@ -24,7 +24,7 @@ export interface EtfPulseProgress {
   ticker?: string;
 }
 
-const ROW_CACHE_KEY = 'etf_pulse_rows:v3';
+const ROW_CACHE_KEY = 'etf_pulse_rows:v4';
 const LEGACY_ROW_CACHE_KEY = 'etf_pulse_rows:v2';
 const ROW_CACHE_TTL = 6 * 60 * 60 * 1000;
 const ROW_CACHE_HARD_TTL = 24 * 60 * 60 * 1000;
@@ -87,15 +87,24 @@ function isValidLegacyLoadResult(value: unknown): value is Omit<EtfPulseLoadResu
     && Array.isArray(value.errors);
 }
 
+function hasCurrentPulseUniverseShape(rows: Array<{ ticker: string }>, total: number): boolean {
+  const expected = new Set(ETF_PULSE_TICKERS);
+  const rowTickers = rows.map(row => row.ticker.trim().toUpperCase());
+  return total === expected.size
+    && new Set(rowTickers).size === rowTickers.length
+    && rowTickers.every(ticker => expected.has(ticker));
+}
+
 function isValidLoadResult(value: unknown): value is EtfPulseLoadResult {
   if (!isRecord(value)) return false;
-  return typeof value.fetchedAt === 'number' &&
+  if (!(typeof value.fetchedAt === 'number' &&
     Array.isArray(value.rows) &&
     value.rows.every(isValidPulseRow) &&
     typeof value.total === 'number' &&
     typeof value.loaded === 'number' &&
     typeof value.failed === 'number' &&
-    Array.isArray(value.errors);
+    Array.isArray(value.errors))) return false;
+  return hasCurrentPulseUniverseShape(value.rows, value.total);
 }
 
 export function readEtfPulseRowsCache(allowStale = false): EtfPulseLoadResult | null {
@@ -111,7 +120,7 @@ export function readEtfPulseRowsCache(allowStale = false): EtfPulseLoadResult | 
     const legacyRaw = storage.getItem(LEGACY_ROW_CACHE_KEY);
     if (!legacyRaw) return null;
     const legacy = JSON.parse(legacyRaw);
-    if (!isValidLegacyLoadResult(legacy) || Date.now() - legacy.fetchedAt >= maxAge) return null;
+    if (!isValidLegacyLoadResult(legacy) || !hasCurrentPulseUniverseShape(legacy.rows, legacy.total) || Date.now() - legacy.fetchedAt >= maxAge) return null;
     const upgraded: EtfPulseLoadResult = {
       ...legacy,
       rows: legacy.rows.map(withEtfPulseTechnicalAssessment),
@@ -144,7 +153,7 @@ export function getEtfPulseUniverse(): ETFInfo[] {
 }
 
 function isEtfPulseDataset(value: unknown): value is EtfPulseDataset {
-  if (!isRecord(value) || value.datasetVersion !== 1 || typeof value.fetchedAt !== 'number' || !Array.isArray(value.tickers) || !isRecord(value.histories) || !Array.isArray(value.errors)) return false;
+  if (!isRecord(value) || value.datasetVersion !== 2 || typeof value.fetchedAt !== 'number' || !Array.isArray(value.tickers) || !isRecord(value.histories) || !Array.isArray(value.errors)) return false;
   const expectedTickers = new Set(ETF_PULSE_TICKERS);
   if (value.tickers.length !== expectedTickers.size || value.tickers.some(ticker => typeof ticker !== 'string' || !expectedTickers.has(ticker))) return false;
   if (!value.errors.every(error => isRecord(error) && typeof error.ticker === 'string' && typeof error.message === 'string')) return false;
@@ -160,7 +169,12 @@ function isEtfPulseDataset(value: unknown): value is EtfPulseDataset {
 
 export async function fetchEtfPulseDataset(options: { forceRefresh?: boolean; signal?: AbortSignal } = {}): Promise<EtfPulseDataset> {
   const source = 'EtfPulse:dataset';
-  const url = `/api/etf-pulse${options.forceRefresh ? `?fresh=1&_=${Date.now()}` : ''}`;
+  const query = new URLSearchParams({ v: '2' });
+  if (options.forceRefresh) {
+    query.set('fresh', '1');
+    query.set('_', String(Date.now()));
+  }
+  const url = `/api/etf-pulse?${query}`;
   recordRequestDiagnostic('etf-pulse', 'attempted', source);
   recordRequestDiagnostic('etf-pulse', 'network', source);
   const startedAt = Date.now();

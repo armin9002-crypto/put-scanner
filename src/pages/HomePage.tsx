@@ -26,13 +26,15 @@ import {
 const InteractivePriceChartModal = lazy(() => import('../components/InteractivePriceChartModal'));
 
 const LEVERAGE_OPTIONS = ['All', '2x', '3x'] as const;
-const TYPE_OPTIONS = ['All', 'Broad Index', 'Sector', 'Commodity', 'Country'] as const;
+const TYPE_OPTIONS = ['All', 'Broad Index', 'Sector', 'Commodity', 'Country', 'Crypto'] as const;
 
 import { ETF_LIST } from '../lib/etfs';
 import {
   buildCachedExpirationState,
   buildExpirationState,
   diagnosticForOutcome,
+  snapshotIssueLabel,
+  snapshotProgressDetails,
   snapshotProgressLabel,
   summarizeSnapshotOutcomes,
   tickerMatchesScannerExpiration,
@@ -453,6 +455,8 @@ export default function HomePage() {
     liquidityFilter !== DEFAULT_SCANNER_STATE.liquidity,
     scannerSort !== DEFAULT_SCANNER_STATE.sort,
   ].filter(Boolean).length;
+  const snapshotIssue = snapshotIssueLabel(snapshotProgress);
+  const snapshotDetails = snapshotProgressDetails(snapshotProgress);
 
   if (isPhone) {
     const marketItems = [
@@ -545,7 +549,10 @@ export default function HomePage() {
                 <div className="grid grid-cols-3 gap-2">{([['all', 'All'], ['mediumPlus', 'Medium+'], ['liquidPlus', 'Liquid+']] as const).map(([value, label]) => <button type="button" key={value} onClick={() => setLiquidityFilter(value)} className="mobile-choice" data-selected={liquidityFilter === value}>{label}</button>)}</div>
               </fieldset>
               <label className="block"><span className="mobile-sheet-label">Sort</span><select value={scannerSort} onChange={event => setScannerSort(event.target.value as ScannerSort)} className="mobile-control-field w-full">{SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-              <button type="button" onClick={() => void updateVisibleOptionSnapshots()} disabled={snapshotUpdateRunningRef.current} className="mobile-sheet-action secondary w-full">{snapshotProgress && !snapshotProgress.complete ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}{snapshotProgressLabel(snapshotProgress)}</button>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => void updateVisibleOptionSnapshots()} disabled={snapshotUpdateRunningRef.current} className="mobile-sheet-action secondary min-w-0 flex-1">{snapshotProgress && !snapshotProgress.complete ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}{snapshotProgressLabel(snapshotProgress)}</button>
+                <span className="scanner-liquidity-issues flex-none" data-visible={Boolean(snapshotIssue)} aria-hidden={!snapshotIssue} title={snapshotDetails ?? undefined}>{snapshotIssue ?? '0 issues'}</span>
+              </div>
             </div>
           </MobileBottomSheet>
         )}
@@ -570,8 +577,10 @@ export default function HomePage() {
               <div className="scanner-control-plane__eyebrow">Opportunity set</div>
               <div className="scanner-control-plane__title">Set expiry and criteria</div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="scanner-control-plane__utilities">
               <div className="scanner-control-plane__summary">{activeControlCount} active controls</div>
+              <button type="button" onClick={() => void updateVisibleOptionSnapshots()} disabled={snapshotUpdateRunningRef.current} className="scanner-control-plane__update inline-flex h-8 flex-none items-center gap-1 rounded-md px-2 text-[10px] font-medium whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-60" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)', color: 'var(--text-muted)' }} title={snapshotDetails ?? 'Update missing or stale IV60 and liquidity snapshots for visible ETFs'}>{snapshotProgress && !snapshotProgress.complete ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}{snapshotProgressLabel(snapshotProgress)}</button>
+              <span className="scanner-liquidity-issues" data-visible={Boolean(snapshotIssue)} aria-hidden={!snapshotIssue} title={snapshotDetails ?? undefined}>{snapshotIssue ?? '0 issues'}</span>
               <button
                 type="button"
                 onClick={resetScannerFilters}
@@ -598,8 +607,7 @@ export default function HomePage() {
               <label className="min-w-0"><span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Liquidity</span><select value={liquidityFilter} onChange={event => setLiquidityFilter(event.target.value as ScannerLiquidityFilter)} className="h-8 w-full rounded-md px-1.5 text-[11px] outline-none" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}><option value="all">All</option><option value="mediumPlus">Medium+</option><option value="liquidPlus">Liquid+</option></select></label>
             </div>
               </div>
-              <div className="scanner-control-plane__types min-w-0"><span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Type</span><div className="grid min-w-0 grid-cols-5 gap-1">{TYPE_OPTIONS.map(opt => <button key={opt} title={opt} onClick={() => setTypeFilter(opt)} className="pressable h-8 min-w-0 truncate rounded-md px-1 text-[10px] font-medium" style={{ backgroundColor: typeFilter === opt ? 'var(--accent)' : 'var(--surface-alt)', color: typeFilter === opt ? 'white' : 'var(--text-muted)', border: `1px solid ${typeFilter === opt ? 'var(--accent)' : 'var(--border)'}` }}>{opt === 'Broad Index' ? 'Broad' : opt === 'Commodity' ? 'Commod.' : opt}</button>)}</div></div>
-              <button type="button" onClick={() => void updateVisibleOptionSnapshots()} disabled={snapshotUpdateRunningRef.current} className="scanner-control-plane__update inline-flex h-8 flex-none items-center gap-1 rounded-md px-2 text-[10px] font-medium whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-60" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)', color: 'var(--text-muted)' }} title="Update missing or stale IV60 and liquidity snapshots for visible ETFs">{snapshotProgress && !snapshotProgress.complete && <Loader2 className="h-3 w-3 animate-spin" />}{snapshotProgressLabel(snapshotProgress)}</button>
+              <div className="scanner-control-plane__types min-w-0"><span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Type</span><div className="grid min-w-0 grid-cols-6 gap-1">{TYPE_OPTIONS.map(opt => <button key={opt} title={opt} onClick={() => setTypeFilter(opt)} className="pressable h-8 min-w-0 truncate rounded-md px-1 text-[10px] font-medium" style={{ backgroundColor: typeFilter === opt ? 'var(--accent)' : 'var(--surface-alt)', color: typeFilter === opt ? 'white' : 'var(--text-muted)', border: `1px solid ${typeFilter === opt ? 'var(--accent)' : 'var(--border)'}` }}>{opt === 'Broad Index' ? 'Broad' : opt}</button>)}</div></div>
             </div>
           </section>
           <section className="scanner-market-rail" aria-label="Market context">

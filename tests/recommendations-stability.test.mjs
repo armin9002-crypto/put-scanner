@@ -6,6 +6,7 @@ import { runRecommendationEngine } from '../src/lib/recommendations/engine.ts';
 import { discoverContractPricing, prepareRecommendationPricingChain } from '../src/lib/recommendations/pricing.ts';
 import { RECOMMENDATION_POLICY } from '../src/lib/recommendations/policy.ts';
 import { buildRecommendationScaleSnapshot } from './fixtures/recommendationsScale.mjs';
+import { ETF_LIST } from '../src/lib/etfs.ts';
 
 function diagnostics() {
   return { phaseMs: {}, dominancePairVisits: 0, relativeHurdlePairVisits: 0, outrankingPairs: 0, rankFactorComputations: 0 };
@@ -54,6 +55,23 @@ test('production-scale Recommendation path is deterministic and structurally bou
     === Object.values(candidate.comparisonSummary.relationshipCounts).reduce((sum, count) => sum + count, 0)));
   assert.deepEqual(buildRecommendationBoardRows(first, 'actionability').map(row => row.candidate?.id ?? null),
     buildRecommendationBoardRows(second, 'actionability').map(row => row.candidate?.id ?? null));
+});
+
+test('84-symbol Recommendation scale remains responsive and admits qualifying new ETFs', () => {
+  const snapshot = buildRecommendationScaleSnapshot(ETF_LIST.map(etf => etf.ticker));
+  const scaleDiagnostics = diagnostics();
+  const startedAt = performance.now();
+  const run = runRecommendationEngine(snapshot, RECOMMENDATION_POLICY, scaleDiagnostics);
+  const elapsedMs = performance.now() - startedAt;
+
+  assert.equal(snapshot.coverage.requestedForOptionScan.length, 84);
+  assert.equal(snapshot.chains.length, 252);
+  assert.equal(snapshot.screenerRows.length, 9_072);
+  assert.ok(elapsedMs < 10_000, `84-symbol deterministic engine pass took ${elapsedMs.toFixed(0)}ms`);
+  const candidateTickers = new Set(run.candidates.map(candidate => candidate.ticker));
+  for (const ticker of ['BITX', 'SPXL', 'BIB', 'CHAU', 'UCOP']) assert.equal(candidateTickers.has(ticker), true, `${ticker} should participate when its inputs qualify`);
+  assert.equal(scaleDiagnostics.rankFactorComputations, run.candidates.length);
+  assert.ok(run.candidates.every(candidate => candidate.comparisons.length <= 8));
 });
 
 test('prepared chain pricing preserves exact candidate pricing inputs and results', () => {

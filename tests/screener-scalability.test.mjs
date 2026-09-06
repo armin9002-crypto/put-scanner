@@ -58,7 +58,7 @@ function yahooChain(ticker, expiration = EXPIRATION_ONE, expirationDates = [EXPI
 
 function batchPayload(plan, overrides = {}) {
   return {
-    datasetVersion: 3,
+    datasetVersion: 4,
     chunkId: plan.chunkId,
     targetDate: plan.targetDate,
     fetchedAt: Date.now(),
@@ -90,15 +90,15 @@ const networkMeta = {
   deduped: false, staleFallbackUsed: false,
 };
 
-test('Screener universe is covered once by 14 stable, fixed-order chunks', () => {
-  assert.equal(SCREENER_TICKERS.length, 42);
-  assert.equal(SCREENER_CHUNKS.length, 14);
+test('Screener universe is covered once by 28 stable, fixed-order chunks', () => {
+  assert.equal(SCREENER_TICKERS.length, 84);
+  assert.equal(SCREENER_CHUNKS.length, 28);
   assert.ok(SCREENER_CHUNKS.every(chunk => chunk.tickers.length === 3));
   assert.deepEqual(SCREENER_CHUNKS.flatMap(chunk => chunk.tickers), [...SCREENER_TICKERS]);
-  assert.equal(new Set(SCREENER_CHUNKS.flatMap(chunk => chunk.tickers)).size, 42);
+  assert.equal(new Set(SCREENER_CHUNKS.flatMap(chunk => chunk.tickers)).size, 84);
   assert.deepEqual(SCREENER_TICKERS, ETF_LIST.map(etf => etf.ticker));
-  assert.deepEqual(SCREENER_CHUNKS[0], { id: 0, tickers: ['AGQ', 'BOIL', 'BRZU'] });
-  assert.deepEqual(SCREENER_CHUNKS[13], { id: 13, tickers: ['UYM', 'WEBL', 'YINN'] });
+  assert.deepEqual(SCREENER_CHUNKS[0], { id: 0, tickers: ['AGQ', 'BIB', 'BITX'] });
+  assert.deepEqual(SCREENER_CHUNKS[27], { id: 27, tickers: ['WEBL', 'XPP', 'YINN'] });
 });
 
 test('batch planning is deterministic and only structural expiration changes alter acquisition keys', () => {
@@ -106,13 +106,13 @@ test('batch planning is deterministic and only structural expiration changes alt
   const all = planScreenerBatches(selected, 'all');
   const thirtyDte = planScreenerBatches(selected, 'lte_30dte');
   const exact = planScreenerBatches(selected, `date_${EXPIRATION_TWO}`);
-  assert.deepEqual(all.map(plan => plan.chunkId), [0, 9, 13]);
+  assert.deepEqual(all.map(plan => plan.chunkId), [0, 18, 27]);
   assert.deepEqual(all.map(plan => plan.cacheKey), thirtyDte.map(plan => plan.cacheKey));
   assert.notDeepEqual(all.map(plan => plan.cacheKey), exact.map(plan => plan.cacheKey));
   assert.equal(screenerDatasetScopeKey('__ALL__', 'all'), screenerDatasetScopeKey('__ALL__', 'lte_30dte'));
   assert.notEqual(screenerDatasetScopeKey('__ALL__', 'all'), screenerDatasetScopeKey('__ALL__', `date_${EXPIRATION_TWO}`));
   assert.notEqual(screenerDatasetScopeKey('__ALL__', 'all'), screenerDatasetScopeKey('TQQQ', 'all'));
-  assert.deepEqual(all[1].chunkTickers, ['TECL', 'TNA', 'TQQQ']);
+  assert.deepEqual(all[1].chunkTickers, ['TQQQ', 'TSXU', 'TTXU']);
   assert.deepEqual(all[1].selectedTickers, ['TQQQ']);
 });
 
@@ -135,7 +135,7 @@ test('server batch reuses initial options for realized-vol context, isolates fai
       const key = canonicalOptionChainKey(ticker, date ?? EXPIRATION_ONE);
       optionCalls.set(key, (optionCalls.get(key) ?? 0) + 1);
       await begin(options.onAttempt);
-      if (ticker === 'BOIL' && date === EXPIRATION_TWO) throw new Error('fixture chain failure');
+      if (ticker === 'BIB' && date === EXPIRATION_TWO) throw new Error('fixture chain failure');
       return yahooChain(ticker, date ?? EXPIRATION_ONE);
     },
     fetchVolatilityContext: async (ticker, options) => {
@@ -153,7 +153,7 @@ test('server batch reuses initial options for realized-vol context, isolates fai
   assert.equal(dataset.errors.length, 1);
   assert.equal(Object.keys(dataset.tickers).length, 3);
   assert.equal(dataset.tickers.AGQ.ivVsRealizedRange, 40);
-  assert.deepEqual(Object.keys(dataset.tickers.BOIL.additionalChains), []);
+  assert.deepEqual(Object.keys(dataset.tickers.BIB.additionalChains), []);
   assert.ok(Date.now() - startedAt < 1_000, 'deterministic mocked cold-batch fixture should complete well below one second');
 });
 
@@ -220,17 +220,17 @@ test('expiration availability preserves per-ticker membership for Scanner filter
     index < 7 ? [oct23, feb19] : index < 12 ? [feb19] : [oct23],
   ]));
   globalThis.fetch = async () => Response.json({
-    datasetVersion: 3,
+    datasetVersion: 4,
     fetchedAt: Date.now(),
     complete: true,
     expirationsByTicker,
     errors: [],
-    diagnostics: { upstreamRequests: 42, maxObservedConcurrency: 3, circuitBreakerRejections: 0 },
+    diagnostics: { upstreamRequests: 84, maxObservedConcurrency: 3, circuitBreakerRejections: 0 },
   });
   try {
     const result = await fetchScreenerExpirationAvailability();
-    assert.equal(Object.keys(result.expirationsByTicker).length, 42);
-    assert.equal(Object.values(result.expirationsByTicker).filter(dates => dates.includes(oct23)).length, 37);
+    assert.equal(Object.keys(result.expirationsByTicker).length, 84);
+    assert.equal(Object.values(result.expirationsByTicker).filter(dates => dates.includes(oct23)).length, 79);
     assert.equal(Object.values(result.expirationsByTicker).filter(dates => dates.includes(feb19)).length, 12);
   } finally {
     globalThis.fetch = previousFetch;
@@ -263,14 +263,14 @@ test('full scan caps browser concurrency at two and combined simulated upstream 
     },
     onProgress: current => { progress = current; },
   });
-  assert.equal(result.plannedBatches, 14);
-  assert.equal(result.completedBatches, 14);
-  assert.equal(result.initialResults.size, 42);
-  assert.equal(progress, 42);
+  assert.equal(result.plannedBatches, 28);
+  assert.equal(result.completedBatches, 28);
+  assert.equal(result.initialResults.size, 84);
+  assert.equal(progress, 84);
   assert.ok(browserMaximum <= SCREENER_BROWSER_CONCURRENCY);
   assert.ok(combinedMaximum <= SCREENER_BROWSER_CONCURRENCY * SCREENER_SERVER_CONCURRENCY);
   const diagnostics = getScreenerScanDiagnostics();
-  assert.equal(diagnostics.browserBatchRequests, 14);
+  assert.equal(diagnostics.browserBatchRequests, 28);
   assert.equal(diagnostics.maxClientBatchConcurrency, 2);
   assert.equal(diagnostics.maxServerYahooConcurrency, 3);
   setRequestDiagnosticsEnabledForTests(null);

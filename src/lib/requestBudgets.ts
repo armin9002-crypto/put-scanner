@@ -1,3 +1,6 @@
+import { ETF_PULSE_TICKERS } from '../../shared/etfPulseUniverse.js';
+import { SCREENER_CHUNKS, SCREENER_TICKERS } from '../../shared/screenerUniverse.js';
+
 export type RequestBudgetWorkflow =
   | 'scanner-load'
   | 'screener-entry'
@@ -32,27 +35,32 @@ export interface RequestBudgetLedgerEntry {
   fixture: string;
 }
 
+const DISCOVERY_TICKER_COUNT = SCREENER_TICKERS.length;
+const SCREENER_BATCH_COUNT = SCREENER_CHUNKS.length;
+const PULSE_TICKER_COUNT = ETF_PULSE_TICKERS.length;
+const SCANNER_PRICE_BATCH_COUNT = Math.ceil(DISCOVERY_TICKER_COUNT / 20);
+
 // Provider acquisitions are logical market-data operations. Provider HTTP attempts are
 // reported separately because Yahoo session/crumb acquisition and a 401/403 retry can
 // add transport attempts without multiplying the product workflow.
 export const REQUEST_BUDGET_LEDGER: Record<RequestBudgetWorkflow, RequestBudgetLedgerEntry> = {
   'scanner-load': {
-    expected: { browserRequests: 7, functionInvocations: 7, providerAcquisitions: 50 },
-    ceiling: { browserRequests: 7, functionInvocations: 7, providerAcquisitions: 50 },
-    providerHttpAttemptCeiling: 55,
-    fixture: '42 Scanner symbols, one full-universe expiration dataset, one price batch, fund metadata, and four market charts',
+    expected: { browserRequests: 7, functionInvocations: 7, providerAcquisitions: DISCOVERY_TICKER_COUNT + SCANNER_PRICE_BATCH_COUNT + 5 },
+    ceiling: { browserRequests: 7, functionInvocations: 7, providerAcquisitions: DISCOVERY_TICKER_COUNT + SCANNER_PRICE_BATCH_COUNT + 5 },
+    providerHttpAttemptCeiling: DISCOVERY_TICKER_COUNT + SCANNER_PRICE_BATCH_COUNT + 10,
+    fixture: `${DISCOVERY_TICKER_COUNT} Scanner symbols, one full-universe expiration dataset, ${SCANNER_PRICE_BATCH_COUNT} internal price batches, one fund-metadata request, and four market charts`,
   },
   'screener-entry': {
-    expected: { browserRequests: 2, functionInvocations: 2, providerAcquisitions: 43 },
-    ceiling: { browserRequests: 2, functionInvocations: 2, providerAcquisitions: 43 },
-    providerHttpAttemptCeiling: 48,
+    expected: { browserRequests: 2, functionInvocations: 2, providerAcquisitions: DISCOVERY_TICKER_COUNT + 1 },
+    ceiling: { browserRequests: 2, functionInvocations: 2, providerAcquisitions: DISCOVERY_TICKER_COUNT + 1 },
+    providerHttpAttemptCeiling: DISCOVERY_TICKER_COUNT + 6,
     fixture: 'one expiration dataset plus VIX',
   },
   'screener-full-scan': {
-    expected: { browserRequests: 14, functionInvocations: 14, providerAcquisitions: 126 },
-    ceiling: { browserRequests: 14, functionInvocations: 14, providerAcquisitions: 126 },
-    providerHttpAttemptCeiling: 196,
-    fixture: '42 ETFs in fourteen fixed three-symbol batches, nine logical acquisitions each',
+    expected: { browserRequests: SCREENER_BATCH_COUNT, functionInvocations: SCREENER_BATCH_COUNT, providerAcquisitions: SCREENER_BATCH_COUNT * 9 },
+    ceiling: { browserRequests: SCREENER_BATCH_COUNT, functionInvocations: SCREENER_BATCH_COUNT, providerAcquisitions: SCREENER_BATCH_COUNT * 9 },
+    providerHttpAttemptCeiling: SCREENER_BATCH_COUNT * 14,
+    fixture: `${DISCOVERY_TICKER_COUNT} ETFs in ${SCREENER_BATCH_COUNT} fixed three-symbol batches, nine logical acquisitions each`,
   },
   'watchlist-refresh': {
     expected: { browserRequests: 2, functionInvocations: 2, providerAcquisitions: 2 },
@@ -133,16 +141,16 @@ export const REQUEST_BUDGET_LEDGER: Record<RequestBudgetWorkflow, RequestBudgetL
     fixture: 'calculator and quote-basis interactions use the selected row',
   },
   'etf-pulse': {
-    expected: { browserRequests: 1, functionInvocations: 1, providerAcquisitions: 44 },
-    ceiling: { browserRequests: 1, functionInvocations: 1, providerAcquisitions: 44 },
-    providerHttpAttemptCeiling: 44,
-    fixture: 'one aggregate dataset with 44 cold history acquisitions',
+    expected: { browserRequests: 1, functionInvocations: 1, providerAcquisitions: PULSE_TICKER_COUNT },
+    ceiling: { browserRequests: 1, functionInvocations: 1, providerAcquisitions: PULSE_TICKER_COUNT },
+    providerHttpAttemptCeiling: PULSE_TICKER_COUNT,
+    fixture: `one aggregate dataset with ${PULSE_TICKER_COUNT} cold history acquisitions`,
   },
   'recommendations-refresh': {
-    expected: { browserRequests: 15, functionInvocations: 15, providerAcquisitions: 254 },
-    ceiling: { browserRequests: 15, functionInvocations: 15, providerAcquisitions: 254 },
-    providerHttpAttemptCeiling: 324,
-    fixture: 'cold upper bound: one cache-aware 44-symbol Pulse dataset plus 42 qualified ETFs with one metadata/discovery chain, at most three selected representative chains, and one volatility-context acquisition each; warm cache hits and hard-fails reduce actual work',
+    expected: { browserRequests: SCREENER_BATCH_COUNT + 1, functionInvocations: SCREENER_BATCH_COUNT + 1, providerAcquisitions: PULSE_TICKER_COUNT + DISCOVERY_TICKER_COUNT * 5 },
+    ceiling: { browserRequests: SCREENER_BATCH_COUNT + 1, functionInvocations: SCREENER_BATCH_COUNT + 1, providerAcquisitions: PULSE_TICKER_COUNT + DISCOVERY_TICKER_COUNT * 5 },
+    providerHttpAttemptCeiling: PULSE_TICKER_COUNT + SCREENER_BATCH_COUNT * 20,
+    fixture: `cold upper bound: one cache-aware ${PULSE_TICKER_COUNT}-symbol Pulse dataset plus ${DISCOVERY_TICKER_COUNT} qualified ETFs with one metadata/discovery chain, at most three selected representative chains, and one volatility-context acquisition each; warm cache hits and hard-fails reduce actual work`,
   },
   'recommendations-local-interactions': {
     expected: { browserRequests: 0, functionInvocations: 0, providerAcquisitions: 0 },
@@ -162,7 +170,7 @@ export function assertWithinRequestBudget(workflow: RequestBudgetWorkflow, obser
 }
 
 export function failedScreenerRetryBudget(failedBatchCount: number): RequestBudgetCounts {
-  const batches = Math.max(0, Math.min(14, Math.floor(failedBatchCount)));
+  const batches = Math.max(0, Math.min(SCREENER_BATCH_COUNT, Math.floor(failedBatchCount)));
   return { browserRequests: batches, functionInvocations: batches, providerAcquisitions: batches * 9 };
 }
 

@@ -68,10 +68,19 @@ export function summarizeSnapshotOutcomes(outcomes: ScannerSnapshotUpdateOutcome
 }
 
 export function snapshotProgressLabel(progress: SnapshotUpdateProgress | null): string {
-  if (!progress) return 'Update IV / Liquidity';
-  if (!progress.complete) return `Updating ${progress.current}/${progress.total}`;
-  if (progress.total === 0) return 'IV / Liquidity Current';
-  return `Updated ${progress.updated} \u00b7 Expanded ${progress.expanded} \u00b7 Unavailable ${progress.unavailable} \u00b7 Failed ${progress.failed}`;
+  if (!progress || progress.complete) return 'Update liquidity';
+  return `Updating ${progress.current}/${progress.total}`;
+}
+
+export function snapshotIssueLabel(progress: SnapshotUpdateProgress | null): string | null {
+  if (!progress?.complete) return null;
+  const issues = progress.unavailable + progress.failed;
+  return issues > 0 ? `${issues} ${issues === 1 ? 'issue' : 'issues'}` : null;
+}
+
+export function snapshotProgressDetails(progress: SnapshotUpdateProgress | null): string | null {
+  if (!progress?.complete || progress.total === 0) return null;
+  return `Updated ${progress.updated} \u00b7 Expanded ${progress.expanded} \u00b7 ${progress.unavailable} unavailable \u00b7 ${progress.failed} failed`;
 }
 
 export function diagnosticForOutcome(outcome: ScannerSnapshotUpdateOutcome): { status: ScannerSnapshotDiagnostic['status']; reason: string } | null {

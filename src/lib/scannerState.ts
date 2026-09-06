@@ -19,7 +19,7 @@ export const DEFAULT_SCANNER_STATE: ScannerState = {
 };
 
 const LEVERAGE_VALUES = new Set(['All', '2x', '3x']);
-const TYPE_VALUES = new Set(['All', 'Broad Index', 'Sector', 'Commodity', 'Country']);
+const TYPE_VALUES = new Set(['All', 'Broad Index', 'Sector', 'Commodity', 'Country', 'Crypto']);
 const SORT_VALUES = new Set<ScannerSort>(['default', 'iv60', 'liquidity', 'fiveDay', 'oneMonth', 'threeMonth', 'drawdown52w', 'priceHigh', 'priceLow']);
 const LIQUIDITY_VALUES = new Set<ScannerLiquidityFilter>(['all', 'mediumPlus', 'liquidPlus']);
 

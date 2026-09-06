@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { formatFundAssets } from '../src/lib/fundAssets.ts';
+import { ETF_LIST } from '../src/lib/etfs.ts';
+import { passesScannerLiquidityFilter } from '../src/lib/scannerDiscovery.ts';
 import { DEFAULT_SCANNER_STATE, parseScannerState, resolveScannerExpiration, serializeScannerState } from '../src/lib/scannerState.ts';
 import { buildExpirationState, tickerMatchesScannerExpiration } from '../src/lib/scannerUpdateState.ts';
 
@@ -13,6 +15,13 @@ test('Scanner URL state parses and serializes all persistent filters', () => {
     search: 'yin', leverage: '3x', type: 'Country', expiration: 'date_1792108800', sort: 'iv60', liquidity: 'liquidPlus',
   });
   assert.equal(serializeScannerState(state).get('expiry'), '2026-10-16');
+});
+
+test('Crypto is a round-trippable Scanner type containing the three approved ETF exposures', () => {
+  const state = parseScannerState(new URLSearchParams('type=Crypto'));
+  assert.equal(state.type, 'Crypto');
+  assert.equal(serializeScannerState(state).get('type'), 'Crypto');
+  assert.deepEqual(ETF_LIST.filter(etf => etf.type === 'Crypto').map(etf => etf.ticker), ['BITX', 'ETHU', 'SOLT']);
 });
 
 test('Scanner URL state uses defaults for missing or invalid parameters', () => {
@@ -38,6 +47,25 @@ test('Scanner expiration state uses market-wide membership and treats partial fa
   assert.equal(tickerMatchesScannerExpiration('BBB', `date_${feb19}`, availability, true, now), false);
   assert.equal(tickerMatchesScannerExpiration('DDD', `date_${feb19}`, availability, true, now), true, 'missing partial data must not hide a ticker');
   assert.equal(tickerMatchesScannerExpiration('BBB', `date_${feb19}`, availability, false, now), true, 'local cache is not authoritative while discovery loads');
+  assert.equal(passesScannerLiquidityFilter(null, 'all'), true, 'a failed liquidity snapshot must not remove an ETF from the unfiltered universe');
+});
+
+test('Scanner desktop and mobile expose six type choices with full Commodity text and a header liquidity action', () => {
+  const source = readFileSync(new URL('../src/pages/HomePage.tsx', import.meta.url), 'utf8');
+  assert.match(source, /TYPE_OPTIONS = \['All', 'Broad Index', 'Sector', 'Commodity', 'Country', 'Crypto'\]/);
+  assert.match(source, /grid-cols-6/);
+  assert.doesNotMatch(source, /Commod\./);
+  assert.match(source, /scanner-control-plane__utilities[\s\S]*Update missing or stale IV60 and liquidity snapshots/);
+});
+
+test('Scanner aggregate price and fund-asset paths remain bounded for 84 symbols', () => {
+  const pricesEndpoint = readFileSync(new URL('../api/prices.js', import.meta.url), 'utf8');
+  const fundEndpoint = readFileSync(new URL('../api/fund-metadata.js', import.meta.url), 'utf8');
+  assert.equal(ETF_LIST.length, 84);
+  assert.ok(encodeURIComponent(ETF_LIST.map(etf => etf.ticker).join(',')).length < 2_000);
+  assert.match(pricesEndpoint, /index \+= 20/);
+  assert.match(pricesEndpoint, /mapWithConcurrency\(chunks, 3/);
+  assert.match(fundEndpoint, /symbols\.length > 100/);
 });
 
 test('Scanner reset returns every criterion and the local query to canonical defaults', () => {

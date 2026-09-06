@@ -410,6 +410,7 @@ function getCategoryBucket(category: string): string {
   if (category === 'Commodity') return 'Commodity';
   if (category === 'Country') return 'Country';
   if (category === 'Sector') return 'Sector';
+  if (category === 'Crypto') return 'Crypto';
   if (category === 'Volatility') return 'Volatility';
   return 'Other';
 }

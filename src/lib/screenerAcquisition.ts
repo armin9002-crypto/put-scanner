@@ -2,6 +2,7 @@ import { mapWithConcurrency } from '../../shared/concurrency.js';
 import {
   SCREENER_BROWSER_CONCURRENCY,
   SCREENER_CHUNKS,
+  SCREENER_TICKERS,
   type ScreenerChunk,
 } from '../../shared/screenerUniverse.js';
 import { requestMarketData, peekMarketData, type MarketDataRequestMeta } from './marketDataRequest.ts';
@@ -17,7 +18,7 @@ import {
 import type { OptionsChainData, OptionChainSource } from './types.ts';
 import { normalizeOptionChainData } from './yahooOptionAdapter.ts';
 
-const SCREENER_DATASET_VERSION = 3;
+const SCREENER_DATASET_VERSION = 4;
 const BATCH_SOFT_TTL_MS = 5 * 60 * 1_000;
 const BATCH_HARD_TTL_MS = 45 * 60 * 1_000;
 const EXPIRATION_SOFT_TTL_MS = 2 * 60 * 60 * 1_000;
@@ -179,12 +180,16 @@ function isBatchPayload(value: ScreenerBatchPayload): boolean {
 }
 
 function isExpirationPayload(value: ScreenerExpirationPayload): boolean {
-  return value != null
+  if (!(value != null
     && value.datasetVersion === SCREENER_DATASET_VERSION
     && typeof value.complete === 'boolean'
     && value.expirationsByTicker != null
     && typeof value.expirationsByTicker === 'object'
-    && Array.isArray(value.errors);
+    && Array.isArray(value.errors))) return false;
+  const expected = new Set(SCREENER_TICKERS as readonly string[]);
+  const received = Object.keys(value.expirationsByTicker).map(ticker => ticker.trim().toUpperCase());
+  if (received.some(ticker => !expected.has(ticker))) return false;
+  return !value.complete || received.length === expected.size;
 }
 
 function responseError(response: Response, fallback: string): Error & { status?: number } {

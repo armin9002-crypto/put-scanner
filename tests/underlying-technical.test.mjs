@@ -161,7 +161,7 @@ test('broad Market Regime remains separate from ticker technical state', () => {
   assert.equal(qqq.technicalAssessment.state, 'RANGE_NEUTRAL');
 });
 
-test('legacy v2 row cache upgrades locally to v3 without a market request', () => {
+test('legacy partial-universe row cache is rejected without a market request', () => {
   const previousStorage = globalThis.localStorage;
   const previousFetch = globalThis.fetch;
   const storage = new MemoryStorage();
@@ -188,8 +188,8 @@ test('legacy v2 row cache upgrades locally to v3 without a market request', () =
   try {
     const upgraded = readEtfPulseRowsCache();
     assert.equal(requests, 0);
-    assert.equal(upgraded.rows[0].technicalAssessment.version, 1);
-    assert.ok(storage.getItem('etf_pulse_rows:v3'));
+    assert.equal(upgraded, null);
+    assert.equal(storage.getItem('etf_pulse_rows:v4'), null);
   } finally {
     globalThis.localStorage = previousStorage;
     globalThis.fetch = previousFetch;

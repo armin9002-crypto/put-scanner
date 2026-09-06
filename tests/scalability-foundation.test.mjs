@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mapWithConcurrency } from '../shared/concurrency.js';
 import { buildEtfPulseDataset, ETF_PULSE_CONCURRENCY } from '../api/_lib/etfPulseDataset.js';
 import { acquireOptionChains, canonicalOptionChainKey, planOptionChainRequests } from '../src/lib/optionChainRequests.ts';
-import { buildEtfPulseRows, getEtfPulseUniverse } from '../src/lib/etfPulseData.ts';
+import { buildEtfPulseRows, getEtfPulseUniverse, readEtfPulseRowsCache } from '../src/lib/etfPulseData.ts';
 import { requestMarketData } from '../src/lib/marketDataRequest.ts';
 import { getRequestDiagnosticsSnapshot, resetRequestDiagnosticsForTests, setRequestDiagnosticsEnabledForTests } from '../src/lib/requestDiagnostics.ts';
 import { archiveExpiredOpenTrades } from '../src/lib/portfolioExpirationArchive.ts';
@@ -69,23 +69,23 @@ test('ETF Pulse browser performs one dataset acquisition, reuses its row cache, 
     price: 100 + index,
   }));
   const universe = getEtfPulseUniverse();
-  assert.equal(universe.length, 44);
+  assert.equal(universe.length, 86);
   let browserCalls = 0;
   globalThis.fetch = async () => {
     browserCalls += 1;
     return Response.json({
-      datasetVersion: 1,
+      datasetVersion: 2,
       fetchedAt: 1_800_000_000_000,
       tickers: universe.map(etf => etf.ticker),
       histories: Object.fromEntries(universe.map(etf => [etf.ticker, { ticker: etf.ticker, timeframe: '2Y', points, latestPrice: 500 }])),
       errors: [],
-    }, { headers: { 'X-PutScanner-Upstream-Requests': '44', 'X-PutScanner-Dataset-Version': '1', 'X-PutScanner-Max-Observed-Concurrency': '6' } });
+    }, { headers: { 'X-PutScanner-Upstream-Requests': '86', 'X-PutScanner-Dataset-Version': '2', 'X-PutScanner-Max-Observed-Concurrency': '6' } });
   };
   try {
     const first = await buildEtfPulseRows();
     const second = await buildEtfPulseRows();
     assert.equal(browserCalls, 1);
-    assert.equal(second.rows.length, 44);
+    assert.equal(second.rows.length, 86);
     const spy = first.rows.find(row => row.ticker === 'SPY');
     assert.equal(spy.price, 500);
     assert.equal(spy.sma20, 389.5);
@@ -94,14 +94,18 @@ test('ETF Pulse browser performs one dataset acquisition, reuses its row cache, 
     assert.ok(Math.abs(spy.returns.fiveDay - (399 / 394 - 1)) < 1e-12);
     const diagnostics = getRequestDiagnosticsSnapshot()['etf-pulse'];
     assert.equal(diagnostics.serverEndpointResponses, 1);
-    assert.equal(diagnostics.yahooUpstreamAttempts, 44);
+    assert.equal(diagnostics.yahooUpstreamAttempts, 86);
     assert.equal(diagnostics.maxObservedConcurrency, 6);
-    assert.equal(diagnostics.lastDatasetVersion, '1');
+    assert.equal(diagnostics.lastDatasetVersion, '2');
 
     globalThis.fetch = async () => { throw new Error('refresh unavailable'); };
     const stale = await buildEtfPulseRows({ forceRefresh: true });
     assert.equal(stale.stale, true);
     assert.deepEqual(stale.rows, first.rows);
+
+    globalThis.localStorage.removeItem('etf_pulse_rows:v4');
+    globalThis.localStorage.setItem('etf_pulse_rows:v3', JSON.stringify({ ...first, rows: first.rows.slice(0, 44), total: 44, loaded: 44 }));
+    assert.equal(readEtfPulseRowsCache(true), null, 'the prior 44-symbol row cache must not masquerade as the 86-symbol dataset');
   } finally {
     globalThis.fetch = previousFetch;
     globalThis.localStorage = previousStorage;

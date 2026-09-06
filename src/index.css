@@ -2999,7 +2999,7 @@ td {
 
 .scanner-control-plane__toolbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: end;
   gap: 0.45rem;
 }
@@ -3008,8 +3008,13 @@ td {
   grid-column: 1 / -1;
 }
 
-.scanner-control-plane__update {
-  justify-self: end;
+.scanner-control-plane__utilities {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
 }
 
 .scanner-control-plane__criteria,
@@ -3054,6 +3059,23 @@ td {
 
 .scanner-control-plane__update {
   min-height: 32px;
+  min-width: calc(104px * var(--ui-text-scale));
+  justify-content: center;
+}
+
+.scanner-liquidity-issues {
+  width: calc(58px * var(--ui-text-scale));
+  border-radius: 999px;
+  padding: 0.2rem 0.45rem;
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+  font-size: calc(0.64rem * var(--ui-text-scale));
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.scanner-liquidity-issues[data-visible="false"] {
+  visibility: hidden;
 }
 
 .scanner-results-meta {
@@ -3383,18 +3405,8 @@ td {
 }
 
 @media (max-width: 980px) and (min-width: 768px) {
-  .scanner-control-plane__toolbar {
-    grid-template-columns: minmax(150px, 1fr) minmax(240px, 1.4fr);
-  }
-
-  .scanner-control-plane__types {
-    grid-column: 1;
-  }
-
-  .scanner-control-plane__update {
-    grid-column: 2;
-    grid-row: 2;
-    justify-self: end;
+  .scanner-control-plane__header {
+    align-items: flex-start;
   }
 }
 

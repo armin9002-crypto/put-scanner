@@ -19,8 +19,10 @@ import MobileOptionRow from '../components/mobile/MobileOptionRow';
 import { annualizedYieldFieldForNominal, OPTION_QUOTE_TABLE_DISPLAY_ORDER, OPTION_YIELD_DISPLAY_LABELS, formatOptionQuoteValue, isNominalYieldField, visibleOptionYieldFields, type OptionQuoteTableDisplayField, type OptionYieldDisplayField } from '../lib/optionQuoteDisplay';
 import { compareNullableValue } from '../lib/metricValue';
 import { PageHeader } from '../components/ui/PageHeader';
+import { SCREENER_CHUNKS } from '../../shared/screenerUniverse.js';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
+const FULL_SCAN_BATCH_COUNT = SCREENER_CHUNKS.length;
 
 type ScreenerSortField = 'ticker' | 'price' | 'expDate' | 'strike' | 'moneyness' | 'delta' | 'bid' | 'last' | 'ask' | 'iv' | 'lastTradeDate' | 'nomYieldBid' | 'nomYieldAsk' | 'nomYieldLast' | 'annYieldBid' | 'annYieldAsk' | 'annYieldLast' | 'volume' | 'openInterest' | 'volOI' | 'ivVsRealizedRange';
 type SortDir = 'asc' | 'desc';
@@ -688,7 +690,7 @@ export default function ScreenerPage() {
           </div>
         </MobileBottomSheet>}
 
-        {showConfirm && <MobileBottomSheet title="Scan all ETFs?" description="This uses 14 shared market-data batch requests." onClose={() => setShowConfirm(false)} footer={<div className="grid grid-cols-2 gap-2"><button type="button" onClick={() => setShowConfirm(false)} className="mobile-sheet-action secondary">Cancel</button><button type="button" onClick={() => executeLoad({ ...currentCriteria, selectedETFs: ETF_LIST })} className="mobile-sheet-action primary">Run scan</button></div>}><p className="text-sm leading-6" style={{ color: 'var(--text-muted)' }}>Select specific ETFs for a faster result, or continue to scan the full universe.</p></MobileBottomSheet>}
+        {showConfirm && <MobileBottomSheet title="Scan all ETFs?" description={`This uses ${FULL_SCAN_BATCH_COUNT} shared market-data batch requests.`} onClose={() => setShowConfirm(false)} footer={<div className="grid grid-cols-2 gap-2"><button type="button" onClick={() => setShowConfirm(false)} className="mobile-sheet-action secondary">Cancel</button><button type="button" onClick={() => executeLoad({ ...currentCriteria, selectedETFs: ETF_LIST })} className="mobile-sheet-action primary">Run scan</button></div>}><p className="text-sm leading-6" style={{ color: 'var(--text-muted)' }}>Select specific ETFs for a faster result, or continue to scan the full universe.</p></MobileBottomSheet>}
         {selectedOption && <ErrorBoundary title="Option sheet unavailable" message="Close it and try again."><Suspense fallback={null}><OptionDetailDrawer option={selectedOption.option} ticker={selectedOption.ticker} expirationLabel={selectedOption.expirationLabel} dte={selectedOption.dte} underlyingPrice={selectedOption.underlyingPrice} onClose={() => setSelectedOption(null)} /></Suspense></ErrorBoundary>}
       </div>
     );
@@ -940,7 +942,7 @@ export default function ScreenerPage() {
             <div className="mobile-confirm-sheet max-h-[85dvh] w-full max-w-sm overflow-y-auto rounded-t-2xl p-4 sm:rounded-xl sm:p-6" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
               <h3 className="text-sm font-semibold mb-2" style={{ color: 'var(--text)' }}>Scan All ETFs?</h3>
               <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
-                Scanning all ETFs uses 14 shared market-data batch requests. Proceed?
+                Scanning all ETFs uses {FULL_SCAN_BATCH_COUNT} shared market-data batch requests. Proceed?
               </p>
               <div className="flex gap-2 justify-end">
                 <button

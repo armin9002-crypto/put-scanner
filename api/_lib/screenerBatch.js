@@ -7,7 +7,7 @@ import {
 import { fetchYahooVolatilityContext } from './ivRank.js';
 import { fetchYahooOptions, inspectYahooOptionData, normalizeTimestampSeconds } from './yahoo.js';
 
-export const SCREENER_BATCH_VERSION = 3;
+export const SCREENER_BATCH_VERSION = 4;
 export const SCREENER_BATCH_TIMEOUT_MS = 6_000;
 export const SCREENER_BATCH_MAX_BYTES = 1_100_000;
 

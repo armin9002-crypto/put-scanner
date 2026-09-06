@@ -39,8 +39,10 @@ function option(ticker, dte, index) {
     contractSymbol: `${ticker}P${dte}P${strike}` };
 }
 
-export function buildRecommendationScaleSnapshot(tickerCount = 37, strikesPerChain = 36) {
-  const tickers = Array.from({ length: tickerCount }, (_, index) => `T${index.toString().padStart(2, '0')}`);
+export function buildRecommendationScaleSnapshot(tickerInput = 37, strikesPerChain = 36) {
+  const tickers = Array.isArray(tickerInput)
+    ? [...tickerInput]
+    : Array.from({ length: tickerInput }, (_, index) => `T${index.toString().padStart(2, '0')}`);
   const initialResults = new Map();
   const chainsByKey = new Map();
   const chains = [];

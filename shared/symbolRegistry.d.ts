@@ -1,6 +1,6 @@
 export type AssetType = 'etf' | 'stock' | 'index';
 export type SymbolUniverse = 'scanner' | 'screener' | 'pulse' | 'context';
-export type SymbolEtfCategory = 'Broad Index' | 'Sector' | 'Commodity' | 'Country';
+export type SymbolEtfCategory = 'Broad Index' | 'Sector' | 'Commodity' | 'Country' | 'Crypto';
 
 export interface SymbolMetadata {
   readonly ticker: string;

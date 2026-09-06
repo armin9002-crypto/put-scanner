@@ -15,18 +15,48 @@ import { ETF_PULSE_TICKERS } from '../shared/etfPulseUniverse.js';
 import { SCREENER_TICKERS } from '../shared/screenerUniverse.js';
 import { ETF_LIST, getScannerEtf } from '../src/lib/etfs.ts';
 import { optionChainMatchesRequestedExpiration } from '../src/lib/optionExpiryNavigation.ts';
+import { classifyHistoryInstrument } from '../src/lib/portfolioHistoryAnalytics.ts';
+import { getPortfolioEtfMetadata } from '../src/lib/portfolioAnalytics.ts';
 import { isPastWatchlistExpirationDte } from '../src/lib/watchlist.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const NEW_LEVERAGED_ETFS = [
+  'BIB', 'BITX', 'CHAU', 'DRN', 'EFO', 'EQQQ', 'ETHU', 'EZJ', 'FNGG', 'JNUG', 'KORU', 'MEXX', 'PILL', 'QQQU',
+  'QQUP', 'QQXL', 'RETL', 'RXL', 'SAA', 'SKYU', 'SOLT', 'SPXL', 'TBXU', 'TEXU', 'TPOR', 'TSXU', 'TTXU', 'UBOT',
+  'UCC', 'UCOP', 'UCYB', 'UGE', 'UMDD', 'UPAL', 'UPLT', 'UPV', 'URAA', 'URE', 'URSP', 'UXI', 'WANT', 'XPP',
+];
 
 test('the symbol registry preserves every current visible universe without duplication', () => {
-  assert.equal(SYMBOL_REGISTRY.length, 46);
+  assert.equal(SYMBOL_REGISTRY.length, 88);
   assert.equal(new Set(SYMBOL_REGISTRY.map(symbol => symbol.ticker)).size, SYMBOL_REGISTRY.length);
-  assert.equal(SCANNER_SYMBOLS.length, 42);
+  assert.equal(SCANNER_SYMBOLS.length, 84);
   assert.deepEqual(SCANNER_SYMBOLS.map(symbol => symbol.ticker), ETF_LIST.map(etf => etf.ticker));
   assert.deepEqual(SCREENER_SYMBOLS.map(symbol => symbol.ticker), [...SCREENER_TICKERS]);
+  assert.equal(SCREENER_SYMBOLS.length, 84);
   assert.deepEqual(ETF_PULSE_SYMBOLS.map(symbol => symbol.ticker), [...ETF_PULSE_TICKERS]);
-  assert.equal(ETF_PULSE_SYMBOLS.length, 44);
+  assert.equal(ETF_PULSE_SYMBOLS.length, 86);
+  assert.equal(ETF_PULSE_SYMBOLS.filter(symbol => symbol.leveraged).length, 84);
+});
+
+test('the approved leveraged expansion has exact membership, leverage, category, and ETF invariants', () => {
+  const newSymbols = SCANNER_SYMBOLS.filter(symbol => NEW_LEVERAGED_ETFS.includes(symbol.ticker));
+  assert.deepEqual(newSymbols.map(symbol => symbol.ticker).sort(), [...NEW_LEVERAGED_ETFS].sort());
+  assert.equal(newSymbols.length, 42);
+  assert.deepEqual(Object.fromEntries([2, 3].map(multiple => [multiple, newSymbols.filter(symbol => symbol.leverageMultiple === multiple).length])), { 2: 33, 3: 9 });
+  assert.deepEqual(Object.fromEntries(['Sector', 'Country', 'Commodity', 'Broad Index', 'Crypto'].map(category => [category, newSymbols.filter(symbol => symbol.etfCategory === category).length])), {
+    Sector: 21, Country: 7, Commodity: 6, 'Broad Index': 5, Crypto: 3,
+  });
+  assert.deepEqual(Object.fromEntries([2, 3].map(multiple => [multiple, SCANNER_SYMBOLS.filter(symbol => symbol.leverageMultiple === multiple).length])), { 2: 52, 3: 32 });
+  assert.deepEqual(Object.fromEntries(['Sector', 'Broad Index', 'Commodity', 'Country', 'Crypto'].map(category => [category, SCANNER_SYMBOLS.filter(symbol => symbol.etfCategory === category).length])), {
+    Sector: 38, 'Broad Index': 16, Commodity: 14, Country: 13, Crypto: 3,
+  });
+  for (const ticker of ['BITX', 'ETHU', 'SOLT']) {
+    assert.deepEqual({ assetType: getSymbolMetadata(ticker)?.assetType, leveraged: getSymbolMetadata(ticker)?.leveraged, leverageMultiple: getSymbolMetadata(ticker)?.leverageMultiple }, {
+      assetType: 'etf', leveraged: true, leverageMultiple: 2,
+    });
+  }
+  assert.ok(NEW_LEVERAGED_ETFS.every(ticker => classifyHistoryInstrument(ticker) === 'etf'));
+  assert.equal(getPortfolioEtfMetadata('BITX').category, 'Crypto');
 });
 
 test('registry selectors normalize routes and distinguish context indices', () => {

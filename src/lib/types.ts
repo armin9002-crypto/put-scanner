@@ -1,6 +1,6 @@
 import type { MarketTimestampSource } from './marketTimestamp';
 
-export type ETFType = 'Broad Index' | 'Sector' | 'Commodity' | 'Country';
+export type ETFType = 'Broad Index' | 'Sector' | 'Commodity' | 'Country' | 'Crypto';
 
 export interface ETFInfo {
   ticker: string;
