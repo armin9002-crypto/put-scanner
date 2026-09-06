@@ -109,8 +109,8 @@ export default function DataBackupModal({ onClose, onImported }: DataBackupModal
   const summary = pendingBackup ? getPutScannerBackupSummary(pendingBackup) : null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-end justify-center p-0 sm:items-center sm:p-4" style={{ backgroundColor: 'rgba(0,0,0,0.72)' }} role="presentation" onMouseDown={event => { if (event.currentTarget === event.target) onClose(); }}>
-      <section className="max-h-[94dvh] w-full overflow-y-auto rounded-t-2xl p-4 shadow-2xl sm:max-w-xl sm:rounded-2xl sm:p-5" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }} role="dialog" aria-modal="true" aria-labelledby="data-backup-title">
+    <div className="motion-backdrop-surface fixed inset-0 z-[100] flex items-end justify-center p-0 sm:items-center sm:p-4" style={{ backgroundColor: 'rgba(0,0,0,0.72)' }} role="presentation" onMouseDown={event => { if (event.currentTarget === event.target) onClose(); }}>
+      <section className="motion-modal max-h-[94dvh] w-full overflow-y-auto rounded-t-2xl p-4 shadow-2xl sm:max-w-xl sm:rounded-2xl sm:p-5" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }} role="dialog" aria-modal="true" aria-labelledby="data-backup-title">
         <header className="flex items-start justify-between gap-3">
           <div>
             <h2 id="data-backup-title" className="text-lg font-semibold" style={{ color: 'var(--text)' }}>Data Backup</h2>

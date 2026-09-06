@@ -58,7 +58,7 @@ export default function MobileBottomSheet({
 
   return (
     <div className="mobile-sheet-layer fixed inset-0 z-[95] flex items-end justify-center">
-      <button type="button" className="absolute inset-0 bg-black/60" aria-label={`Close ${title}`} onClick={onClose} />
+      <button type="button" className="motion-backdrop absolute inset-0 bg-black/60" aria-label={`Close ${title}`} onClick={onClose} />
       <div
         ref={panelRef}
         role="dialog"

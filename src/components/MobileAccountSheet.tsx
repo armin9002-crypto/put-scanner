@@ -88,7 +88,7 @@ export default function MobileAccountSheet({
     <div className="mobile-account-sheet-layer fixed inset-0 z-[110] flex items-end justify-center" data-account-overlay="mobile">
       <button
         type="button"
-        className="absolute inset-0 bg-black/65"
+        className="motion-backdrop absolute inset-0 bg-black/65"
         aria-label="Close Account"
         onClick={onClose}
       />

@@ -193,7 +193,7 @@ export default function RecommendationEvidenceDrawer({
   }
   return (
     <div className="fixed inset-0 z-[90] flex justify-end" role="dialog" aria-modal="true" aria-label={`${title} recommendation evidence`}>
-      <button type="button" className="absolute inset-0 bg-black/60" aria-label="Close recommendation evidence" onClick={onClose} />
+      <button type="button" className="motion-backdrop absolute inset-0 bg-black/60" aria-label="Close recommendation evidence" onClick={onClose} />
       <aside className="recommendation-evidence-drawer overlay-panel relative z-10 flex h-full w-full max-w-[720px] flex-col" style={{ backgroundColor: 'var(--bg)', borderLeft: '1px solid var(--border)' }}>
         <header className="flex flex-none items-start justify-between gap-3 border-b px-5 py-4" style={{ borderColor: 'var(--border)' }}>
           <div><div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Recommendation evidence · {candidate.verdict}</div><h2 className="mt-1 text-lg font-semibold" style={{ color: 'var(--text)' }}>{title}</h2><p className="text-xs" style={{ color: 'var(--text-muted)' }}>{candidate.expirationLabel}</p></div>

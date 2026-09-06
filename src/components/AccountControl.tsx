@@ -178,14 +178,14 @@ export function DesktopAccountDialog({ onClose, accountSyncContent }: { onClose:
 
   const dialog = (
     <div className="fixed inset-0 z-[95] flex items-center justify-center p-4" data-account-overlay="desktop">
-      <button type="button" className="absolute inset-0 bg-black/60" aria-label="Close account" onClick={onClose} />
+      <button type="button" className="motion-backdrop absolute inset-0 bg-black/60" aria-label="Close account" onClick={onClose} />
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="overlay-panel relative z-10 flex max-h-[calc(100dvh-2rem)] w-full max-w-sm flex-col overflow-hidden outline-none"
+        className="motion-modal overlay-panel relative z-10 flex max-h-[calc(100dvh-2rem)] w-full max-w-sm flex-col overflow-hidden outline-none"
         style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
       >
         <div className="mb-4 flex flex-none items-center justify-between gap-3 border-b px-5 pb-3 pt-5" style={{ borderColor: 'var(--border)' }}>

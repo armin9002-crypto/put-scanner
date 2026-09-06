@@ -222,3 +222,68 @@ test('text control persistence, request isolation, dense themes and charts', asy
     await capture(page, directory, 'account-input-focused');
   }
 });
+
+test('motion controls, overlays and reduced motion', async ({ page, browser }, info) => {
+  await installDeterministicMarketApi(page);
+  await installDeterministicCloudAccount(page, { portfolio, watchlist, preferences: {} });
+  await page.addInitScript(() => localStorage.setItem('theme_migration_version', '2'));
+  const directory = path.join(artifacts, 'motion', info.project.name);
+  await mkdir(directory, { recursive: true });
+  for (const theme of ['dark', 'dark-blue', 'light', 'sepia']) {
+    await page.goto('/');
+    await page.evaluate(theme => {
+      localStorage.setItem('put_scanner_theme', theme);
+      localStorage.setItem('put_scanner_text_size', theme === 'dark' ? 'small' : 'large');
+    }, theme);
+    await page.reload();
+    const control = page.getByRole('button', { name: /^Text size:/ });
+    await expect(control).toBeVisible();
+    await control.focus();
+    await expect(control).toBeFocused();
+    await control.hover();
+    await expect.poll(() => control.evaluate(el => getComputedStyle(el).translate)).toBe('0px -1px');
+    await page.mouse.down();
+    await expect.poll(() => control.evaluate(el => getComputedStyle(el).scale)).toBe('0.99');
+    await page.mouse.move(0, 0);
+    await page.mouse.up();
+    const row = page.locator('.mobile-etf-row').first();
+    if (await row.isVisible()) {
+      await row.hover();
+      await page.mouse.down();
+      expect(await row.evaluate(el => ({ translate: getComputedStyle(el).translate, scale: getComputedStyle(el).scale }))).toEqual({ translate: 'none', scale: 'none' });
+      await page.mouse.move(0, 0); await page.mouse.up();
+    }
+    await page.screenshot({ path: path.join(directory, `${theme}.png`), animations: 'disabled' });
+    await page.goto('/?account-ui-fixture=synced');
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    const animation = await dialog.evaluate(el => getComputedStyle(el).animationName);
+    expect(['ui-modal', 'ui-sheet']).toContain(animation);
+    await page.screenshot({ path: path.join(directory, `${theme}-account.png`), animations: 'disabled' });
+  }
+  const touchContext = await browser.newContext({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 }, baseURL: 'http://127.0.0.1:4317' });
+  const touchPage = await touchContext.newPage();
+  await installDeterministicMarketApi(touchPage);
+  await touchPage.goto('/');
+  const touchControl = touchPage.getByRole('button', { name: /^Text size:/ });
+  await expect(touchControl).toBeVisible();
+  await touchPage.waitForLoadState('networkidle');
+  const bounds = await touchControl.boundingBox();
+  expect(bounds).not.toBeNull();
+  // Chromium applies touch :active during tap completion, not a held touchStart.
+  await touchControl.tap();
+  await expect(touchControl).toHaveAttribute('title', 'Text size: Medium');
+  expect(await touchControl.evaluate(el => getComputedStyle(el).scale)).toBe('0.99');
+  expect(await touchControl.evaluate(el => (el as HTMLElement).offsetHeight)).toBeGreaterThanOrEqual(44);
+  await touchContext.close();
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/');
+  const control = page.getByRole('button', { name: /^Text size:/ });
+  await control.hover();
+  await page.mouse.down();
+  expect(await control.evaluate(el => ({ translate: getComputedStyle(el).translate, scale: getComputedStyle(el).scale }))).toEqual({ translate: 'none', scale: 'none' });
+  await page.mouse.move(0, 0); await page.mouse.up();
+  await page.goto('/?account-ui-fixture=synced');
+  await expect(page.getByRole('dialog')).toBeVisible();
+  expect(await page.getByRole('dialog').evaluate(el => getComputedStyle(el).animationName)).toBe('none');
+});

@@ -164,5 +164,14 @@ Theme utilities use distinct, recognizable icons. A bare square is not an accept
 - Positive/negative color is supplementary to a numeric sign or text label.
 - Every interactive element receives a visible `:focus-visible` outline.
 - Hover does not move cards or rows.
-- UI transitions use `--transition-ui` (140ms) and `prefers-reduced-motion` collapses them.
+- UI transitions use `--transition-ui` (`--motion-fast`: 110ms, `--ease-ui`) and `prefers-reduced-motion` collapses them.
 - Modal and sheet focus traps, Escape behavior, labels, and dialog roles remain required.
+
+
+### Restrained control and overlay motion
+
+`--motion-medium` (170ms) and `--ease-lift` govern custom overlay entrances: modal 5px vertical, sheet 6px upward, drawer 6px lateral. Backdrops fade in 110ms. Entrances do not retain mounted exit state or delay interaction. Individual CSS `translate`/`scale` preserve existing dialog centering transforms.
+
+Fine pointers lift enabled shared buttons and genuinely clickable instrument/market/heatmap cards by 1px. Pressed buttons scale to .99 immediately, including touch. Rows, sortable headers, tabs and segmented controls use color/background/border feedback only. Static KPIs and chart containers stay still; chart values and scroll behavior are unchanged.
+
+All added spatial motion is inside `prefers-reduced-motion: no-preference`; the existing global reduced-motion rule remains intact. Glass stays on existing navigation/header surfaces with a solid fallback. No animation dependencies, JavaScript timers, request changes or permanent `will-change` hints are used.

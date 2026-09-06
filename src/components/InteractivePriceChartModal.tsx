@@ -312,7 +312,7 @@ export default function InteractivePriceChartModal({
     <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center p-0 sm:p-4">
       <button
         type="button"
-        className="absolute inset-0 cursor-default"
+        className="motion-backdrop absolute inset-0 cursor-default"
         style={{ backgroundColor: 'rgba(0,0,0,0.62)' }}
         onClick={onClose}
         aria-label="Close chart"

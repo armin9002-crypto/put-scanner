@@ -1228,7 +1228,7 @@ function TradeModal({ trade, seed = null, onClose, onSave, onDelete }: TradeModa
 
   return (
     <div className="fixed inset-0 z-[130]">
-      <button type="button" aria-label="Close add trade modal" onClick={onClose} className="absolute inset-0 bg-black/55" />
+      <button type="button" aria-label="Close add trade modal" onClick={onClose} className="motion-backdrop absolute inset-0 bg-black/55" />
       <section ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="trade-modal-title" className="portfolio-trade-sheet absolute inset-x-0 bottom-0 max-h-[96dvh] overflow-y-auto rounded-t-2xl p-3 shadow-2xl sm:inset-x-1/2 sm:top-1/2 sm:bottom-auto sm:max-h-[calc(100dvh-1rem)] sm:w-[760px] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl sm:p-4" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
         <div className="mx-auto mb-2 h-1 w-10 rounded-full sm:hidden" aria-hidden="true" style={{ backgroundColor: 'var(--border-strong)' }} />
         <div className="mb-3 flex items-start justify-between gap-3">
@@ -1419,8 +1419,8 @@ function ContractPositionEditor({
 
   return (
     <div className="fixed inset-0 z-[125]">
-      <button type="button" aria-label="Close contract position editor" onClick={onClose} className="absolute inset-0 bg-black/55" />
-      <section ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="contract-position-editor-title" className="absolute inset-x-0 bottom-0 max-h-[96dvh] overflow-y-auto rounded-t-2xl p-3 shadow-2xl sm:inset-x-1/2 sm:top-1/2 sm:bottom-auto sm:max-h-[calc(100dvh-2rem)] sm:w-[680px] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl sm:p-4" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
+      <button type="button" aria-label="Close contract position editor" onClick={onClose} className="motion-backdrop absolute inset-0 bg-black/55" />
+      <section ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="contract-position-editor-title" className="motion-modal absolute inset-x-0 bottom-0 max-h-[96dvh] overflow-y-auto rounded-t-2xl p-3 shadow-2xl sm:inset-x-1/2 sm:top-1/2 sm:bottom-auto sm:max-h-[calc(100dvh-2rem)] sm:w-[680px] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl sm:p-4" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
             <h2 id="contract-position-editor-title" className="text-lg font-bold" style={{ color: 'var(--text)' }}>{position.ticker} {formatCurrency(position.strike)} Put</h2>

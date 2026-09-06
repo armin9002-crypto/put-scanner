@@ -445,7 +445,7 @@ export default function OptionDetailDrawer({
         type="button"
         aria-label="Close option detail drawer"
         onClick={onClose}
-        className="absolute inset-0 bg-black/50"
+        className="motion-backdrop absolute inset-0 bg-black/50"
       />
       <aside
         className="option-detail-drawer drawer-shell overlay-panel absolute inset-x-0 bottom-0 max-h-[94dvh] w-full overflow-y-auto rounded-t-2xl p-3 sm:inset-y-0 sm:left-auto sm:right-0 sm:h-full sm:max-h-none sm:w-[480px] md:w-[520px] lg:w-[560px] sm:rounded-l-[14px] sm:rounded-r-none sm:p-5"

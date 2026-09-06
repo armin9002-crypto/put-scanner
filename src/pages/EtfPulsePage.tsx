@@ -235,7 +235,7 @@ function MarketReadModal({ regime, posture, onClose }: { regime: RegimeAnalysis;
 
   return (
     <div className="fixed inset-0 z-[90] flex items-end sm:block">
-      <button type="button" aria-label="Close market read" onClick={onClose} className="absolute inset-0 bg-black/55" />
+      <button type="button" aria-label="Close market read" onClick={onClose} className="motion-backdrop absolute inset-0 bg-black/55" />
       <section className="market-read-sheet relative z-10 w-full max-h-[92dvh] overflow-y-auto rounded-t-2xl p-3 sm:absolute sm:inset-x-1/2 sm:top-6 sm:w-[680px] sm:-translate-x-1/2 sm:rounded-lg sm:max-h-[85dvh] sm:p-4 shadow-2xl" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
         <div className="mx-auto mb-2 h-1 w-10 rounded-full sm:hidden" aria-hidden="true" style={{ backgroundColor: 'var(--border-strong)' }} />
         <div className="flex items-start justify-between gap-3 mb-3">
@@ -353,7 +353,7 @@ function UniverseHeatmap({ rows, period }: { rows: EtfPulseRow[]; period: Visual
             key={row.ticker}
             to={`/options/${row.ticker}`}
             aria-label={`Open ${row.ticker} ETF detail`}
-            className="rounded-md p-2 min-h-[64px] overflow-hidden text-left cursor-pointer transition duration-150 hover:-translate-y-0.5 hover:shadow-[0_0_0_1px_rgba(96,165,250,0.28)] focus:outline-none focus:ring-2 focus:ring-blue-400/40 flex flex-col justify-between"
+            className="rounded-md p-2 min-h-[64px] overflow-hidden text-left cursor-pointer pulse-heatmap-tile focus:outline-none focus:ring-2 focus:ring-blue-400/40 flex flex-col justify-between"
             title={`${row.ticker} - ${row.name}\n${period}: ${formatPct(value)}\nRSI: ${isFiniteNumber(row.rsi14) ? row.rsi14.toFixed(1) : DASH}\nTrend: ${trend.label}\n20D RV: ${formatPct(row.realizedVolatility20)}\nRecent DD: ${formatPct(row.recentDrawdown30)}\nvs 50D: ${formatPct(row.distance50)}\nvs 200D: ${formatPct(row.distance200)}\n52W Pos: ${formatPct(row.position52Week)}\n52W DD: ${formatPct(row.drawdown52Week)}`}
             style={{ backgroundColor: style.backgroundColor, border: `1px solid ${style.borderColor}` }}
           >

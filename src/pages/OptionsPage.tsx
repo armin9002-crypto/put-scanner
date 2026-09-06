@@ -283,7 +283,7 @@ function MobileOptionCard({
           onSelect();
         }
       }}
-      className="mobile-option-card w-full rounded-xl p-3 text-left transition-all active:scale-[0.99]"
+      className="mobile-option-card w-full rounded-xl p-3 text-left"
       style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
     >
       <div className="flex items-start justify-between gap-2 min-w-0">

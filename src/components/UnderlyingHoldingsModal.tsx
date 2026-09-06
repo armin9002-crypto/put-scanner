@@ -68,7 +68,7 @@ export default function UnderlyingHoldingsModal({ proxy, onClose }: UnderlyingHo
         type="button"
         aria-label="Close underlying holdings modal"
         onClick={onClose}
-        className="absolute inset-0 bg-black/60"
+        className="motion-backdrop absolute inset-0 bg-black/60"
       />
       <section
         className="underlying-holdings-sheet relative flex max-h-[94dvh] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl shadow-2xl sm:max-h-[86dvh] sm:rounded-2xl"

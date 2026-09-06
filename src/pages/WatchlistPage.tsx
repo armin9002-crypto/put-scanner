@@ -540,7 +540,7 @@ export default function WatchlistPage() {
                             handleRemove(row.id);
                           }}
                           aria-label={`Remove ${row.ticker} ${row.expiryFormatted} ${formatMoney(row.strike)} put from watchlist`}
-                          className="watchlist-remove min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-opacity hover:opacity-75 active:scale-95"
+                          className="watchlist-remove min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-opacity hover:opacity-75 pressable"
                           title="Remove from watchlist"
                           style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}
                         >
@@ -676,7 +676,7 @@ export default function WatchlistPage() {
                               handleRemove(row.id);
                             }}
                             aria-label={`Remove ${row.ticker} ${row.expiryFormatted} ${formatMoney(row.strike)} put from watchlist`}
-                            className="watchlist-remove transition-all hover:opacity-75 active:scale-95 min-h-[34px] min-w-[32px] flex items-center justify-center rounded"
+                            className="watchlist-remove transition-all hover:opacity-75 pressable min-h-[34px] min-w-[32px] flex items-center justify-center rounded"
                             title="Remove from watchlist"
                           >
                             <Star className="w-3.5 h-3.5 fill-current" style={{ color: 'var(--accent-light)' }} />
