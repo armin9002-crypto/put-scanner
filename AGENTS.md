@@ -1,208 +1,463 @@
 # Put Scanner — Codex Working Rules
 
-## Purpose
+## Mission
 
-Put Scanner is a production React/Vite/TypeScript financial application for analyzing and managing short-put opportunities, with a current focus on leveraged ETFs.
+Put Scanner is a production React/Vite/TypeScript financial application for analyzing and managing short-put opportunities.
 
-Treat the existing repository as the source of truth. Understand the current implementation before changing it.
+Treat the CURRENT repository as the source of truth.
 
-The broader future ThetaGang/general premium-selling product is separate. Do not broaden Put Scanner into that product unless explicitly requested.
+For every task, make the smallest robust change that solves the requested problem while preserving financial correctness, user data, request efficiency, runtime performance, and existing behavior outside scope.
 
-## Scope Guard
+Do not broaden the product, refactor unrelated code, or future-proof speculatively unless explicitly requested.
 
-Complete the requested task with the smallest robust change that solves the actual problem.
+---
+
+## 1. Work Efficiently
+
+Model/tool usage matters.
+
+Start narrow.
 
 Before editing:
-- Read the relevant implementation, tests, configuration, and nearby patterns directly.
-- Check `git status` and do not disturb unrelated or user-authored work.
-- Verify assumptions from code rather than relying on filenames, old docs, search snippets, or guesses.
-- Identify the requested outcome, what must not change, the smallest likely file set, and the checks that prove the result.
 
-While editing:
+1. Read this file.
+2. Run `git status`.
+3. Inspect the directly relevant implementation and tests.
+4. Use targeted `rg`/search rather than browsing the whole repository.
+5. Read deeper documentation only when the task touches that domain.
+6. Identify:
+   - requested outcome;
+   - likely root cause;
+   - what must not change;
+   - smallest likely file set;
+   - minimum verification needed.
+
+Do not repeatedly rediscover architecture that current code already establishes.
+
+Do not read every historical doc for every task.
+
+Do not run every test suite before making a change.
+
+### Verification order
+
+Prefer:
+
+1. targeted test/typecheck;
+2. fix until targeted checks pass;
+3. relevant domain checks;
+4. one appropriate final broader verification pass.
+
+Do not repeatedly run full tests, full builds, and large Playwright matrices after every edit.
+
+Visual QA should be proportional to risk.
+
+Localized UI changes usually need representative desktop + mobile checks, not every Theme × Viewport × Text Size combination.
+
+Use broader matrices only for genuinely site-wide/responsive changes.
+
+Stop when the task is correctly implemented and adequately verified.
+
+More files, tests, screenshots, abstractions, and runtime are not inherently better.
+
+---
+
+## 2. Scope and Repository Safety
+
+- Preserve unrelated and user-authored work.
+- Never reset, discard, overwrite, or silently incorporate unrelated uncommitted changes.
+- Verify assumptions from current code, not old prompts, screenshots, filenames, or stale docs.
+- Reuse existing helpers, components, tokens, caches, Workers, patterns, and tests before creating new ones.
 - Fix root causes instead of stacking patches around incorrect behavior.
-- Reuse existing components, helpers, design tokens, utilities, caches, and test infrastructure before adding anything new.
-- Do not introduce a framework, adapter, abstraction layer, dependency, service, or configuration system unless the task genuinely requires it.
-- Do not perform unrelated cleanup, modernization, renaming, or refactoring.
-- Preserve behavior outside the requested scope.
-- Remove code that is genuinely replaced; do not keep obsolete paths unless compatibility is explicitly required.
+- Avoid new dependencies, frameworks, services, or infrastructure unless genuinely required.
+- Do not perform unrelated cleanup, renaming, modernization, or formatting.
+- Keep the final diff focused.
 
-Explicitly requested architectural work may be large. The scope guard is not a prohibition on larger changes; it prevents unrequested expansion.
+If a task depends on recent phased work, verify specifically named prerequisite commits once, then continue.
 
-## Read the Relevant Source of Truth
+Do not spend time reconstructing repository history unless the task requires it.
 
-Do not load every historical document for every task. Read deeper docs only when relevant.
+---
 
-Important current references include:
-- `docs/PUT_METRIC_DEFINITIONS.md` — financial metric definitions and formulas.
-- `docs/UI_DESIGN_SYSTEM.md` — current visual and responsive system.
-- `docs/PRODUCT_STAGE7A_CLOUD_AUTHORITATIVE_STATE.md` — current account persistence architecture.
-- `docs/PRODUCT_STAGE6B3_OPERATIONAL_RELIABILITY.md` — request observability and request-budget principles.
+## 3. Relevant Documentation
 
-Current code wins if historical documentation describes architecture that has since been retired.
+Read only when relevant.
 
-## Financial Correctness
+Important references include:
 
-Financial calculations are high-risk behavior.
+- `docs/PUT_METRIC_DEFINITIONS.md`
+- `docs/UI_DESIGN_SYSTEM.md`
+- `docs/PRODUCT_STAGE7A_CLOUD_AUTHORITATIVE_STATE.md`
+- `docs/PRODUCT_STAGE6B3_OPERATIONAL_RELIABILITY.md`
+- `docs/RECOMMENDATIONS_ENGINE_V1.md`
+- `docs/UNDERLYING_TECHNICAL_ASSESSMENT_V1.md`
+- current Portfolio / Historical Analytics methodology docs
 
-- Use existing canonical metric helpers; do not reimplement formulas independently in different surfaces.
-- A metric representing the same concept and price basis must calculate consistently across Scanner, Screener, Watchlist, Portfolio, ticker detail, and Option Drawer.
-- Preserve Bid / Ask / Last semantics and the Portfolio Mark Book behavior.
-- Preserve the distinction between zero and unavailable/missing data.
-- Fail closed when required financial inputs are missing or invalid; do not invent plausible fallback values.
-- Never rewrite historical trade economics merely to fill missing data.
-- Never use current market data and label it as historical entry data.
+Current implementation wins if older documentation is stale.
 
-User-facing terminology is intentionally concise:
-- `NY` / `Nominal Yield`
-- `AY` / `Annualized Yield`
-- `Gross Risk`
-- `Net Risk`
-- `Entry NY` / `Entry AY`
-- `Current NY` / `Current AY`
+If live deterministic financial methodology materially changes, update the relevant methodology doc.
 
-Do not globally rename financial concepts without explicit instruction. Tooltips may explain the exact underlying formula even when the visible label is concise.
+Do not rewrite documentation merely because code changed.
 
-### Entry Delta
+---
 
-Entry Delta is durable historical trade data.
-- Capture it only from a valid contemporaneous exact-contract value, a valid canonical contemporaneous calculation, explicit manual/imported data, or an actual stored historical snapshot.
-- Never substitute today's/current Delta for an older trade's Entry Delta.
-- Missing trustworthy historical Entry Delta should remain unavailable.
+## 4. Financial Correctness
 
-## User Data and Persistence
+Financial calculations are high-risk.
+
+Always reuse canonical financial helpers where they exist.
+
+The same metric and price basis should calculate consistently across applicable surfaces.
+
+Preserve distinctions between:
+
+- Bid / Ask / Last;
+- zero / unavailable;
+- historical / current;
+- entry / current;
+- option price / underlying price;
+- lot-level / aggregate values.
+
+Never invent plausible fallback financial values.
+
+Never use current market data and label it as historical entry data.
+
+Never replace missing historical Entry Delta or Entry IV with current values.
+
+Do not calculate canonical metrics from rounded display strings when raw values exist.
+
+Use the canonical weighting/aggregation methodology.
+
+Do not average percentages when the metric requires aggregate numerator ÷ aggregate denominator.
+
+### Population filters
+
+If a filter changes the records underlying a financial calculation:
+
+FILTER THE INPUT RECORDS FIRST,
+THEN RUN THE CANONICAL CALCULATION.
+
+Do not calculate on the complete population and merely hide excluded output.
+
+---
+
+## 5. Portfolio Architecture
+
+A durable `PortfolioTrade` represents one independent trade lot / entry event.
+
+A unique option contract position is a DERIVED grouping of applicable lots.
+
+Permanent rules:
+
+- Do not durably merge lots merely because ticker/expiration/strike match.
+- Additional sales of the same contract create new lots.
+- Preserve lot-specific entry date, price, Delta, IV, VIX, and lifecycle facts.
+- Aggregation belongs in derived read models/UI.
+- Current market data may be contract-level; historical entry facts remain lot-level.
+- Do not create a second durable contract-position authority.
+- Do not introduce partial-close / transaction-ledger architecture during unrelated tasks.
+
+Historical option execution data and underlying-price context are separate concepts.
+
+For manually closed options, option `closePrice` must not be confused with historical underlying-at-close.
+
+---
+
+## 6. Historical Import / Export
+
+Historical Excel Import is a high-risk bulk-data workflow.
+
+Preserve its established safety model unless explicitly redesigning it:
+
+- one source trade row → one independent lot;
+- additive import;
+- staging/review causes zero Portfolio writes;
+- possible duplicates are reviewed rather than silently merged;
+- multiplicity of legitimate identical lots is preserved;
+- backup/safety gate remains;
+- final batch uses established CAS/revision protection;
+- no blind conflict retry;
+- success requires authoritative verification where established;
+- private user workbooks/data must never be committed, logged, or copied into fixtures.
+
+Use sanitized/fabricated fixtures.
+
+For analytical Portfolio export, default to one row per canonical lot unless explicitly asked for aggregated contract positions.
+
+Export should normally use already-loaded data and make zero provider requests.
+
+Unavailable values remain unavailable/blank rather than synthetic zeroes.
+
+---
+
+## 7. User Data and Persistence
 
 Protect user financial data above convenience.
 
-### Durable account data
+For signed-in users, Supabase is the durable authority for established account data.
 
-For signed-in users, Supabase is the sole durable authority for:
-- Portfolio and history
-- Watchlist and notes
-- Entry Delta / Entry VIX and other established durable trade fields
-- account-level portable preferences
+Do not change the cloud-authoritative model, database schema, RLS, CAS/revision semantics, backup behavior, or persistence format unless explicitly required.
 
-The browser is not a competing durable account database.
+A stale device must not silently overwrite newer cloud state.
 
-For signed-out users, Portfolio/Watchlist account data must not silently persist as durable browser state.
+Market refresh data is transient and must not silently rewrite durable historical trade facts.
 
-Legacy local account data is inert and must never automatically overwrite, merge into, or block authoritative cloud state.
+Derived contract positions and market caches are not competing durable authorities.
 
-Retain cloud revision/CAS protection so a stale device cannot silently overwrite newer cloud data.
+Device-only display preferences may remain local where established.
 
-Do not change the cloud-authoritative model, Supabase schema, RLS, CAS semantics, backup behavior, or persistence format unless the task explicitly requires it.
+Never delete, bulk-rewrite, or migrate user financial data without explicit authorization and an appropriate safety path.
 
-### Market and device data
+---
 
-Do not confuse account persistence with caching.
+## 8. Market Data and Request Efficiency
 
-Preserve existing local/server market-data caches and request deduplication unless explicitly changing them.
+Provider/API efficiency is a permanent requirement.
 
-Device-only presentation state such as theme or appropriate UI state may remain local.
+Do not add:
 
-### Durable vs transient Portfolio work
+- polling;
+- background refresh loops;
+- fetch-on-hover;
+- per-row requests;
+- per-card requests;
+- unnecessary request fan-out;
 
-- Market quote refreshes are transient and must not silently mutate durable Portfolio state.
-- Lifecycle changes, Entry VIX maintenance, and other durable maintenance remain explicit actions.
-- Backup/import/restore operations must protect existing data and remain explicit.
+unless explicitly requested.
 
-Never delete, rewrite, migrate, or bulk-transform user data without explicit authorization and an appropriate safety/backup path.
+Prefer:
 
-## Market Data and Request Efficiency
+- user-triggered refresh;
+- existing cache-first behavior;
+- bounded batching;
+- request deduplication;
+- already-loaded data;
+- established abort/generation protections.
 
-Provider/API efficiency is a permanent product requirement.
+Sorting, filtering, grouping, column visibility, local display preferences, and similar UI interactions should normally be request-free.
 
-- No polling, cron, Realtime subscription, background refresh loop, or fetch-on-hover unless explicitly requested.
-- Prefer user-initiated refresh and existing cache-first behavior.
-- Reuse loaded data for sorting, filtering, drawers, hover, and other client-side interactions whenever possible.
-- Preserve request deduplication and bounded batching.
-- Do not add provider calls just to simplify implementation.
-- Avoid duplicate initial fetches and request fan-out.
-- Superseded requests should use existing abort/generation protections where applicable.
-- Opening drawers/modals or changing purely local UI state should not create market requests unless the feature genuinely requires new data.
+If request behavior changes, inspect the request graph and run the relevant request-ledger checks.
 
-If a change affects market request behavior, inspect the existing request graph and run the request-ledger checks.
+Trading-session calculations should reuse the canonical U.S. market-calendar helpers rather than naive calendar-day math.
 
-## UI and Responsive Behavior
+---
 
-Put Scanner should remain a compact, premium financial workstation: dense but calm, data-first, precise, and restrained.
+## 9. Recommendations
 
-- Reuse the existing design system, semantic tokens, shared surfaces, tables, controls, overlays, and responsive patterns.
-- Do not introduce a large third-party UI system unless explicitly requested.
-- Prefer hierarchy, alignment, grouping, and subtle separators over adding more cards.
-- Do not solve density by making important text excessively small.
-- Use tabular numerals where financial comparison benefits.
-- Preserve clear loading, empty, stale, partial, unavailable, and error states.
-- Mobile/iOS is a deliberate product layout, not compressed desktop.
-- Maintain practical touch targets, safe-area behavior, keyboard/input usability, and phone-landscape support.
-- Avoid page-level horizontal overflow and overlay clipping.
+Recommendations is a deterministic financial decision system.
 
-For meaningful UI changes, inspect the rendered result rather than judging only from source code.
+Permanent invariants:
 
-## Cross-Surface Regression Awareness
+- No LLM/AI inference inside verdict/ranking logic.
+- Same canonical input should produce the same deterministic result.
+- `NO TRADE` is a valid analytical result.
+- Incomplete acquisition/evidence is distinct from `NO TRADE`.
+- Hard gates remain hard gates.
+- Do not manufacture recommendations to hit a target count.
+- Verdict, actionability ranking, and surfaced shortlist are separate concepts.
+- Fresh API retrieval is not the same as recent option price discovery.
+- Stale Last must not masquerade as executable credit.
+- Nearby-strike evidence must follow established deterministic rules.
+- Explanations must trace to actual evidence.
 
-Changes to shared financial or UI behavior may affect:
-- Scanner
-- Screener
-- Watchlist
-- Portfolio
-- Portfolio Analytics
-- ticker/ETF detail
-- Option Drawer
-- ETF Pulse
-- Account
+ETF Pulse and Recommendations share the canonical ticker-level technical assessment where concepts overlap.
 
-Audit only the surfaces reasonably affected by the change, but do not assume a shared helper is isolated to the page where the bug was reported.
+Do not create competing definitions of trend, pullback, oversold, recovery, extension, deterioration, or broken trend.
 
-## Testing
+Market Regime remains separate from ticker-level technical assessment.
 
-Testing should be proportional to the change.
+---
 
-- Run the narrowest existing tests that exercise the changed behavior first.
-- Extend an existing relevant test before creating a new test framework or broad test file.
-- Add tests for changed user-observable behavior, financial correctness, persistence safety, or meaningful regression risk.
-- Do not create unrelated coverage merely to make the task look thorough.
-- Never weaken assertions or use passing tests to justify incorrect behavior.
+## 10. Recommendations Performance
 
-Use existing broader checks when relevant:
-- Request/API behavior changed → run `npm run request:ledger`.
-- Cross-site/responsive UI changed → run `npm run responsive:check`.
-- Broad or high-risk work → run `npm run verify` and `npm run build:report` as appropriate.
-- Cloud/persistence changes → run the relevant account/cloud/backup regression suite.
-- Financial metric changes → run deterministic metric regressions across affected surfaces.
+Recommendations may process thousands of contracts.
 
-If a required check cannot run, report that plainly.
+Performance and browser responsiveness are part of correctness.
 
-## Pause Before Expanding Scope
+Preserve the optimized architecture:
 
-If the task has not explicitly authorized it, stop and ask before:
-- materially expanding into unrelated files or product areas;
-- adding a dependency, service, framework, provider, or new infrastructure;
-- changing a public API, database schema, durable storage format, or cloud architecture;
-- deleting or rewriting user data;
-- changing financial formulas or historical-data semantics;
-- replacing a bounded request path with a more expensive one;
-- keeping two materially different implementations of the same behavior.
+- avoid unnecessary global O(N²) work;
+- pre-index repeated lookups;
+- reuse prepared pricing/chain evidence;
+- avoid repeated sorting/normalization;
+- do not restore unbounded pairwise-detail structures;
+- preserve established Worker execution/serialization where applicable;
+- preserve cancellation semantics.
 
-Read-only investigation is always allowed.
+Do not “fix” performance by silently reducing:
 
-## Git and Repository Safety
+- underlyings;
+- expirations;
+- evidence quality;
+- recommendation breadth;
+- financial policy.
 
-- Inspect `git status` before editing.
-- Never discard, reset, overwrite, or silently incorporate unrelated uncommitted user work.
-- Keep the diff focused on the requested task.
-- Do not amend/rewrite existing history unless explicitly requested.
-- Commit/push only when the user/task asks for it.
-- Never include secrets, service-role keys, credentials, or user financial data in source, fixtures, logs, or commits.
+For material engine optimizations, verify both:
 
-## Done Means
+1. financial-output equivalence;
+2. computational/runtime behavior.
 
-A task is complete when:
-- the requested behavior works;
-- the root cause is addressed;
-- relevant regressions are checked;
-- request, financial, persistence, and UI invariants remain intact where applicable;
-- every touched file is necessary to the requested outcome;
-- no unnecessary new framework or abstraction was introduced;
-- limitations or unverified runtime behavior are stated plainly.
+Use realistic scale tests when scale is relevant.
 
-Stop when the task is done. Do not turn a completed request into a future-proofing project.
+---
+
+## 11. UI / Responsive Design
+
+Put Scanner should remain a compact, premium financial workstation:
+
+- dense;
+- calm;
+- precise;
+- data-first;
+- modern;
+- restrained.
+
+Reuse the existing design system.
+
+Do not introduce a large UI framework without explicit need.
+
+Mobile/iOS is an intentional layout, not compressed desktop.
+
+Preserve:
+
+- practical touch targets;
+- safe areas;
+- keyboard/input usability;
+- phone landscape support;
+- overlay containment;
+- no page-level horizontal overflow.
+
+For meaningful UI changes, inspect actual rendered behavior.
+
+### Text Size
+
+Preserve the established Small / Medium / Large text-size architecture.
+
+Small is the baseline.
+
+Do not implement text size using page zoom or whole-page transforms.
+
+Text-size changes are presentation-only and must not trigger market requests or financial recalculation.
+
+### Motion
+
+Preserve shared motion primitives and `prefers-reduced-motion`.
+
+Use CSS-first restrained motion.
+
+Do not add animation libraries unless explicitly justified.
+
+Avoid gimmicky movement, heavy effects, animated financial interpolation, and geometry-changing table-row animation.
+
+Motion must not introduce API calls or significant runtime overhead.
+
+---
+
+## 12. Testing
+
+Testing should be proportional to risk.
+
+Add or update tests for meaningful changes to:
+
+- user-visible behavior;
+- financial calculations;
+- persistence/data safety;
+- request behavior;
+- major runtime behavior.
+
+Prefer existing relevant tests over new test infrastructure.
+
+Useful broader checks when applicable:
+
+- request behavior → `npm run request:ledger`
+- responsive/cross-site UI → `npm run responsive:check`
+- broad/high-risk change → `npm run verify`
+- meaningful bundle/dependency/site-wide CSS/JS change → `npm run build:report`
+- cloud/persistence → relevant account/CAS/backup tests
+- Recommendations performance → scale/equivalence/browser checks as appropriate
+
+Do not run every check merely because it exists.
+
+If a check cannot actually run, say so.
+
+Never claim browser verification that did not execute.
+
+---
+
+## 13. Performance and Error Handling
+
+Measure meaningful performance problems before optimizing them.
+
+Watch for:
+
+- unnecessary O(N²) loops;
+- repeated sorting/date calculations;
+- repeated normalization;
+- duplicate large object graphs;
+- large main-thread serialization;
+- unnecessary React state/rerenders;
+- retained memory;
+- long synchronous tasks.
+
+Fix unnecessary complexity first.
+
+Use Workers/yielding when justified after fixing the underlying inefficiency.
+
+Normal failures should not require restarting the application.
+
+Prefer controlled error/incomplete/cancel states over crashes or fabricated results.
+
+---
+
+## 14. Ask Before Major Expansion
+
+Unless explicitly authorized, stop and ask before:
+
+- adding a major framework/dependency/service/provider;
+- changing database/schema/RLS/cloud architecture;
+- changing durable storage format;
+- rewriting user financial data;
+- materially changing canonical financial formulas;
+- changing historical-data semantics;
+- redesigning Portfolio transaction architecture;
+- introducing partial-close ledger architecture;
+- materially increasing provider request fan-out;
+- maintaining two competing implementations of the same domain behavior.
+
+Read-only investigation is allowed.
+
+---
+
+## 15. Git and Completion
+
+Before editing:
+
+`git status`
+
+Never discard unrelated work.
+
+Do not amend/rewrite existing history unless explicitly requested.
+
+Commit/push only when requested.
+
+Never commit secrets, credentials, private financial spreadsheets, or user financial data.
+
+Before declaring success:
+
+1. inspect the final diff;
+2. confirm every changed file is necessary;
+3. check for unintended financial/request/persistence changes;
+4. remove temporary diagnostics;
+5. run the appropriate final verification;
+6. report limitations honestly.
+
+A task is DONE when:
+
+- requested behavior works;
+- root cause is addressed;
+- relevant invariants remain intact;
+- appropriate tests pass;
+- final diff is focused.
+
+STOP WHEN DONE.
+
+Do not convert a completed task into an unrelated cleanup, refactor, documentation expansion, test expansion, or speculative optimization project.
