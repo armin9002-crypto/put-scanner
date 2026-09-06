@@ -32,3 +32,14 @@ Required commands: `npm test`, `npm run verify`, `npm run responsive:check`, `np
 - PortfolioPage: modal/backdrop class hooks. EtfPulsePage: shared heatmap/backdrop classes. OptionsPage: removes card scaling. WatchlistPage: replaces 95% compression with shared feedback.
 - `e2e/text-size.visual.spec.ts`: extends existing fixture-based visual tests with motion assertions.
 - `docs/UI_DESIGN_SYSTEM.md` and this report: document the resulting conventions and QA scope.
+
+
+## Motion V2 follow-up
+
+Actual starting HEAD: `2e805bde5a942f18684bc692439fd73746a3af8a`; the named V1 prerequisite is HEAD itself, with no later commits. The existing user-authored `AGENTS.md` changes were read and preserved.
+
+Source audit confirmed 110/170ms tokens, 1px control/card lift, .99 press, 5px modals and 6px sheets/drawers. Lift was limited to instrument, market and heatmap cards; recommendations, position summaries, tabs and rows used color feedback. Scanner snapshot tooltips reused the modal entrance; freshness tooltips used opacity. Charts kept their existing period/metric controls and spatially static data. All added movement was gated by no-preference, with global reduced-motion protection retained.
+
+V2 uses 90/150/210ms tiers and emphasized easing with a quick start and soft settle. Lift is 2px; cards have a modestly deeper shadow. Press reaches .985 immediately, then releases in 90ms: a timed press was rejected after actual short-tap testing showed it could disappear before reaching its target. Modals enter by 8px, sheets/drawers by 12px; compact snapshot tooltips have their own 3px/90ms entrance. Non-tab quote segments are explicitly excluded from scaling. The final interaction review removed a redundant inline instrument-card shadow that masked the hover elevation; the shared surface class preserves its resting shadow. No layout, financial, request, persistence, chart-rendering or dependency changes were made.
+
+The existing motion test now checks V2 amplitudes and samples the actual CSS overlay entrance halfway through its 210ms duration. Desktop and phone checks retain four themes, Small/Large text, keyboard focus, actual touch taps, still rows and reduced motion. The existing dense-theme/chart/request-isolation test supplies representative cross-route regression coverage. V2 results: all four representative Playwright checks passed (1.5 minutes); `npm run verify` passed, including 353 unit tests, typecheck, selfcheck, responsive checklist, production build and lint (zero errors, four existing warnings). The production bundle report passed. Physical iOS testing is outside this browser-emulation run.

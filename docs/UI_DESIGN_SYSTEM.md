@@ -163,15 +163,15 @@ Theme utilities use distinct, recognizable icons. A bare square is not an accept
 - Use primary/secondary/tertiary text roles in that order; do not place tertiary text on inset backgrounds when it carries required meaning.
 - Positive/negative color is supplementary to a numeric sign or text label.
 - Every interactive element receives a visible `:focus-visible` outline.
-- Hover does not move cards or rows.
-- UI transitions use `--transition-ui` (`--motion-fast`: 110ms, `--ease-ui`) and `prefers-reduced-motion` collapses them.
+- Only explicitly interactive cards receive lift; rows remain still.
+- UI transitions use `--transition-ui` (`--motion-fast`: 150ms, `--ease-ui`) and `prefers-reduced-motion` collapses them.
 - Modal and sheet focus traps, Escape behavior, labels, and dialog roles remain required.
 
 
 ### Restrained control and overlay motion
 
-`--motion-medium` (170ms) and `--ease-lift` govern custom overlay entrances: modal 5px vertical, sheet 6px upward, drawer 6px lateral. Backdrops fade in 110ms. Entrances do not retain mounted exit state or delay interaction. Individual CSS `translate`/`scale` preserve existing dialog centering transforms.
+`--motion-instant` (90ms) handles presses and compact tooltips; `--motion-fast` (150ms) handles control feedback and backdrops. `--motion-medium` (210ms) and `--ease-emphasized` (`cubic-bezier(0.16, 1, 0.3, 1)`) govern overlay entrances: modal 8px vertical, sheet 12px upward, drawer 12px lateral. Tooltips retain a separate 3px entrance. Entrances do not retain mounted exit state or delay interaction. Individual CSS `translate`/`scale` preserve existing dialog centering transforms.
 
-Fine pointers lift enabled shared buttons and genuinely clickable instrument/market/heatmap cards by 1px. Pressed buttons scale to .99 immediately, including touch. Rows, sortable headers, tabs and segmented controls use color/background/border feedback only. Static KPIs and chart containers stay still; chart values and scroll behavior are unchanged.
+Fine pointers lift enabled shared buttons and genuinely clickable instrument/market/heatmap cards by 2px. Pressed buttons reach .985 immediately, including short touch taps, and release over 90ms. The emphasized easing gives a quick response followed by a soft settle, without overshoot. Rows, sortable headers, tabs and segmented controls use color/background/border feedback only. Static KPIs and chart containers stay still; chart values and scroll behavior are unchanged.
 
 All added spatial motion is inside `prefers-reduced-motion: no-preference`; the existing global reduced-motion rule remains intact. Glass stays on existing navigation/header surfaces with a solid fallback. No animation dependencies, JavaScript timers, request changes or permanent `will-change` hints are used.

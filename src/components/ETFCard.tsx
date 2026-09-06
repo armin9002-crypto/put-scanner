@@ -295,7 +295,6 @@ export default function ETFCard({
         backgroundColor: rangeStyle ? rangeStyle.bgTint : 'var(--surface)',
         border: `1px solid ${rangeStyle ? rangeStyle.borderColor : 'var(--border)'}`,
         borderLeftWidth: rangeStyle ? '2px' : '1px',
-        boxShadow: 'var(--shadow)',
       }}
     >
       <Link

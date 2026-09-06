@@ -241,9 +241,9 @@ test('motion controls, overlays and reduced motion', async ({ page, browser }, i
     await control.focus();
     await expect(control).toBeFocused();
     await control.hover();
-    await expect.poll(() => control.evaluate(el => getComputedStyle(el).translate)).toBe('0px -1px');
+    await expect.poll(() => control.evaluate(el => getComputedStyle(el).translate)).toBe('0px -2px');
     await page.mouse.down();
-    await expect.poll(() => control.evaluate(el => getComputedStyle(el).scale)).toBe('0.99');
+    await expect.poll(() => control.evaluate(el => getComputedStyle(el).scale)).toBe('0.985');
     await page.mouse.move(0, 0);
     await page.mouse.up();
     const row = page.locator('.mobile-etf-row').first();
@@ -259,6 +259,26 @@ test('motion controls, overlays and reduced motion', async ({ page, browser }, i
     await expect(dialog).toBeVisible();
     const animation = await dialog.evaluate(el => getComputedStyle(el).animationName);
     expect(['ui-modal', 'ui-sheet']).toContain(animation);
+    // Inspect the actual entrance halfway through, preserving layout transforms.
+    const entrance = await dialog.evaluate(el => {
+      // Restart the same CSS entrance if navigation has already finished it.
+      (el as HTMLElement).style.animationName = 'none';
+      void (el as HTMLElement).offsetWidth;
+      (el as HTMLElement).style.animationName = '';
+      const animation = el.getAnimations()[0];
+      if (!animation) throw new Error('Expected the CSS overlay entrance');
+      animation.pause();
+      animation.currentTime = 105;
+      const style = getComputedStyle(el);
+      const sample = { duration: animation.effect?.getTiming().duration, opacity: Number(style.opacity), translate: style.translate };
+      animation.finish();
+      return sample;
+    });
+    expect(entrance.duration).toBe(210);
+    expect(entrance.opacity).toBeGreaterThan(0);
+    expect(entrance.opacity).toBeLessThan(1);
+    expect(entrance.translate).not.toBe('none');
+
     await page.screenshot({ path: path.join(directory, `${theme}-account.png`), animations: 'disabled' });
   }
   const touchContext = await browser.newContext({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 }, baseURL: 'http://127.0.0.1:4317' });
@@ -273,7 +293,7 @@ test('motion controls, overlays and reduced motion', async ({ page, browser }, i
   // Chromium applies touch :active during tap completion, not a held touchStart.
   await touchControl.tap();
   await expect(touchControl).toHaveAttribute('title', 'Text size: Medium');
-  expect(await touchControl.evaluate(el => getComputedStyle(el).scale)).toBe('0.99');
+  await expect.poll(() => touchControl.evaluate(el => getComputedStyle(el).scale)).toBe('0.985');
   expect(await touchControl.evaluate(el => (el as HTMLElement).offsetHeight)).toBeGreaterThanOrEqual(44);
   await touchContext.close();
   await page.emulateMedia({ reducedMotion: 'reduce' });

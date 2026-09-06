@@ -226,10 +226,11 @@
   --radius-lg: 12px;
   --radius-overlay: 14px;
   --space-page: clamp(0.875rem, 2.2vw, 1.75rem);
-  --motion-fast: 110ms;
-  --motion-medium: 170ms;
+  --motion-instant: 90ms;
+  --motion-fast: 150ms;
+  --motion-medium: 210ms;
   --ease-ui: cubic-bezier(0.2, 0, 0, 1);
-  --ease-lift: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
   --transition-ui: var(--motion-fast) var(--ease-ui);
 }
 
@@ -5688,43 +5689,45 @@ input[type="number"] {
 
 /* Shared microinteractions: individual translate/scale preserve layout transforms.
    Rows, tab indicators, sticky headers and static analytical surfaces stay still. */
-:is(.button-primary, .button-secondary, .button-ghost, .icon-button, button.pressable, a.pressable, .mobile-sheet-action):not([role="tab"]):not([role="row"]):not(.mobile-etf-row, .mobile-option-row, .mobile-option-card):not(th *) {
-  transition: color var(--transition-ui), background-color var(--transition-ui), border-color var(--transition-ui), opacity var(--transition-ui), translate var(--motion-fast) var(--ease-lift), scale var(--motion-fast) var(--ease-lift);
+:is(.button-primary, .button-secondary, .button-ghost, .icon-button, button.pressable, a.pressable, .mobile-sheet-action):not([role="tab"]):not([role="row"]):not(.mobile-etf-row, .mobile-option-row, .mobile-option-card, .mobile-segmented__item):not(th *) {
+  transition: color var(--transition-ui), background-color var(--transition-ui), border-color var(--transition-ui), opacity var(--transition-ui), translate var(--motion-fast) var(--ease-emphasized), scale var(--motion-instant) var(--ease-emphasized);
 }
 :is(.app-nav-item, .app-utility-button, [role="tab"], .mobile-segmented__item, .recommendation-card__summary, .mobile-option-card, .mobile-option-row, .mobile-etf-row, .portfolio-priority-item, th button) {
   transition: color var(--transition-ui), background-color var(--transition-ui), border-color var(--transition-ui), opacity var(--transition-ui);
 }
 :is(.instrument-card, .scanner-market-card, .pulse-heatmap-tile) {
-  transition: border-color var(--transition-ui), background-color var(--transition-ui), box-shadow var(--transition-ui), translate var(--motion-fast) var(--ease-lift);
+  transition: border-color var(--transition-ui), background-color var(--transition-ui), box-shadow var(--transition-ui), translate var(--motion-fast) var(--ease-emphasized);
 }
 @media (prefers-reduced-motion: no-preference) {
   @media (hover: hover) and (pointer: fine) {
-    :is(.button-primary, .button-secondary, .button-ghost, .icon-button, button.pressable, a.pressable, .mobile-sheet-action):not([role="tab"]):not([role="row"]):not(.mobile-etf-row, .mobile-option-row, .mobile-option-card):not(th *):not(:disabled):not([aria-disabled="true"]):hover {
-      translate: 0 -1px;
+    :is(.button-primary, .button-secondary, .button-ghost, .icon-button, button.pressable, a.pressable, .mobile-sheet-action):not([role="tab"]):not([role="row"]):not(.mobile-etf-row, .mobile-option-row, .mobile-option-card, .mobile-segmented__item):not(th *):not(:disabled):not([aria-disabled="true"]):hover {
+      translate: 0 -2px;
     }
     :is(.instrument-card, .scanner-market-card, .pulse-heatmap-tile):hover {
-      translate: 0 -1px;
+      translate: 0 -2px;
       border-color: var(--border-emphasis);
-      box-shadow: 0 3px 10px color-mix(in srgb, var(--bg) 24%, transparent);
+      box-shadow: 0 6px 16px color-mix(in srgb, var(--bg) 28%, transparent);
     }
   }
-  :is(.button-primary, .button-secondary, .button-ghost, .icon-button, button.pressable, a.pressable, .mobile-sheet-action):not([role="tab"]):not([role="row"]):not(.mobile-etf-row, .mobile-option-row, .mobile-option-card):not(th *):not(:disabled):not([aria-disabled="true"]):active {
+  :is(.button-primary, .button-secondary, .button-ghost, .icon-button, button.pressable, a.pressable, .mobile-sheet-action):not([role="tab"]):not([role="row"]):not(.mobile-etf-row, .mobile-option-row, .mobile-option-card, .mobile-segmented__item):not(th *):not(:disabled):not([aria-disabled="true"]):active {
     translate: 0 0;
-    scale: .99;
+    scale: .985;
+    /* A short touch must reach the pressed state; release uses motion-instant. */
     transition-duration: 0ms;
   }
   :is(.motion-backdrop-surface, .recommendation-methodology-backdrop) { animation: ui-backdrop-surface var(--motion-fast) var(--ease-ui); }
   .motion-backdrop { animation: ui-backdrop var(--motion-fast) var(--ease-ui); }
-  :is(.motion-modal, .recommendation-methodology-modal, .chart-modal-panel, .market-read-sheet, .underlying-holdings-sheet, .portfolio-trade-sheet) { animation: ui-modal var(--motion-medium) var(--ease-lift); }
-  :is(.mobile-sheet-panel, .mobile-account-sheet, .mobile-trade-sheet) { animation: ui-sheet var(--motion-medium) var(--ease-lift); }
-  :is(.option-detail-drawer, .recommendation-evidence-drawer) { animation: ui-drawer var(--motion-medium) var(--ease-lift); }
-  .scanner-snapshot-tooltip { animation: ui-modal var(--motion-fast) var(--ease-ui); }
+  :is(.motion-modal, .recommendation-methodology-modal, .chart-modal-panel, .market-read-sheet, .underlying-holdings-sheet, .portfolio-trade-sheet) { animation: ui-modal var(--motion-medium) var(--ease-emphasized); }
+  :is(.mobile-sheet-panel, .mobile-account-sheet, .mobile-trade-sheet) { animation: ui-sheet var(--motion-medium) var(--ease-emphasized); }
+  :is(.option-detail-drawer, .recommendation-evidence-drawer) { animation: ui-drawer var(--motion-medium) var(--ease-emphasized); }
+  .scanner-snapshot-tooltip { animation: ui-tooltip var(--motion-instant) var(--ease-ui); }
 }
 @keyframes ui-backdrop-surface { from { background-color: transparent; } }
 @keyframes ui-backdrop { from { opacity: 0; } to { opacity: 1; } }
-@keyframes ui-modal { from { opacity: 0; translate: 0 5px; } to { opacity: 1; translate: 0 0; } }
-@keyframes ui-sheet { from { opacity: 0; translate: 0 6px; } to { opacity: 1; translate: 0 0; } }
-@keyframes ui-drawer { from { opacity: 0; translate: 6px 0; } to { opacity: 1; translate: 0 0; } }
+@keyframes ui-tooltip { from { opacity: 0; translate: 0 3px; } to { opacity: 1; translate: 0 0; } }
+@keyframes ui-modal { from { opacity: 0; translate: 0 8px; } to { opacity: 1; translate: 0 0; } }
+@keyframes ui-sheet { from { opacity: 0; translate: 0 12px; } to { opacity: 1; translate: 0 0; } }
+@keyframes ui-drawer { from { opacity: 0; translate: 12px 0; } to { opacity: 1; translate: 0 0; } }
 /* Glass remains confined to existing navigation/header surfaces. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   :is(.app-desktop-nav, .mobile-page-header, .mobile-trade-sheet__header, .drawer-header, .mobile-bottom-nav, .pulse-mobile-controls) {
