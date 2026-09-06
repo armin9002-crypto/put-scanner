@@ -31,12 +31,15 @@ const TYPE_OPTIONS = ['All', 'Broad Index', 'Sector', 'Commodity', 'Country'] as
 import { ETF_LIST } from '../lib/etfs';
 import {
   buildCachedExpirationState,
+  buildExpirationState,
   diagnosticForOutcome,
   snapshotProgressLabel,
   summarizeSnapshotOutcomes,
+  tickerMatchesScannerExpiration,
   type CachedExpirationState,
   type SnapshotUpdateProgress,
 } from '../lib/scannerUpdateState';
+import { fetchScreenerExpirationAvailability } from '../lib/screenerAcquisition';
 import { passesScannerLiquidityFilter, sortScannerEtfs, type ScannerLiquidityFilter, type ScannerSort } from '../lib/scannerDiscovery';
 import { fetchFundAssets, type FundAssetsData } from '../lib/fundAssets';
 import { DEFAULT_SCANNER_STATE, parseScannerState, resolveScannerExpiration, serializeScannerState, type ScannerState } from '../lib/scannerState';
@@ -157,11 +160,7 @@ export default function HomePage() {
   const initialScannerStateRef = useRef<ScannerState | null>(null);
   if (!initialScannerStateRef.current) {
     const parsed = parseScannerState(searchParams);
-    const expirations = initialExpirationStateRef.current.expirations;
-    initialScannerStateRef.current = {
-      ...parsed,
-      expiration: resolveScannerExpiration(parsed.expiration, expirations.filter(expiration => expiration.dte > 30).map(expiration => expiration.date), expirations.some(expiration => expiration.dte <= 30)),
-    };
+    initialScannerStateRef.current = parsed;
   }
   const initialScannerState = initialScannerStateRef.current!;
   const [search, setSearch] = useState(initialScannerState.search);
@@ -172,6 +171,8 @@ export default function HomePage() {
   const [liquidityFilter, setLiquidityFilter] = useState<ScannerLiquidityFilter>(initialScannerState.liquidity);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [expirationState, setExpirationState] = useState<CachedExpirationState>(initialExpirationStateRef.current!);
+  const [expirationAvailabilityReady, setExpirationAvailabilityReady] = useState(false);
+  const [expirationDatesLoading, setExpirationDatesLoading] = useState(true);
   const [optionSnapshots, setOptionSnapshots] = useState<Record<string, ScannerOptionSnapshot>>(() => getScannerOptionSnapshots());
   const [snapshotDiagnostics, setSnapshotDiagnostics] = useState<Record<string, ScannerSnapshotDiagnostic>>(() => getScannerSnapshotDiagnostics());
   const [snapshotProgress, setSnapshotProgress] = useState<SnapshotUpdateProgress | null>(null);
@@ -266,12 +267,33 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
+    const controller = new AbortController();
+    setExpirationDatesLoading(true);
+    fetchScreenerExpirationAvailability({ signal: controller.signal })
+      .then(result => {
+        if (controller.signal.aborted) return;
+        setExpirationState(buildExpirationState(result.expirationsByTicker));
+        setExpirationAvailabilityReady(true);
+      })
+      .catch(() => {
+        // Keep locally observed dates as a dropdown fallback, but never use them as
+        // authoritative evidence that another ticker lacks an expiration.
+        if (!controller.signal.aborted) setExpirationAvailabilityReady(false);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setExpirationDatesLoading(false);
+      });
+    return () => controller.abort(new DOMException('Scanner route closed', 'AbortError'));
+  }, []);
+
+  useEffect(() => {
+    if (!expirationAvailabilityReady) return;
     setExpFilter(current => resolveScannerExpiration(
       current,
       availableExps.filter(expiration => expiration.dte > 30).map(expiration => expiration.date),
       availableExps.some(expiration => expiration.dte <= 30),
     ));
-  }, [availableExps]);
+  }, [availableExps, expirationAvailabilityReady]);
 
   const serializedScannerState = serializeScannerState({
     search,
@@ -334,7 +356,6 @@ export default function HomePage() {
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
-    const dateToDte = new Map(availableExps.map(exp => [exp.date, exp.dte]));
     const matches = ETF_LIST.filter(e => {
       if (q && !e.ticker.toLowerCase().includes(q) && !e.underlying.toLowerCase().includes(q) && !e.name.toLowerCase().includes(q)) {
         return false;
@@ -346,24 +367,13 @@ export default function HomePage() {
         return false;
       }
       if (!passesScannerLiquidityFilter(optionSnapshots[e.ticker], liquidityFilter)) return false;
-      if (expFilter === 'lte_30dte') {
-        const dates = expiryAvailability[e.ticker] ?? [];
-        if (!dates.some(date => (dateToDte.get(date) ?? Infinity) <= 30)) {
-          return false;
-        }
-      } else if (expFilter.startsWith('date_')) {
-        const targetDate = Number(expFilter.replace('date_', ''));
-        const dates = expiryAvailability[e.ticker] ?? [];
-        if (!dates.includes(targetDate)) {
-          return false;
-        }
-      }
+      if (!tickerMatchesScannerExpiration(e.ticker, expFilter, expiryAvailability, expirationAvailabilityReady)) return false;
       return true;
     });
     return sortScannerEtfs(matches, scannerSort, prices, optionSnapshots);
-  }, [search, leverageFilter, typeFilter, liquidityFilter, scannerSort, prices, optionSnapshots, expFilter, expiryAvailability, availableExps]);
+  }, [search, leverageFilter, typeFilter, liquidityFilter, scannerSort, prices, optionSnapshots, expFilter, expiryAvailability, expirationAvailabilityReady]);
 
-  const expDropdownOptions = useMemo(() => buildExpirationOptions(availableExps), [availableExps]);
+  const expDropdownOptions = useMemo(() => buildExpirationOptions(availableExps, expFilter), [availableExps, expFilter]);
 
   const handleExpirationChange = useCallback((value: string) => {
     setExpFilter(value);
@@ -429,7 +439,6 @@ export default function HomePage() {
       const summary = summarizeSnapshotOutcomes(outcomes);
       setOptionSnapshots(getScannerOptionSnapshots());
       setSnapshotDiagnostics(getScannerSnapshotDiagnostics());
-      setExpirationState(buildCachedExpirationState());
       setSnapshotProgress(current => current ? { ...current, ...summary, complete: true } : current);
     } finally {
       snapshotUpdateRunningRef.current = false;
@@ -468,7 +477,7 @@ export default function HomePage() {
           <div className="mobile-scanner-filter-row grid grid-cols-[minmax(0,1fr)_auto] gap-2">
             <label className="min-w-0">
               <span className="sr-only">Expiration</span>
-              <select value={expFilter} onChange={event => handleExpirationChange(event.target.value)} className="mobile-control-field w-full" aria-label="Scanner expiration">
+              <select value={expFilter} onChange={event => handleExpirationChange(event.target.value)} className="mobile-control-field w-full" aria-label="Scanner expiration" aria-busy={expirationDatesLoading}>
                 {expDropdownOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
             </label>
@@ -584,7 +593,7 @@ export default function HomePage() {
                   {LEVERAGE_OPTIONS.map(opt => <button key={opt} onClick={() => setLeverageFilter(opt)} className="pressable h-8 w-[26px] rounded-md px-0 text-[11px] font-medium" style={{ backgroundColor: leverageFilter === opt ? 'var(--accent)' : 'var(--surface-alt)', color: leverageFilter === opt ? 'white' : 'var(--text-muted)', border: `1px solid ${leverageFilter === opt ? 'var(--accent)' : 'var(--border)'}` }}>{opt}</button>)}
                 </div>
               </div>
-              <div className="scanner-control-plane__expiration"><ExpirationFilter value={expFilter} onChange={handleExpirationChange} options={expDropdownOptions} loadingDates={false} datesLoaded /></div>
+              <div className="scanner-control-plane__expiration"><ExpirationFilter value={expFilter} onChange={handleExpirationChange} options={expDropdownOptions} loadingDates={expirationDatesLoading} datesLoaded={availableExps.length > 0} /></div>
               <label className="min-w-0"><span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Sort</span><select value={scannerSort} onChange={event => setScannerSort(event.target.value as ScannerSort)} className="h-8 w-full rounded-md px-1.5 text-[11px] outline-none" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>{SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
               <label className="min-w-0"><span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Liquidity</span><select value={liquidityFilter} onChange={event => setLiquidityFilter(event.target.value as ScannerLiquidityFilter)} className="h-8 w-full rounded-md px-1.5 text-[11px] outline-none" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}><option value="all">All</option><option value="mediumPlus">Medium+</option><option value="liquidPlus">Liquid+</option></select></label>
             </div>

@@ -1,13 +1,13 @@
 import { mapWithConcurrency } from '../../shared/concurrency.js';
 import {
   SCREENER_CHUNKS,
-  SCREENER_PREFETCH_TICKERS,
+  SCREENER_TICKERS,
   SCREENER_SERVER_CONCURRENCY,
 } from '../../shared/screenerUniverse.js';
 import { fetchYahooVolatilityContext } from './ivRank.js';
-import { fetchYahooOptions, normalizeTimestampSeconds } from './yahoo.js';
+import { fetchYahooOptions, inspectYahooOptionData, normalizeTimestampSeconds } from './yahoo.js';
 
-export const SCREENER_BATCH_VERSION = 2;
+export const SCREENER_BATCH_VERSION = 3;
 export const SCREENER_BATCH_TIMEOUT_MS = 6_000;
 export const SCREENER_BATCH_MAX_BYTES = 1_100_000;
 
@@ -104,6 +104,7 @@ export async function buildScreenerBatch(options = {}) {
 
   const initial = await mapWithConcurrency(chunk.tickers, concurrency, async ticker => {
     const data = await fetchOptions(ticker, null, { timeoutMs: SCREENER_BATCH_TIMEOUT_MS, onAttempt, signal: options.signal });
+    if (inspectYahooOptionData(data).status !== 'optionable') throw new Error(`Yahoo returned an incomplete option chain for ${ticker}`);
     return { ticker, data };
   }, { signal: options.signal, onActiveChange: observe });
 
@@ -155,7 +156,9 @@ export async function buildScreenerBatch(options = {}) {
     if (task.kind === 'volatility-context') {
       return { ...task, value: await fetchVolatilityContext(task.ticker, { optionData: task.data, timeoutMs: SCREENER_BATCH_TIMEOUT_MS, onAttempt, signal: options.signal }) };
     }
-    return { ...task, value: await fetchOptions(task.ticker, task.date, { timeoutMs: SCREENER_BATCH_TIMEOUT_MS, onAttempt, signal: options.signal }) };
+    const value = await fetchOptions(task.ticker, task.date, { timeoutMs: SCREENER_BATCH_TIMEOUT_MS, onAttempt, signal: options.signal });
+    if (inspectYahooOptionData(value, task.date).status !== 'optionable') throw new Error(`Yahoo returned an incomplete option chain for ${task.ticker}`);
+    return { ...task, value };
   }, { signal: options.signal, onActiveChange: observe });
 
   phaseTwo.forEach((result, index) => {
@@ -196,17 +199,18 @@ export async function buildScreenerExpirationDataset(options = {}) {
   let maxObservedConcurrency = 0;
   let circuitBreakerRejections = 0;
   const onAttempt = () => { upstreamRequests += 1; };
-  const settled = await mapWithConcurrency(SCREENER_PREFETCH_TICKERS, options.concurrency ?? SCREENER_SERVER_CONCURRENCY, async ticker => ({
-    ticker,
-    data: await fetchOptions(ticker, { timeoutMs: SCREENER_BATCH_TIMEOUT_MS, onAttempt, signal: options.signal }),
-  }), {
+  const settled = await mapWithConcurrency(SCREENER_TICKERS, options.concurrency ?? SCREENER_SERVER_CONCURRENCY, async ticker => {
+    const data = await fetchOptions(ticker, { timeoutMs: SCREENER_BATCH_TIMEOUT_MS, onAttempt, signal: options.signal });
+    if (inspectYahooOptionData(data).status !== 'optionable') throw new Error(`Yahoo returned incomplete expiration metadata for ${ticker}`);
+    return { ticker, data };
+  }, {
     signal: options.signal,
     onActiveChange: active => { maxObservedConcurrency = Math.max(maxObservedConcurrency, active); },
   });
   const expirationsByTicker = {};
   const errors = [];
   settled.forEach((result, index) => {
-    const ticker = SCREENER_PREFETCH_TICKERS[index];
+    const ticker = SCREENER_TICKERS[index];
     if (result.status === 'fulfilled') expirationsByTicker[ticker] = optionMetadata(result.value.data).expirationDates;
     else {
       if (result.reason?.code === 'YAHOO_CIRCUIT_OPEN') circuitBreakerRejections += 1;

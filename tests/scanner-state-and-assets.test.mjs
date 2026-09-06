@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { formatFundAssets } from '../src/lib/fundAssets.ts';
 import { DEFAULT_SCANNER_STATE, parseScannerState, resolveScannerExpiration, serializeScannerState } from '../src/lib/scannerState.ts';
+import { buildExpirationState, tickerMatchesScannerExpiration } from '../src/lib/scannerUpdateState.ts';
 
 test('Scanner URL state parses and serializes all persistent filters', () => {
   const params = new URLSearchParams('expiry=2026-10-16&leverage=3x&type=Country&q=yin&sort=iv60&liquidity=liquidPlus');
@@ -24,6 +25,19 @@ test('Scanner expiration restoration keeps valid dates and falls back to nearest
   assert.equal(resolveScannerExpiration('date_240', [100, 200, 300]), 'date_200');
   assert.equal(resolveScannerExpiration('date_240', []), 'all');
   assert.equal(resolveScannerExpiration('lte_30dte', [100], false), 'all');
+});
+
+test('Scanner expiration state uses market-wide membership and treats partial failures as unknown', () => {
+  const now = new Date('2026-09-06T12:00:00Z');
+  const oct23 = Date.parse('2026-10-23T00:00:00Z') / 1_000;
+  const feb19 = Date.parse('2027-02-19T00:00:00Z') / 1_000;
+  const availability = { AAA: [oct23, feb19], BBB: [oct23], CCC: [feb19] };
+  const state = buildExpirationState(availability);
+  assert.deepEqual(state.expirations.map(expiration => expiration.date), [oct23, feb19]);
+  assert.equal(tickerMatchesScannerExpiration('AAA', `date_${feb19}`, availability, true, now), true);
+  assert.equal(tickerMatchesScannerExpiration('BBB', `date_${feb19}`, availability, true, now), false);
+  assert.equal(tickerMatchesScannerExpiration('DDD', `date_${feb19}`, availability, true, now), true, 'missing partial data must not hide a ticker');
+  assert.equal(tickerMatchesScannerExpiration('BBB', `date_${feb19}`, availability, false, now), true, 'local cache is not authoritative while discovery loads');
 });
 
 test('Scanner reset returns every criterion and the local query to canonical defaults', () => {

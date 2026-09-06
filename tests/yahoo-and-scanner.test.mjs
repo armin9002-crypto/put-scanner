@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeOptionChainData, parseYahooOptionSymbol } from '../src/lib/yahooOptionAdapter.ts';
+import { isValidOptionsChain } from '../src/lib/optionChainCache.ts';
+import { inspectYahooOptionData } from '../api/_lib/yahoo.js';
 import { buildScannerOptionSnapshot, rankScannerSnapshotExpirations, selectScannerSnapshotExpiration } from '../src/lib/scannerOptionSnapshot.ts';
 import { EXPIRATIONS, malformedResponse, missingFieldsResponse, normalLiquidResponse, oneSidedResponse, sparseResponse, staleTradeResponse, zeroBidResponse } from './fixtures/yahoo-options.mjs';
 
@@ -40,6 +42,32 @@ test('rejects call symbols from put rows and handles malformed payloads determin
   const malformed = normalize(malformedResponse);
   assert.deepEqual(malformed.puts, []);
   assert.equal(malformed.currentPrice, 0);
+});
+
+test('rejects suspicious empty and mismatched chains before they can poison shared caches', () => {
+  const emptyListed = structuredClone(normalLiquidResponse);
+  emptyListed.optionChain.result[0].options[0].puts = [];
+  assert.equal(inspectYahooOptionData(emptyListed, EXPIRATIONS[0]).status, 'incomplete');
+  assert.equal(isValidOptionsChain(normalize(emptyListed)), false);
+
+  const mismatched = structuredClone(normalLiquidResponse);
+  mismatched.optionChain.result[0].options[0].expirationDate = EXPIRATIONS[1];
+  assert.equal(inspectYahooOptionData(mismatched, EXPIRATIONS[0]).status, 'incomplete');
+  assert.equal(isValidOptionsChain(normalize(mismatched)), false);
+  assert.equal(isValidOptionsChain(normalize(malformedResponse)), false);
+
+  const noOptions = structuredClone(normalLiquidResponse);
+  noOptions.optionChain.result[0].expirationDates = [];
+  noOptions.optionChain.result[0].options = [];
+  const normalizedNoOptions = normalizeOptionChainData(noOptions, 'TST', undefined, 'fixture', 'network', null);
+  assert.equal(inspectYahooOptionData(noOptions).status, 'no_options');
+  assert.equal(inspectYahooOptionData(noOptions, EXPIRATIONS[0]).status, 'incomplete', 'an explicit expiration cannot be proven unavailable by an empty response');
+  assert.equal(isValidOptionsChain(normalizedNoOptions), true, 'a positive-price symbol with no listed expirations remains a valid no-options result');
+  assert.equal(isValidOptionsChain(normalizeOptionChainData(noOptions, 'TST', EXPIRATIONS[0], 'fixture', 'network', null)), false);
+
+  const missingReturnedExpiration = structuredClone(normalLiquidResponse);
+  delete missingReturnedExpiration.optionChain.result[0].options[0].expirationDate;
+  assert.equal(inspectYahooOptionData(missingReturnedExpiration, EXPIRATIONS[0]).status, 'incomplete');
 });
 
 test('selects nearest 60 DTE expiration with stable tier ordering', () => {

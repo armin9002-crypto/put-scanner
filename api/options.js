@@ -1,4 +1,4 @@
-import { fetchYahooOptions } from './_lib/yahoo.js';
+import { fetchYahooOptions, inspectYahooOptionData } from './_lib/yahoo.js';
 import { observeMarketRequest } from './_lib/requestObservability.js';
 
 export default async function handler(req, res) {
@@ -33,8 +33,14 @@ export default async function handler(req, res) {
       },
       onRetry: () => observation.noteRetry(),
     });
+    const inspection = inspectYahooOptionData(data, date);
+    if (inspection.status === 'incomplete') {
+      const error = new Error(`Yahoo returned an incomplete option chain for ${ticker}`);
+      error.status = 502;
+      throw error;
+    }
 
-    const cacheControl = fresh
+    const cacheControl = fresh || inspection.status === 'no_options'
         ? 'no-store'
         : date
           ? 'public, s-maxage=600, stale-while-revalidate=1800'

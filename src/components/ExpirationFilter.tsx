@@ -21,13 +21,23 @@ export function formatExpirationDropdownLabel(ts: number): string {
   return `${month} ${day}, ${yr}`;
 }
 
-export function buildExpirationOptions(availableExps: ExpirationInfo[]): ExpirationOption[] {
+export function buildExpirationOptions(availableExps: ExpirationInfo[], selectedValue = 'all'): ExpirationOption[] {
+  const selectedDate = selectedValue.startsWith('date_') ? Number(selectedValue.slice(5)) : null;
+  const selectedDte = selectedDate != null && Number.isSafeInteger(selectedDate) && selectedDate > 0
+    ? Math.max(0, Math.round((selectedDate * 1_000 - Date.now()) / 86_400_000))
+    : null;
+  const expirations = selectedDate != null
+    && selectedDte != null
+    && selectedDte > 30
+    && !availableExps.some(expiration => expiration.date === selectedDate)
+    ? [...availableExps, { date: selectedDate, label: formatExpirationDropdownLabel(selectedDate), dte: selectedDte }].sort((a, b) => a.date - b.date)
+    : availableExps;
   const opts: ExpirationOption[] = [{ value: 'all', label: 'All dates' }];
-  const hasShortDated = availableExps.some(e => e.dte <= 30);
+  const hasShortDated = expirations.some(e => e.dte <= 30);
   if (hasShortDated) {
     opts.push({ value: 'lte_30dte', label: '\u226430 DTE' });
   }
-  for (const exp of availableExps) {
+  for (const exp of expirations) {
     if (exp.dte > 30) {
       opts.push({
         value: `date_${exp.date}`,

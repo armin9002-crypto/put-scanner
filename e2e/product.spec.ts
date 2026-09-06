@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { installDeterministicMarketApi } from './fixtures/marketApi';
+import { SCREENER_CHUNKS } from '../shared/screenerUniverse.js';
 
 const EXACT_EXPIRATION = 1_798_761_600;
 const NEAR_EXPIRATION = 1_789_689_600;
@@ -108,6 +109,30 @@ test('ETF Pulse performance window is shared by table and visuals without anothe
   await expect(page.locator('svg[aria-label="Momentum quadrant using 30D return and RSI"]:visible')).toBeVisible();
   await expect(page.locator('a[title*="30D:"]:visible').first()).toBeVisible();
   expect([...marketHarness.counts.values()].reduce((sum, count) => sum + count, 0)).toBe(requestsBefore);
+});
+
+test('Scanner expiration selector stays operable and uses authoritative per-ticker counts', async ({ page }, testInfo) => {
+  test.skip(!['desktop-1440x900', 'portrait-390x844'].includes(testInfo.project.name), 'representative desktop and iPhone-sized Scanner scenarios');
+  await page.unroute('**/api/**');
+  const scannerTickers = SCREENER_CHUNKS.flatMap(chunk => chunk.tickers);
+  const expirationsByTicker = Object.fromEntries(scannerTickers.map((ticker, index) => [
+    ticker,
+    [NEAR_EXPIRATION, ...(index < 7 ? [EXACT_EXPIRATION] : []), ...(index < 6 ? [1_801_180_800] : [])],
+  ]));
+  marketHarness = await installDeterministicMarketApi(page, { expirationsByTicker });
+  await page.goto('/');
+
+  const expirationSelect = page.locator('select[aria-label="Scanner expiration"], .scanner-control-plane__expiration select').first();
+  await expect(expirationSelect).toBeVisible();
+  await expect(page.getByText(/^42 results/).first()).toBeVisible();
+  await expirationSelect.click();
+  await expect(expirationSelect).toBeFocused();
+
+  await expirationSelect.selectOption(`date_${EXACT_EXPIRATION}`);
+  await expect(page.getByText(/^7 results/).first()).toBeVisible();
+  await expirationSelect.selectOption('date_1801180800');
+  await expect(page.getByText(/^6 results/).first()).toBeVisible();
+  expect(marketHarness.counts.get('screener-expirations')).toBeLessThanOrEqual(2, 'development Strict Mode may abort and restart the mount request once');
 });
 
 test('Screener retries failed batches only and preserves successful rows', async ({ page }, testInfo) => {

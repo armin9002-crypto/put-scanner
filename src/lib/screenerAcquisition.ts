@@ -17,7 +17,7 @@ import {
 import type { OptionsChainData, OptionChainSource } from './types.ts';
 import { normalizeOptionChainData } from './yahooOptionAdapter.ts';
 
-const SCREENER_DATASET_VERSION = 2;
+const SCREENER_DATASET_VERSION = 3;
 const BATCH_SOFT_TTL_MS = 5 * 60 * 1_000;
 const BATCH_HARD_TTL_MS = 45 * 60 * 1_000;
 const EXPIRATION_SOFT_TTL_MS = 2 * 60 * 60 * 1_000;
@@ -64,6 +64,12 @@ interface ScreenerExpirationPayload {
     maxObservedConcurrency: number;
     circuitBreakerRejections: number;
   };
+}
+
+export interface ScreenerExpirationAvailability {
+  expirationsByTicker: Record<string, number[]>;
+  complete: boolean;
+  errors: Array<{ ticker?: string; message: string }>;
 }
 
 export interface ScreenerBatchPlan {
@@ -207,7 +213,7 @@ export async function fetchScreenerBatch(plan: ScreenerBatchPlan, options: { sig
     timeoutMs: 58_000,
     signal: options.signal,
     fetcher: async signal => {
-      const query = new URLSearchParams({ chunk: String(plan.chunkId) });
+      const query = new URLSearchParams({ chunk: String(plan.chunkId), v: String(SCREENER_DATASET_VERSION) });
       if (plan.targetDate != null) query.set('date', String(plan.targetDate));
       if (plan.recommendationUniverse) {
         query.set('recommendations', '1');
@@ -385,32 +391,50 @@ export async function retryFailedScreenerBatches(options: {
   };
 }
 
-export async function fetchScreenerExpirations(options: { signal?: AbortSignal } = {}): Promise<Array<{ date: number; dte: number }>> {
+async function fetchScreenerExpirationPayload(options: { signal?: AbortSignal } = {}): Promise<ScreenerExpirationPayload> {
   const key = `screener_expirations_v${SCREENER_DATASET_VERSION}`;
-  const result = await requestMarketData<ScreenerExpirationPayload>({
+  const cacheOptions = {
     key,
-    source: 'Screener:expirations',
-    endpoint: 'screener-expirations',
     softTtlMs: EXPIRATION_SOFT_TTL_MS,
     hardTtlMs: EXPIRATION_HARD_TTL_MS,
     schemaVersion: SCREENER_DATASET_VERSION,
-    mode: 'cache-first',
+    storage: 'session' as const,
+    validator: isExpirationPayload,
+  };
+  const cached = peekMarketData<ScreenerExpirationPayload>(cacheOptions);
+  const result = await requestMarketData<ScreenerExpirationPayload>({
+    ...cacheOptions,
+    source: 'Screener:expirations',
+    endpoint: 'screener-expirations',
+    mode: cached && !cached.data.complete ? 'revalidate' : 'cache-first',
     signal: options.signal,
     priority: 'background_reuse',
     allowStaleOnError: true,
     timeoutMs: 45_000,
-    storage: 'session',
-    validator: isExpirationPayload,
     fetcher: async signal => {
-      const response = await fetchObservedMarketData('screener-expirations', '/api/screener-expirations', { signal }, 'Screener:expirations');
+      const response = await fetchObservedMarketData('screener-expirations', `/api/screener-expirations?v=${SCREENER_DATASET_VERSION}`, { signal }, 'Screener:expirations');
       if (!response.ok) throw responseError(response, `Screener expirations failed (${response.status})`);
       return response.json() as Promise<ScreenerExpirationPayload>;
     },
   });
+  return result.data;
+}
+
+export async function fetchScreenerExpirationAvailability(options: { signal?: AbortSignal } = {}): Promise<ScreenerExpirationAvailability> {
+  const payload = await fetchScreenerExpirationPayload(options);
+  const expirationsByTicker = Object.fromEntries(Object.entries(payload.expirationsByTicker).map(([ticker, values]) => [
+    ticker.trim().toUpperCase(),
+    [...new Set(values.filter(value => Number.isInteger(value) && value > 0))].sort((a, b) => a - b),
+  ]));
+  return { expirationsByTicker, complete: payload.complete, errors: payload.errors };
+}
+
+export async function fetchScreenerExpirations(options: { signal?: AbortSignal } = {}): Promise<Array<{ date: number; dte: number }>> {
+  const availability = await fetchScreenerExpirationAvailability(options);
   const today = new Date();
   const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()) / 1_000;
   const dates = new Set<number>();
-  Object.values(result.data.expirationsByTicker).forEach(values => values.forEach(value => {
+  Object.values(availability.expirationsByTicker).forEach(values => values.forEach(value => {
     if (Number.isInteger(value) && value > 0) dates.add(value);
   }));
   return [...dates].sort((a, b) => a - b).map(date => ({ date, dte: Math.max(0, Math.round((date - todayUtc) / 86_400)) }));

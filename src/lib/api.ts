@@ -6,7 +6,7 @@ import { cacheScannerOptionChain } from './scannerOptionSnapshot';
 import { peekMarketData, requestMarketData, type DataFreshness, type RefreshMode } from './marketDataRequest';
 import { normalizeFiniteNumber } from './marketDataNormalize';
 import { normalizeOptionChainData } from './yahooOptionAdapter';
-import { getOptionsCacheKey, isValidOptionsChain, OPTIONS_HARD_TTL_MS, OPTIONS_SOFT_TTL_MS, primeOptionsMarketDataCache } from './optionChainCache';
+import { getOptionsCacheKey, isValidOptionsChain, OPTIONS_CACHE_SCHEMA_VERSION, OPTIONS_HARD_TTL_MS, OPTIONS_SOFT_TTL_MS, primeOptionsMarketDataCache } from './optionChainCache';
 import { fetchObservedMarketData } from './requestDiagnostics';
 import { mapWithConcurrency } from '../../shared/concurrency.js';
 import { calculatePutDelta } from './putDelta';
@@ -133,7 +133,7 @@ export async function fetchOptions(ticker: string, date?: number, options: Fetch
     key: cacheKey,
     softTtlMs: OPTIONS_SOFT_TTL,
     hardTtlMs: OPTIONS_HARD_TTL,
-    schemaVersion: 3,
+    schemaVersion: OPTIONS_CACHE_SCHEMA_VERSION,
     validator,
   })?.data ?? null;
   const previousCachedPutCount = previousCached?.puts?.length ?? null;
@@ -144,14 +144,14 @@ export async function fetchOptions(ticker: string, date?: number, options: Fetch
     endpoint: 'options',
     softTtlMs: OPTIONS_SOFT_TTL,
     hardTtlMs: OPTIONS_HARD_TTL,
-    schemaVersion: 3,
+    schemaVersion: OPTIONS_CACHE_SCHEMA_VERSION,
     mode,
     priority: source.startsWith('Scanner:') ? 'bulk_manual' : fresh ? 'user_refresh' : 'interactive',
     allowStaleOnError: true,
     signal: options.signal,
     validator,
     fetcher: async signal => {
-    let url = `${API_BASE}/options?ticker=${encodeURIComponent(normalizedTicker)}`;
+    let url = `${API_BASE}/options?ticker=${encodeURIComponent(normalizedTicker)}&v=${OPTIONS_CACHE_SCHEMA_VERSION}`;
     if (date) url += `&date=${date}`;
     if (fresh) url += `&fresh=1&_=${Date.now()}`;
 
@@ -355,7 +355,7 @@ export async function fetchTickerDetail(
     cacheKey,
     5 * 60 * 1000,
     async signal => {
-      let url = `${API_BASE}/ticker-detail?ticker=${encodeURIComponent(normalizedTicker)}`;
+      let url = `${API_BASE}/ticker-detail?ticker=${encodeURIComponent(normalizedTicker)}&v=2`;
       if (date) url += `&date=${date}`;
       if (options.fresh) url += `&fresh=1&_=${Date.now()}`;
       const response = await fetchObservedMarketData('ticker-detail', url, { ...(options.fresh ? { cache: 'no-store' as RequestCache } : {}), signal }, 'fetchTickerDetail');
@@ -384,10 +384,17 @@ export async function fetchTickerDetail(
     {
       bypassCache: options.bypassCache || options.fresh,
       hardTtlMs: 45 * 60 * 1000,
-      schemaVersion: 1,
+      schemaVersion: 2,
       allowStaleOnError: !options.fresh,
       signal: options.signal,
-      validator: value => value?.options != null && (value.availability === 'optionable' || value.availability === 'no_options'),
+      validator: value => value?.options != null && (
+        (value.availability === 'optionable' && isValidOptionsChain(value.options))
+        || (value.availability === 'no_options'
+          && value.options.expirations.length === 0
+          && value.options.puts.length === 0
+          && (value.options.chainMeta?.callCount ?? 0) === 0
+          && value.options.currentPrice > 0)
+      ),
       diagnosticsEndpoint: 'ticker-detail',
       diagnosticsSource: 'fetchTickerDetail',
     },

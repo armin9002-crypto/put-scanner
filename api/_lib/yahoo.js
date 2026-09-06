@@ -29,6 +29,21 @@ export function normalizeTimestampSeconds(value) {
   return Math.round(numeric > 10_000_000_000 ? numeric / 1000 : numeric);
 }
 
+export function inspectYahooOptionData(data, requestedDate = null) {
+  const result = data?.optionChain?.result?.[0];
+  if (!result) return { status: 'incomplete', expirationDates: [], returnedExpiration: null, putCount: 0 };
+  const expirationDates = [...new Set((result.expirationDates ?? []).map(normalizeTimestampSeconds).filter(value => value != null))];
+  const returnedExpiration = normalizeTimestampSeconds(result.options?.[0]?.expirationDate);
+  const puts = Array.isArray(result.options?.[0]?.puts) ? result.options[0].puts : [];
+  const calls = Array.isArray(result.options?.[0]?.calls) ? result.options[0].calls : [];
+  if (requestedDate != null && requestedDate !== returnedExpiration) {
+    return { status: 'incomplete', expirationDates, returnedExpiration, putCount: puts.length };
+  }
+  if (puts.length > 0) return { status: 'optionable', expirationDates, returnedExpiration, putCount: puts.length };
+  if (requestedDate == null && expirationDates.length === 0 && calls.length === 0) return { status: 'no_options', expirationDates, returnedExpiration, putCount: 0 };
+  return { status: 'incomplete', expirationDates, returnedExpiration, putCount: 0 };
+}
+
 // Provider event timestamps are advisory: reject malformed, pre-2000, or implausibly future values.
 export function normalizeProviderTimestampSeconds(value, nowMs = Date.now()) {
   const numeric = normalizeFiniteNumber(value);

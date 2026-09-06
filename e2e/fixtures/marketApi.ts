@@ -14,6 +14,7 @@ type MarketFixtureOptions = {
   firstOptionLast?: number | null;
   firstOptionVolume?: number | null;
   firstOptionOpenInterest?: number | null;
+  expirationsByTicker?: Record<string, number[]>;
 };
 
 function optionChain(ticker: string, expiration = EXPIRATION, putCount = 2, overrides: MarketFixtureOptions = {}) {
@@ -120,7 +121,7 @@ export async function installDeterministicMarketApi(page: Page, options: MarketF
       const payload = chart((url.searchParams.get('ticker') || 'TQQQ').toUpperCase());
       return json(route, url.searchParams.has('start') || url.searchParams.has('end') ? { ...payload, timeframe: 'custom' } : payload);
     }
-    if (endpoint === 'screener-expirations') return json(route, { datasetVersion: 2, fetchedAt: 1_798_000_000_000, complete: true, expirationsByTicker: Object.fromEntries(SCREENER_CHUNKS.flatMap(chunk => chunk.tickers).map(ticker => [ticker, [NEAR_EXPIRATION, EXPIRATION, SECOND_EXPIRATION]])), errors: [], diagnostics: { upstreamRequests: 7, maxObservedConcurrency: 3, circuitBreakerRejections: 0 } }, 200, { 'X-PutScanner-Upstream-Requests': '7' });
+    if (endpoint === 'screener-expirations') return json(route, { datasetVersion: 3, fetchedAt: 1_798_000_000_000, complete: true, expirationsByTicker: options.expirationsByTicker ?? Object.fromEntries(SCREENER_CHUNKS.flatMap(chunk => chunk.tickers).map(ticker => [ticker, [NEAR_EXPIRATION, EXPIRATION, SECOND_EXPIRATION]])), errors: [], diagnostics: { upstreamRequests: 42, maxObservedConcurrency: 3, circuitBreakerRejections: 0 } }, 200, { 'X-PutScanner-Upstream-Requests': '42' });
     if (endpoint === 'screener-batch') {
       const chunkId = Number(url.searchParams.get('chunk'));
       const chunk = SCREENER_CHUNKS[chunkId];
@@ -129,7 +130,7 @@ export async function installDeterministicMarketApi(page: Page, options: MarketF
       counts.set(attemptKey, attempt);
       if (options.failScreenerChunkOnce === chunkId && attempt === 1) return json(route, { error: 'E2E temporary batch failure' }, 503);
       const tickers = Object.fromEntries(chunk.tickers.map(ticker => [ticker, { ticker, expirationDates: [NEAR_EXPIRATION, EXPIRATION, SECOND_EXPIRATION], initialExpiration: NEAR_EXPIRATION, initial: optionChain(ticker, NEAR_EXPIRATION, options.optionCount, options), additionalChains: { [EXPIRATION]: optionChain(ticker, EXPIRATION, options.optionCount, options), [SECOND_EXPIRATION]: optionChain(ticker, SECOND_EXPIRATION, options.optionCount, options) }, ivVsRealizedRange: 50 }]));
-      return json(route, { datasetVersion: 2, chunkId, targetDate: null, fetchedAt: 1_798_000_000_000, complete: true, tickers, errors: [], diagnostics: { plannedEtfs: 3, plannedOptionChains: 9, uniqueChains: 9, upstreamRequests: 9, maxObservedConcurrency: 3, circuitBreakerRejections: 0, elapsedMs: 5 } }, 200, { 'X-PutScanner-Upstream-Requests': '9' });
+      return json(route, { datasetVersion: 3, chunkId, targetDate: null, fetchedAt: 1_798_000_000_000, complete: true, tickers, errors: [], diagnostics: { plannedEtfs: 3, plannedOptionChains: 9, uniqueChains: 9, upstreamRequests: 9, maxObservedConcurrency: 3, circuitBreakerRejections: 0, elapsedMs: 5 } }, 200, { 'X-PutScanner-Upstream-Requests': '9' });
     }
     if (endpoint === 'etf-pulse') {
       const histories = Object.fromEntries(ETF_PULSE_TICKERS.map(ticker => [ticker, chart(ticker)]));

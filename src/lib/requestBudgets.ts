@@ -37,15 +37,15 @@ export interface RequestBudgetLedgerEntry {
 // add transport attempts without multiplying the product workflow.
 export const REQUEST_BUDGET_LEDGER: Record<RequestBudgetWorkflow, RequestBudgetLedgerEntry> = {
   'scanner-load': {
-    expected: { browserRequests: 6, functionInvocations: 6, providerAcquisitions: 8 },
-    ceiling: { browserRequests: 6, functionInvocations: 6, providerAcquisitions: 8 },
-    providerHttpAttemptCeiling: 8,
-    fixture: '42 Scanner symbols, one price batch, fund metadata, and four market charts',
+    expected: { browserRequests: 7, functionInvocations: 7, providerAcquisitions: 50 },
+    ceiling: { browserRequests: 7, functionInvocations: 7, providerAcquisitions: 50 },
+    providerHttpAttemptCeiling: 55,
+    fixture: '42 Scanner symbols, one full-universe expiration dataset, one price batch, fund metadata, and four market charts',
   },
   'screener-entry': {
-    expected: { browserRequests: 2, functionInvocations: 2, providerAcquisitions: 8 },
-    ceiling: { browserRequests: 2, functionInvocations: 2, providerAcquisitions: 8 },
-    providerHttpAttemptCeiling: 13,
+    expected: { browserRequests: 2, functionInvocations: 2, providerAcquisitions: 43 },
+    ceiling: { browserRequests: 2, functionInvocations: 2, providerAcquisitions: 43 },
+    providerHttpAttemptCeiling: 48,
     fixture: 'one expiration dataset plus VIX',
   },
   'screener-full-scan': {

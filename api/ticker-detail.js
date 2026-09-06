@@ -1,6 +1,6 @@
 import { fetchYahooExtendedPrice } from './_lib/extendedPrice.js';
 import { fetchYahooVolatilityContext } from './_lib/ivRank.js';
-import { fetchYahooOptions } from './_lib/yahoo.js';
+import { fetchYahooOptions, inspectYahooOptionData } from './_lib/yahoo.js';
 import { observeMarketRequest } from './_lib/requestObservability.js';
 
 function tickerFromRequest(req) {
@@ -46,10 +46,10 @@ export default async function handler(req, res) {
       extendedPromise,
       fetchYahooVolatilityContext(ticker, { optionData: options, onAttempt, signal: observation.signal }).catch(() => null),
     ]);
-    const expirationDates = Array.isArray(result.expirationDates) ? result.expirationDates : [];
-    const puts = Array.isArray(result.options?.[0]?.puts) ? result.options[0].puts : [];
-    const availability = expirationDates.length > 0 && puts.length > 0 ? 'optionable' : 'no_options';
-    const cacheControl = fresh ? 'no-store' : 'public, s-maxage=300, stale-while-revalidate=900';
+    const inspection = inspectYahooOptionData(options, date);
+    if (inspection.status === 'incomplete') throw new Error(`Yahoo returned an incomplete option chain for ${ticker}`);
+    const availability = inspection.status;
+    const cacheControl = fresh || availability === 'no_options' ? 'no-store' : 'public, s-maxage=300, stale-while-revalidate=900';
     res.setHeader('Cache-Control', cacheControl);
     res.setHeader('X-PutScanner-Cache-Strategy', cacheControl);
     res.setHeader('X-PutScanner-Upstream-Requests', String(upstreamAttempts));

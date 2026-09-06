@@ -12,6 +12,7 @@ import { buildScreenerBatch, buildScreenerExpirationDataset, planRepresentativeE
 import { calculateIvVsRealizedVolFromCloses, currentAtmIvFromOptionData } from '../api/_lib/ivRank.js';
 import {
   createLatestScreenerScanGate,
+  fetchScreenerExpirationAvailability,
   fetchScreenerBatch,
   planScreenerBatches,
   retryFailedScreenerBatches,
@@ -57,7 +58,7 @@ function yahooChain(ticker, expiration = EXPIRATION_ONE, expirationDates = [EXPI
 
 function batchPayload(plan, overrides = {}) {
   return {
-    datasetVersion: 2,
+    datasetVersion: 3,
     chunkId: plan.chunkId,
     targetDate: plan.targetDate,
     fetchedAt: Date.now(),
@@ -187,7 +188,7 @@ test('Recommendations representative planner measures three selected tenors plus
   assert.equal(dataset.complete, true);
 });
 
-test('expiration discovery consolidates seven browser calls behind one bounded partial-safe dataset', async () => {
+test('expiration discovery covers the full Scanner universe behind one bounded partial-safe dataset', async () => {
   let active = 0;
   let maximum = 0;
   let calls = 0;
@@ -203,11 +204,37 @@ test('expiration discovery consolidates seven browser calls behind one bounded p
       return yahooChain(ticker);
     },
   });
-  assert.equal(calls, 7);
+  assert.equal(calls, SCREENER_TICKERS.length);
   assert.ok(maximum <= SCREENER_SERVER_CONCURRENCY);
-  assert.equal(dataset.diagnostics.upstreamRequests, 7);
-  assert.equal(Object.keys(dataset.expirationsByTicker).length, 6);
+  assert.equal(dataset.diagnostics.upstreamRequests, SCREENER_TICKERS.length);
+  assert.equal(Object.keys(dataset.expirationsByTicker).length, SCREENER_TICKERS.length - 1);
   assert.deepEqual(dataset.errors, [{ ticker: 'LABU', message: 'fixture expiration failure' }]);
+});
+
+test('expiration availability preserves per-ticker membership for Scanner filtering', async () => {
+  const previousFetch = globalThis.fetch;
+  const oct23 = Date.parse('2026-10-23T00:00:00Z') / 1_000;
+  const feb19 = Date.parse('2027-02-19T00:00:00Z') / 1_000;
+  const expirationsByTicker = Object.fromEntries(SCREENER_TICKERS.map((ticker, index) => [
+    ticker,
+    index < 7 ? [oct23, feb19] : index < 12 ? [feb19] : [oct23],
+  ]));
+  globalThis.fetch = async () => Response.json({
+    datasetVersion: 3,
+    fetchedAt: Date.now(),
+    complete: true,
+    expirationsByTicker,
+    errors: [],
+    diagnostics: { upstreamRequests: 42, maxObservedConcurrency: 3, circuitBreakerRejections: 0 },
+  });
+  try {
+    const result = await fetchScreenerExpirationAvailability();
+    assert.equal(Object.keys(result.expirationsByTicker).length, 42);
+    assert.equal(Object.values(result.expirationsByTicker).filter(dates => dates.includes(oct23)).length, 37);
+    assert.equal(Object.values(result.expirationsByTicker).filter(dates => dates.includes(feb19)).length, 12);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
 });
 
 test('full scan caps browser concurrency at two and combined simulated upstream work at six', async () => {

@@ -22,14 +22,39 @@ export interface SnapshotUpdateProgress {
   complete: boolean;
 }
 
-export function buildCachedExpirationState(): CachedExpirationState {
-  const availability = getAllCachedScannerExpirations();
+export function buildExpirationState(availability: Record<string, number[]>): CachedExpirationState {
   const expirationMap = new Map<number, { date: number; label: string; dte: number }>();
   Object.values(availability).flat().forEach(date => {
     const dte = calculateCalendarDte(date);
     if (dte > 0 && !expirationMap.has(date)) expirationMap.set(date, { date, label: formatExpirationDropdownLabel(date), dte });
   });
   return { expirations: [...expirationMap.values()].sort((a, b) => a.date - b.date), availability };
+}
+
+export function buildCachedExpirationState(): CachedExpirationState {
+  return buildExpirationState(getAllCachedScannerExpirations());
+}
+
+export function tickerMatchesScannerExpiration(
+  ticker: string,
+  expirationFilter: string,
+  availability: Record<string, number[]>,
+  authoritativeAvailabilityReady: boolean,
+  now = new Date(),
+): boolean {
+  if (expirationFilter === 'all' || !authoritativeAvailabilityReady) return true;
+  const dates = availability[ticker.trim().toUpperCase()];
+  // Partial endpoint failures are unknown, not evidence that the ticker has no options.
+  if (!dates) return true;
+  if (expirationFilter === 'lte_30dte') {
+    return dates.some(date => {
+      const dte = calculateCalendarDte(date, now);
+      return dte >= 0 && dte <= 30;
+    });
+  }
+  if (!expirationFilter.startsWith('date_')) return true;
+  const targetDate = Number(expirationFilter.slice(5));
+  return Number.isSafeInteger(targetDate) && dates.includes(targetDate);
 }
 
 export function summarizeSnapshotOutcomes(outcomes: ScannerSnapshotUpdateOutcome[]): Pick<SnapshotUpdateProgress, 'updated' | 'expanded' | 'unavailable' | 'failed'> {
