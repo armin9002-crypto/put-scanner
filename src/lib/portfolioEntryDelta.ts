@@ -1,6 +1,7 @@
 import { isFiniteNumber } from './optionMetrics.ts';
 import { resolvePutDeltaWithSource } from './putDelta.ts';
 import type { OptionsChainData } from './types.ts';
+import { isOptionContractIntegrityInvalid } from './optionMarketIntegrity.ts';
 import type {
   PortfolioEntryDeltaSource,
   PortfolioEntryIvSource,
@@ -174,6 +175,9 @@ export function entrySnapshotFromExactChain(
 
   const put = chain.puts.find(candidate => Math.abs(candidate.strike - trade.strike) < 0.0001);
   if (!put) return { status: 'unavailable', reason: 'The exact put contract was not available.' };
+  if (isOptionContractIntegrityInvalid(put)) {
+    return { status: 'unavailable', reason: 'The exact contract quote is financially inconsistent; Entry Delta and IV were not captured.' };
+  }
   const delta = resolvePutDeltaWithSource({
     providerDelta: put.delta,
     underlyingPrice: chain.currentPrice,

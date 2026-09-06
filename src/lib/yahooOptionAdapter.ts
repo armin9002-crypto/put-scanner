@@ -1,6 +1,9 @@
 import { normalizeFiniteNumber, normalizeNonNegativeNumber, normalizePositiveNumber, normalizeTimestampSeconds, normalizeYahooIvPercent } from './marketDataNormalize.ts';
 import type { ExpirationDate, OptionChainSource, OptionContract, OptionsChainData } from './types';
 import { normalizeMarketTimestamp } from './marketTimestamp.ts';
+import { assessPutOptionSurface, parseYahooOptionSymbol } from './optionMarketIntegrity.ts';
+
+export { parseYahooOptionSymbol } from './optionMarketIntegrity.ts';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -106,19 +109,6 @@ function mapYahooPut(contract: YahooOptionContract & { strike: number }): Option
   };
 }
 
-export function parseYahooOptionSymbol(symbol: string | null | undefined): { expiration: number | null; type: 'C' | 'P' | null; strike: number | null } {
-  const match = symbol?.match(/(\d{6})([CP])(\d{8})$/);
-  if (!match) return { expiration: null, type: null, strike: null };
-  const [, yymmdd, rawType, strikeRaw] = match;
-  const expiration = Math.floor(Date.UTC(2000 + Number(yymmdd.slice(0, 2)), Number(yymmdd.slice(2, 4)) - 1, Number(yymmdd.slice(4, 6))) / 1000);
-  const strike = Number(strikeRaw) / 1000;
-  return {
-    expiration: Number.isFinite(expiration) ? expiration : null,
-    type: rawType === 'P' || rawType === 'C' ? rawType : null,
-    strike: Number.isFinite(strike) ? strike : null,
-  };
-}
-
 function validateYahooPutContract(contract: YahooOptionContract, requestedExpiration: number | null, returnedExpiration: number | null): string[] {
   const warnings: string[] = [];
   if (!Number.isFinite(contract.strike)) warnings.push('Invalid or missing strike.');
@@ -167,13 +157,15 @@ export function normalizeOptionChainData(data: unknown, ticker: string, date: nu
     const existing = putsByStrike.get(put.strike);
     putsByStrike.set(put.strike, existing ? preferContract(existing, put) : put);
   });
-  const puts = [...putsByStrike.values()].sort((a, b) => a.strike - b.strike);
+  const normalizedPuts = [...putsByStrike.values()].sort((a, b) => a.strike - b.strike);
+  const assessed = assessPutOptionSurface(normalizedPuts, { requestedExpiration, returnedExpiration: chainExpiration });
+  const puts = assessed.puts;
   return {
     expirations, puts, currentPrice,
     instrument: {
       name: result.quote?.longName?.trim() || result.quote?.shortName?.trim() || null,
       quoteType: result.quote?.quoteType?.trim().toUpperCase() || null,
     },
-    chainMeta: { ticker, requestedExpiration, returnedExpiration: chainExpiration, expirationDate: chainExpiration, fetchedAt, providerMarketTime: normalizeProviderMarketTime(result.quote?.regularMarketTime), timestampSource: normalizeProviderMarketTime(result.quote?.regularMarketTime) != null ? 'provider_market_time' : 'observed_at', source, fresh: source === 'fresh', cacheKey, putCount: puts.length, callCount: callsRaw.length, putStrikeMin: putRange.min, putStrikeMax: putRange.max, callStrikeMin: callRange.min, callStrikeMax: callRange.max, yahooExpirationDatesCount: expirationDates.length, previousCachedPutCount, validationWarnings },
+    chainMeta: { ticker, requestedExpiration, returnedExpiration: chainExpiration, expirationDate: chainExpiration, fetchedAt, providerMarketTime: normalizeProviderMarketTime(result.quote?.regularMarketTime), timestampSource: normalizeProviderMarketTime(result.quote?.regularMarketTime) != null ? 'provider_market_time' : 'observed_at', source, fresh: source === 'fresh', cacheKey, putCount: puts.length, callCount: callsRaw.length, putStrikeMin: putRange.min, putStrikeMax: putRange.max, callStrikeMin: callRange.min, callStrikeMax: callRange.max, yahooExpirationDatesCount: expirationDates.length, previousCachedPutCount, validationWarnings, integrity: assessed.integrity },
   };
 }

@@ -17,6 +17,28 @@ export interface PriceData {
   providerMarketTime?: number | null;
 }
 
+export type OptionIntegrityStatus = 'clean' | 'degraded' | 'invalid';
+export type OptionIntegrityReasonCode =
+  | 'CROSSED_MARKET'
+  | 'PUT_EXECUTABLE_MONOTONICITY'
+  | 'PUT_VERTICAL_MAX_VALUE'
+  | 'CONTRACT_IDENTITY_MISMATCH'
+  | 'CHAIN_EXPIRATION_MISMATCH'
+  | 'PERVASIVE_CONTRACT_FAILURE'
+  | 'VERY_WIDE_MARKET';
+
+export interface OptionContractIntegrity {
+  status: OptionIntegrityStatus;
+  reasonCodes: OptionIntegrityReasonCode[];
+}
+
+export interface OptionChainIntegrity extends OptionContractIntegrity {
+  contractCount: number;
+  cleanCount: number;
+  degradedCount: number;
+  invalidCount: number;
+}
+
 export interface OptionContract {
   strike: number;
   last: number | null;
@@ -38,6 +60,7 @@ export interface OptionContract {
   rawOpenInterest?: number | null;
   rawVolume?: number | null;
   rawLastTradeDate?: number | null;
+  integrity?: OptionContractIntegrity;
 }
 
 export interface ExpirationDate {
@@ -72,6 +95,7 @@ export interface OptionChainMeta {
   yahooExpirationDatesCount?: number;
   previousCachedPutCount?: number | null;
   validationWarnings?: string[];
+  integrity?: OptionChainIntegrity;
 }
 
 export interface OptionsChainData {

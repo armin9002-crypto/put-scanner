@@ -1,5 +1,6 @@
 import type { ExpirationDate, OptionContract, OptionsChainData } from './types';
 import type { DataFreshness } from './marketDataRequest';
+import { isOptionContractIntegrityInvalid } from './optionMarketIntegrity.ts';
 
 export type SnapshotConfidence = 'high' | 'normal' | 'reduced' | 'low';
 export type ExpirationSelectionTier = 'ideal' | 'normal' | 'expanded' | 'broad';
@@ -507,9 +508,9 @@ export function buildScannerOptionSnapshot(
   if (!finitePositive(underlyingPrice)) {
     return emptySnapshot(normalizedTicker, selectedExpiration, null, 'unavailable', updatedAt, 'Underlying price is unavailable.');
   }
-  const puts = chain.puts.filter(put => Number.isFinite(put.strike));
+  const puts = chain.puts.filter(put => Number.isFinite(put.strike) && !isOptionContractIntegrityInvalid(put));
   if (puts.length === 0) {
-    return emptySnapshot(normalizedTicker, selectedExpiration, underlyingPrice, underlyingPriceSource, updatedAt, 'The option chain contains no usable put strikes.');
+    return emptySnapshot(normalizedTicker, selectedExpiration, underlyingPrice, underlyingPriceSource, updatedAt, 'No integrity-trusted put observations were available for IV or liquidity.');
   }
 
   const atm = selectAtmIv(puts, underlyingPrice);

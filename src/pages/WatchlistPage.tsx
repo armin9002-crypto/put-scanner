@@ -5,6 +5,7 @@ import {
   isPastWatchlistExpirationDte,
   markWatchlistItems,
   removeFromWatchlist,
+  retainWatchlistSnapshotAfterInvalidRefresh,
   updateWatchlistNote,
   type WatchlistItem,
   type WatchlistSnapshot,
@@ -24,6 +25,7 @@ import { acquireOptionChains, canonicalOptionChainKey } from '../lib/optionChain
 import { resolvePutDelta } from '../lib/putDelta';
 import { buildWatchlistGroups, type WatchlistGroupMode, type WatchlistSortOverride, type WatchlistGroupableRow } from '../lib/watchlistPresentation';
 import { PageHeader } from '../components/ui/PageHeader';
+import { isOptionContractIntegrityInvalid } from '../lib/optionMarketIntegrity';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 
@@ -104,12 +106,14 @@ function statusLabel(status: WatchlistStatus, expired: boolean): string {
   if (expired) return 'Expired';
   if (status === 'live') return 'Live';
   if (status === 'refresh_failed') return 'Refresh failed';
+  if (status === 'quote_inconsistent') return 'Quote inconsistent';
   if (status === 'unavailable') return 'Unavailable';
   return 'Stale';
 }
 
 function statusColor(status: WatchlistStatus, expired: boolean): string {
   if (expired || status === 'unavailable' || status === 'refresh_failed') return 'var(--red)';
+  if (status === 'quote_inconsistent') return 'var(--yellow)';
   if (status === 'live') return 'var(--green)';
   return 'var(--text-dim)';
 }
@@ -177,6 +181,8 @@ function optionDetailFromWatchlistRow(row: LiveRow): OptionDetail {
     otmItmPct: row.moneynessPct,
     otmItmLabel: row.moneynessLabel,
     otmItmColor: row.moneynessColor,
+    integrityStatus: row.snapshot?.integrityStatus,
+    integrityReasonCodes: row.snapshot?.integrityReasonCodes as OptionDetail['integrityReasonCodes'],
   };
 }
 
@@ -188,7 +194,7 @@ function mergeLiveItem(item: WatchlistItem, optData: OptionsChainData | null, cu
   }
 
   if (failed || !optData) {
-    return { ...item, status: 'refresh_failed', updatedAt: Date.now() };
+    return { ...item, status: 'refresh_failed', updatedAt: item.updatedAt };
   }
 
   const put = optData.puts.find(candidate => Math.abs(candidate.strike - item.strike) < 0.01);
@@ -200,13 +206,17 @@ function mergeLiveItem(item: WatchlistItem, optData: OptionsChainData | null, cu
     return {
       ...item,
       status: 'unavailable',
-      updatedAt: Date.now(),
+      updatedAt: item.updatedAt,
       snapshot: {
         ...item.snapshot,
         underlyingPrice,
         dte,
       },
     };
+  }
+
+  if (isOptionContractIntegrityInvalid(put)) {
+    return retainWatchlistSnapshotAfterInvalidRefresh(item, { underlyingPrice, dte, reasonCodes: put.integrity?.reasonCodes ?? [] });
   }
 
   const iv = put.impliedVolatility ?? null;
@@ -242,6 +252,8 @@ function mergeLiveItem(item: WatchlistItem, optData: OptionsChainData | null, cu
       annualizedYieldAsk: askYield.annualized,
       moneynessPct: moneyness.pct,
       moneynessLabel: moneyness.label,
+      integrityStatus: put.integrity?.status ?? 'clean',
+      integrityReasonCodes: put.integrity?.reasonCodes ?? [],
     },
   };
 }
@@ -321,7 +333,9 @@ export default function WatchlistPage() {
         const optData = optionsByKey.get(key) ?? null;
         if (hasRequest && (optData == null || optData.chainMeta?.staleFallbackUsed === true)) partialFailure = true;
         const price = batchResult?.[item.ticker]?.price ?? optData?.currentPrice ?? item.snapshot?.underlyingPrice ?? null;
-        return mergeLiveItem(item, optData, price, hasRequest && (optData == null || optData.chainMeta?.staleFallbackUsed === true));
+        const merged = mergeLiveItem(item, optData, price, hasRequest && (optData == null || optData.chainMeta?.staleFallbackUsed === true));
+        if (merged.status === 'quote_inconsistent') partialFailure = true;
+        return merged;
       });
 
       if (refreshGeneration !== refreshGenerationRef.current) return;
@@ -454,7 +468,7 @@ export default function WatchlistPage() {
         {items.length === 0 ? <div className="px-6 py-16 text-center"><Star className="mx-auto mb-3 h-7 w-7" style={{ color: 'var(--text-dim)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No saved puts</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Star a contract from an option chain to save it here.</p></div> : (
           <div className="mobile-financial-list">{groupedRows.map(group => <section key={group.key} aria-label={`${groupMode === 'underlying' ? 'Underlying' : 'Expiry'} ${group.label}`}><div className="sticky top-0 z-10 border-b px-3.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface-alt)', color: 'var(--text-muted)' }}>{groupMode === 'underlying' ? group.label : `${group.label} · ${group.rows.length} saved`}</div>{(group.rows as unknown as LiveRow[]).map(row => (
               <div key={row.id} className="mobile-watchlist-entry watchlist-mobile-row" style={{ opacity: row.expired || row.status === 'unavailable' ? 0.65 : 1 }}>
-              <MobileOptionRow ticker={row.ticker} tickerTo={`/options/${row.ticker}?expiry=${row.expiryTimestamp}`} strike={row.strike} expirationLabel={row.expiryFormatted} dte={row.dte} bid={row.bid} ask={row.ask} last={row.last} lastTradeDate={row.lastTradeDate} annualYield={row.annYieldBid} annYieldLast={row.annYieldLast} annYieldBid={row.annYieldBid} annYieldAsk={row.annYieldAsk} delta={row.delta} impliedVolatility={row.iv} openInterest={row.openInterest} moneynessLabel={row.moneynessLabel} moneynessColor={row.moneynessColor} statusText={`${row.statusLabel} · Last trade ${formatOptionLastTradeDate(row.lastTradeDate)}${showNominalYields ? ` · NY L/B/A ${formatPercentValue(row.nomYieldLast)} / ${formatPercentValue(row.nomYieldBid)} / ${formatPercentValue(row.nomYieldAsk)}` : ''}`} watched onToggleWatchlist={() => handleRemove(row.id)} onSelect={() => setSelectedOption({ option: optionDetailFromWatchlistRow(row), ticker: row.ticker, expirationLabel: row.expiryFormatted, dte: row.dte, underlyingPrice: row.currentPrice })} />
+              <MobileOptionRow ticker={row.ticker} tickerTo={`/options/${row.ticker}?expiry=${row.expiryTimestamp}`} strike={row.strike} expirationLabel={row.expiryFormatted} dte={row.dte} bid={row.bid} ask={row.ask} last={row.last} lastTradeDate={row.lastTradeDate} annualYield={row.annYieldBid} annYieldLast={row.annYieldLast} annYieldBid={row.annYieldBid} annYieldAsk={row.annYieldAsk} delta={row.delta} impliedVolatility={row.iv} openInterest={row.openInterest} moneynessLabel={row.moneynessLabel} moneynessColor={row.moneynessColor} integrityStatus={row.snapshot?.integrityStatus} statusText={`${row.statusLabel} · Last trade ${formatOptionLastTradeDate(row.lastTradeDate)}${showNominalYields ? ` · NY L/B/A ${formatPercentValue(row.nomYieldLast)} / ${formatPercentValue(row.nomYieldBid)} / ${formatPercentValue(row.nomYieldAsk)}` : ''}`} watched onToggleWatchlist={() => handleRemove(row.id)} onSelect={() => setSelectedOption({ option: optionDetailFromWatchlistRow(row), ticker: row.ticker, expirationLabel: row.expiryFormatted, dte: row.dte, underlyingPrice: row.currentPrice })} />
               <div className="watchlist-mobile-note border-b px-3 pb-1" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>{editingNote === row.id ? <input type="text" value={noteText} onChange={event => setNoteText(event.target.value.slice(0, 60))} onBlur={() => handleNoteSave(row.id)} onKeyDown={event => { if (event.key === 'Enter') handleNoteSave(row.id); if (event.key === 'Escape') { setEditingNote(null); setNoteText(''); } }} autoFocus className="mobile-control-field w-full" maxLength={60} aria-label={`Note for ${row.ticker}`} /> : <button type="button" onClick={() => { setEditingNote(row.id); setNoteText(row.note); }} className="flex min-h-11 w-full items-center text-left text-[11px]" style={{ color: row.note ? 'var(--text-secondary)' : 'var(--text-dim)' }}>{row.note || 'Add a note'}</button>}</div>
             </div>
           ))}</section>)}</div>

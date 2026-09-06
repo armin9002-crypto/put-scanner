@@ -118,6 +118,7 @@ function withCacheSource(data: OptionsChainData, cacheKey: string, stale = false
       yahooExpirationDatesCount: data.chainMeta?.yahooExpirationDatesCount,
       previousCachedPutCount: data.chainMeta?.previousCachedPutCount ?? null,
       validationWarnings: data.chainMeta?.validationWarnings ?? [],
+      integrity: data.chainMeta?.integrity,
     },
   };
 }

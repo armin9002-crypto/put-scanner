@@ -1,6 +1,7 @@
 import { Star } from 'lucide-react';
 import { formatOptionLastTradeDate } from '../../lib/format';
 import { Link } from 'react-router-dom';
+import type { OptionIntegrityStatus } from '../../lib/types';
 
 export interface MobileOptionRowProps {
   // Legacy callers (Screener/Watchlist) still provide the richer card props.
@@ -27,6 +28,7 @@ export interface MobileOptionRowProps {
   moneynessLabel?: string;
   moneynessColor?: string;
   staleText?: string | null;
+  integrityStatus?: OptionIntegrityStatus;
   watched?: boolean;
   onToggleWatchlist?: () => void;
   onSelect: () => void;
@@ -83,6 +85,7 @@ export default function MobileOptionRow(props: MobileOptionRowProps) {
       </div>
       <div role="cell" className="mobile-option-chain-cell" data-field="moneyness" style={{ color: props.moneynessColor ?? 'var(--text-muted)' }}>
         <span className="font-mono tabular-nums">{props.moneynessLabel || '\u2014'}</span>
+        {props.integrityStatus === 'invalid' && <small className="mobile-option-chain-cell__context" style={{ color: 'var(--yellow)' }}>Quote inconsistent</small>}
         {props.statusText && <small className="mobile-option-chain-cell__context">{props.statusText}</small>}
       </div>
       <div role="cell" className="mobile-option-chain-cell" data-field="ay-last" style={{ color: 'var(--accent-light)' }}>

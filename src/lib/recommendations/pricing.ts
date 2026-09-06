@@ -11,6 +11,7 @@ import type {
   RecommendationReasonCode,
   TransactionRecency,
 } from './types.ts';
+import { isOptionContractIntegrityInvalid } from '../optionMarketIntegrity.ts';
 
 function quote(value: number | null | undefined): number | null {
   return isFiniteNumber(value) && value >= 0 ? value : null;
@@ -89,9 +90,10 @@ function baseEvidenceFor(
   dte: number,
   asOf: string,
 ): BasePriceEvidence {
-  const bid = quote(option.bid);
-  const ask = quote(option.ask);
-  const last = quote(option.last);
+  const integrityInvalid = isOptionContractIntegrityInvalid(option);
+  const bid = integrityInvalid ? null : quote(option.bid);
+  const ask = integrityInvalid ? null : quote(option.ask);
+  const last = integrityInvalid ? null : quote(option.last);
   const lastTradeDate = positiveQuote(option.lastTradeDate);
   const tradingSessionAge = recommendationTradingSessionAge(lastTradeDate, asOf);
   return {
@@ -102,13 +104,13 @@ function baseEvidenceFor(
     lastTradeDate,
     tradingSessionAge,
     delta: resolvePutDelta({
-      providerDelta: option.delta,
+      providerDelta: integrityInvalid ? null : option.delta,
       underlyingPrice: chain.currentPrice,
       strike: option.strike,
       dte,
-      impliedVolatilityPercent: option.impliedVolatility,
+      impliedVolatilityPercent: integrityInvalid ? null : option.impliedVolatility,
     }),
-    iv: positiveQuote(option.impliedVolatility),
+    iv: integrityInvalid ? null : positiveQuote(option.impliedVolatility),
     openInterest: quote(option.openInterest),
     volume: quote(option.volume),
     spreadPercent: calculateBidAskSpreadPercent(bid, ask),

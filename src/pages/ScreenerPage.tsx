@@ -163,6 +163,8 @@ function optionDetailFromScreenerRow(row: ScreenerRow): OptionDetail {
     otmItmPct: row.moneynessPct,
     otmItmLabel: row.moneynessLabel,
     otmItmColor: row.moneynessColor,
+    integrityStatus: row.integrityStatus,
+    integrityReasonCodes: row.integrityReasonCodes,
   };
 }
 
@@ -677,7 +679,7 @@ export default function ScreenerPage() {
         {hasStructuralCriteriaChanged && <div role="status" className="border-b px-3.5 py-2 text-[11px]" style={{ borderColor: 'var(--border)', color: 'var(--yellow)', backgroundColor: 'rgba(250,204,21,0.08)' }}>ETF or expiration changed since the last Load. Run Screener to refresh the dataset.</div>}
 
         {loadError && !loading ? <div className="screener-mobile-state screener-mobile-state--error px-6 text-center"><AlertTriangle className="mx-auto mb-3 h-6 w-6" style={{ color: 'var(--red)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Screener load failed</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>{loadError}</p><button type="button" onClick={() => void handleLoad()} className="mobile-sheet-action secondary mt-4"><RefreshCw className="h-4 w-4" /> Retry</button></div> : !loaded && !loading ? <div className="screener-mobile-state screener-mobile-state--ready px-6 text-center"><Search className="mx-auto mb-3 h-6 w-6" style={{ color: 'var(--text-dim)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Ready to screen</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Choose criteria, then run the screener.</p></div> : loaded && sortedRows.length === 0 ? <div className="screener-mobile-state screener-mobile-state--empty px-6 text-center"><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No screener matches</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Try widening delta, moneyness, or yield.</p><button type="button" onClick={() => setMobileFiltersOpen(true)} className="mobile-sheet-action secondary mt-4">Adjust filters</button></div> : (
-          <div className="mobile-financial-list">{sortedRows.map(row => <MobileOptionRow key={`${row.ticker}-${row.expDate}-${row.strike}`} ticker={row.ticker} strike={row.strike} expirationLabel={row.expLabel} dte={row.dte} bid={row.bid} ask={row.ask} last={row.last} annualYield={row.annYieldBid} delta={row.delta} impliedVolatility={row.iv} openInterest={row.openInterest} moneynessLabel={row.moneynessLabel} moneynessColor={row.moneynessColor} statusText={`Vol ${formatNumber(row.volume)} · OI ${formatNumber(row.openInterest)}`} onSelect={() => setSelectedOption({ option: optionDetailFromScreenerRow(row), ticker: row.ticker, expirationLabel: row.expLabel, dte: row.dte, underlyingPrice: row.currentPrice > 0 ? row.currentPrice : null })} />)}</div>
+          <div className="mobile-financial-list">{sortedRows.map(row => <MobileOptionRow key={`${row.ticker}-${row.expDate}-${row.strike}`} ticker={row.ticker} strike={row.strike} expirationLabel={row.expLabel} dte={row.dte} bid={row.bid} ask={row.ask} last={row.last} annualYield={row.annYieldBid} delta={row.delta} impliedVolatility={row.iv} openInterest={row.openInterest} moneynessLabel={row.moneynessLabel} moneynessColor={row.moneynessColor} integrityStatus={row.integrityStatus} statusText={`Vol ${formatNumber(row.volume)} · OI ${formatNumber(row.openInterest)}`} onSelect={() => setSelectedOption({ option: optionDetailFromScreenerRow(row), ticker: row.ticker, expirationLabel: row.expLabel, dte: row.dte, underlyingPrice: row.currentPrice > 0 ? row.currentPrice : null })} />)}</div>
         )}
 
         {mobileFiltersOpen && <MobileBottomSheet title="Screener filters" description="Define the contracts you want to find" onClose={() => setMobileFiltersOpen(false)} footer={<div className="grid grid-cols-2 gap-2"><button type="button" onClick={resetFilters} className="mobile-sheet-action secondary">Reset</button><button type="button" onClick={() => setMobileFiltersOpen(false)} className="mobile-sheet-action primary">Done</button></div>}>
@@ -1033,6 +1035,7 @@ export default function ScreenerPage() {
                   <div className="flex items-center gap-2">
                     <Link to={`/options/${row.ticker}`} className="tap-target inline-flex items-center font-mono text-base font-bold" style={{ color: 'var(--accent-light)' }}>{row.ticker}</Link>
                     <span className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold" style={{ color: row.moneynessColor, backgroundColor: 'var(--surface-alt)' }}>{row.moneynessLabel}</span>
+                    {row.integrityStatus === 'invalid' && <span className="text-[10px] font-semibold" style={{ color: 'var(--yellow)' }}>Quote inconsistent</span>}
                   </div>
                   <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{row.expLabel} · {row.dte} DTE · Underlying ${formatPrice(row.currentPrice)}</p>
                 </div>
@@ -1140,6 +1143,7 @@ export default function ScreenerPage() {
                           >
                             {row.ticker}
                           </Link>
+                          {row.integrityStatus === 'invalid' && <span className="text-[9px] font-semibold" style={{ color: 'var(--yellow)' }} title={row.integrityReasonCodes?.join(', ')}>Quote inconsistent</span>}
                           <span className="text-[9px]" style={{ color: 'var(--text-dim)' }}>{row.expLabel} · ${formatPrice(row.strike)} put</span>
                         </div>
                       </td>

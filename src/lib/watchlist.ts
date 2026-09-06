@@ -1,5 +1,5 @@
 export type WatchlistOptionType = 'put';
-export type WatchlistStatus = 'saved' | 'live' | 'stale' | 'expired' | 'unavailable' | 'refresh_failed';
+export type WatchlistStatus = 'saved' | 'live' | 'stale' | 'expired' | 'unavailable' | 'refresh_failed' | 'quote_inconsistent';
 
 export interface WatchlistSnapshot {
   underlyingPrice?: number | null;
@@ -17,6 +17,8 @@ export interface WatchlistSnapshot {
   annualizedYieldAsk?: number | null;
   moneynessPct?: number | null;
   moneynessLabel?: string | null;
+  integrityStatus?: 'clean' | 'degraded' | 'invalid';
+  integrityReasonCodes?: string[];
 }
 
 export interface WatchlistItem {
@@ -33,6 +35,27 @@ export interface WatchlistItem {
   note: string;
   status?: WatchlistStatus;
   snapshot?: WatchlistSnapshot;
+}
+
+export function retainWatchlistSnapshotAfterInvalidRefresh(
+  item: WatchlistItem,
+  update: { underlyingPrice: number | null; dte: number | null; reasonCodes: string[] },
+): WatchlistItem {
+  const hasTrustedPrice = item.snapshot?.integrityStatus !== 'invalid'
+    && [item.snapshot?.bid, item.snapshot?.ask, item.snapshot?.last]
+      .some(value => typeof value === 'number' && Number.isFinite(value) && value > 0);
+  return {
+    ...item,
+    status: 'quote_inconsistent',
+    updatedAt: item.updatedAt,
+    snapshot: {
+      ...item.snapshot,
+      underlyingPrice: update.underlyingPrice,
+      dte: update.dte,
+      integrityStatus: hasTrustedPrice ? 'degraded' : 'invalid',
+      integrityReasonCodes: update.reasonCodes.slice(0, 8),
+    },
+  };
 }
 
 export const WATCHLIST_STORAGE_KEY = 'put_scanner_watchlist';
@@ -173,6 +196,8 @@ function normalizeSnapshot(value: unknown): WatchlistSnapshot | undefined {
   if (typeof value.moneynessLabel === 'string') {
     snapshot.moneynessLabel = value.moneynessLabel;
   }
+  if (value.integrityStatus === 'clean' || value.integrityStatus === 'degraded' || value.integrityStatus === 'invalid') snapshot.integrityStatus = value.integrityStatus;
+  if (Array.isArray(value.integrityReasonCodes)) snapshot.integrityReasonCodes = value.integrityReasonCodes.filter((reason): reason is string => typeof reason === 'string').slice(0, 8);
 
   return Object.keys(snapshot).length > 0 ? snapshot : undefined;
 }
@@ -197,7 +222,7 @@ export function normalizeWatchlistItem(
   const savedAt = isFiniteNumber(value.savedAt) ? value.savedAt : addedAt;
   if (addedAt == null || savedAt == null) return null;
   const note = typeof value.note === 'string' ? value.note : '';
-  const validStatuses: WatchlistStatus[] = ['saved', 'live', 'stale', 'expired', 'unavailable', 'refresh_failed'];
+  const validStatuses: WatchlistStatus[] = ['saved', 'live', 'stale', 'expired', 'unavailable', 'refresh_failed', 'quote_inconsistent'];
   if (value.status !== undefined && (typeof value.status !== 'string' || !validStatuses.includes(value.status as WatchlistStatus))) return null;
   const status = typeof value.status === 'string' ? value.status as WatchlistStatus : 'saved';
 
@@ -347,7 +372,7 @@ export function migrateWatchlistState(
 function normalizeWatchlistLocalState(value: unknown): Record<string, WatchlistLocalState> | null {
   if (value === undefined) return {};
   if (!isRecord(value)) return null;
-  const validStatuses: WatchlistStatus[] = ['saved', 'live', 'stale', 'expired', 'unavailable', 'refresh_failed'];
+  const validStatuses: WatchlistStatus[] = ['saved', 'live', 'stale', 'expired', 'unavailable', 'refresh_failed', 'quote_inconsistent'];
   const normalized: Record<string, WatchlistLocalState> = {};
   for (const [id, raw] of Object.entries(value)) {
     if (!isRecord(raw)) return null;

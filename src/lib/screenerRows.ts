@@ -1,10 +1,11 @@
 import { resolvePutDelta } from './putDelta.ts';
 import { canonicalOptionChainKey } from './optionChainRequests.ts';
 import { calculateMoneyness, calculateYieldPercent } from './optionMetrics.ts';
-import { executableOptionPrice } from './optionQuoteDisplay.ts';
 import { elapsedUsEquityTradingSessions, isUsEquityTradingSession } from './usMarketCalendar.ts';
 import { usMarketDateIso } from './portfolioEntryDelta.ts';
 import type { OptionsChainData } from './types.ts';
+import { isOptionContractIntegrityInvalid, trustedOptionPrice } from './optionMarketIntegrity.ts';
+import type { OptionIntegrityReasonCode, OptionIntegrityStatus } from './types.ts';
 
 export interface ScreenerRow {
   ticker: string;
@@ -32,6 +33,8 @@ export interface ScreenerRow {
   openInterest: number | null;
   volOI: number | null;
   ivVsRealizedRange: number | null;
+  integrityStatus?: OptionIntegrityStatus;
+  integrityReasonCodes?: OptionIntegrityReasonCode[];
 }
 
 export interface ScreenerFilterCriteria {
@@ -239,20 +242,21 @@ export function buildScreenerRows(data: ScreenerAcquiredData, expFilter: string)
       // intentionally unavailable at 0 DTE; provider Delta can still survive.
       const dte = Math.max(0, expiration.dte);
       for (const put of chain.puts) {
+        const integrityInvalid = isOptionContractIntegrityInvalid(put);
         const delta = resolvePutDelta({
-          providerDelta: put.delta,
+          providerDelta: integrityInvalid ? null : put.delta,
           underlyingPrice: price,
           strike: put.strike,
           dte,
-          impliedVolatilityPercent: put.impliedVolatility,
+          impliedVolatilityPercent: integrityInvalid ? null : put.impliedVolatility,
         });
 
         const moneyness = calculateMoneyness(price, put.strike);
         const moneynessPct = moneyness.pct ?? 0;
         const moneynessLabel = moneyness.label === '—' ? '—' : moneyness.label.replace(/(\d+\.\d)%/, match => `${Number.parseFloat(match).toFixed(2)}%`);
-        const bidYield = calculateYieldPercent(executableOptionPrice(put.bid), put.strike, dte);
-        const askYield = calculateYieldPercent(executableOptionPrice(put.ask), put.strike, dte);
-        const lastYield = calculateYieldPercent(executableOptionPrice(put.last), put.strike, dte);
+        const bidYield = calculateYieldPercent(trustedOptionPrice(put, 'bid'), put.strike, dte);
+        const askYield = calculateYieldPercent(trustedOptionPrice(put, 'ask'), put.strike, dte);
+        const lastYield = calculateYieldPercent(trustedOptionPrice(put, 'last'), put.strike, dte);
         const volOI = put.volume != null && put.volume > 0 && put.openInterest != null && put.openInterest > 0 ? put.volume / put.openInterest : null;
 
         rows.push({
@@ -270,7 +274,7 @@ export function buildScreenerRows(data: ScreenerAcquiredData, expFilter: string)
           last: put.last,
           lastTradeDate: put.lastTradeDate,
           ask: put.ask,
-          iv: put.impliedVolatility,
+          iv: integrityInvalid ? null : put.impliedVolatility,
           nomYieldBid: bidYield.nominal,
           nomYieldAsk: askYield.nominal,
           nomYieldLast: lastYield.nominal,
@@ -281,6 +285,10 @@ export function buildScreenerRows(data: ScreenerAcquiredData, expFilter: string)
           openInterest: put.openInterest,
           volOI,
           ivVsRealizedRange: data.ivVsRealizedRangeByTicker.get(ticker) ?? null,
+          ...(put.integrity && put.integrity.status !== 'clean' ? {
+            integrityStatus: put.integrity.status,
+            integrityReasonCodes: put.integrity.reasonCodes,
+          } : {}),
         });
       }
     }

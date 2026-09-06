@@ -3,7 +3,7 @@ import type { OptionsChainData } from './types.ts';
 
 export const OPTIONS_SOFT_TTL_MS = 15 * 60 * 1_000;
 export const OPTIONS_HARD_TTL_MS = 2 * 60 * 60 * 1_000;
-export const OPTIONS_CACHE_SCHEMA_VERSION = 4;
+export const OPTIONS_CACHE_SCHEMA_VERSION = 5;
 
 export function getOptionsCacheKey(ticker: string, date?: number): string {
   return `options_v2_${ticker.trim().toUpperCase()}_${date ?? 'initial'}`;
@@ -15,6 +15,7 @@ export function isValidOptionsChain(value: OptionsChainData): boolean {
     || !Array.isArray(value.puts)
     || !Number.isFinite(value.currentPrice)
     || value.currentPrice <= 0) return false;
+  if (value.chainMeta?.integrity?.status === 'invalid') return false;
   const requestedExpiration = value.chainMeta?.requestedExpiration ?? null;
   const returnedExpiration = value.chainMeta?.returnedExpiration ?? value.chainMeta?.expirationDate ?? null;
   if (requestedExpiration != null && returnedExpiration != null && requestedExpiration !== returnedExpiration) return false;

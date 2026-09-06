@@ -23,6 +23,7 @@ import {
   type OptionSoldPriceBasis,
 } from '../lib/optionQuoteDisplay';
 import type { PutDeltaSource } from '../lib/putDelta';
+import type { OptionIntegrityReasonCode, OptionIntegrityStatus } from '../lib/types';
 
 export interface OptionDetail {
   strike: number;
@@ -48,6 +49,8 @@ export interface OptionDetail {
   otmItmPct: number | null;
   otmItmLabel: string;
   otmItmColor: string;
+  integrityStatus?: OptionIntegrityStatus;
+  integrityReasonCodes?: OptionIntegrityReasonCode[];
 }
 
 export interface AddToPortfolioDraft {
@@ -181,6 +184,7 @@ function MobileMetric({ label, value, color }: { label: string; value: string; c
 }
 
 function selectLegacyRecommendationSoldPrice(option: OptionDetail) {
+  if (option.integrityStatus === 'invalid') return null;
   if (isFiniteNumber(option.bid) && option.bid >= 0) return { basis: 'bid' as const, value: option.bid };
   const mid = calculateExecutableMidPrice(option);
   if (mid != null) return { basis: 'mid' as const, value: mid };
@@ -199,7 +203,7 @@ export default function OptionDetailDrawer({
 }: OptionDetailDrawerProps) {
   const { isPhone } = useResponsiveMode();
   const preserveRecommendationContract = window.location.pathname === '/recommendations';
-  const defaultPrice = useMemo(() => option ? preserveRecommendationContract ? selectLegacyRecommendationSoldPrice(option) : selectDefaultSoldPrice(option) : null, [option, preserveRecommendationContract]);
+  const defaultPrice = useMemo(() => option ? option.integrityStatus === 'invalid' ? null : preserveRecommendationContract ? selectLegacyRecommendationSoldPrice(option) : selectDefaultSoldPrice(option) : null, [option, preserveRecommendationContract]);
   const [contracts, setContracts] = useState('1');
   const [soldPrice, setSoldPrice] = useState('');
   const [soldPriceBasis, setSoldPriceBasis] = useState<OptionSoldPriceBasis | null>(null);
@@ -226,16 +230,17 @@ export default function OptionDetailDrawer({
 
   if (!option) return null;
 
+  const quoteIntegrityInvalid = option.integrityStatus === 'invalid';
   const bid = option.bid;
   const ask = option.ask;
-  const executableBid = executableOptionPrice(bid);
-  const executableAsk = executableOptionPrice(ask);
-  const mid = calculateExecutableMidPrice(option);
+  const executableBid = quoteIntegrityInvalid ? null : executableOptionPrice(bid);
+  const executableAsk = quoteIntegrityInvalid ? null : executableOptionPrice(ask);
+  const mid = quoteIntegrityInvalid ? null : calculateExecutableMidPrice(option);
   const spread = calculateBidAskSpread(preserveRecommendationContract ? bid : executableBid, preserveRecommendationContract ? ask : executableAsk);
   const spreadPct = calculateBidAskSpreadPercent(preserveRecommendationContract ? bid : executableBid, preserveRecommendationContract ? ask : executableAsk);
   const lastTradeInfo = getLastTradeDetail(option.lastTradeDate);
   const compactLastTradeAge = lastTradeInfo.age.replace(/ - (?:Very )?Stale$/, '');
-  const usableLast = executableOptionPrice(option.last);
+  const usableLast = quoteIntegrityInvalid ? null : executableOptionPrice(option.last);
 
   const parsedSoldPrice = soldPrice.trim() === '' ? null : Number(soldPrice);
   const validSoldPrice = isFiniteNumber(parsedSoldPrice) && (preserveRecommendationContract ? parsedSoldPrice >= 0 : parsedSoldPrice > 0) ? parsedSoldPrice : null;
@@ -258,6 +263,7 @@ export default function OptionDetailDrawer({
   const annualizedSecuredCashYield = calculateAnnualizedSecuredCashYield(activeSoldPrice, option.strike, dte);
 
   const setSoldPriceFromQuote = (basis: OptionQuoteDisplayField, value: number | null | undefined) => {
+    if (quoteIntegrityInvalid) return;
     if (preserveRecommendationContract && isFiniteNumber(value) && value >= 0) {
       setSoldPrice(value.toFixed(2));
       setSoldPriceBasis(basis);
@@ -286,6 +292,7 @@ export default function OptionDetailDrawer({
           </header>
 
           <div className="space-y-5 px-4 py-4">
+            {quoteIntegrityInvalid && <p role="status" className="rounded-lg border px-3 py-2 text-xs" style={{ color: 'var(--yellow)', borderColor: 'var(--border)', backgroundColor: 'var(--surface-alt)' }}>Quote inconsistent · raw provider prices are shown for audit; executable metrics are unavailable.</p>}
             <section>
               <div className="mobile-segmented drawer-quote-selector" role="group" aria-label="Select sold price quote">
                 {quoteOptions.map(({ field, label, value }) => {
@@ -360,6 +367,7 @@ export default function OptionDetailDrawer({
           </header>
 
           <div className="space-y-4 px-4 py-3">
+            {quoteIntegrityInvalid && <p role="status" className="rounded-lg border px-3 py-2 text-xs" style={{ color: 'var(--yellow)', borderColor: 'var(--border)', backgroundColor: 'var(--surface-alt)' }}>Quote inconsistent · raw provider prices are shown for audit; executable metrics are unavailable.</p>}
             <section className="option-detail-mobile-group" aria-labelledby="option-price-execution-heading">
               <h3 id="option-price-execution-heading">Price / Execution</h3>
               <div className="mobile-segmented drawer-quote-selector" role="group" aria-label="Select sold price quote">
@@ -475,6 +483,7 @@ export default function OptionDetailDrawer({
         </div>
 
         <div className="drawer-key-figures grid grid-cols-1 min-[390px]:grid-cols-2 gap-2 mb-3 min-w-0">
+          {quoteIntegrityInvalid && <div role="status" className="col-span-full rounded-lg border px-3 py-2 text-xs" style={{ color: 'var(--yellow)', borderColor: 'var(--border)', backgroundColor: 'var(--surface-alt)' }}>Quote inconsistent · raw provider prices remain visible; executable metrics are unavailable.</div>}
           <MetricCard label="Option Price" value={formatCurrency(activeSoldPrice)} color="var(--accent-light)" />
           <MetricCard label="Breakeven" value={formatCurrency(topBreakeven)} />
           <MetricCard label="Downside Cushion" value={formatPercent(positionMetrics.downsideCushion)} color={isFiniteNumber(positionMetrics.downsideCushion) && positionMetrics.downsideCushion >= 0 ? 'var(--green)' : 'var(--red)'} />

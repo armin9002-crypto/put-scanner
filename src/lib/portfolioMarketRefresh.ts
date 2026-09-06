@@ -1,4 +1,5 @@
 import type { PortfolioMarketData, PortfolioTrade } from './portfolioStorage.ts';
+import type { OptionIntegrityReasonCode } from './types.ts';
 
 export type PortfolioMarketDataUpdateMode = 'merge' | 'replace';
 
@@ -18,6 +19,48 @@ export function applyTransientPortfolioMarketData(
       ? { ...marketData }
       : { ...trade.latestMarketData, ...marketData },
   };
+}
+
+export function retainPortfolioMarketAfterUntrustedRefresh(
+  trade: PortfolioTrade,
+  update: {
+    underlyingPrice?: number | null;
+    dte?: number | null;
+    attemptedAt: string;
+    reasonCodes?: OptionIntegrityReasonCode[];
+    kind: 'quote_inconsistent' | 'refresh_failed' | 'unavailable';
+  },
+): PortfolioTrade {
+  const previous = trade.latestMarketData;
+  const hasTrustedOptionMark = previous?.optionIntegrityStatus !== 'invalid'
+    && [previous?.optionBid, previous?.optionAsk, previous?.optionLast].some(value => typeof value === 'number' && Number.isFinite(value) && value > 0);
+  const retained: PortfolioMarketData = hasTrustedOptionMark
+    ? {
+        ...previous,
+        underlyingPrice: update.underlyingPrice ?? previous?.underlyingPrice ?? null,
+        dte: update.dte ?? previous?.dte ?? null,
+        availabilityStatus: update.kind === 'refresh_failed' ? 'refresh_failed' : 'stale',
+        optionIntegrityStatus: update.kind === 'quote_inconsistent' ? 'degraded' : previous?.optionIntegrityStatus,
+        optionIntegrityReasonCodes: update.reasonCodes ?? previous?.optionIntegrityReasonCodes,
+        latestRefreshAttemptAt: update.attemptedAt,
+      }
+    : {
+        underlyingPrice: update.underlyingPrice ?? previous?.underlyingPrice ?? null,
+        dte: update.dte ?? previous?.dte ?? null,
+        optionBid: null,
+        optionAsk: null,
+        optionMid: null,
+        optionLast: null,
+        iv: null,
+        delta: null,
+        volume: null,
+        openInterest: null,
+        availabilityStatus: 'unavailable',
+        optionIntegrityStatus: update.kind === 'quote_inconsistent' ? 'invalid' : previous?.optionIntegrityStatus,
+        optionIntegrityReasonCodes: update.reasonCodes,
+        latestRefreshAttemptAt: update.attemptedAt,
+      };
+  return applyTransientPortfolioMarketData(trade, retained, 'replace');
 }
 
 function sameMarketDataTarget(current: PortfolioTrade, requested: PortfolioTrade): boolean {

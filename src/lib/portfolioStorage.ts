@@ -1,5 +1,6 @@
 import { normalizeMarketTimestamp } from './marketTimestamp.ts';
 import type { MarketTimestampSource } from './marketTimestamp.ts';
+import type { OptionIntegrityReasonCode, OptionIntegrityStatus } from './types.ts';
 import { reconcilePortfolioTradeEconomics } from './portfolioRealizedEconomics.ts';
 
 export type PortfolioTradeStatus = 'open' | 'closed' | 'expired' | 'assigned' | 'expired_price_pending';
@@ -41,6 +42,10 @@ export interface PortfolioMarketData {
   cachedAt?: string;
   timestampSource?: MarketTimestampSource;
   availabilityStatus?: PortfolioAvailabilityStatus;
+  optionIntegrityStatus?: OptionIntegrityStatus;
+  optionIntegrityReasonCodes?: OptionIntegrityReasonCode[];
+  /** Latest attempted refresh, separate from the retained trusted quote time. */
+  latestRefreshAttemptAt?: string;
 }
 
 export interface PortfolioImportedSnapshot {

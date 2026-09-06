@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { fetchBatchPricesResult, fetchOptions } from '../lib/api';
 import { resolvePutDelta } from '../lib/putDelta';
 import type { OptionsChainData } from '../lib/types';
+import { isOptionContractIntegrityInvalid } from '../lib/optionMarketIntegrity';
 import { acquireOptionChains, canonicalOptionChainKey } from '../lib/optionChainRequests';
 import { formatCurrency, formatDate, formatOptionPrice, formatPercent, formatPercentPoints, normalizeTimestampMs } from '../lib/format';
 import { calculateDte, calculateMoneyness, calculateYieldPercent, isFiniteNumber } from '../lib/optionMetrics';
@@ -86,7 +87,7 @@ import {
   type RealizedHistoryMetric,
   type RealizedPnlPeriod,
 } from '../lib/portfolioHistoryAnalytics';
-import { applyTransientPortfolioMarketData, mergePortfolioLifecycleResults, mergePortfolioMarketRefresh } from '../lib/portfolioMarketRefresh';
+import { applyTransientPortfolioMarketData, mergePortfolioLifecycleResults, mergePortfolioMarketRefresh, retainPortfolioMarketAfterUntrustedRefresh } from '../lib/portfolioMarketRefresh';
 import { useResponsiveMode } from '../lib/responsive';
 import MobileBottomSheet from '../components/mobile/MobileBottomSheet';
 import MobileSegmentedControl from '../components/mobile/MobileSegmentedControl';
@@ -1929,28 +1930,23 @@ export default function PortfolioPage() {
 
         if (failed || !optData) {
           partialFailure = true;
-          return applyTransientPortfolioMarketData(trade, {
-            underlyingPrice: underlying,
-            dte: remainingDte,
-            refreshedAt: nowIso,
-            providerMarketAt: providerMarketTime,
-            cachedAt: cacheTime,
-            timestampSource: providerMarketTime ? 'provider_market_time' : 'observed_at',
-            availabilityStatus: 'refresh_failed',
-          });
+          return retainPortfolioMarketAfterUntrustedRefresh(trade, { underlyingPrice: underlying, dte: remainingDte, attemptedAt: nowIso, kind: 'refresh_failed' });
         }
 
         const put = optData.puts.find(candidate => Math.abs(candidate.strike - trade.strike) < 0.01);
         if (!put) {
           partialFailure = true;
-          return applyTransientPortfolioMarketData(trade, {
+          return retainPortfolioMarketAfterUntrustedRefresh(trade, { underlyingPrice: underlying, dte: remainingDte, attemptedAt: nowIso, kind: 'unavailable' });
+        }
+
+        if (isOptionContractIntegrityInvalid(put)) {
+          partialFailure = true;
+          return retainPortfolioMarketAfterUntrustedRefresh(trade, {
             underlyingPrice: underlying,
             dte: remainingDte,
-            refreshedAt: nowIso,
-            providerMarketAt: providerMarketTime,
-            cachedAt: cacheTime,
-            timestampSource: providerMarketTime ? 'provider_market_time' : 'observed_at',
-            availabilityStatus: 'unavailable',
+            attemptedAt: nowIso,
+            kind: 'quote_inconsistent',
+            reasonCodes: put.integrity?.reasonCodes ?? [],
           });
         }
 
@@ -1983,6 +1979,9 @@ export default function PortfolioPage() {
           cachedAt: cacheTime,
           timestampSource: providerMarketTime ? 'provider_market_time' : 'observed_at',
           availabilityStatus: 'live',
+          optionIntegrityStatus: put.integrity?.status ?? 'clean',
+          optionIntegrityReasonCodes: put.integrity?.reasonCodes ?? [],
+          latestRefreshAttemptAt: nowIso,
         }, 'replace');
       });
 

@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import type { OptionsChainData, SortField, SortDirection } from '../lib/types';
+import type { OptionIntegrityReasonCode, OptionIntegrityStatus, OptionsChainData, SortField, SortDirection } from '../lib/types';
 import { fetchOptions, fetchTickerDetail, formatPrice, formatYield, yieldColor, formatNumber } from '../lib/api';
 import type { ExtendedPriceData, TickerDetailAvailability, TickerDetailErrorCode, VolatilityContextData } from '../lib/api';
 import { addToWatchlist, removeFromWatchlist, isInWatchlist, makeWatchlistId } from '../lib/watchlist';
@@ -22,12 +22,12 @@ import {
   OPTION_QUOTE_TABLE_DISPLAY_ORDER,
   OPTION_YIELD_DISPLAY_LABELS,
   OPTION_YIELD_DISPLAY_ORDER,
-  executableOptionPrice,
   formatOptionQuoteValue,
   isNominalYieldField,
   type OptionQuoteTableDisplayField,
   type OptionYieldDisplayField,
 } from '../lib/optionQuoteDisplay';
+import { isOptionContractIntegrityInvalid, trustedOptionPrice } from '../lib/optionMarketIntegrity';
 import SparklineChart from '../components/SparklineChart';
 import ErrorBoundary from '../components/ErrorBoundary';
 import MobileOptionRow from '../components/mobile/MobileOptionRow';
@@ -36,7 +36,7 @@ import { useResponsiveMode } from '../lib/responsive';
 import type { AddToPortfolioDraft } from '../components/OptionDetailDrawer';
 import {
   ArrowLeft, RefreshCw, TrendingUp, TrendingDown, AlertCircle,
-  ChevronUp, ChevronDown, ChevronsUpDown, Star, BarChart3, Layers
+  ChevronUp, ChevronDown, ChevronsUpDown, Star, BarChart3, Layers, AlertTriangle
 } from 'lucide-react';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
@@ -75,6 +75,8 @@ interface EnrichedPut {
   otmItmPct: number | null;
   otmItmLabel: string;
   otmItmColor: string;
+  integrityStatus: OptionIntegrityStatus;
+  integrityReasonCodes: OptionIntegrityReasonCode[];
 }
 
 function SkeletonRow({ colCount }: { colCount: number }) {
@@ -304,6 +306,7 @@ function MobileOptionCard({
               {put.otmItmLabel}
             </div>
           )}
+          {put.integrityStatus === 'invalid' && <div className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold" style={{ color: 'var(--yellow)' }} title={put.integrityReasonCodes.join(', ')}><AlertTriangle className="h-3 w-3" />Quote inconsistent</div>}
         </div>
         <button
           type="button"
@@ -588,17 +591,18 @@ export default function OptionsPage() {
     const dte = exp?.dte ?? 1;
 
     return optionsData.puts.map(p => {
+      const integrityInvalid = isOptionContractIntegrityInvalid(p);
       const resolvedDelta = resolvePutDeltaWithSource({
-        providerDelta: p.delta,
+        providerDelta: integrityInvalid ? null : p.delta,
         underlyingPrice: currentPrice,
         strike: p.strike,
         dte,
-        impliedVolatilityPercent: p.impliedVolatility,
+        impliedVolatilityPercent: integrityInvalid ? null : p.impliedVolatility,
       });
 
-      const bidYield = calculateYieldPercent(executableOptionPrice(p.bid), p.strike, dte);
-      const askYield = calculateYieldPercent(executableOptionPrice(p.ask), p.strike, dte);
-      const lastYield = calculateYieldPercent(executableOptionPrice(p.last), p.strike, dte);
+      const bidYield = calculateYieldPercent(trustedOptionPrice(p, 'bid'), p.strike, dte);
+      const askYield = calculateYieldPercent(trustedOptionPrice(p, 'ask'), p.strike, dte);
+      const lastYield = calculateYieldPercent(trustedOptionPrice(p, 'last'), p.strike, dte);
 
       const volOI = (p.volume != null && p.volume > 0 && p.openInterest != null && p.openInterest > 0)
         ? p.volume / p.openInterest : null;
@@ -609,7 +613,7 @@ export default function OptionsPage() {
         strike: p.strike, last: p.last, lastTradeDate: p.lastTradeDate, bid: p.bid, ask: p.ask,
         delta: resolvedDelta?.delta ?? null, deltaSource: resolvedDelta?.source ?? null,
         gamma: p.gamma ?? null, theta: p.theta ?? null, vega: p.vega ?? null,
-        impliedVolatility: p.impliedVolatility, volume: p.volume, openInterest: p.openInterest, volOI,
+        impliedVolatility: integrityInvalid ? null : p.impliedVolatility, volume: p.volume, openInterest: p.openInterest, volOI,
         contractSymbol: p.contractSymbol,
         rawLastPrice: p.rawLastPrice,
         rawBid: p.rawBid,
@@ -627,6 +631,8 @@ export default function OptionsPage() {
         otmItmPct: moneyness.pct != null ? Math.abs(moneyness.pct) : null,
         otmItmLabel: moneyness.label === '—' ? '' : moneyness.label,
         otmItmColor: moneyness.color,
+        integrityStatus: p.integrity?.status ?? 'clean',
+        integrityReasonCodes: p.integrity?.reasonCodes ?? [],
       };
     });
   }, [optionsData, selectedExp, currentPrice]);
@@ -969,7 +975,7 @@ export default function OptionsPage() {
             {loading && enrichedPuts.length === 0 ? Array.from({ length: 6 }).map((_, index) => <div role="row" key={index} className="mobile-option-chain-row mobile-option-chain-row--skeleton animate-pulse"><span /><span /><span /><span /><span /><span /></div>) : sortedPuts.map(put => {
               const expirationIso = selectedExp ? new Date(selectedExp * 1000).toISOString().split('T')[0] : '';
               const watchlistId = makeWatchlistId(ticker ?? '', expirationIso, put.strike);
-              return <MobileOptionRow key={put.strike} strike={put.strike} last={put.last} lastTradeDate={put.lastTradeDate} bid={put.bid} ask={put.ask} annYieldLast={put.annYieldLast} annYieldBid={put.annYieldBid} annYieldAsk={put.annYieldAsk} moneynessLabel={put.otmItmLabel} moneynessColor={put.otmItmColor} staleText={mobileStaleText(put.lastTradeDate)} watched={watchlistIds.has(watchlistId)} onToggleWatchlist={() => toggleWatchlist(put)} onSelect={() => setSelectedOption(put)} />;
+              return <MobileOptionRow key={put.strike} strike={put.strike} last={put.last} lastTradeDate={put.lastTradeDate} bid={put.bid} ask={put.ask} annYieldLast={put.annYieldLast} annYieldBid={put.annYieldBid} annYieldAsk={put.annYieldAsk} moneynessLabel={put.otmItmLabel} moneynessColor={put.otmItmColor} staleText={mobileStaleText(put.lastTradeDate)} integrityStatus={put.integrityStatus} watched={watchlistIds.has(watchlistId)} onToggleWatchlist={() => toggleWatchlist(put)} onSelect={() => setSelectedOption(put)} />;
             })}
           </div>
         )}
@@ -1516,6 +1522,7 @@ export default function OptionsPage() {
                           <td className="sticky-stack left-0 z-[2] px-1.5 sm:px-2 py-1.5 text-left text-xs whitespace-nowrap border-r w-[88px]" style={{ borderColor: 'var(--border)', backgroundColor: isSelected ? 'var(--accent-bg)' : bg }}>
                             <div className="flex items-center gap-1.5">
                               <span className="font-mono font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{formatPrice(put.strike)}</span>
+                              {put.integrityStatus === 'invalid' && <span title={`Quote inconsistent: ${put.integrityReasonCodes.join(', ')}`} aria-label="Quote inconsistent"><AlertTriangle className="h-3.5 w-3.5" style={{ color: 'var(--yellow)' }} /></span>}
                               {moneyness === 'itm' && (
                                 <span className="text-[9px] font-bold px-1 py-0.5 rounded" style={{ backgroundColor: 'rgba(34,197,94,0.15)', color: 'var(--green)', border: '1px solid rgba(34,197,94,0.2)' }}>ITM</span>
                               )}
