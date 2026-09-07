@@ -17,11 +17,13 @@ export function AccountPanel({
   presentation: 'mobile' | 'desktop';
   accountSyncContent?: ReactNode;
 }) {
-  const { user, isAuthLoading, authError, signInWithEmail, signOut } = useAuth();
+  const { user, isAuthLoading, authError, signInWithEmail, signInWithPastedLink, signOut } = useAuth();
   const accountState = useAccountState();
   const [email, setEmail] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [linkSent, setLinkSent] = useState(false);
+  const [showLinkFallback, setShowLinkFallback] = useState(false);
+  const [pastedLink, setPastedLink] = useState('');
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -29,6 +31,17 @@ export function AccountPanel({
     setLinkSent(false);
     const sent = await signInWithEmail(email);
     setLinkSent(sent);
+    setSubmitting(false);
+  };
+
+  const handlePastedLink = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSubmitting(true);
+    const signedIn = await signInWithPastedLink(pastedLink);
+    if (signedIn) {
+      setPastedLink('');
+      setShowLinkFallback(false);
+    }
     setSubmitting(false);
   };
 
@@ -87,46 +100,83 @@ export function AccountPanel({
   }
 
   return (
-    <form onSubmit={event => void handleSubmit(event)} className="space-y-4">
+    <div className="space-y-4">
       <p className="text-xs leading-5" style={{ color: 'var(--text-muted)' }}>
         Sign in to load your cloud Portfolio and Watchlist. Account data is not saved in this browser while signed out.
       </p>
-      <label className="block">
-        <span className="mb-1.5 block text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Email</span>
-        <div className="flex min-h-11 items-center gap-2 rounded-lg border px-3" style={{ backgroundColor: 'var(--input-bg)', borderColor: 'var(--border)' }}>
-          <Mail className="h-4 w-4 flex-none" aria-hidden="true" style={{ color: 'var(--text-dim)' }} />
-          <input
-            type="email"
-            value={email}
-            onChange={event => { setEmail(event.target.value); setLinkSent(false); }}
-            autoComplete="email"
-            inputMode="email"
-            required
-            placeholder="you@example.com"
-            className="min-w-0 flex-1 bg-transparent py-2 text-sm outline-none"
-            style={{ color: 'var(--text)' }}
-          />
-        </div>
-      </label>
+      <form onSubmit={event => void handleSubmit(event)} className="space-y-4">
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Email</span>
+          <div className="flex min-h-11 items-center gap-2 rounded-lg border px-3" style={{ backgroundColor: 'var(--input-bg)', borderColor: 'var(--border)' }}>
+            <Mail className="h-4 w-4 flex-none" aria-hidden="true" style={{ color: 'var(--text-dim)' }} />
+            <input
+              type="email"
+              value={email}
+              onChange={event => { setEmail(event.target.value); setLinkSent(false); setShowLinkFallback(false); setPastedLink(''); }}
+              autoComplete="email"
+              inputMode="email"
+              required
+              placeholder="you@example.com"
+              className="min-w-0 flex-1 bg-transparent py-2 text-sm outline-none"
+              style={{ color: 'var(--text)' }}
+            />
+          </div>
+        </label>
+        <button
+          type="submit"
+          disabled={submitting || email.trim().length === 0}
+          className="pressable flex min-h-11 w-full items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold text-white disabled:opacity-50"
+          style={{ backgroundColor: 'var(--accent)' }}
+        >
+          {submitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Mail className="h-4 w-4" aria-hidden="true" />}
+          {linkSent ? 'Resend Sign-In Link' : 'Send Sign-In Link'}
+        </button>
+      </form>
       {linkSent && (
-        <div role="status" className="rounded-lg border px-3 py-2 text-xs" style={{ backgroundColor: 'color-mix(in srgb, var(--green) 10%, transparent)', borderColor: 'color-mix(in srgb, var(--green) 35%, transparent)', color: 'var(--green)' }}>
-          Check your email for a sign-in link.
+        <div className="space-y-3">
+          <div role="status" className="rounded-lg border px-3 py-2 text-xs" style={{ backgroundColor: 'color-mix(in srgb, var(--green) 10%, transparent)', borderColor: 'color-mix(in srgb, var(--green) 35%, transparent)', color: 'var(--green)' }}>
+            Check your email for a sign-in link.
+          </div>
+          {!showLinkFallback ? (
+            <button type="button" onClick={() => setShowLinkFallback(true)} className="pressable min-h-11 w-full rounded-lg px-3 text-xs font-semibold" style={{ color: 'var(--text-secondary)', backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
+              Having trouble opening the link in this app?
+            </button>
+          ) : (
+            <form onSubmit={event => void handlePastedLink(event)} className="space-y-3 rounded-lg border p-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface-alt)' }}>
+              <p className="text-xs leading-5" style={{ color: 'var(--text-muted)' }}>
+                Using Put Scanner from your iPhone Home Screen? Long-press the Sign in link in the email, choose Copy Link, then paste it below.
+              </p>
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Sign-in link</span>
+                <input
+                  type="url"
+                  value={pastedLink}
+                  onChange={event => setPastedLink(event.target.value)}
+                  autoComplete="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  required
+                  placeholder="Paste sign-in link"
+                  className="min-h-11 w-full min-w-0 rounded-lg border px-3 py-2 text-sm outline-none"
+                  style={{ color: 'var(--text)', backgroundColor: 'var(--input-bg)', borderColor: 'var(--border)' }}
+                />
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => { setShowLinkFallback(false); setPastedLink(''); }} disabled={submitting} className="pressable min-h-11 rounded-lg px-3 text-sm font-semibold disabled:opacity-50" style={{ color: 'var(--text-secondary)', border: '1px solid var(--border)' }}>Cancel</button>
+                <button type="submit" disabled={submitting || pastedLink.trim().length === 0} className="pressable flex min-h-11 items-center justify-center gap-2 rounded-lg px-3 text-sm font-semibold text-white disabled:opacity-50" style={{ backgroundColor: 'var(--accent)' }}>
+                  {submitting && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                  Sign In
+                </button>
+              </div>
+            </form>
+          )}
         </div>
       )}
       {authError && <AccountError>{authError}</AccountError>}
-      <button
-        type="submit"
-        disabled={submitting || email.trim().length === 0}
-        className="pressable flex min-h-11 w-full items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold text-white disabled:opacity-50"
-        style={{ backgroundColor: 'var(--accent)' }}
-      >
-        {submitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Mail className="h-4 w-4" aria-hidden="true" />}
-        Send Sign-In Link
-      </button>
       <p className="text-[11px] leading-4" style={{ color: 'var(--text-dim)' }}>
         New email addresses create an account automatically. No password is required.
       </p>
-    </form>
+    </div>
   );
 }
 

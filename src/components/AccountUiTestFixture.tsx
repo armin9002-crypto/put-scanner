@@ -30,6 +30,7 @@ function authFixture(signedOut: boolean): AuthContextValue {
     isConfigured: true,
     authError: null,
     signInWithEmail: async () => true,
+    signInWithPastedLink: async () => true,
     signOut: async () => true,
   };
 }

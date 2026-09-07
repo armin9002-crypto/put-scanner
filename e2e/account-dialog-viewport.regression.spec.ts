@@ -156,6 +156,39 @@ test.describe('Account dialog viewport and clipping regression', () => {
     expectContained(await measure(page));
   });
 
+  test('Home Screen pasted-link fallback expands, collapses, and remains contained', async ({ page }, testInfo) => {
+    if (isPortrait(testInfo)) {
+      await page.addInitScript(() => {
+        localStorage.setItem('put_scanner_theme', 'sepia');
+        localStorage.setItem('put_scanner_text_size', 'large');
+        localStorage.setItem('theme_migration_version', '2');
+      });
+    }
+    await openFixture(page, 'signed-out');
+    await page.getByRole('textbox', { name: 'Email' }).fill('owner@example.invalid');
+    await page.getByRole('button', { name: 'Send Sign-In Link' }).click();
+    await expect(page.getByText('Check your email for a sign-in link.')).toBeVisible();
+    const trouble = page.getByRole('button', { name: 'Having trouble opening the link in this app?' });
+    await trouble.click();
+    await expect(page.getByText(/Using Put Scanner from your iPhone Home Screen/)).toBeVisible();
+    const pastedLink = page.getByRole('textbox', { name: 'Sign-in link' });
+    await pastedLink.fill('https://visual-fixture.supabase.co/auth/v1/verify?token=fixture&type=magiclink');
+    await expect(pastedLink).toHaveValue(/token=fixture/);
+    expectContained(await measure(page));
+    if (isDesktop(testInfo) || isPortrait(testInfo) || isLandscape(testInfo)) {
+      await page.screenshot({ path: testInfo.outputPath('account-magic-link-fallback.png'), fullPage: true });
+    }
+    await page.getByRole('button', { name: 'Sign In', exact: true }).click();
+    await expect(pastedLink).toHaveCount(0);
+    await expect(trouble).toBeVisible();
+    await trouble.click();
+    await expect(page.getByRole('textbox', { name: 'Sign-in link' })).toHaveValue('');
+    await page.getByRole('textbox', { name: 'Sign-in link' }).fill('https://visual-fixture.supabase.co/second-link');
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.getByRole('textbox', { name: 'Sign-in link' })).toHaveCount(0);
+    await expect(trouble).toBeVisible();
+  });
+
   test('Account open does not create page-level overflow', async ({ page }) => {
     await openFixture(page, 'conflict');
     const metrics = await measure(page);

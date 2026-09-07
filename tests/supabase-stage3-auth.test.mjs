@@ -6,9 +6,11 @@ import { fileURLToPath } from 'node:url';
 import {
   authRedirectForOrigin,
   endAuthSession,
+  parsePastedMagicLink,
   requestMagicLink,
   restoreAuthSession,
   subscribeToAuthSession,
+  verifyPastedMagicLink,
 } from '../src/lib/authActions.ts';
 import {
   createConfiguredSupabaseClient,
@@ -62,6 +64,11 @@ function authMock({ session = null, operationError = null, storage = null } = {}
       async signInWithOtp(credentials) {
         calls.push(['signInWithOtp', credentials]);
         return { error: operationError };
+      },
+      async verifyOtp(credentials) {
+        calls.push(['verifyOtp', credentials]);
+        if (!operationError && session) listener?.('SIGNED_IN', session);
+        return { data: { session: operationError ? null : session }, error: operationError };
       },
       async signOut() {
         calls.push(['signOut']);
@@ -152,6 +159,70 @@ test('passwordless request uses auth only, current-origin redirect, and automati
   assert.equal(mock.databaseCalls(), 0);
 });
 
+test('current-project magic-link action URL is parsed without navigating or retaining its token', () => {
+  const token = 'hashed-secret-token';
+  const link = `https://project.supabase.co/auth/v1/verify?token=${token}&type=magiclink&redirect_to=${encodeURIComponent('https://put-scanner.vercel.app/')}`;
+  assert.deepEqual(parsePastedMagicLink(
+    link,
+    'https://project.supabase.co',
+    'https://put-scanner.vercel.app',
+  ), { ok: true, tokenHash: token });
+});
+
+test('pasted magic-link parsing fails closed for malformed, foreign, incomplete, and suspicious links', () => {
+  const parse = link => parsePastedMagicLink(
+    link,
+    'https://project.supabase.co',
+    'https://put-scanner.vercel.app',
+  );
+  const validQuery = `token=secret&type=magiclink&redirect_to=${encodeURIComponent('https://put-scanner.vercel.app/')}`;
+
+  assert.equal(parse('not a url').ok, false);
+  assert.equal(parse(`https://evil.example/auth/v1/verify?${validQuery}`).ok, false);
+  assert.equal(parse(`https://other-project.supabase.co/auth/v1/verify?${validQuery}`).ok, false);
+  assert.equal(parse(`https://project.supabase.co/auth/v1/token?${validQuery}`).ok, false);
+  assert.equal(parse(`https://project.supabase.co/auth/v1/verify?token=secret&type=recovery&redirect_to=${encodeURIComponent('https://put-scanner.vercel.app/')}`).ok, false);
+  assert.equal(parse(`https://project.supabase.co/auth/v1/verify?type=magiclink&redirect_to=${encodeURIComponent('https://put-scanner.vercel.app/')}`).ok, false);
+  assert.equal(parse(`https://project.supabase.co/auth/v1/verify?${validQuery}&next=https://evil.example`).ok, false);
+  assert.equal(parse(`https://project.supabase.co/auth/v1/verify?token=secret&type=magiclink&redirect_to=${encodeURIComponent('https://evil.example/')}`).ok, false);
+});
+
+test('pasted magic link verifies its token hash in the current client and establishes the canonical session', async () => {
+  const session = { access_token: 'access-secret', user: { id: 'same-user', email: 'owner@example.com' } };
+  const mock = authMock({ session });
+  const observed = [];
+  const unsubscribe = subscribeToAuthSession(mock.client, nextSession => observed.push(nextSession));
+  const result = await verifyPastedMagicLink(
+    mock.client,
+    `https://project.supabase.co/auth/v1/verify?token=hash-secret&type=magiclink&redirect_to=${encodeURIComponent('https://put-scanner.vercel.app/')}`,
+    'https://project.supabase.co',
+    'https://put-scanner.vercel.app',
+  );
+  unsubscribe();
+
+  assert.deepEqual(result, { ok: true, error: null });
+  assert.deepEqual(mock.calls, [
+    ['onAuthStateChange'],
+    ['verifyOtp', { token_hash: 'hash-secret', type: 'magiclink' }],
+  ]);
+  assert.deepEqual(observed, [session]);
+  assert.equal(mock.databaseCalls(), 0);
+});
+
+test('expired or used pasted links and network failures expose no auth secrets or application state', async () => {
+  const link = `https://project.supabase.co/auth/v1/verify?token=do-not-expose&type=magiclink&redirect_to=${encodeURIComponent('https://put-scanner.vercel.app/')}`;
+  const expired = authMock({ operationError: { status: 403, message: 'token do-not-expose expired' } });
+  const expiredResult = await verifyPastedMagicLink(expired.client, link, 'https://project.supabase.co', 'https://put-scanner.vercel.app');
+  assert.equal(expiredResult.ok, false);
+  assert.doesNotMatch(expiredResult.error, /do-not-expose/);
+
+  const offlineClient = authMock().client;
+  offlineClient.auth.verifyOtp = async () => { throw new TypeError('network failed for do-not-expose'); };
+  const offlineResult = await verifyPastedMagicLink(offlineClient, link, 'https://project.supabase.co', 'https://put-scanner.vercel.app');
+  assert.equal(offlineResult.ok, false);
+  assert.doesNotMatch(offlineResult.error, /do-not-expose/);
+});
+
 test('auth sign-out is auth-only; account-memory clearing remains provider-owned', async () => {
   const trackedKeys = [PORTFOLIO_STORAGE_KEY, WATCHLIST_STORAGE_KEY, THEME_STORAGE_KEY, PORTFOLIO_MARK_BASIS_KEY];
   const storage = new MemoryStorage({
@@ -222,6 +293,8 @@ test('account UI is optional, truthful, and does not add a primary route or mobi
   ]);
   assert.match(accountSource, /if \(!isConfigured\) return null/);
   assert.match(accountSource, /Check your email for a sign-in link\./);
+  assert.match(accountSource, /Having trouble opening the link in this app\?/);
+  assert.match(accountSource, /setPastedLink\(''\)/);
   assert.match(accountSource, /Supabase is the durable source of truth/);
   assert.match(accountSource, /Account data is not saved in this browser while signed out\./);
   assert.match(accountSource, /min-h-11 min-w-11/);

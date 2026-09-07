@@ -6,8 +6,9 @@ import {
   restoreAuthSession,
   subscribeToAuthSession,
   type AuthOnlyClient,
+  verifyPastedMagicLink,
 } from './authActions';
-import { supabaseAuthClient } from './supabaseClient';
+import { supabaseAuthClient, supabasePublicConfig } from './supabaseClient';
 import { AuthContext, type AuthContextValue } from './authContext';
 
 export function AuthProvider({
@@ -57,6 +58,19 @@ export function AuthProvider({
     return result.ok;
   }, [client]);
 
+  const signInWithPastedLink = useCallback(async (pastedLink: string) => {
+    if (!client) return false;
+    setAuthError(null);
+    const result = await verifyPastedMagicLink(
+      client,
+      pastedLink,
+      supabasePublicConfig.url,
+      window.location.origin,
+    );
+    setAuthError(result.error);
+    return result.ok;
+  }, [client]);
+
   const signOut = useCallback(async () => {
     if (!client) return false;
     setAuthError(null);
@@ -73,8 +87,9 @@ export function AuthProvider({
     isConfigured,
     authError,
     signInWithEmail,
+    signInWithPastedLink,
     signOut,
-  }), [authError, isAuthLoading, isConfigured, session, signInWithEmail, signOut]);
+  }), [authError, isAuthLoading, isConfigured, session, signInWithEmail, signInWithPastedLink, signOut]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

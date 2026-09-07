@@ -8,6 +8,7 @@ export interface AuthContextValue {
   isConfigured: boolean;
   authError: string | null;
   signInWithEmail: (email: string) => Promise<boolean>;
+  signInWithPastedLink: (pastedLink: string) => Promise<boolean>;
   signOut: () => Promise<boolean>;
 }
 
