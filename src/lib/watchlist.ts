@@ -603,7 +603,7 @@ export function mergeWatchlistRefreshItems(existing: WatchlistItem[], updatedIte
 }
 
 export function markWatchlistItems(updatedItems: WatchlistItem[]): WatchlistItem[] {
-  const existing = watchlistItemsForMutation();
+  const existing = pruneExpiredWatchlist();
   const updated = mergeWatchlistRefreshItems(existing, updatedItems);
   return saveWatchlist(updated).status === 'ok' ? updated : existing;
 }
@@ -621,3 +621,16 @@ import {
 } from './durableStorage.ts';
 import { emitDurableMutation } from './cloudState/syncEvents.ts';
 import { getAccountStateStorage } from './cloudState/accountStateStorage.ts';
+
+/** Expiration day is inclusive in the U.S. market timezone; no quote is needed. */
+export function pruneExpiredWatchlistItems(items: WatchlistItem[], now = new Date()): WatchlistItem[] {
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+  return items.filter(item => item.expiry >= today);
+}
+
+export function pruneExpiredWatchlist(now = new Date()): WatchlistItem[] {
+  const current = watchlistItemsForMutation();
+  const remaining = pruneExpiredWatchlistItems(current, now);
+  if (remaining.length === current.length) return current;
+  return saveWatchlist(remaining).status === 'ok' ? remaining : current;
+}

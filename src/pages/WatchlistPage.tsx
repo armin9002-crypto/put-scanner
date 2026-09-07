@@ -1,10 +1,10 @@
 import { Fragment, lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  getWatchlist,
   isPastWatchlistExpirationDte,
   markWatchlistItems,
   removeFromWatchlist,
+  pruneExpiredWatchlist,
   retainWatchlistSnapshotAfterInvalidRefresh,
   updateWatchlistNote,
   type WatchlistItem,
@@ -278,17 +278,24 @@ export default function WatchlistPage() {
   const refreshAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    const stored = getWatchlist();
+    const stored = pruneExpiredWatchlist();
     setItems(stored);
     const lastUpdated = Math.max(...stored.map(item => item.updatedAt ?? 0));
     if (lastUpdated > 0) setLastRefreshed(new Date(lastUpdated));
+  }, []);
+
+  useEffect(() => {
+    const prune = () => { if (document.visibilityState === 'visible') setItems(pruneExpiredWatchlist()); };
+    window.addEventListener('focus', prune);
+    document.addEventListener('visibilitychange', prune);
+    return () => { window.removeEventListener('focus', prune); document.removeEventListener('visibilitychange', prune); };
   }, []);
 
   const rows = useMemo(() => items.map(buildRow), [items]);
 
   const handleRefresh = useCallback(async (explicit = true) => {
     if (refreshInFlightRef.current) return;
-    const currentItems = getWatchlist();
+    const currentItems = pruneExpiredWatchlist();
     if (currentItems.length === 0) {
       setItems([]);
       return;
@@ -403,7 +410,7 @@ export default function WatchlistPage() {
 
   function handleGroupModeChange(mode: WatchlistGroupMode) {
     setGroupMode(mode);
-    setSortOverride(null);
+    setSortOverride(mode === 'none' ? { field: 'dte', direction: 'asc' } : null);
     setSortField('dte');
     setSortDir('asc');
   }
@@ -461,12 +468,12 @@ export default function WatchlistPage() {
           <button type="button" onClick={() => void handleRefresh(true)} disabled={loading || items.length === 0} className="pressable flex h-11 w-11 items-center justify-center rounded-lg disabled:opacity-40" aria-label="Refresh watchlist" style={{ color: 'var(--accent-light)' }}>{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}</button>
         </div>
         <div className="flex items-center gap-2 border-b px-3.5 py-2" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
-          <label className="flex min-w-0 flex-1 items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>Group by <select value={groupMode} onChange={event => handleGroupModeChange(event.target.value as WatchlistGroupMode)} className="mobile-control-field min-h-9 min-w-0 flex-1 text-xs"><option value="underlying">Underlying</option><option value="expiry">Expiry</option></select></label>
+          <label className="flex min-w-0 flex-1 items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>Group by <select value={groupMode} onChange={event => handleGroupModeChange(event.target.value as WatchlistGroupMode)} className="mobile-control-field min-h-9 min-w-0 flex-1 text-xs"><option value="none">None</option><option value="underlying">Underlying</option><option value="expiry">Expiry</option></select></label>
           <label className="flex min-h-9 items-center gap-1.5 whitespace-nowrap text-[11px]" style={{ color: 'var(--text-muted)' }}><input type="checkbox" checked={showNominalYields} onChange={event => handleNominalYieldToggle(event.target.checked)} className="rounded" /> NY</label>
         </div>
         {refreshError && <div role="alert" className="flex items-start gap-2 border-b px-3.5 py-2 text-[11px]" style={{ borderColor: 'var(--border)', color: 'var(--red)', backgroundColor: 'rgba(239,68,68,0.08)' }}><AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-none" /><span>{refreshError} Tap refresh to retry.</span></div>}
         {items.length === 0 ? <div className="px-6 py-16 text-center"><Star className="mx-auto mb-3 h-7 w-7" style={{ color: 'var(--text-dim)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No saved puts</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Star a contract from an option chain to save it here.</p></div> : (
-          <div className="mobile-financial-list">{groupedRows.map(group => <section key={group.key} aria-label={`${groupMode === 'underlying' ? 'Underlying' : 'Expiry'} ${group.label}`}><div className="sticky top-0 z-10 border-b px-3.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface-alt)', color: 'var(--text-muted)' }}>{groupMode === 'underlying' ? group.label : `${group.label} · ${group.rows.length} saved`}</div>{(group.rows as unknown as LiveRow[]).map(row => (
+          <div className="mobile-financial-list">{groupedRows.map(group => <section key={group.key} aria-label={groupMode === 'none' ? 'Watchlist' : `${groupMode === 'underlying' ? 'Underlying' : 'Expiry'} ${group.label}`}>{groupMode !== 'none' && <div className="sticky top-0 z-10 border-b px-3.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface-alt)', color: 'var(--text-muted)' }}>{groupMode === 'underlying' ? group.label : `${group.label} · ${group.rows.length} saved`}</div>}{(group.rows as unknown as LiveRow[]).map(row => (
               <div key={row.id} className="mobile-watchlist-entry watchlist-mobile-row" style={{ opacity: row.expired || row.status === 'unavailable' ? 0.65 : 1 }}>
               <MobileOptionRow ticker={row.ticker} tickerTo={`/options/${row.ticker}?expiry=${row.expiryTimestamp}`} strike={row.strike} expirationLabel={row.expiryFormatted} dte={row.dte} bid={row.bid} ask={row.ask} last={row.last} lastTradeDate={row.lastTradeDate} annualYield={row.annYieldBid} annYieldLast={row.annYieldLast} annYieldBid={row.annYieldBid} annYieldAsk={row.annYieldAsk} delta={row.delta} impliedVolatility={row.iv} openInterest={row.openInterest} moneynessLabel={row.moneynessLabel} moneynessColor={row.moneynessColor} integrityStatus={row.snapshot?.integrityStatus} statusText={`${row.statusLabel} · Last trade ${formatOptionLastTradeDate(row.lastTradeDate)}${showNominalYields ? ` · NY L/B/A ${formatPercentValue(row.nomYieldLast)} / ${formatPercentValue(row.nomYieldBid)} / ${formatPercentValue(row.nomYieldAsk)}` : ''}`} watched onToggleWatchlist={() => handleRemove(row.id)} onSelect={() => setSelectedOption({ option: optionDetailFromWatchlistRow(row), ticker: row.ticker, expirationLabel: row.expiryFormatted, dte: row.dte, underlyingPrice: row.currentPrice })} />
               <div className="watchlist-mobile-note border-b px-3 pb-1" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>{editingNote === row.id ? <input type="text" value={noteText} onChange={event => setNoteText(event.target.value.slice(0, 60))} onBlur={() => handleNoteSave(row.id)} onKeyDown={event => { if (event.key === 'Enter') handleNoteSave(row.id); if (event.key === 'Escape') { setEditingNote(null); setNoteText(''); } }} autoFocus className="mobile-control-field w-full" maxLength={60} aria-label={`Note for ${row.ticker}`} /> : <button type="button" onClick={() => { setEditingNote(row.id); setNoteText(row.note); }} className="flex min-h-11 w-full items-center text-left text-[11px]" style={{ color: row.note ? 'var(--text-secondary)' : 'var(--text-dim)' }}>{row.note || 'Add a note'}</button>}</div>
@@ -500,7 +507,7 @@ export default function WatchlistPage() {
         {refreshError && <div role="alert" className="mb-3 flex items-center gap-2 rounded-lg px-3 py-2 text-xs" style={{ backgroundColor: 'rgba(239,68,68,0.08)', color: 'var(--red)', border: '1px solid rgba(239,68,68,0.24)' }}><AlertTriangle className="h-4 w-4 flex-none" /> <span>{refreshError} Click Refresh All to retry.</span></div>}
 
         {items.length > 0 && <div className="mb-3 flex flex-wrap items-center justify-end gap-2" data-testid="watchlist-presentation-controls">
-          <label className="flex min-h-9 items-center gap-2 rounded-lg px-2 text-xs" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Group by <select value={groupMode} onChange={event => handleGroupModeChange(event.target.value as WatchlistGroupMode)} className="rounded px-1.5 py-1 text-xs outline-none" style={{ backgroundColor: 'var(--input-bg)', color: 'var(--text)' }}><option value="underlying">Underlying</option><option value="expiry">Expiry</option></select></label>
+          <label className="flex min-h-9 items-center gap-2 rounded-lg px-2 text-xs" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Group by <select value={groupMode} onChange={event => handleGroupModeChange(event.target.value as WatchlistGroupMode)} className="rounded px-1.5 py-1 text-xs outline-none" style={{ backgroundColor: 'var(--input-bg)', color: 'var(--text)' }}><option value="none">None</option><option value="underlying">Underlying</option><option value="expiry">Expiry</option></select></label>
           <label className="flex min-h-9 items-center gap-1.5 rounded-lg px-2 text-xs" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}><input type="checkbox" checked={showNominalYields} onChange={event => handleNominalYieldToggle(event.target.checked)} className="rounded" /> Show Nominal Yields</label>
         </div>}
         {items.length > 0 && (
@@ -681,7 +688,7 @@ export default function WatchlistPage() {
 
                     return (
                       <Fragment key={row.id}>
-                      {groupStart && <tr className="watchlist-group-header" style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}><th colSpan={columns.length + 3} className="px-2 py-1 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>{groupMode === 'underlying' ? group?.label : `${group?.label} · ${group?.rows.length} saved`}</th></tr>}
+                      {groupMode !== 'none' && groupStart && <tr className="watchlist-group-header" style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}><th colSpan={columns.length + 3} className="px-2 py-1 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>{groupMode === 'underlying' ? group?.label : `${group?.label} · ${group?.rows.length} saved`}</th></tr>}
                       <tr className="transition-colors" style={{ borderBottom: '1px solid var(--border)', ...bgStyle }}>
                         <td className="px-1.5 py-0.5 text-center" style={mutedStyle}>
                           <button
