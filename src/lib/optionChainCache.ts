@@ -37,3 +37,13 @@ export function primeOptionsMarketDataCache(ticker: string, date: number | undef
     validator: isValidOptionsChain,
   }, data, data.chainMeta?.fetchedAt);
 }
+
+/** Carries acquired raw facts without admitting the rejected chain to any cache. */
+export class RejectedOptionChainError extends Error {
+  readonly chain: OptionsChainData;
+  constructor(chain: OptionsChainData) {
+    super('Option quote integrity rejected the acquired chain.');
+    this.name = 'RejectedOptionChainError';
+    this.chain = chain;
+  }
+}

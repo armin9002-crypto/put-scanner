@@ -1,3 +1,4 @@
+import { resolvePortfolioMark } from './portfolioValuation.ts';
 import { isFiniteNumber } from './optionMetrics.ts';
 import { elapsedUsEquityTradingSessions } from './usMarketCalendar.ts';
 import { canonicalizeMarketTime, type MarketTimestampSource } from './marketTimestamp.ts';
@@ -7,7 +8,7 @@ export type PortfolioQuoteFreshnessState = 'fresh' | 'aging' | 'stale' | 'unavai
 
 export interface PortfolioQuoteFreshness {
   state: PortfolioQuoteFreshnessState;
-  label: 'Fresh' | 'Aging' | 'Stale' | 'Unavailable';
+  label: 'Fresh' | 'Aging' | 'Stale' | 'Stale Last' | 'Unavailable';
   observedAt: number | null;
   observedSessionAge: number | null;
   freshnessAt: number | null;
@@ -67,7 +68,11 @@ export function getPortfolioQuoteFreshness(trade: PortfolioTrade, now = new Date
 
   let state: PortfolioQuoteFreshnessState;
   let reason: string;
-  if (!market || market.availabilityStatus === 'unavailable' || market.availabilityStatus === 'imported_snapshot' || !hasCurrentInputs || freshnessAt == null) {
+  const lastFallback = resolvePortfolioMark(trade, 'last').source === 'last_fallback';
+  if (lastFallback) {
+    state = 'stale';
+    reason = 'Exact-contract historical Last valuation fallback; not a current executable quote. Last-trade time is preserved when available.';
+  } else if (!market || market.availabilityStatus === 'unavailable' || market.availabilityStatus === 'imported_snapshot' || !hasCurrentInputs || freshnessAt == null) {
     state = 'unavailable';
     reason = 'No current market observation is available.';
   } else if (market.availabilityStatus === 'refresh_failed' || market.availabilityStatus === 'stale') {
@@ -90,7 +95,7 @@ export function getPortfolioQuoteFreshness(trade: PortfolioTrade, now = new Date
   }
 
   return {
-    state, label: labelFor(state), observedAt, observedSessionAge,
+    state, label: lastFallback ? 'Stale Last' : labelFor(state), observedAt, observedSessionAge,
     freshnessAt, freshnessSessionAge, freshnessTimestampSource,
     providerMarketAt: canonical.providerMarketAt, providerQuoteAt: canonical.providerQuoteAt,
     cachedAt: canonical.cachedAt, lastTradeAt, lastTradeSessionAge, reason,

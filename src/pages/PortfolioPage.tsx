@@ -1,3 +1,4 @@
+import { resolvePortfolioMark } from '../lib/portfolioValuation';
 import { uiTextCssPx } from '../lib/uiTextSizePreference';
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AlertTriangle, Briefcase, ChevronDown, ChevronRight, Download, Edit2, FileImage, FileSpreadsheet, Loader2, MoreHorizontal, Plus, RefreshCw, SlidersHorizontal, Trash2, Wrench } from 'lucide-react';
@@ -87,7 +88,7 @@ import {
   type RealizedHistoryMetric,
   type RealizedPnlPeriod,
 } from '../lib/portfolioHistoryAnalytics';
-import { applyTransientPortfolioMarketData, mergePortfolioLifecycleResults, mergePortfolioMarketRefresh, retainPortfolioMarketAfterUntrustedRefresh } from '../lib/portfolioMarketRefresh';
+import { applyTransientPortfolioMarketData, mergePortfolioLifecycleResults, mergePortfolioMarketRefresh, retainPortfolioMarketAfterUntrustedRefresh, findExactPortfolioPut, portfolioExactLast, acquirePortfolioValuationChain, requiresPortfolioLastFallback } from '../lib/portfolioMarketRefresh';
 import { useResponsiveMode } from '../lib/responsive';
 import MobileBottomSheet from '../components/mobile/MobileBottomSheet';
 import MobileSegmentedControl from '../components/mobile/MobileSegmentedControl';
@@ -454,7 +455,7 @@ function CurrentMarkTooltipContent({ trade, markBasis }: { trade: PortfolioTrade
     <div>
       <div className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text)' }}>Current Mark Details</div>
       <TooltipRows rows={[
-        { label: 'Mark Basis', value: formatMarkBasis(markBasis) },
+        { label: 'Mark Basis', value: resolvePortfolioMark(trade, markBasis).source === 'last_fallback' ? 'Stale Last fallback' : formatMarkBasis(markBasis) },
         ...orderedOptionQuoteEntries({
           last: trade.latestMarketData?.optionLast,
           bid: trade.latestMarketData?.optionBid,
@@ -466,7 +467,7 @@ function CurrentMarkTooltipContent({ trade, markBasis }: { trade: PortfolioTrade
           value: `${formatFullDate(trade.latestMarketData?.lastTradeDate)}${stale.label ? ` · ${stale.label}` : ''}`,
           color: stale.label ? stale.color : undefined,
         },
-        { label: 'Quote Freshness', value: `${quoteFreshness.label} · ${quoteFreshness.freshnessTimestampSource === 'provider_market_time' ? 'provider market time' : quoteFreshness.freshnessTimestampSource === 'provider_quote' ? 'provider quote time' : 'observation time'}` },
+        { label: 'Quote Freshness', value: resolvePortfolioMark(trade, markBasis).source === 'last_fallback' ? 'Stale Last valuation only' : `${quoteFreshness.label} · ${quoteFreshness.freshnessTimestampSource === 'provider_market_time' ? 'provider market time' : quoteFreshness.freshnessTimestampSource === 'provider_quote' ? 'provider quote time' : 'observation time'}` },
       ]} />
     </div>
   );
@@ -513,22 +514,22 @@ function percentColor(value: number | null | undefined): string {
 }
 
 interface PositionHealth {
-  label: 'Healthy' | 'Monitor' | 'Elevated' | 'Risky' | 'Threatened' | 'Needs quote' | 'Unknown';
+  label: 'Healthy' | 'Monitor' | 'Elevated' | 'Risky' | 'Threatened' | 'Needs quote' | 'Stale Last' | 'Unknown';
   color: string;
   bg: string;
   border: string;
   title: string;
 }
 
-function getPositionHealth(trade: PortfolioTrade): PositionHealth {
+function getPositionHealth(trade: PortfolioTrade, basis: MarkBasis = 'last'): PositionHealth {
   const freshness = getPortfolioQuoteFreshness(trade);
-  if (!isPortfolioQuoteDecisionEligible(trade)) {
+  if (!isPortfolioQuoteDecisionEligible(trade) || resolvePortfolioMark(trade, basis).source === 'last_fallback') {
     return {
-      label: 'Needs quote',
+      label: resolvePortfolioMark(trade, basis).source === 'last_fallback' ? 'Stale Last' : 'Needs quote',
       color: 'var(--yellow)',
       bg: 'rgba(250,204,21,0.10)',
       border: 'rgba(250,204,21,0.25)',
-      title: `${freshness.label}: ${freshness.reason}`,
+      title: resolvePortfolioMark(trade, basis).source === 'last_fallback' ? `Exact Last valuation fallback; last traded ${formatFullDate(trade.latestMarketData?.lastTradeDate)}. Not a current executable quote.` : `${freshness.label}: ${freshness.reason}`,
     };
   }
   const underlying = trade.latestMarketData?.underlyingPrice ?? trade.entrySnapshot?.underlyingPrice ?? null;
@@ -665,7 +666,7 @@ function PortfolioPriorityStrip({
         </div>
         <div className="portfolio-priority-list">
           {attention.map(trade => {
-            const health = getPositionHealth(trade);
+            const health = getPositionHealth(trade, markBasis);
             return <button type="button" key={trade.id} className="portfolio-priority-item" onClick={() => onOpenTrade(trade)}>
               <span className="portfolio-priority-item__identity"><b>{trade.ticker} {formatCurrency(trade.strike)} Put</b><small>{expiryLabel(trade.expiration)} · {formatDteValue(calculateRemainingDte(trade))}</small></span>
               <span className="portfolio-priority-item__value" style={{ color: health.color }}>{health.label}</span>
@@ -1521,6 +1522,18 @@ export default function PortfolioPage() {
   const markSummary = useMemo(() => calculatePortfolioMarkSummary(openTrades, markBasis), [openTrades, markBasis]);
   const maintenanceAssessment = useMemo(() => assessPortfolioMaintenance(trades), [trades]);
   const quoteFreshnessSummary = useMemo(() => summarizePortfolioQuoteFreshness(openPositions), [openPositions]);
+  const lastFallbackCount = openPositions.filter(trade => resolvePortfolioMark(trade, markBasis).source === 'last_fallback').length;
+  const unavailableMarkCount = openPositions.filter(trade => resolvePortfolioMark(trade, markBasis).value == null).length;
+  const currentQuoteCount = openPositions.filter(trade => resolvePortfolioMark(trade, markBasis).source === 'selected' && getPortfolioQuoteFreshness(trade).state === 'fresh').length;
+  const retainedMarkCount = openPositions.length - currentQuoteCount - lastFallbackCount - unavailableMarkCount;
+  const marketDetails = openPositions.length > 0 && <details className="my-2 rounded-lg border p-2 text-xs" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}><summary className="min-h-9 cursor-pointer py-2">{currentQuoteCount} current quotes · {lastFallbackCount} stale Last fallback{retainedMarkCount > 0 ? ` \u00b7 ${retainedMarkCount} prior marks retained` : ''}{unavailableMarkCount > 0 ? ` \u00b7 ${unavailableMarkCount} unavailable` : ''}{refreshWarning ? ' · refresh issues' : ''}</summary><div className="space-y-2 pt-2">{openPositions.map(trade => {
+    const mark = resolvePortfolioMark(trade, markBasis);
+    const market = trade.latestMarketData;
+    const outcome = market?.refreshOutcome;
+    const reason = outcome === 'quote_inconsistent' ? 'integrity-rejected quote' : outcome === 'refresh_failed' ? 'provider refresh unavailable' : outcome === 'unavailable' ? 'exact contract missing' : outcome === 'no_usable_price' ? 'no usable current exact-contract price' : 'selected mark unavailable';
+    const status = mark.source === 'last_fallback' ? 'Stale Last fallback' : mark.value == null ? 'Needs quote' : outcome && outcome !== 'current' ? 'Prior trusted mark retained' : 'Current mark';
+    return <div key={trade.id} className="break-words"><strong>{trade.ticker} {trade.expiration} {formatOptionPrice(trade.strike)} put</strong> — {status}{mark.source === 'last_fallback' ? ` ${formatCurrency(mark.value, 2)} · Last trade ${formatFullDate(market?.lastTradeDate)} · ${reason}. Valuation only; not executable.` : outcome && outcome !== 'current' || mark.value == null ? ` · ${reason}` : ''}</div>;
+  })}</div></details>;
   const positionsNeedingFreshData = quoteFreshnessSummary.stale + quoteFreshnessSummary.unavailable;
   const historicalExcelImportAvailable = account.phase === 'ready' && account.cloud !== null && account.userId !== null;
 
@@ -1891,7 +1904,7 @@ export default function PortfolioPage() {
       const acquired = await acquireOptionChains<OptionsChainData>(requestItems, {
         source: 'Portfolio:refreshOpenTrades',
         limit: 3,
-        fetchChain: (ticker, timestamp) => fetchOptions(ticker, timestamp, { source: 'Portfolio:refreshOpenTrades', refreshMode: 'revalidate', signal: controller.signal }),
+        fetchChain: (ticker, timestamp) => acquirePortfolioValuationChain(() => fetchOptions(ticker, timestamp, { source: 'Portfolio:refreshOpenTrades', refreshMode: 'revalidate', signal: controller.signal })),
       });
       const optionsByKey = acquired.byKey;
       const failedKeys = new Set(acquired.failedKeys);
@@ -1928,12 +1941,14 @@ export default function PortfolioPage() {
             ? new Date(batchPriceResult.fetchedAt).toISOString()
             : undefined;
 
+        const exactPut = findExactPortfolioPut(trade, optData);
+        const exactLast = portfolioExactLast(exactPut, new Date(optData?.chainMeta?.fetchedAt ?? Date.now()).toISOString());
         if (failed || !optData) {
           partialFailure = true;
-          return retainPortfolioMarketAfterUntrustedRefresh(trade, { underlyingPrice: underlying, dte: remainingDte, attemptedAt: nowIso, kind: 'refresh_failed' });
+          return retainPortfolioMarketAfterUntrustedRefresh(trade, { underlyingPrice: underlying, dte: remainingDte, attemptedAt: nowIso, exactLast, kind: 'refresh_failed' });
         }
 
-        const put = optData.puts.find(candidate => Math.abs(candidate.strike - trade.strike) < 0.01);
+        const put = exactPut;
         if (!put) {
           partialFailure = true;
           return retainPortfolioMarketAfterUntrustedRefresh(trade, { underlyingPrice: underlying, dte: remainingDte, attemptedAt: nowIso, kind: 'unavailable' });
@@ -1946,10 +1961,17 @@ export default function PortfolioPage() {
             dte: remainingDte,
             attemptedAt: nowIso,
             kind: 'quote_inconsistent',
+            exactLast,
             reasonCodes: put.integrity?.reasonCodes ?? [],
           });
         }
 
+        const lastFallbackOnly = requiresPortfolioLastFallback(put);
+        if (lastFallbackOnly) {
+          return retainPortfolioMarketAfterUntrustedRefresh(trade, {
+            underlyingPrice: underlying, dte: remainingDte, attemptedAt: nowIso, exactLast, kind: 'no_usable_price',
+          });
+        }
         const iv = put.impliedVolatility ?? null;
         const delta = resolvePutDelta({
           providerDelta: put.delta,
@@ -1967,8 +1989,9 @@ export default function PortfolioPage() {
           optionBid: bid,
           optionAsk: ask,
           optionMid: mid,
-          optionLast: put.last ?? null,
-          lastTradeDate: put.lastTradeDate ?? null,
+          optionLast: exactLast?.price ?? trade.latestMarketData?.optionLast ?? null,
+          lastTradeDate: exactLast ? exactLast.lastTradeDate : trade.latestMarketData?.lastTradeDate ?? null,
+          lastObservedAt: exactLast?.observedAt ?? trade.latestMarketData?.lastObservedAt ?? trade.latestMarketData?.refreshedAt,
           iv,
           delta,
           volume: put.volume ?? null,
@@ -1979,6 +2002,8 @@ export default function PortfolioPage() {
           cachedAt: cacheTime,
           timestampSource: providerMarketTime ? 'provider_market_time' : 'observed_at',
           availabilityStatus: 'live',
+          lastFallbackOnly,
+          refreshOutcome: 'current',
           optionIntegrityStatus: put.integrity?.status ?? 'clean',
           optionIntegrityReasonCodes: put.integrity?.reasonCodes ?? [],
           latestRefreshAttemptAt: nowIso,
@@ -1989,7 +2014,7 @@ export default function PortfolioPage() {
       const latest = loadPortfolioTrades();
       const reconciled = mergePortfolioMarketRefresh(latest, refreshed);
       const persisted = persistTrades(reconciled);
-      setRefreshWarning(partialFailure || !persisted);
+      setRefreshWarning(!persisted || (partialFailure && reconciled.some(trade => trade.status === 'open' && resolvePortfolioMark(trade, markBasis).value == null)));
       if (persisted) setLastRefreshed(new Date());
     } catch {
       if (refreshGeneration === quoteRefreshGenerationRef.current && !controller.signal.aborted) setRefreshWarning(true);
@@ -2000,7 +2025,7 @@ export default function PortfolioPage() {
         setRefreshing(false);
       }
     }
-  }, [persistTrades]);
+  }, [persistTrades, markBasis]);
 
   const handleRetryResolve = useCallback(async (trade: PortfolioTrade) => {
     setResolvingArchiveIds(previous => new Set(previous).add(trade.id));
@@ -2123,9 +2148,9 @@ export default function PortfolioPage() {
 
   const renderMobileScheduleTrade = (trade: PortfolioTrade) => {
     const freshness = getPortfolioQuoteFreshness(trade);
-    const visibleFreshness = freshness.state === 'stale' || freshness.state === 'unavailable' ? freshness.label : '';
+    const visibleFreshness = resolvePortfolioMark(trade, markBasis).source === 'last_fallback' ? 'Stale Last' : freshness.state === 'stale' || freshness.state === 'unavailable' ? freshness.label : '';
     const entryDate = isPortfolioContractPosition(trade) ? formatPositionEntryDate(trade) : formatHistoryDate(trade.soldDate);
-    return <MobilePositionRow key={trade.id} ticker={trade.ticker} strike={formatCurrency(trade.strike)} contracts={trade.contracts} expiration={formatDteValue(calculateRemainingDte(trade))} entryDate={entryDate} pnl={formatCurrency(calculateTotalGainLoss(trade, markBasis), 0)} captured={formatPctValue(calculatePercentCaptured(trade, markBasis))} mark={formatOptionPrice(calculateCurrentOptionMark(trade, markBasis))} entryDelta={formatDelta(trade.entryDelta)} showEntryDelta={showEntryDeltas} currentDelta={formatDelta(trade.latestMarketData?.delta)} entryIv={formatPercentPoints(trade.entryIv, 1)} currentIv={formatPercentPoints(trade.latestMarketData?.iv, 1)} showEntryIv={showEntryDeltas} freshness={visibleFreshness} distance={formatPctValue(calculateDistanceToStrike(trade))} entryVix={isFiniteNumber(trade.entryVixClose) ? trade.entryVixClose.toFixed(2) : DASH} health={getPositionHealth(trade)} onOpen={() => openDrawer(trade)} onEdit={() => editContractPosition(trade)} />;
+    return <MobilePositionRow key={trade.id} ticker={trade.ticker} strike={formatCurrency(trade.strike)} contracts={trade.contracts} expiration={formatDteValue(calculateRemainingDte(trade))} entryDate={entryDate} pnl={formatCurrency(calculateTotalGainLoss(trade, markBasis), 0)} captured={formatPctValue(calculatePercentCaptured(trade, markBasis))} mark={formatOptionPrice(calculateCurrentOptionMark(trade, markBasis))} entryDelta={formatDelta(trade.entryDelta)} showEntryDelta={showEntryDeltas} currentDelta={formatDelta(trade.latestMarketData?.delta)} entryIv={formatPercentPoints(trade.entryIv, 1)} currentIv={formatPercentPoints(trade.latestMarketData?.iv, 1)} showEntryIv={showEntryDeltas} freshness={visibleFreshness} distance={formatPctValue(calculateDistanceToStrike(trade))} entryVix={isFiniteNumber(trade.entryVixClose) ? trade.entryVixClose.toFixed(2) : DASH} health={getPositionHealth(trade, markBasis)} onOpen={() => openDrawer(trade)} onEdit={() => editContractPosition(trade)} />;
   };
 
   if (isPhone && !isPhoneLandscape) {
@@ -2151,7 +2176,8 @@ export default function PortfolioPage() {
                 ].map(([label, value, color], index) => <div key={label} className="portfolio-mobile-metric min-w-0" data-primary={index < 4 ? 'true' : 'false'}><div className="portfolio-mobile-metric-label uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>{label}</div><div className="portfolio-mobile-metric-value font-mono font-semibold tabular-nums" style={{ color }}>{value}</div></div>)}
               </div>
               <div className="portfolio-mobile-mark-control mt-2 flex items-center gap-3"><span className="portfolio-mobile-mark-label flex-none"><b>Mark basis</b><small>Revalues P&amp;L + Current AY</small></span><div className="min-w-0 flex-1"><MobileSegmentedControl value={markBasis} onChange={setMarkBasis} label="Portfolio mark basis" options={MARK_BASIS_OPTIONS.map(value => ({ value, label: value.charAt(0).toUpperCase() + value.slice(1) }))} /></div></div>
-              <DataFreshness className="portfolio-mobile-freshness" updatedAt={lastRefreshed} status={refreshing ? 'updating' : refreshWarning ? 'failed' : lastRefreshed ? 'cached' : 'stale'} label="Portfolio marks" />
+              {marketDetails}
+              <DataFreshness className="portfolio-mobile-freshness" updatedAt={lastRefreshed} status={refreshing ? 'updating' : refreshWarning ? 'stale' : lastRefreshed ? 'cached' : 'stale'} label="Portfolio marks" />
               {positionsNeedingFreshData > 0 && <p className="mt-1 text-[11px]" style={{ color: 'var(--yellow)' }}>{positionsNeedingFreshData} {positionsNeedingFreshData === 1 ? 'position needs' : 'positions need'} fresh market data.</p>}
               {openTrades.length > 0 && markSummary.totalGainLoss == null && <p className="portfolio-partial-mark" role="status">Partial marks · one or more open quotes are unavailable; aggregate P&amp;L stays — until refreshed.</p>}
               {durableActivityNotice && <p role="status" className="mt-2 text-[11px] leading-4" style={{ color: 'var(--yellow)' }}>{durableActivityNotice}</p>}
@@ -2197,7 +2223,7 @@ export default function PortfolioPage() {
       <div className="page-frame page-frame--wide portfolio-page__frame">
         <PageHeader
           title="Portfolio"
-          meta={<DataFreshness updatedAt={lastRefreshed} status={refreshing ? 'updating' : refreshWarning ? 'failed' : lastRefreshed ? 'cached' : 'stale'} label="Portfolio market marks" />}
+          meta={<DataFreshness updatedAt={lastRefreshed} status={refreshing ? 'updating' : refreshWarning ? 'stale' : lastRefreshed ? 'cached' : 'stale'} label="Portfolio market marks" />}
           actions={<div className="portfolio-actions flex flex-wrap lg:flex-nowrap items-center justify-start lg:justify-end gap-2 lg:shrink-0">
             {trades.length > 0 && <MarkBasisToggle markBasis={markBasis} onChange={setMarkBasis} />}
             <button onClick={() => setShowAddModal(true)} className="button-primary inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs whitespace-nowrap" style={{ backgroundColor: 'var(--accent)' }}>
@@ -2226,6 +2252,7 @@ export default function PortfolioPage() {
             <AlertTriangle className="w-3.5 h-3.5" /> {durableActivityNotice}
           </div>
         )}
+        {marketDetails}
         {refreshWarning && (
           <div className="flex items-center gap-2 rounded-lg px-3 py-2 mb-3 text-xs" style={{ backgroundColor: 'rgba(250,204,21,0.10)', color: 'var(--yellow)', border: '1px solid rgba(250,204,21,0.22)' }}>
             <AlertTriangle className="w-3.5 h-3.5" /> Some trades could not be refreshed. Saved trade data was preserved.
@@ -2386,7 +2413,7 @@ export default function PortfolioPage() {
                     {group.trades.map(trade => (
                 <div key={trade.id} data-trade-id={trade.id} data-trade-ticker={trade.ticker.trim().toUpperCase()} className="scroll-mt-20 rounded-lg p-3 transition-opacity duration-300 motion-reduce:transition-none" style={{ backgroundColor: highlightedTradeId === trade.id || activeScheduleTicker === trade.ticker.trim().toUpperCase() ? 'var(--accent-bg)' : 'var(--surface)', border: `1px solid ${highlightedTradeId === trade.id ? 'var(--accent)' : 'var(--border)'}`, opacity: activeScheduleTicker && activeScheduleTicker !== trade.ticker.trim().toUpperCase() ? 0.72 : 1 }}>
                   {(() => {
-                    const health = getPositionHealth(trade);
+                    const health = getPositionHealth(trade, markBasis);
                     return (
                       <div className="mb-2">
                         <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold leading-none" title={health.title} style={{ color: health.color, backgroundColor: health.bg, border: `1px solid ${health.border}` }}>{health.label}</span>
@@ -2519,7 +2546,7 @@ export default function PortfolioPage() {
                       const quoteFreshness = getPortfolioQuoteFreshness(trade);
                       const visibleFreshness = quoteFreshness.state === 'stale' || quoteFreshness.state === 'unavailable' ? quoteFreshness.label : null;
                       const redeployBadges = getRedeployBadges(trade, markBasis);
-                      const health = getPositionHealth(trade);
+                      const health = getPositionHealth(trade, markBasis);
                       return (
                         <tr key={trade.id} data-trade-id={trade.id} data-trade-ticker={trade.ticker.trim().toUpperCase()} className="scroll-mt-20 transition-opacity duration-300 motion-reduce:transition-none" style={{ borderBottom: '1px solid var(--border)', backgroundColor: highlightedTradeId === trade.id || activeScheduleTicker === trade.ticker.trim().toUpperCase() ? 'var(--accent-bg)' : index % 2 ? 'var(--row-alt)' : 'transparent', boxShadow: highlightedTradeId === trade.id ? 'inset 3px 0 var(--accent)' : undefined, opacity: activeScheduleTicker && activeScheduleTicker !== trade.ticker.trim().toUpperCase() ? 0.72 : 1 }}>
                           <td className="px-2 py-1 text-left font-mono font-bold whitespace-nowrap">
@@ -2544,7 +2571,7 @@ export default function PortfolioPage() {
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(calculateEquityAtRisk(trade), 0)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">
                             <HoverTooltip content={<CurrentMarkTooltipContent trade={trade} markBasis={markBasis} />} ariaLabel={`${trade.ticker} current mark details`}>
-                              {formatOptionPrice(currentMark)}
+                              {formatOptionPrice(currentMark)}{resolvePortfolioMark(trade, markBasis).source === 'last_fallback' && <span className="block text-[9px]" style={{ color: 'var(--yellow)' }}>Last fallback</span>}
                             </HoverTooltip>
                           </td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(currentValue, 0)}</td>
@@ -2630,7 +2657,7 @@ export default function PortfolioPage() {
             </div>
 
             <div className="mt-3 text-[10px]" style={{ color: 'var(--text-dim)' }}>
-              Resolved entries: {summary.totalClosedTrades} · Current mark-dependent metrics use the selected {markBasis.toUpperCase()} basis and show {DASH} when that mark is unavailable.
+              Resolved entries: {summary.totalClosedTrades} · Current mark-dependent metrics use {markBasis.toUpperCase()}, with exact Last fallback where needed, and show {DASH} when neither price is available.
             </div>
 
             {allArchivedTrades.length > 0 && <ArchiveHistorySection

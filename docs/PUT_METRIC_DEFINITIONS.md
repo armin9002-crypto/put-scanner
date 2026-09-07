@@ -29,7 +29,7 @@ NY and AY use the same denominator on discovery, Portfolio, and History surfaces
 
 - Bid, Ask, and Last are normalized provider values. A valid zero remains zero. Invalid, negative where invalid, or non-finite values are unavailable.
 - Mid is `(bid + ask) / 2` only for valid ordered quotes. It is a reference value, not a fill guarantee.
-- Selected mark is the user-visible Bid, Ask, Last, or Mid basis used for position calculations. Mark basis remains visible.
+- Selected mark is the user-visible Bid, Ask, Last, or Mid basis used for position calculations. Mark basis remains visible. For existing open Portfolio positions only, an unavailable selected mark may use a finite positive exact-contract provider Last, regardless of age. Rejected executable quotes remain rejected; Last fallback is valuation-only and retains original last-trade/observation provenance. Current value, P&L, captured premium, Current NY/AY, and aggregates consume the same canonical mark formulas. Last does not supply current Greeks, liquidity, or execution eligibility. Scanner, Screener, Watchlist, Recommendations, and resolved History semantics are unchanged.
 - Breakeven is `strike - option price` per share.
 - OTM % is `(underlying - strike) / underlying × 100`; positive is OTM for a put. It is not assignment probability.
 - DTE is UTC expiration date minus the UTC current date. Expiration day is 0 DTE; a contract is expired only below 0 DTE.

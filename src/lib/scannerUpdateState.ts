@@ -69,7 +69,7 @@ export function summarizeSnapshotOutcomes(outcomes: ScannerSnapshotUpdateOutcome
 
 export function snapshotProgressLabel(progress: SnapshotUpdateProgress | null): string {
   if (!progress || progress.complete) return 'Update liquidity';
-  return `Updating ${progress.current}/${progress.total}`;
+  return `Updating ${progress.current}/${progress.total} needing refresh`;
 }
 
 export function snapshotIssueLabel(progress: SnapshotUpdateProgress | null): string | null {

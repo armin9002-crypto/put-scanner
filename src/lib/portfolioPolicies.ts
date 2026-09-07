@@ -1,3 +1,4 @@
+import { resolvePortfolioMark } from './portfolioValuation.ts';
 import { isFiniteNumber } from './optionMetrics.ts';
 import {
   getTradeDistanceToBreakeven,
@@ -117,7 +118,7 @@ export function buildCloseCandidates(trades: PortfolioTrade[], basis: MarkBasis,
       const breakevenCushion = getTradeDistanceToBreakeven(trade);
       const reasons: string[] = [];
 
-      if (!quoteEligible) return { trade, percentCaptured, currentAnnualizedYield, remainingPremium, dte, score: 0, reasons, freshness: freshness.state };
+      if (!quoteEligible || resolvePortfolioMark(trade, basis).source === 'last_fallback') return { trade, percentCaptured, currentAnnualizedYield, remainingPremium, dte, score: 0, reasons, freshness: freshness.state };
       if (isFiniteNumber(percentCaptured) && percentCaptured >= PORTFOLIO_CLOSE_POLICY.highCapture) reasons.push('75%+ captured');
       else if (isFiniteNumber(percentCaptured) && percentCaptured >= PORTFOLIO_CLOSE_POLICY.standardCapture) reasons.push('50%+ captured');
       if (isFiniteNumber(percentCaptured)

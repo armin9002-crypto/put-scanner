@@ -1,5 +1,8 @@
+import { normalizeTimestampMs } from './marketDataNormalize.ts';
+import { elapsedMarketSessions } from './portfolioQuoteFreshness.ts';
+import { RejectedOptionChainError } from './optionChainCache.ts';
 import type { PortfolioMarketData, PortfolioTrade } from './portfolioStorage.ts';
-import type { OptionIntegrityReasonCode } from './types.ts';
+import type { OptionContract, OptionsChainData, OptionIntegrityReasonCode } from './types.ts';
 
 export type PortfolioMarketDataUpdateMode = 'merge' | 'replace';
 
@@ -28,7 +31,8 @@ export function retainPortfolioMarketAfterUntrustedRefresh(
     dte?: number | null;
     attemptedAt: string;
     reasonCodes?: OptionIntegrityReasonCode[];
-    kind: 'quote_inconsistent' | 'refresh_failed' | 'unavailable';
+    exactLast?: { price: number; lastTradeDate: number | string | null; observedAt: string };
+    kind: 'quote_inconsistent' | 'refresh_failed' | 'unavailable' | 'no_usable_price';
   },
 ): PortfolioTrade {
   const previous = trade.latestMarketData;
@@ -60,6 +64,24 @@ export function retainPortfolioMarketAfterUntrustedRefresh(
         optionIntegrityReasonCodes: update.reasonCodes,
         latestRefreshAttemptAt: update.attemptedAt,
       };
+  retained.refreshOutcome = update.kind;
+  // Preserve a previously observed exact Last and its original timestamps.
+  const observedLast = update.exactLast ?? (previous?.availabilityStatus !== 'imported_snapshot' && typeof previous?.optionLast === 'number' && Number.isFinite(previous.optionLast) && previous.optionLast > 0
+    ? { price: previous.optionLast, lastTradeDate: previous.lastTradeDate ?? null, observedAt: previous.lastObservedAt ?? previous.refreshedAt } : null);
+  if (trade.status === 'open' && observedLast && Number.isFinite(observedLast.price) && observedLast.price > 0) {
+    // A new rejected quote's historical Last must not relabel prior trusted Bid/Ask.
+    if (!hasTrustedOptionMark || previous?.lastFallbackOnly || update.exactLast) {
+      retained.optionBid = null; retained.optionAsk = null; retained.optionMid = null;
+      retained.iv = null; retained.delta = null; retained.volume = null; retained.openInterest = null;
+      retained.lastFallbackOnly = true;
+      retained.availabilityStatus = 'stale';
+      retained.providerMarketAt = undefined; retained.providerQuoteAt = undefined;
+    }
+    retained.optionLast = observedLast.price;
+    retained.lastTradeDate = observedLast.lastTradeDate;
+    retained.lastObservedAt = observedLast.observedAt;
+    if (retained.lastFallbackOnly) retained.refreshedAt = observedLast.observedAt;
+  }
   return applyTransientPortfolioMarketData(trade, retained, 'replace');
 }
 
@@ -73,7 +95,7 @@ function sameMarketDataTarget(current: PortfolioTrade, requested: PortfolioTrade
 }
 
 function refreshedAt(value: PortfolioTrade): number {
-  const timestamp = Date.parse(value.latestMarketData?.refreshedAt ?? '');
+  const timestamp = Date.parse(value.latestMarketData?.latestRefreshAttemptAt ?? value.latestMarketData?.refreshedAt ?? '');
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
@@ -118,4 +140,46 @@ export function mergePortfolioLifecycleResults(
     if (resolved === inspected) return current;
     return resolved;
   });
+}
+
+/** Require the returned chain identity, plus OCC identity when supplied. */
+export function findExactPortfolioPut(trade: PortfolioTrade, chain: OptionsChainData | null): OptionContract | null {
+  if (!chain || trade.status !== 'open' || trade.optionType !== 'put') return null;
+  const expiration = Date.parse(`${trade.expiration}T00:00:00Z`) / 1000;
+  const meta = chain.chainMeta;
+  if (!meta || meta.ticker.trim().toUpperCase() !== trade.ticker.trim().toUpperCase()
+    || (meta.returnedExpiration ?? meta.expirationDate) !== expiration) return null;
+  const put = chain.puts.find(candidate => Math.abs(candidate.strike - trade.strike) < 0.0001);
+  if (!put) return null;
+  if (put.contractSymbol) {
+    const match = put.contractSymbol.match(/^(.+?)(\d{6})P(\d{8})$/);
+    if (!match || match[1].toUpperCase() !== trade.ticker.trim().toUpperCase()
+      || match[2] !== trade.expiration.replace(/-/g, '').slice(2)
+      || Number(match[3]) / 1000 !== trade.strike) return null;
+  }
+  return put;
+}
+
+export function portfolioExactLast(put: OptionContract | null, observedAt: string) {
+  const price = put?.rawLastPrice ?? put?.last;
+  return typeof price === 'number' && Number.isFinite(price) && price > 0
+    ? { price, lastTradeDate: put?.rawLastTradeDate ?? put?.lastTradeDate ?? null, observedAt } : undefined;
+}
+
+/** Only Portfolio open-position refresh may consume this non-executable evidence. */
+export async function acquirePortfolioValuationChain(acquire: () => Promise<OptionsChainData>): Promise<OptionsChainData> {
+  try { return await acquire(); }
+  catch (error) {
+    if (error instanceof RejectedOptionChainError) return error.chain;
+    throw error;
+  }
+}
+
+/** Preserve recent trusted Last behavior even when no executable Bid/Ask exists. */
+export function requiresPortfolioLastFallback(put: OptionContract, now = new Date()): boolean {
+  if (put.integrity?.status === 'invalid') return true;
+  if ([put.bid, put.ask].some(value => typeof value === 'number' && Number.isFinite(value) && value > 0)) return false;
+  const last = portfolioExactLast(put, now.toISOString());
+  const tradedAt = normalizeTimestampMs(last?.lastTradeDate);
+  return !last || tradedAt == null || elapsedMarketSessions(tradedAt, now) > 1;
 }

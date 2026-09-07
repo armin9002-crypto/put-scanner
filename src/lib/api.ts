@@ -6,7 +6,7 @@ import { cacheScannerOptionChain } from './scannerOptionSnapshot';
 import { peekMarketData, requestMarketData, type DataFreshness, type RefreshMode } from './marketDataRequest';
 import { normalizeFiniteNumber } from './marketDataNormalize';
 import { normalizeOptionChainData } from './yahooOptionAdapter';
-import { getOptionsCacheKey, isValidOptionsChain, OPTIONS_CACHE_SCHEMA_VERSION, OPTIONS_HARD_TTL_MS, OPTIONS_SOFT_TTL_MS, primeOptionsMarketDataCache } from './optionChainCache';
+import { getOptionsCacheKey, isValidOptionsChain, RejectedOptionChainError, OPTIONS_CACHE_SCHEMA_VERSION, OPTIONS_HARD_TTL_MS, OPTIONS_SOFT_TTL_MS, primeOptionsMarketDataCache } from './optionChainCache';
 import { fetchObservedMarketData } from './requestDiagnostics';
 import { mapWithConcurrency } from '../../shared/concurrency.js';
 import { calculatePutDelta } from './putDelta';
@@ -165,7 +165,7 @@ export async function fetchOptions(ticker: string, date?: number, options: Fetch
     const data = await res.json();
     if (data.error) throw new Error(data.error);
 
-    return normalizeOptionChainData(
+    const chain = normalizeOptionChainData(
       data,
       normalizedTicker,
       date,
@@ -173,6 +173,8 @@ export async function fetchOptions(ticker: string, date?: number, options: Fetch
       fresh ? 'fresh' : 'network',
       previousCachedPutCount
     );
+    if (chain.chainMeta?.integrity?.status === 'invalid') throw new RejectedOptionChainError(chain);
+    return chain;
     },
   });
   const normalized = result.meta.source === 'network'

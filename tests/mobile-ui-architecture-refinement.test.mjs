@@ -29,14 +29,17 @@ test('missing executable prices fail dependent yield closed without changing leg
   assert.equal(formatNumber(0), '0');
 });
 
-test('a zero live quote cannot fabricate a Portfolio mark or downstream P&L', () => {
+test('zero Bid uses only legitimate exact Last for Portfolio valuation, never a fabricated zero', () => {
   const trade = {
     id: 'zero-bid', ticker: 'TQQQ', optionType: 'put', strike: 90, expiration: '2027-01-01', contracts: 1,
     soldPrice: 2, soldDate: '2026-08-20', status: 'open', createdAt: '2026-08-20T12:00:00.000Z',
     updatedAt: '2026-08-20T12:00:00.000Z', latestMarketData: { optionBid: 0, optionAsk: 2.2, optionLast: 2.1 },
   };
-  assert.equal(calculateCurrentOptionMark(trade, 'bid'), null);
-  assert.equal(calculateUnrealizedPnl(trade, 'bid'), null);
+  assert.equal(calculateCurrentOptionMark(trade, 'bid'), 2.1);
+  assert.ok(Math.abs(calculateUnrealizedPnl(trade, 'bid') + 10) < 1e-8);
+  const withoutLast = { ...trade, latestMarketData: { ...trade.latestMarketData, optionLast: null } };
+  assert.equal(calculateCurrentOptionMark(withoutLast, 'bid'), null);
+  assert.equal(calculateUnrealizedPnl(withoutLast, 'bid'), null);
   assert.equal(calculateCurrentOptionMark(trade, 'ask'), 2.2);
   assert.equal(calculateCurrentOptionMark(trade, 'last'), 2.1);
 });

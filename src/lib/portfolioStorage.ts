@@ -28,6 +28,10 @@ export interface PortfolioMarketData {
   optionAsk?: number | null;
   optionMid?: number | null;
   optionLast?: number | null;
+  /** Exact historical Last only; never current execution evidence. */
+  lastFallbackOnly?: boolean;
+  lastObservedAt?: string;
+  refreshOutcome?: 'current' | 'quote_inconsistent' | 'refresh_failed' | 'unavailable' | 'no_usable_price';
   lastTradeDate?: string | number | null;
   iv?: number | null;
   delta?: number | null;
@@ -241,6 +245,11 @@ function normalizeMarketData(value: unknown): PortfolioMarketData | undefined {
     if (normalized !== undefined) marketData[field] = normalized;
   });
 
+  if (typeof value.lastFallbackOnly === 'boolean') marketData.lastFallbackOnly = value.lastFallbackOnly;
+  if (['current', 'quote_inconsistent', 'refresh_failed', 'unavailable', 'no_usable_price'].includes(String(value.refreshOutcome))) marketData.refreshOutcome = value.refreshOutcome as PortfolioMarketData['refreshOutcome'];
+  if (['clean', 'degraded', 'invalid'].includes(String(value.optionIntegrityStatus))) marketData.optionIntegrityStatus = value.optionIntegrityStatus as OptionIntegrityStatus;
+  if (Array.isArray(value.optionIntegrityReasonCodes)) marketData.optionIntegrityReasonCodes = value.optionIntegrityReasonCodes.filter((reason): reason is OptionIntegrityReasonCode => typeof reason === 'string').slice(0, 8);
+  if (typeof value.latestRefreshAttemptAt === 'string') marketData.latestRefreshAttemptAt = value.latestRefreshAttemptAt;
   if (typeof value.lastTradeDate === 'string' || typeof value.lastTradeDate === 'number') {
     marketData.lastTradeDate = value.lastTradeDate;
   }
@@ -248,7 +257,7 @@ function normalizeMarketData(value: unknown): PortfolioMarketData | undefined {
     const parsed = new Date(value.refreshedAt);
     if (!Number.isNaN(parsed.getTime())) marketData.refreshedAt = parsed.toISOString();
   }
-  (['providerMarketAt', 'providerQuoteAt', 'cachedAt'] as const).forEach(field => {
+  (['providerMarketAt', 'providerQuoteAt', 'cachedAt', 'lastObservedAt'] as const).forEach(field => {
     const normalized = normalizeMarketTimestampIso(value[field]);
     if (normalized) marketData[field] = normalized;
   });

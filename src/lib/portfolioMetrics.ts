@@ -1,3 +1,4 @@
+import { resolvePortfolioMark } from './portfolioValuation.ts';
 import { calculateAnnualizedYield, calculateDte, calculateNominalYield, isFiniteNumber } from './optionMetrics.ts';
 import type { PortfolioTrade } from './portfolioStorage';
 
@@ -104,17 +105,7 @@ export function calculateOriginalAnnualizedYield(trade: PortfolioTrade): number 
 }
 
 export function calculateCurrentOptionMark(trade: PortfolioTrade, basis: MarkBasis): number | null {
-  const md = trade.latestMarketData;
-  if (!md) return null;
-  if (basis === 'ask') return positive(md.optionAsk);
-  if (basis === 'bid') return positive(md.optionBid);
-  if (basis === 'last') return positive(md.optionLast);
-  const explicitMid = positive(md.optionMid);
-  if (explicitMid != null) return explicitMid;
-  const bid = positive(md.optionBid);
-  const ask = positive(md.optionAsk);
-  if (bid != null && ask != null && ask >= bid) return (bid + ask) / 2;
-  return positive(md.optionLast);
+  return resolvePortfolioMark(trade, basis).value;
 }
 
 export function calculateOriginalNominalYield(trade: PortfolioTrade): number | null {

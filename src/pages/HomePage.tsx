@@ -177,6 +177,8 @@ export default function HomePage() {
   const [expirationDatesLoading, setExpirationDatesLoading] = useState(true);
   const [optionSnapshots, setOptionSnapshots] = useState<Record<string, ScannerOptionSnapshot>>(() => getScannerOptionSnapshots());
   const [snapshotDiagnostics, setSnapshotDiagnostics] = useState<Record<string, ScannerSnapshotDiagnostic>>(() => getScannerSnapshotDiagnostics());
+  const [snapshotIssuesOpen, setSnapshotIssuesOpen] = useState(false);
+  const [snapshotIssueRows, setSnapshotIssueRows] = useState<{ ticker: string; status: string; reason: string }[]>([]);
   const [snapshotProgress, setSnapshotProgress] = useState<SnapshotUpdateProgress | null>(null);
   const snapshotUpdateRunningRef = useRef(false);
   const { expirations: availableExps, availability: expiryAvailability } = expirationState;
@@ -393,13 +395,14 @@ export default function HomePage() {
   const updateVisibleOptionSnapshots = useCallback(async () => {
     if (snapshotUpdateRunningRef.current) return;
     const tickers = [...new Set(filtered.map(etf => etf.ticker.trim().toUpperCase()))]
-      .filter(ticker => isScannerOptionSnapshotStale(optionSnapshots[ticker]));
+      .filter(ticker => isScannerOptionSnapshotStale(optionSnapshots[ticker]) || snapshotDiagnostics[ticker]?.status === 'failed');
     if (tickers.length === 0) {
       setSnapshotProgress({ current: 0, total: 0, updated: 0, expanded: 0, unavailable: 0, failed: 0, complete: true });
       return;
     }
 
     snapshotUpdateRunningRef.current = true;
+    setSnapshotIssueRows([]);
     setSnapshotProgress({ current: 0, total: tickers.length, updated: 0, expanded: 0, unavailable: 0, failed: 0, complete: false });
     const tasks = tickers.map(ticker => async () => {
       try {
@@ -415,10 +418,6 @@ export default function HomePage() {
         });
         if (outcome.snapshot && hasScannerSnapshotData(outcome.snapshot)) {
           cacheScannerOptionSnapshot(outcome.snapshot);
-        }
-        if (outcome.status !== 'updated') {
-          const diagnostic = diagnosticForOutcome(outcome);
-          if (diagnostic) recordScannerSnapshotDiagnostic(ticker, diagnostic.status, diagnostic.reason);
         }
         return outcome;
       } finally {
@@ -438,6 +437,13 @@ export default function HomePage() {
           requestCount: 0,
           requestedExpirations: [],
         } satisfies ScannerSnapshotUpdateOutcome);
+      const issues = outcomes.flatMap((outcome, index) => {
+        const diagnostic = diagnosticForOutcome(outcome);
+        if (!diagnostic) return [];
+        recordScannerSnapshotDiagnostic(tickers[index], diagnostic.status, diagnostic.reason);
+        return [{ ticker: tickers[index], ...diagnostic }];
+      });
+      setSnapshotIssueRows(issues);
       const summary = summarizeSnapshotOutcomes(outcomes);
       setOptionSnapshots(getScannerOptionSnapshots());
       setSnapshotDiagnostics(getScannerSnapshotDiagnostics());
@@ -445,7 +451,7 @@ export default function HomePage() {
     } finally {
       snapshotUpdateRunningRef.current = false;
     }
-  }, [filtered, optionSnapshots, prices]);
+  }, [filtered, optionSnapshots, prices, snapshotDiagnostics]);
 
   const activeControlCount = [
     search.trim().length > 0,
@@ -455,8 +461,9 @@ export default function HomePage() {
     liquidityFilter !== DEFAULT_SCANNER_STATE.liquidity,
     scannerSort !== DEFAULT_SCANNER_STATE.sort,
   ].filter(Boolean).length;
-  const snapshotIssue = snapshotIssueLabel(snapshotProgress);
+  const snapshotIssue = snapshotIssueLabel(snapshotProgress) ?? (snapshotIssueRows.length ? `${snapshotIssueRows.length} issues` : null);
   const snapshotDetails = snapshotProgressDetails(snapshotProgress);
+  const snapshotIssueSurface = snapshotIssuesOpen && <MobileBottomSheet title="Liquidity refresh details" description={`${filtered.length} visible ETFs; only missing or stale snapshots need refresh.`} onClose={() => setSnapshotIssuesOpen(false)}><div className="space-y-3 text-xs">{snapshotIssueRows.map(row => <div key={row.ticker} className="break-words"><strong>{row.ticker}</strong> — {row.status} — {row.reason}</div>)}</div></MobileBottomSheet>;
 
   if (isPhone) {
     const marketItems = [
@@ -550,13 +557,14 @@ export default function HomePage() {
               </fieldset>
               <label className="block"><span className="mobile-sheet-label">Sort</span><select value={scannerSort} onChange={event => setScannerSort(event.target.value as ScannerSort)} className="mobile-control-field w-full">{SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
               <div className="flex items-center gap-2">
-                <button type="button" onClick={() => void updateVisibleOptionSnapshots()} disabled={snapshotUpdateRunningRef.current} className="mobile-sheet-action secondary min-w-0 flex-1">{snapshotProgress && !snapshotProgress.complete ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}{snapshotProgressLabel(snapshotProgress)}</button>
-                <span className="scanner-liquidity-issues flex-none" data-visible={Boolean(snapshotIssue)} aria-hidden={!snapshotIssue} title={snapshotDetails ?? undefined}>{snapshotIssue ?? '0 issues'}</span>
+                <button type="button" onClick={() => void updateVisibleOptionSnapshots()} disabled={snapshotUpdateRunningRef.current} className="mobile-sheet-action secondary min-w-0 flex-1 whitespace-normal">{snapshotProgress && !snapshotProgress.complete ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}{snapshotProgressLabel(snapshotProgress)}</button>
+                <button type="button" onClick={() => { setMobileFiltersOpen(false); setSnapshotIssuesOpen(true); }} className="scanner-liquidity-issues flex-none min-h-11" data-visible={Boolean(snapshotIssue)} aria-hidden={!snapshotIssue} disabled={!snapshotIssue} title={snapshotDetails ?? undefined}>{snapshotIssue ?? '0 issues'}</button>
               </div>
             </div>
           </MobileBottomSheet>
         )}
 
+        {snapshotIssueSurface}
         {chartModal && <ErrorBoundary title="Chart unavailable" message="The chart modal could not render. Close it and try again."><Suspense fallback={null}><InteractivePriceChartModal isOpen ticker={chartModal.ticker} displayTicker={chartModal.displayTicker} onClose={() => setChartModal(null)} /></Suspense></ErrorBoundary>}
       </div>
     );
@@ -580,7 +588,7 @@ export default function HomePage() {
             <div className="scanner-control-plane__utilities">
               <div className="scanner-control-plane__summary">{activeControlCount} active controls</div>
               <button type="button" onClick={() => void updateVisibleOptionSnapshots()} disabled={snapshotUpdateRunningRef.current} className="scanner-control-plane__update inline-flex h-8 flex-none items-center gap-1 rounded-md px-2 text-[10px] font-medium whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-60" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)', color: 'var(--text-muted)' }} title={snapshotDetails ?? 'Update missing or stale IV60 and liquidity snapshots for visible ETFs'}>{snapshotProgress && !snapshotProgress.complete ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}{snapshotProgressLabel(snapshotProgress)}</button>
-              <span className="scanner-liquidity-issues" data-visible={Boolean(snapshotIssue)} aria-hidden={!snapshotIssue} title={snapshotDetails ?? undefined}>{snapshotIssue ?? '0 issues'}</span>
+              <button type="button" onClick={() => setSnapshotIssuesOpen(true)} className="scanner-liquidity-issues" data-visible={Boolean(snapshotIssue)} aria-hidden={!snapshotIssue} disabled={!snapshotIssue} title={snapshotDetails ?? undefined}>{snapshotIssue ?? '0 issues'}</button>
               <button
                 type="button"
                 onClick={resetScannerFilters}
@@ -660,6 +668,7 @@ export default function HomePage() {
         </footer>
       </div>
 
+      {snapshotIssueSurface}
       {chartModal && (
         <ErrorBoundary title="Chart unavailable" message="The chart modal could not render. Close it and try again.">
           <Suspense fallback={null}>

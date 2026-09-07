@@ -24,7 +24,7 @@ test('portrait financial surfaces use compact primary fields and preserve drawer
   assert.match(positionRow, /data-expanded=\{expanded \? 'true' : 'false'\}/);
   assert.match(positionRow, /Gain\/Loss/);
   assert.match(positionRow, /% Captured/);
-  assert.match(portfolio, /const visibleFreshness = freshness\.state === 'stale' \|\| freshness\.state === 'unavailable'/);
+  assert.match(portfolio, /const visibleFreshness = .*'Stale Last' : freshness\.state === 'stale' \|\| freshness\.state === 'unavailable'/);
 });
 
 test('portrait Option Chain uses the real header with a measured sticky offset', async () => {
