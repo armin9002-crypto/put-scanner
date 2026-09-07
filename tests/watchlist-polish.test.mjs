@@ -30,4 +30,3 @@ test('Watchlist keeps all expiration trading day; day after prunes durable item 
   assert.deepEqual(readWatchlist(storage).data.map(row => row.id), [future.id]);
   assert.deepEqual(mergeWatchlistRefreshItems(remaining, [expired, future]).map(row => row.id), [future.id]);
 });
-
