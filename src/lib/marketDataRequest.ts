@@ -7,6 +7,7 @@ export type RequestPriority = 'interactive' | 'user_refresh' | 'background_reuse
 export interface CacheRecord<T> {
   data: T;
   fetchedAt: number;
+  cachedAt?: number;
   softExpiresAt: number;
   hardExpiresAt: number;
   schemaVersion: number;
@@ -19,6 +20,8 @@ export interface MarketDataRequestMeta {
   networkCall: boolean;
   deduped: boolean;
   staleFallbackUsed: boolean;
+  observedAt?: number;
+  cachedAt?: number;
 }
 
 export interface MarketDataRequestResult<T> {
@@ -134,6 +137,7 @@ function writeRecord<T>(options: MarketDataRequestOptions<T>, data: T, fetchedAt
   const record: CacheRecord<T> = {
     data,
     fetchedAt,
+    cachedAt: Date.now(),
     softExpiresAt: fetchedAt + options.softTtlMs,
     hardExpiresAt: fetchedAt + options.hardTtlMs,
     schemaVersion: options.schemaVersion,
@@ -219,6 +223,8 @@ function resultFromRecord<T>(record: CacheRecord<T>, source: 'memory' | 'persist
       networkCall: false,
       deduped,
       staleFallbackUsed: source === 'stale-fallback',
+      observedAt: record.fetchedAt,
+      cachedAt: record.cachedAt,
     },
   };
 }
@@ -308,6 +314,8 @@ export async function requestMarketData<T>(options: MarketDataRequestOptions<T>)
           networkCall: true,
           deduped: false,
           staleFallbackUsed: false,
+          observedAt: record.fetchedAt,
+          cachedAt: record.cachedAt,
         },
       };
     } catch (error) {

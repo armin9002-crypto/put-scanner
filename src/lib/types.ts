@@ -84,6 +84,7 @@ export interface OptionChainMeta {
   source: OptionChainSource;
   freshness?: 'fresh' | 'stale' | 'expired';
   staleFallbackUsed?: boolean;
+  retentionReason?: string | null;
   fresh?: boolean;
   cacheKey?: string;
   putCount: number;

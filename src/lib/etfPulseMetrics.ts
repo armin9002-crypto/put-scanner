@@ -57,6 +57,11 @@ export interface EtfPulseRow {
   isOversold: boolean;
   isOverbought: boolean;
   error?: string;
+  /** Optional transient authority fields used by Recommendations; row math is unchanged. */
+  evidenceFreshness?: 'current' | 'cached-current' | 'retained-stale' | 'unavailable';
+  observedAt?: number | null;
+  evidenceSource?: string;
+  retentionReason?: string | null;
 }
 
 function finite(value: unknown): number | null {

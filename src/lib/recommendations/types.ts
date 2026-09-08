@@ -88,6 +88,9 @@ export interface RecommendationCoverage {
   pulse: {
     requested: number;
     loaded: number;
+    current?: number;
+    retained?: number;
+    unavailable?: number;
     failed: number;
     stale: boolean;
   };

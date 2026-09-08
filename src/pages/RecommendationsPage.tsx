@@ -112,7 +112,7 @@ function delta(value: number | null): string {
 }
 
 function statusLabel(progress: RecommendationRefreshProgress): string {
-  if (progress.stage === 'UNDERLYINGS') return `Analyzing underlyings ${progress.completed}/${progress.total}`;
+  if (progress.stage === 'UNDERLYINGS') return progress.indeterminate ? 'Analyzing underlyings…' : `Analyzing underlyings ${progress.completed}/${progress.total}`;
   if (progress.stage === 'CONTRACTS') return `Acquiring contracts ${progress.completed}/${progress.total}`;
   return 'Applying deterministic policy';
 }
@@ -227,7 +227,7 @@ function DecisionTrace({ run }: { run: RecommendationRun }) {
           <strong>Coverage</strong>
           <span>{run.coverage.successfullyAnalyzedUnderlyings.length}/{run.coverage.requestedForOptionScan.length} option underlyings analyzed</span>
           <span>{run.coverage.failedBatches.length} failed batches · {run.coverage.failedUnderlyings.length} failed underlyings</span>
-          <span>{run.coverage.pulse.loaded}/{run.coverage.pulse.requested} Pulse rows loaded{run.coverage.pulse.stale ? ' · stale evidence present' : ''}</span>
+          <span>Pulse rows: {run.coverage.pulse.current ?? run.coverage.pulse.loaded} current · {run.coverage.pulse.retained ?? 0} retained · {run.coverage.pulse.unavailable ?? run.coverage.pulse.failed} unavailable of {run.coverage.pulse.requested}{run.coverage.pulse.stale ? ' · non-current evidence present' : ''}</span>
         </div>
         <div className="recommendations-decision-trace__rejections">
           <strong>Top rejection reasons</strong>
@@ -406,7 +406,7 @@ export default function RecommendationsPage() {
         <PageHeader
           title="Recommendations"
           description="A deterministic, skeptical market assessment that is comfortable returning no trade."
-          meta={run ? <div className="recommendations-header-meta"><span>Updated {formatDateTime(Date.parse(run.asOf))}</span><span>{run.coverage.trackedUnderlyings.length} tracked → {run.coverage.requestedForOptionScan.length} qualified → {run.coverage.contractsEvaluated.toLocaleString()} contracts → {surfaced.length} surfaced</span></div> : <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>No market scan runs on page load.</span>}
+          meta={run ? <div className="recommendations-header-meta"><span>Evaluated / started {formatDateTime(Date.parse(run.asOf))}</span><span>{run.coverage.trackedUnderlyings.length} tracked → {run.coverage.requestedForOptionScan.length} qualified → {run.coverage.contractsEvaluated.toLocaleString()} contracts → {surfaced.length} surfaced</span></div> : <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>No market scan runs on page load.</span>}
           actions={<div className="recommendations-header-actions"><button type="button" className="button-secondary recommendations-methodology-trigger" onClick={() => setShowMethodology(true)} disabled={!run}><Info className="h-4 w-4" />Methodology</button><label className="recommendations-dte-toggle"><input type="checkbox" checked={onlyEvaluateAtLeast60Dte} onChange={event => updateMinimumDtePreference(event.target.checked)} /><span>Only evaluate options ≥60 DTE</span></label><button type="button" className="button-primary" onClick={() => void handleRefresh()} disabled={loading}>{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}{loading ? statusLabel(progress) : 'Refresh Recommendations'}</button>{loading && <button type="button" className="button-secondary" onClick={handleCancel}>Cancel</button>}</div>}
         />
 

@@ -3,6 +3,7 @@ import type { ExpirationDate, OptionChainSource, OptionContract, OptionsChainDat
 import { normalizeMarketTimestamp } from './marketTimestamp.ts';
 import { assessPutOptionSurface, parseYahooOptionSymbol } from './optionMarketIntegrity.ts';
 import { calculateDte } from './optionMetrics.ts';
+import type { DataFreshness } from './marketDataRequest.ts';
 
 export { parseYahooOptionSymbol } from './optionMarketIntegrity.ts';
 
@@ -31,6 +32,14 @@ export interface YahooOptionContract {
   impliedVolatility?: number | null;
   volume?: number | null;
   openInterest?: number | null;
+}
+
+export interface OptionChainProvenanceOverride {
+  observedAt?: number;
+  cachedAt?: number | null;
+  freshness?: DataFreshness;
+  staleFallbackUsed?: boolean;
+  retentionReason?: string | null;
 }
 
 function formatExpirationLabel(timestamp: number, currentUtcYear: number): string {
@@ -115,17 +124,18 @@ function validateYahooPutContract(contract: YahooOptionContract, requestedExpira
   return warnings;
 }
 
-export function normalizeOptionChainData(data: unknown, ticker: string, date: number | undefined, cacheKey: string, source: OptionChainSource, previousCachedPutCount: number | null): OptionsChainData {
+export function normalizeOptionChainData(data: unknown, ticker: string, date: number | undefined, cacheKey: string, source: OptionChainSource, previousCachedPutCount: number | null, provenance: OptionChainProvenanceOverride = {}): OptionsChainData {
   const result = (data as { optionChain?: { result?: unknown[] } })?.optionChain?.result?.[0] as {
     quote?: { regularMarketPrice?: number | null; regularMarketTime?: number | null; longName?: string | null; shortName?: string | null; quoteType?: string | null };
     expirationDates?: number[];
     options?: Array<{ puts?: YahooOptionContract[]; calls?: YahooOptionContract[]; expirationDate?: number }>;
   } | undefined;
-  const fetchedAt = Date.now();
+  const fetchedAt = provenance.observedAt ?? Date.now();
+  const freshness = provenance.freshness ?? (source === 'stale' ? 'stale' : 'fresh');
   if (!result) return {
     expirations: [], puts: [], currentPrice: 0,
     instrument: { name: null, quoteType: null },
-    chainMeta: { ticker, requestedExpiration: date ?? null, returnedExpiration: null, expirationDate: null, fetchedAt, providerMarketTime: null, timestampSource: 'observed_at', source, fresh: source === 'fresh', cacheKey, putCount: 0, callCount: 0, putStrikeMin: null, putStrikeMax: null, callStrikeMin: null, callStrikeMax: null, yahooExpirationDatesCount: 0, previousCachedPutCount },
+    chainMeta: { ticker, requestedExpiration: date ?? null, returnedExpiration: null, expirationDate: null, fetchedAt, providerMarketTime: null, cachedAt: provenance.cachedAt ?? null, timestampSource: 'observed_at', source, freshness, staleFallbackUsed: provenance.staleFallbackUsed ?? source === 'stale', fresh: source === 'fresh', cacheKey, putCount: 0, callCount: 0, putStrikeMin: null, putStrikeMax: null, callStrikeMin: null, callStrikeMax: null, yahooExpirationDatesCount: 0, previousCachedPutCount, validationWarnings: provenance.retentionReason ? [provenance.retentionReason] : [] },
   };
 
   const currentPrice = normalizePositiveNumber(result.quote?.regularMarketPrice) ?? 0;
@@ -164,6 +174,6 @@ export function normalizeOptionChainData(data: unknown, ticker: string, date: nu
       name: result.quote?.longName?.trim() || result.quote?.shortName?.trim() || null,
       quoteType: result.quote?.quoteType?.trim().toUpperCase() || null,
     },
-    chainMeta: { ticker, requestedExpiration, returnedExpiration: chainExpiration, expirationDate: chainExpiration, fetchedAt, providerMarketTime: normalizeProviderMarketTime(result.quote?.regularMarketTime), timestampSource: normalizeProviderMarketTime(result.quote?.regularMarketTime) != null ? 'provider_market_time' : 'observed_at', source, fresh: source === 'fresh', cacheKey, putCount: puts.length, callCount: callsRaw.length, putStrikeMin: putRange.min, putStrikeMax: putRange.max, callStrikeMin: callRange.min, callStrikeMax: callRange.max, yahooExpirationDatesCount: expirationDates.length, previousCachedPutCount, validationWarnings, integrity: assessed.integrity },
+    chainMeta: { ticker, requestedExpiration, returnedExpiration: chainExpiration, expirationDate: chainExpiration, fetchedAt, providerMarketTime: normalizeProviderMarketTime(result.quote?.regularMarketTime), cachedAt: provenance.cachedAt ?? null, timestampSource: normalizeProviderMarketTime(result.quote?.regularMarketTime) != null ? 'provider_market_time' : 'observed_at', source, freshness, staleFallbackUsed: provenance.staleFallbackUsed ?? source === 'stale', retentionReason: provenance.retentionReason ?? null, fresh: source === 'fresh', cacheKey, putCount: puts.length, callCount: callsRaw.length, putStrikeMin: putRange.min, putStrikeMax: putRange.max, callStrikeMin: callRange.min, callStrikeMax: callRange.max, yahooExpirationDatesCount: expirationDates.length, previousCachedPutCount, validationWarnings, integrity: assessed.integrity },
   };
 }

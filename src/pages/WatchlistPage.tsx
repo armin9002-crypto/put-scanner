@@ -11,7 +11,7 @@ import {
   type WatchlistSnapshot,
   type WatchlistStatus,
 } from '../lib/watchlist';
-import { fetchOptions, fetchBatchPrices } from '../lib/api';
+import { fetchOptions, fetchBatchPricesResult } from '../lib/api';
 import type { OptionsChainData } from '../lib/types';
 import { calculateDte, calculateMoneyness, calculateVolumeOpenInterestRatio, calculateYieldPercent, isFiniteNumber, sanitizePositive } from '../lib/optionMetrics';
 import { formatDate as formatDisplayDate, formatOptionLastTradeDate, formatOptionPrice, formatPercentPoints } from '../lib/format';
@@ -26,6 +26,7 @@ import { resolvePutDelta } from '../lib/putDelta';
 import { buildWatchlistGroups, type WatchlistGroupMode, type WatchlistSortOverride, type WatchlistGroupableRow } from '../lib/watchlistPresentation';
 import { PageHeader } from '../components/ui/PageHeader';
 import { isOptionContractIntegrityInvalid } from '../lib/optionMarketIntegrity';
+import { evidenceFreshnessFromChainMeta } from '../lib/evidence';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 
@@ -53,6 +54,8 @@ interface LiveRow extends WatchlistItem {
   annYieldLast: number | null;
   status: WatchlistStatus;
   statusLabel: string;
+  evidenceFreshness?: 'current' | 'cached-current' | 'retained-stale' | 'unavailable';
+  observedAt?: number | null;
 }
 
 type SortField = 'ticker' | 'strike' | 'expiry' | 'dte' | 'moneyness' | 'bid' | 'ask' | 'last' | 'lastTradeDate' | 'delta' | 'iv' | 'nomYieldBid' | 'annYieldBid' | 'nomYieldAsk' | 'annYieldAsk' | 'nomYieldLast' | 'annYieldLast' | 'added';
@@ -159,6 +162,8 @@ function buildRow(item: WatchlistItem): LiveRow {
     annYieldLast: lastYield.annualized,
     status,
     statusLabel: statusLabel(status, expired),
+    evidenceFreshness: snapshot.evidenceFreshness,
+    observedAt: snapshot.observedAt ?? item.updatedAt ?? null,
   };
 }
 
@@ -196,7 +201,7 @@ function mergeLiveItem(item: WatchlistItem, optData: OptionsChainData | null, cu
   }
 
   if (failed || !optData) {
-    return { ...item, status: 'refresh_failed', updatedAt: item.updatedAt };
+    return { ...item, status: 'refresh_failed', updatedAt: item.updatedAt, snapshot: { ...item.snapshot, evidenceFreshness: 'retained-stale', evidenceSource: 'snapshot', observedAt: item.snapshot?.observedAt ?? item.updatedAt ?? null, retentionReason: 'Refresh failed; the prior trusted quote was retained.' } };
   }
 
   const put = optData.puts.find(candidate => Math.abs(candidate.strike - item.strike) < 0.01);
@@ -211,6 +216,10 @@ function mergeLiveItem(item: WatchlistItem, optData: OptionsChainData | null, cu
         ...item.snapshot,
         underlyingPrice,
         dte,
+        evidenceFreshness: 'retained-stale',
+        evidenceSource: 'snapshot',
+        observedAt: item.snapshot?.observedAt ?? item.updatedAt ?? null,
+        retentionReason: 'The exact contract was absent from the new chain; the prior quote was retained.',
       },
     };
   }
@@ -231,11 +240,14 @@ function mergeLiveItem(item: WatchlistItem, optData: OptionsChainData | null, cu
   const bidYield = calculateYieldPercent(executableOptionPrice(put.bid), item.strike, dte);
   const askYield = calculateYieldPercent(executableOptionPrice(put.ask), item.strike, dte);
   const moneyness = calculateMoneyness(underlyingPrice, item.strike);
+  const evidenceFreshness = evidenceFreshnessFromChainMeta(optData.chainMeta);
+  const retained = evidenceFreshness === 'retained-stale';
+  const observedAt = optData.chainMeta?.fetchedAt ?? item.snapshot?.observedAt ?? item.updatedAt ?? null;
 
   return {
     ...item,
-    status: 'live',
-    updatedAt: Date.now(),
+    status: retained ? 'stale' : 'live',
+    updatedAt: observedAt ?? item.updatedAt,
     snapshot: {
       underlyingPrice,
       bid: put.bid,
@@ -254,6 +266,11 @@ function mergeLiveItem(item: WatchlistItem, optData: OptionsChainData | null, cu
       moneynessLabel: moneyness.label,
       integrityStatus: put.integrity?.status ?? 'clean',
       integrityReasonCodes: put.integrity?.reasonCodes ?? [],
+      observedAt,
+      providerMarketTime: optData.chainMeta?.providerMarketTime ?? null,
+      evidenceFreshness,
+      evidenceSource: optData.chainMeta?.source ?? 'unknown',
+      retentionReason: retained ? 'Refresh returned stale fallback; the prior trusted quote remains visible.' : null,
     },
   };
 }
@@ -280,8 +297,7 @@ export default function WatchlistPage() {
   useEffect(() => {
     const stored = pruneExpiredWatchlist();
     setItems(stored);
-    const lastUpdated = Math.max(...stored.map(item => item.updatedAt ?? 0));
-    if (lastUpdated > 0) setLastRefreshed(new Date(lastUpdated));
+    setLastRefreshed(null);
   }, []);
 
   useEffect(() => {
@@ -311,7 +327,7 @@ export default function WatchlistPage() {
     try {
       const uniqueTickers = [...new Set(currentItems.map(item => item.ticker))];
       const refreshMode = explicit ? 'revalidate' : 'cache-first';
-      const batchResult = await fetchBatchPrices(uniqueTickers, { mode: refreshMode, signal: controller.signal }).catch(error => {
+      const batchResult = await fetchBatchPricesResult(uniqueTickers, { mode: refreshMode, signal: controller.signal }).catch(error => {
         if ((error as { name?: unknown })?.name === 'AbortError') throw error;
         return null;
       });
@@ -332,14 +348,14 @@ export default function WatchlistPage() {
         }),
       });
       const optionsByKey = acquired.byKey;
-      let partialFailure = batchResult == null;
+      let partialFailure = batchResult == null || batchResult?.staleFallbackUsed === true;
 
       const refreshed = currentItems.map(item => {
         const key = canonicalOptionChainKey(item.ticker, item.expiryTimestamp);
         const hasRequest = optionsByKey.has(key);
         const optData = optionsByKey.get(key) ?? null;
         if (hasRequest && (optData == null || optData.chainMeta?.staleFallbackUsed === true)) partialFailure = true;
-        const price = batchResult?.[item.ticker]?.price ?? optData?.currentPrice ?? null;
+        const price = batchResult?.data[item.ticker]?.price ?? optData?.currentPrice ?? null;
         const merged = mergeLiveItem(item, optData, price, hasRequest && (optData == null || optData.chainMeta?.staleFallbackUsed === true));
         if (merged.status === 'quote_inconsistent') partialFailure = true;
         return merged;
@@ -462,7 +478,7 @@ export default function WatchlistPage() {
     return (
       <div className="mobile-route-page watchlist-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
         <div className="flex min-h-[52px] items-center gap-2 border-b px-3.5" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
-          <div className="mr-auto min-w-0"><div className="truncate text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{items.length} saved {items.length === 1 ? 'contract' : 'contracts'}</div><div className="truncate text-[10px]" style={{ color: 'var(--text-dim)' }}>{lastRefreshed ? `Updated ${lastRefreshed.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Saved snapshots'}</div></div>
+          <div className="mr-auto min-w-0"><div className="truncate text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{items.length} saved {items.length === 1 ? 'contract' : 'contracts'}</div><div className="truncate text-[10px]" style={{ color: 'var(--text-dim)' }}>{lastRefreshed ? `Refresh completed ${lastRefreshed.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Saved snapshots'}</div></div>
           <select value={sortField} onChange={event => handleSortSelection(event.target.value as SortField)} className="min-h-11 min-w-0 max-w-[112px] flex-none rounded-lg px-2 text-[12px] outline-none" aria-label="Sort watchlist" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}><option value="dte">DTE</option><option value="ticker">Ticker</option><option value="annYieldBid">AY Bid</option><option value="lastTradeDate">Last Trade</option><option value="strike">Strike</option><option value="delta">Delta</option><option value="iv">IV</option><option value="added">Added</option></select>
           <button type="button" onClick={toggleSortDirection} className="pressable flex h-11 w-11 flex-none items-center justify-center rounded-lg text-sm font-semibold" aria-label={`Sort ${sortDir === 'asc' ? 'descending' : 'ascending'}`} style={{ color: 'var(--accent-light)' }}>{sortDir === 'asc' ? '↑' : '↓'}</button>
           <button type="button" onClick={() => void handleRefresh(true)} disabled={loading || items.length === 0} className="pressable flex h-11 w-11 items-center justify-center rounded-lg disabled:opacity-40" aria-label="Refresh watchlist" style={{ color: 'var(--accent-light)' }}>{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}</button>

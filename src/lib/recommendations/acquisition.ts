@@ -21,6 +21,7 @@ export interface RecommendationRefreshProgress {
   completed: number;
   total: number;
   ticker?: string;
+  indeterminate?: boolean;
 }
 
 export interface RecommendationRefreshResult {
@@ -126,7 +127,17 @@ function unavailablePulseRow(ticker: string): EtfPulseRow {
 
 function canonicalUnderlyingRows(result: EtfPulseLoadResult): EtfPulseRow[] {
   const byTicker = new Map(result.rows.map(row => [row.ticker, row]));
-  return [...SCREENER_TICKERS].sort().map(ticker => byTicker.get(ticker) ?? unavailablePulseRow(ticker));
+  return [...SCREENER_TICKERS].sort().map(ticker => {
+    const row = byTicker.get(ticker) ?? unavailablePulseRow(ticker);
+    const evidence = result.rowEvidence?.[ticker];
+    return evidence ? {
+      ...row,
+      evidenceFreshness: evidence.freshness,
+      observedAt: evidence.observedAt,
+      evidenceSource: evidence.source,
+      retentionReason: evidence.retentionReason ?? null,
+    } : row;
+  });
 }
 
 function chainSnapshots(scan: ScreenerScanResult): RecommendationChainSnapshot[] {
@@ -152,7 +163,7 @@ export async function refreshRecommendations(options: {
   const universe = recommendationUniverse(options.onlyEvaluateAtLeast60Dte ?? true);
   const pulseResult = await dependencies.loadPulse({
     signal: options.signal,
-    onProgress: progress => options.onProgress?.({ stage: 'UNDERLYINGS', completed: progress.loaded, total: progress.total, ticker: progress.ticker }),
+    onProgress: progress => options.onProgress?.({ stage: 'UNDERLYINGS', completed: 0, total: 0, ticker: progress.ticker, indeterminate: true }),
   });
   if (options.signal?.aborted) throw options.signal.reason ?? new DOMException('Operation aborted', 'AbortError');
   const underlyings = canonicalUnderlyingRows(pulseResult);
@@ -227,6 +238,9 @@ export async function refreshRecommendations(options: {
       pulse: {
         requested: pulseResult.total,
         loaded: pulseResult.loaded,
+        current: pulseResult.currentRows ?? pulseResult.loaded,
+        retained: pulseResult.retainedRows ?? 0,
+        unavailable: pulseResult.unavailableRows ?? pulseResult.failed,
         failed: pulseResult.failed,
         stale: pulseResult.stale === true,
       },

@@ -1,7 +1,7 @@
 import type { OptionsChainData } from './types';
 import { threeLayerCache, BATCH_PRICE_KEY, SPARKLINE_MEM_TTL, SPARKLINE_LS_TTL, EXTENDED_PRICE_MEM_TTL, EXTENDED_PRICE_LS_TTL } from './cache';
 import type { BatchPriceData } from './cache';
-import { cachedRequest, makeCacheKey } from './dataCache';
+import { cachedRequest, cachedRequestResult, makeCacheKey } from './dataCache';
 import { cacheScannerOptionChain } from './scannerOptionSnapshot';
 import { peekMarketData, requestMarketData, type DataFreshness, type RefreshMode } from './marketDataRequest';
 import { normalizeFiniteNumber } from './marketDataNormalize';
@@ -90,8 +90,12 @@ export function primeOptionsChainCache(ticker: string, date: number | undefined,
   return primed;
 }
 
-function withCacheSource(data: OptionsChainData, cacheKey: string, stale = false, staleFallbackUsed = false): OptionsChainData {
-  const fetchedAt = data.chainMeta?.fetchedAt ?? Date.now();
+function withRequestProvenance(data: OptionsChainData, cacheKey: string, meta: { source: string; fetchedAt: number; cachedAt?: number; staleFallbackUsed: boolean }): OptionsChainData {
+  const retained = meta.staleFallbackUsed || meta.source === 'stale-fallback';
+  const fetchedAt = retained
+    ? data.chainMeta?.fetchedAt ?? meta.fetchedAt
+    : meta.source === 'network' ? meta.fetchedAt : data.chainMeta?.fetchedAt ?? meta.fetchedAt;
+  const source = retained ? 'stale' : meta.source === 'network' ? data.chainMeta?.source === 'fresh' ? 'fresh' : 'network' : 'cache';
   return {
     ...data,
     chainMeta: {
@@ -102,12 +106,13 @@ function withCacheSource(data: OptionsChainData, cacheKey: string, stale = false
       fetchedAt,
       providerMarketTime: data.chainMeta?.providerMarketTime ?? null,
       // Cache reads preserve the original storage/observation time; read time must not refresh the quote.
-      cachedAt: data.chainMeta?.cachedAt ?? fetchedAt,
+      cachedAt: meta.cachedAt ?? data.chainMeta?.cachedAt ?? null,
       timestampSource: data.chainMeta?.timestampSource,
-      source: stale ? 'stale' : 'cache',
-      freshness: stale ? 'stale' : 'fresh',
-      staleFallbackUsed,
-      fresh: false,
+      source,
+      freshness: retained ? 'stale' : 'fresh',
+      staleFallbackUsed: retained,
+      retentionReason: retained ? 'Refresh failed; the last usable chain was retained.' : null,
+      fresh: source === 'fresh',
       cacheKey: data.chainMeta?.cacheKey ?? cacheKey,
       putCount: data.puts.length,
       callCount: data.chainMeta?.callCount,
@@ -177,9 +182,7 @@ export async function fetchOptions(ticker: string, date?: number, options: Fetch
     return chain;
     },
   });
-  const normalized = result.meta.source === 'network'
-    ? result.data
-    : withCacheSource(result.data, cacheKey, result.meta.freshness === 'stale' || result.meta.staleFallbackUsed, result.meta.staleFallbackUsed);
+  const normalized = withRequestProvenance(result.data, cacheKey, result.meta);
   cacheScannerOptionChain(normalizedTicker, normalized);
   return normalized;
 }
@@ -354,7 +357,7 @@ export async function fetchTickerDetail(
 ): Promise<TickerDetailData> {
   const normalizedTicker = ticker.trim().toUpperCase();
   const cacheKey = makeCacheKey(['ticker-detail-v1', normalizedTicker, date]);
-  const data = await cachedRequest(
+  const detailResult = await cachedRequestResult(
     cacheKey,
     5 * 60 * 1000,
     async signal => {
@@ -402,6 +405,10 @@ export async function fetchTickerDetail(
       diagnosticsSource: 'fetchTickerDetail',
     },
   );
+  const data = {
+    ...detailResult.data,
+    options: withRequestProvenance(detailResult.data.options, getOptionsCacheKey(normalizedTicker, date), detailResult.meta),
+  };
   primeOptionsChainCache(normalizedTicker, date, data.options);
   return data;
 }

@@ -520,7 +520,7 @@ export default function EtfPulsePage() {
     const requestGeneration = ++requestGenerationRef.current;
     setLoading(true);
     setError('');
-    setProgress({ loaded: 0, total: getEtfPulseUniverse().length });
+    setProgress({ loaded: 0, total: getEtfPulseUniverse().length, phase: 'acquiring' });
     try {
       const next = await buildEtfPulseRows({
         forceRefresh,
@@ -531,7 +531,7 @@ export default function EtfPulsePage() {
       });
       if (requestGeneration !== requestGenerationRef.current) return;
       setResult(next);
-      setProgress({ loaded: next.loaded + next.failed, total: next.total });
+      setProgress({ loaded: next.currentRows ?? next.loaded, total: next.total, phase: 'processing' });
     } catch (err) {
       if (requestGeneration !== requestGenerationRef.current) return;
       if ((err as { name?: unknown })?.name === 'AbortError') return;
@@ -584,7 +584,6 @@ export default function EtfPulsePage() {
       return (aValue - bValue) * direction;
     });
   }, [leverageFilter, rows, search, sort, trendFilter, typeFilter]);
-  const pulseProgressPct = progress.total > 0 ? Math.round((progress.loaded / progress.total) * 100) : 0;
   const pulseFilterCount = [search.trim() !== '', leverageFilter !== 'All', typeFilter !== 'All', trendFilter !== 'All'].filter(Boolean).length;
   const sortLabel = sort.field === 'ticker' ? 'Ticker' : sort.field === 'oneDay' ? '1D return' : sort.field === 'thirtyDay' ? '30D return' : sort.field === 'threeMonth' ? '3M return' : sort.field === 'rsi14' ? 'RSI' : sort.field === 'realizedVolatility20' ? '20D volatility' : sort.field === 'drawdown52Week' ? '52W drawdown' : 'Trend';
   const selectedPerformanceColumn = ({ '1D': 'oneDay', '5D': 'fiveDay', '30D': 'thirtyDay', '3M': 'threeMonth', '6M': 'sixMonth', YTD: 'yearToDate', '1Y': 'oneYear' } as const)[selectedVisualPeriod];
@@ -783,7 +782,7 @@ export default function EtfPulsePage() {
       <div className="mobile-route-page pulse-mobile-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
         <section className="pulse-mobile-read border-b px-3.5 py-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
           <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: 'var(--text-dim)' }}>Market Read</div>
-          {regime && posture ? <><div className="flex flex-wrap items-center gap-1.5"><MarketBadge label={regime.label} /><MarketBadge label={posture.label} tone="posture" /><MarketBadge label={`${regime.confidence} confidence`} tone="confidence" /></div><p className="mt-2 line-clamp-2 text-[12px] leading-5" style={{ color: 'var(--text-secondary)' }}>{regime.marketRead}</p><button type="button" onClick={() => setShowMarketRead(true)} className="pressable mt-1 inline-flex min-h-11 items-center text-[12px] font-semibold" style={{ color: 'var(--accent-light)' }}>Details</button></> : <div className="flex min-h-[64px] items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>{loading ? <><Loader2 className="h-4 w-4 animate-spin" /> Reading market {progress.loaded}/{progress.total}</> : 'Market Read unavailable'}</div>}
+          {regime && posture ? <><div className="flex flex-wrap items-center gap-1.5"><MarketBadge label={regime.label} /><MarketBadge label={posture.label} tone="posture" /><MarketBadge label={`${regime.confidence} confidence`} tone="confidence" /></div><p className="mt-2 line-clamp-2 text-[12px] leading-5" style={{ color: 'var(--text-secondary)' }}>{regime.marketRead}</p><button type="button" onClick={() => setShowMarketRead(true)} className="pressable mt-1 inline-flex min-h-11 items-center text-[12px] font-semibold" style={{ color: 'var(--accent-light)' }}>Details</button></> : <div className="flex min-h-[64px] items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>{loading ? <><Loader2 className="h-4 w-4 animate-spin" /> Acquiring aggregate market data…</> : 'Market Read unavailable'}</div>}
         </section>
 
         <div className="pulse-mobile-controls border-b px-3.5 py-2.5" style={{ borderColor: 'var(--border)' }}>
@@ -819,7 +818,7 @@ export default function EtfPulsePage() {
               <MarketReadStrip regime={regime} posture={posture} unavailable={rows.length === 0} onOpen={() => setShowMarketRead(true)} />
             </div>
             <div className="flex flex-wrap items-center gap-1.5 xl:justify-end xl:flex-shrink-0">
-              <DataFreshness updatedAt={result?.lastSuccessfulAt ?? result?.fetchedAt} status={loading ? 'updating' : error || result?.stale ? 'failed' : result ? 'cached' : 'stale'} label="ETF Pulse" />
+              <DataFreshness updatedAt={result?.lastSuccessfulAt ?? result?.fetchedAt} status={loading ? 'updating' : error || result?.stale ? 'failed' : result ? 'cached' : 'stale'} evidenceFreshness={result?.retainedRows ? 'retained-stale' : result ? 'cached-current' : 'unavailable'} label="ETF Pulse" />
               <button
                 type="button"
                 onClick={() => void loadRows(true)}
@@ -837,9 +836,9 @@ export default function EtfPulsePage() {
               <AlertTriangle className="w-3.5 h-3.5" /> {error}
             </div>
           )}
-          {result && result.failed > 0 && (
+          {result && ((result.retainedRows ?? 0) > 0 || (result.unavailableRows ?? result.failed) > 0 || result.errors.length > 0) && (
             <div className="flex items-center gap-2 rounded-lg px-3 py-2 mb-2 text-xs" style={{ backgroundColor: 'rgba(250,204,21,0.10)', color: 'var(--yellow)', border: '1px solid rgba(250,204,21,0.22)' }}>
-              <AlertTriangle className="w-3.5 h-3.5" /> Loaded {result.loaded} of {result.total} ETFs. {result.failed} failed.
+              <AlertTriangle className="w-3.5 h-3.5" /> Current {result.currentRows ?? result.loaded} Â· retained {result.retainedRows ?? 0} Â· unavailable {result.unavailableRows ?? result.failed} of {result.total} ETFs.
             </div>
           )}
           <div className="pulse-filter-surface rounded-lg p-1.5" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
@@ -864,9 +863,9 @@ export default function EtfPulsePage() {
 
         <div className="pulse-control-rail">
           <div className="pulse-period-control"><span className="pulse-control-label">Performance window</span><VisualPeriodSelector value={selectedVisualPeriod} onChange={setSelectedVisualPeriod} /></div>
-          <div className="pulse-result-context"><span className="pulse-control-label">Universe</span><strong>{loading ? `${progress.loaded}/${progress.total}` : `${filteredRows.length} ETFs`}</strong><span className="pulse-sort-context">Sort: <b>{sortLabel}</b> · {sort.direction === 'asc' ? 'ascending' : 'descending'}</span>{pulseFilterCount > 0 && <span className="status-badge" data-status="updating">{pulseFilterCount} filter{pulseFilterCount === 1 ? '' : 's'} active</span>}</div>
+          <div className="pulse-result-context"><span className="pulse-control-label">Universe</span><strong>{loading ? progress.phase === 'processing' ? 'Processing dataset' : 'Acquiring dataset…' : `${filteredRows.length} ETFs`}</strong><span className="pulse-sort-context">Sort: <b>{sortLabel}</b> · {sort.direction === 'asc' ? 'ascending' : 'descending'}</span>{pulseFilterCount > 0 && <span className="status-badge" data-status="updating">{pulseFilterCount} filter{pulseFilterCount === 1 ? '' : 's'} active</span>}</div>
         </div>
-        {loading && <div className="pulse-progress"><div className="flex items-center justify-between text-[10px]" style={{ color: 'var(--text-muted)' }}><span>Refreshing daily histories</span><span className="font-mono">{pulseProgressPct}%</span></div><div className="mt-1 h-1 overflow-hidden rounded-full" style={{ backgroundColor: 'var(--border)' }}><div className="h-full rounded-full transition-[width] duration-300" style={{ width: `${pulseProgressPct}%`, backgroundColor: 'var(--accent)' }} /></div></div>}
+        {loading && <div className="pulse-progress text-[10px]" role="status" style={{ color: 'var(--text-muted)' }}>{progress.phase === 'processing' ? 'Processing returned ETF rows' : 'Acquiring aggregate ETF histories'}</div>}
 
         <div className="etf-pulse-content min-w-0">
           <div className="mb-2 grid grid-cols-[1fr_auto] gap-2 md:hidden">
@@ -878,7 +877,7 @@ export default function EtfPulsePage() {
 
           <div className="space-y-2 md:hidden">
             {loading && rows.length === 0 ? (
-              <div className="rounded-xl px-4 py-12 text-center text-sm" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Loading {progress.loaded} / {progress.total} ETFs...</div>
+              <div className="rounded-xl px-4 py-12 text-center text-sm" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Acquiring ETF Pulse dataset...</div>
             ) : filteredRows.length === 0 ? (
               <div className="rounded-xl px-4 py-12 text-center text-sm" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>No ETFs match these filters.</div>
             ) : filteredRows.map(row => {
@@ -919,7 +918,7 @@ export default function EtfPulsePage() {
                 </thead>
                 <tbody>
                   {loading && rows.length === 0 ? (
-                    <tr><td colSpan={columns.length} role="status" aria-label="ETF Pulse loading" className="pulse-loading-state px-3 py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}><Loader2 className="mx-auto mb-2 h-4 w-4 animate-spin" style={{ color: 'var(--accent-light)' }} />Loading {progress.loaded} / {progress.total} ETF histories…</td></tr>
+                    <tr><td colSpan={columns.length} role="status" aria-label="ETF Pulse loading" className="pulse-loading-state px-3 py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}><Loader2 className="mx-auto mb-2 h-4 w-4 animate-spin" style={{ color: 'var(--accent-light)' }} />Acquiring ETF Pulse dataset…</td></tr>
                   ) : filteredRows.length === 0 ? (
                     <tr><td colSpan={columns.length} className="px-3 py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No ETFs match these filters.</td></tr>
                   ) : filteredRows.map((row, index) => (

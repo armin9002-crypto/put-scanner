@@ -929,6 +929,8 @@ export function runRecommendationEngine(
   const operationalStatus = snapshot.coverage.failedBatches.length > 0
     || snapshot.coverage.failedUnderlyings.length > 0
     || snapshot.coverage.pulse.failed > 0
+    || snapshot.coverage.pulse.stale === true
+    || (snapshot.coverage.pulse.retained ?? 0) > 0
     ? 'INCOMPLETE'
     : 'COMPLETE';
   const hasOpportunities = candidates.some(candidate => candidate.verdict === 'ACTIONABLE' || candidate.verdict === 'CONDITIONAL');

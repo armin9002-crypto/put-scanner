@@ -8,6 +8,7 @@ import { CALCULATED_PUT_DELTA_MODEL } from '../lib/putDelta';
 import type { SparklineData } from '../lib/api';
 import { getExpirationsCache, setExpirationsCache } from '../lib/cache';
 import { createLatestScreenerScanGate, fetchScreenerExpirations, retryFailedScreenerBatches, runScreenerBatchScan, screenerDatasetScopeKey, type ScreenerScanResult } from '../lib/screenerAcquisition';
+import type { EvidenceFreshness } from '../lib/evidence';
 import { applyScreenerFilters, buildScreenerRows, type ScreenerRow } from '../lib/screenerRows';
 import SparklineChart from '../components/SparklineChart';
 import ExpirationFilter, { buildExpirationOptions, formatExpirationDropdownLabel } from '../components/ExpirationFilter';
@@ -257,6 +258,8 @@ export default function ScreenerPage() {
   const [loaded, setLoaded] = useState(false);
   const [lastLoadedCriteria, setLastLoadedCriteria] = useState<ScreenerCriteria | null>(null);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
+  const [datasetObservedAt, setDatasetObservedAt] = useState<number | null>(null);
+  const [datasetFreshness, setDatasetFreshness] = useState<EvidenceFreshness>('unavailable');
   const [slowWarning, setSlowWarning] = useState(false);
   const [scanFailureCount, setScanFailureCount] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -435,17 +438,22 @@ export default function ScreenerPage() {
   // Load data
   const executeLoad = useCallback(async (criteria: ScreenerCriteria) => {
     const scan = scanGateRef.current.begin();
+    const hadPriorDataset = rawRowsRef.current.length > 0;
     setShowConfirm(false);
     setLoading(true);
-    setLoaded(false);
     setSlowWarning(false);
     setScanFailureCount(0);
     setLoadError(null);
     setRetryState(null);
-    rawRowsRef.current = [];
-    setLastLoadedCriteria(null);
-    setRows([]);
-    setProgress({ current: 0, total: criteria.selectedETFs.length });
+    if (!hadPriorDataset) {
+      setLoaded(false);
+      rawRowsRef.current = [];
+      setLastLoadedCriteria(null);
+      setRows([]);
+    } else {
+      setLoaded(true);
+    }
+    setProgress({ current: 0, total: 0 });
     const startTime = Date.now();
     const slowCheck = setInterval(() => {
       if (scan.isCurrent() && Date.now() - startTime > 30000) setSlowWarning(true);
@@ -476,14 +484,18 @@ export default function ScreenerPage() {
       setExpirationsCache(sortedExps);
       rawRowsRef.current = built.rows;
       setRows(applyScreenerFilters(built.rows, criteria));
-      setScanFailureCount(acquired.errors.length);
+      setScanFailureCount(acquired.failedBatchIds.length);
+      const provenance = acquired.batchProvenance ?? [];
+      setDatasetFreshness(provenance.some(item => item.staleFallbackUsed) ? 'retained-stale' : provenance.some(item => item.source === 'network') ? 'current' : provenance.length > 0 ? 'cached-current' : 'unavailable');
+      setDatasetObservedAt(provenance.length > 0 ? Math.max(...provenance.map(item => item.fetchedAt)) : null);
       setRetryState(acquired.failedBatchIds.length > 0 ? { criteria, acquired } : null);
       setLoaded(true);
       setLastLoadedCriteria(criteria);
 
     } catch (error) {
       if (scan.isCurrent() && (error as Error)?.name !== 'AbortError') {
-        setScanFailureCount(0);
+        if (hadPriorDataset) setDatasetFreshness('retained-stale');
+        setScanFailureCount(current => hadPriorDataset ? current : 0);
         setLoadError(error instanceof Error ? error.message : 'The Screener could not load market data. Try again.');
       }
     } finally {
@@ -498,7 +510,7 @@ export default function ScreenerPage() {
     const { criteria, acquired: previous } = retryState;
     setLoading(true);
     setLoadError(null);
-    setProgress({ current: 0, total: previous.failedBatchIds.length });
+    setProgress({ current: 0, total: 0 });
     try {
       const acquired = await retryFailedScreenerBatches({
         scanId: scan.id,
@@ -507,12 +519,18 @@ export default function ScreenerPage() {
         failedBatchIds: previous.failedBatchIds,
         previous,
         signal: scan.signal,
+        onProgress: (current, total) => {
+          if (scan.isCurrent()) setProgress({ current, total });
+        },
       });
       if (!scan.isCurrent()) return;
       const built = buildScreenerRows(acquired, criteria.expFilter);
       rawRowsRef.current = built.rows;
       setRows(applyScreenerFilters(built.rows, criteria));
-      setScanFailureCount(acquired.errors.length);
+      setScanFailureCount(acquired.failedBatchIds.length);
+      const provenance = acquired.batchProvenance ?? [];
+      setDatasetFreshness(provenance.some(item => item.staleFallbackUsed) ? 'retained-stale' : provenance.some(item => item.source === 'network') ? 'current' : provenance.length > 0 ? 'cached-current' : 'unavailable');
+      setDatasetObservedAt(provenance.length > 0 ? Math.max(...provenance.map(item => item.fetchedAt)) : null);
       setRetryState(acquired.failedBatchIds.length > 0 ? { criteria, acquired } : null);
       setLoaded(true);
     } catch (error) {
@@ -664,8 +682,9 @@ export default function ScreenerPage() {
             <div className="min-w-0"><div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.07em]" style={{ color: 'var(--text-dim)' }}><span>Screening criteria</span>{loaded && <span className="status-badge" data-status={loadError ? 'failed' : 'fresh'}>{loadError ? 'Needs retry' : `${rawRowsRef.current.length} loaded`}</span>}</div><p className="truncate text-[13px]" style={{ color: 'var(--text)' }}>{activeCriteria}</p></div>
             <button type="button" onClick={() => setMobileFiltersOpen(true)} className="pressable mobile-control-button" aria-haspopup="dialog"><SlidersHorizontal className="h-4 w-4" /> Filters {activeFilterCount}</button>
           </div>
-          <button type="button" onClick={() => void handleLoad()} disabled={loading} className="mobile-sheet-action primary mt-3 w-full disabled:opacity-50">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}{loading ? `Scanning ${progress.current}/${progress.total}` : 'Run Screener'}</button>
-          {loading && progress.total > 0 && <div className="screener-progress mt-2"><div className="flex items-center justify-between text-[10px]" style={{ color: 'var(--text-muted)' }}><span>Loading bounded dataset</span><span className="font-mono">{progress.current}/{progress.total}</span></div><div className="mt-1 h-1 overflow-hidden rounded-full" style={{ backgroundColor: 'var(--border)' }}><div className="h-full rounded-full" style={{ width: `${progressPct}%`, backgroundColor: 'var(--accent)' }} /></div></div>}
+          <button type="button" onClick={() => void handleLoad()} disabled={loading} className="mobile-sheet-action primary mt-3 w-full disabled:opacity-50">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}{loading ? progress.total > 0 ? `Scanning ${progress.current}/${progress.total} ETFs` : 'Scanning...' : 'Run Screener'}</button>
+          {loaded && <div className="mt-2 text-[10px]" data-evidence-freshness={datasetFreshness} style={{ color: datasetFreshness === 'retained-stale' ? 'var(--yellow)' : 'var(--text-muted)' }}>{loading ? datasetObservedAt ? `Updating · showing retained data observed ${new Date(datasetObservedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Updating · showing prior dataset' : loadError ? datasetObservedAt ? `Refresh failed · showing retained data observed ${new Date(datasetObservedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Refresh failed · showing prior dataset' : datasetFreshness === 'cached-current' ? `Cached · observed ${datasetObservedAt ? new Date(datasetObservedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '—'}` : `Current · observed ${datasetObservedAt ? new Date(datasetObservedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '—'}`}</div>}
+          {loading && progress.total > 0 && <div className="screener-progress mt-2"><div className="flex items-center justify-between text-[10px]" style={{ color: 'var(--text-muted)' }}><span>Settled ETF acquisition</span><span className="font-mono">{progress.current}/{progress.total}</span></div><div className="mt-1 h-1 overflow-hidden rounded-full" style={{ backgroundColor: 'var(--border)' }}><div className="h-full rounded-full" style={{ width: `${progressPct}%`, backgroundColor: 'var(--accent)' }} /></div></div>}
           {slowWarning && <p className="mt-2 flex items-center gap-1 text-[11px]" style={{ color: 'var(--yellow)' }}><AlertTriangle className="h-3.5 w-3.5" /> Narrow filters for a faster scan.</p>}
           {scanFailureCount > 0 && <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]" style={{ color: 'var(--yellow)' }}><span className="flex items-center gap-1"><AlertTriangle className="h-3.5 w-3.5" /> Some results could not be loaded.</span>{retryState && !hasStructuralCriteriaChanged && !loading && <button type="button" onClick={() => void handleRetryFailedResults()} className="mobile-sheet-action secondary min-h-9 px-3 py-1"><RefreshCw className="h-3.5 w-3.5" /> Retry failed results</button>}</div>}
           {loadError && !loading && <p role="alert" className="mt-2 flex items-start gap-1 text-[11px]" style={{ color: 'var(--red)' }}><AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-none" /> <span>{loadError} Run Screener to retry.</span></p>}
@@ -858,7 +877,7 @@ export default function ScreenerPage() {
                 style={{ backgroundColor: 'var(--accent)' }}
               >
                 {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
-                {loading ? `Scanning... (${progress.current} of ${progress.total})` : 'Load'}
+                {loading ? progress.total > 0 ? `Scanning ETFs (${progress.current} of ${progress.total})` : 'Scanning...' : 'Load'}
               </button>
               <button
                 onClick={clearFilters}
@@ -916,10 +935,12 @@ export default function ScreenerPage() {
                 />
               </div>
               <div className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
-                {progressPct}% complete
+                {progressPct}% of ETF acquisition settled
               </div>
             </div>
           )}
+
+          {loaded && <div className="mt-2 text-[10px]" data-evidence-freshness={datasetFreshness} style={{ color: datasetFreshness === 'retained-stale' ? 'var(--yellow)' : 'var(--text-muted)' }}>{loading ? datasetObservedAt ? `Updating · showing retained data observed ${new Date(datasetObservedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Updating · showing prior dataset' : loadError ? datasetObservedAt ? `Refresh failed · showing retained data observed ${new Date(datasetObservedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Refresh failed · showing prior dataset' : datasetFreshness === 'cached-current' ? `Cached · observed ${datasetObservedAt ? new Date(datasetObservedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '—'}` : `Current · observed ${datasetObservedAt ? new Date(datasetObservedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '—'}`}</div>}
 
           {slowWarning && (
             <div className="flex items-center gap-2 mt-3 text-xs" style={{ color: 'var(--yellow)' }}>

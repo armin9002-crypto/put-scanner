@@ -76,8 +76,11 @@ export function assessUnderlying(
   const severeTrendDamage = technical.state === 'BROKEN_TREND';
   const regimeDamage = (regime.label === 'Risk-Off' || regime.label === 'Oversold Panic')
     && technical.signals.structure === 'BROKEN';
+  const retainedTechnicalEvidence = row.evidenceFreshness === 'retained-stale';
   const qualification: UnderlyingAssessment['qualification'] = severeTrendDamage || regimeDamage
     ? 'HARD_FAIL'
+    : retainedTechnicalEvidence
+      ? 'WATCH'
     : (setup === 'STRONG' || setup === 'GOOD') && quality !== 'LOW'
       ? 'ELIGIBLE'
       : 'WATCH';
@@ -85,6 +88,7 @@ export function assessUnderlying(
   if (qualification === 'HARD_FAIL') reasonCodes.push('BROKEN_TREND');
   else if (setup === 'STRONG' || setup === 'GOOD') reasonCodes.push('SUPPORTIVE_UNDERLYING');
   if (quality === 'LOW') reasonCodes.push('EVIDENCE_GAPS');
+  if (retainedTechnicalEvidence && !reasonCodes.includes('EVIDENCE_GAPS')) reasonCodes.push('EVIDENCE_GAPS');
   if (lenses.regimeFit === 'WEAK') reasonCodes.push('REGIME_INCOMPATIBLE');
 
   return {

@@ -19,6 +19,11 @@ export interface WatchlistSnapshot {
   moneynessLabel?: string | null;
   integrityStatus?: 'clean' | 'degraded' | 'invalid';
   integrityReasonCodes?: string[];
+  observedAt?: number | null;
+  providerMarketTime?: number | null;
+  evidenceFreshness?: 'current' | 'cached-current' | 'retained-stale' | 'unavailable';
+  evidenceSource?: string;
+  retentionReason?: string | null;
 }
 
 export interface WatchlistItem {
@@ -52,6 +57,10 @@ export function retainWatchlistSnapshotAfterInvalidRefresh(
       ...item.snapshot,
       underlyingPrice: update.underlyingPrice,
       dte: update.dte,
+      evidenceFreshness: 'retained-stale',
+      evidenceSource: 'snapshot',
+      observedAt: item.snapshot?.observedAt ?? item.updatedAt ?? null,
+      retentionReason: 'New option evidence was invalid; the prior trusted quote was retained.',
       integrityStatus: hasTrustedPrice ? 'degraded' : 'invalid',
       integrityReasonCodes: update.reasonCodes.slice(0, 8),
     },
@@ -182,6 +191,8 @@ function normalizeSnapshot(value: unknown): WatchlistSnapshot | undefined {
     'annualizedYieldBid',
     'annualizedYieldAsk',
     'moneynessPct',
+    'observedAt',
+    'providerMarketTime',
   ];
 
   numericFields.forEach(field => {
@@ -198,6 +209,9 @@ function normalizeSnapshot(value: unknown): WatchlistSnapshot | undefined {
   }
   if (value.integrityStatus === 'clean' || value.integrityStatus === 'degraded' || value.integrityStatus === 'invalid') snapshot.integrityStatus = value.integrityStatus;
   if (Array.isArray(value.integrityReasonCodes)) snapshot.integrityReasonCodes = value.integrityReasonCodes.filter((reason): reason is string => typeof reason === 'string').slice(0, 8);
+  if (value.evidenceFreshness === 'current' || value.evidenceFreshness === 'cached-current' || value.evidenceFreshness === 'retained-stale' || value.evidenceFreshness === 'unavailable') snapshot.evidenceFreshness = value.evidenceFreshness;
+  if (typeof value.evidenceSource === 'string') snapshot.evidenceSource = value.evidenceSource;
+  if (typeof value.retentionReason === 'string') snapshot.retentionReason = value.retentionReason;
 
   return Object.keys(snapshot).length > 0 ? snapshot : undefined;
 }

@@ -64,6 +64,9 @@ export interface ScannerOptionSnapshot {
   fallbackReason: string | null;
   unavailableReason: string | null;
   updatedAt: string;
+  evidenceFreshness?: 'current' | 'cached-current' | 'retained-stale' | 'unavailable';
+  evidenceSource?: string;
+  retentionReason?: string | null;
 }
 
 export interface ScannerSnapshotDiagnostic {
@@ -431,6 +434,11 @@ export function buildScannerOptionSnapshot(
   const normalizedTicker = ticker.trim().toUpperCase();
   const fetchedAt = chain.chainMeta?.fetchedAt;
   const updatedAt = Number.isFinite(fetchedAt) ? new Date(fetchedAt!).toISOString() : now.toISOString();
+  const evidenceFreshness = chain.chainMeta?.staleFallbackUsed || chain.chainMeta?.source === 'stale'
+    ? 'retained-stale' as const
+    : chain.chainMeta?.source === 'cache' ? 'cached-current' as const : 'current' as const;
+  const evidenceSource = chain.chainMeta?.source ?? 'unknown';
+  const retentionReason = evidenceFreshness === 'retained-stale' ? 'Scanner refresh failed; the prior trusted option evidence was retained.' : null;
   const { price: underlyingPrice, source: underlyingPriceSource } = resolveUnderlyingPrice(chain, scannerPrice);
   if (!normalizedTicker) return emptySnapshot('', selectedExpiration, underlyingPrice, underlyingPriceSource, updatedAt, 'Ticker is unavailable.');
   const returnedExpiration = chain.chainMeta?.returnedExpiration ?? chain.chainMeta?.expirationDate ?? null;
@@ -558,6 +566,9 @@ export function buildScannerOptionSnapshot(
     fallbackReason: fallbackReasons.length > 0 ? fallbackReasons.join(' ') : null,
     unavailableReason,
     updatedAt,
+    evidenceFreshness,
+    evidenceSource,
+    retentionReason,
   };
 }
 
@@ -765,7 +776,13 @@ function cacheExpirationMetadata(ticker: string, chain: OptionsChainData): void 
 export function cacheScannerOptionChain(ticker: string, chain: OptionsChainData): ScannerOptionSnapshot | null {
   const normalizedTicker = ticker.trim().toUpperCase();
   if (!normalizedTicker) return null;
-  if (chain.chainMeta?.freshness === 'stale') return getScannerOptionSnapshots()[normalizedTicker] ?? null;
+  if (chain.chainMeta?.freshness === 'stale' || chain.chainMeta?.staleFallbackUsed) {
+    const existing = getScannerOptionSnapshots()[normalizedTicker] ?? null;
+    if (!existing) return null;
+    const retained = { ...existing, evidenceFreshness: 'retained-stale' as const, evidenceSource: 'snapshot', retentionReason: 'Scanner refresh failed; the prior trusted option evidence was retained.' };
+    cacheScannerOptionSnapshot(retained);
+    return retained;
+  }
   cacheExpirationMetadata(normalizedTicker, chain);
   const selectedExpiration = selectScannerSnapshotExpiration(chain.expirations);
   const returnedExpiration = chain.chainMeta?.returnedExpiration ?? chain.chainMeta?.expirationDate ?? null;

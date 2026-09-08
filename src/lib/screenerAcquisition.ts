@@ -100,6 +100,8 @@ export interface ScreenerScanResult {
   plannedBatches: number;
   completedBatches: number;
   failedBatchIds: number[];
+  retainedBatchIds?: number[];
+  batchProvenance?: Array<{ batchId: number; source: MarketDataRequestMeta['source']; fetchedAt: number; staleFallbackUsed: boolean }>;
   expirationPlansByTicker: Map<string, {
     availableExpirationDates: number[];
     eligibleExpirationDates: number[];
@@ -236,12 +238,18 @@ export async function fetchScreenerBatch(plan: ScreenerBatchPlan, options: { sig
 
 function sourceFromMeta(meta: MarketDataRequestMeta): OptionChainSource {
   if (meta.source === 'network') return 'network';
-  if (meta.source === 'stale-fallback' || meta.freshness === 'stale') return 'stale';
+  if (meta.source === 'stale-fallback') return 'stale';
   return 'cache';
 }
 
 function normalizeBatchChain(raw: unknown, ticker: string, date: number | undefined, meta: MarketDataRequestMeta): OptionsChainData {
-  return normalizeOptionChainData(raw, ticker, date, `screener:${ticker}:${date ?? 'initial'}`, sourceFromMeta(meta), null);
+  return normalizeOptionChainData(raw, ticker, date, `screener:${ticker}:${date ?? 'initial'}`, sourceFromMeta(meta), null, {
+    observedAt: meta.fetchedAt,
+    cachedAt: meta.cachedAt,
+    freshness: meta.freshness,
+    staleFallbackUsed: meta.staleFallbackUsed,
+    retentionReason: meta.staleFallbackUsed ? 'Screener batch refresh failed; prior batch evidence was retained.' : null,
+  });
 }
 
 function primeOptionsChainCache(ticker: string, date: number | undefined, data: OptionsChainData): boolean {
@@ -268,6 +276,8 @@ export async function runScreenerBatchScan(options: {
   let completedEtfs = 0;
   let rejectedBatchFailures = 0;
   const failedBatchIds = new Set<number>();
+  const retainedBatchIds = new Set<number>();
+  const batchProvenance: ScreenerScanResult['batchProvenance'] = [];
   const expirationPlansByTicker = new Map<string, {
     availableExpirationDates: number[];
     eligibleExpirationDates: number[];
@@ -303,7 +313,9 @@ export async function runScreenerBatchScan(options: {
       return;
     }
     const { payload, meta } = batchResult.value.result;
-    if (!payload.complete || payload.errors.length > 0) failedBatchIds.add(plan.chunkId);
+    if (!payload.complete || payload.errors.length > 0 || meta.staleFallbackUsed) failedBatchIds.add(plan.chunkId);
+    if (meta.staleFallbackUsed) retainedBatchIds.add(plan.chunkId);
+    batchProvenance?.push({ batchId: plan.chunkId, source: meta.source, fetchedAt: meta.fetchedAt, staleFallbackUsed: meta.staleFallbackUsed });
     recordScreenerScanBatch(options.scanId, {
       networkCall: meta.networkCall,
       plannedOptionChains: payload.diagnostics.plannedOptionChains,
@@ -356,6 +368,8 @@ export async function runScreenerBatchScan(options: {
     plannedBatches: plans.length,
     completedBatches: settled.filter(result => result.status === 'fulfilled').length,
     failedBatchIds: [...failedBatchIds].sort((a, b) => a - b),
+    retainedBatchIds: [...retainedBatchIds].sort((a, b) => a - b),
+    batchProvenance,
     expirationPlansByTicker,
   };
 }
@@ -393,6 +407,8 @@ export async function retryFailedScreenerBatches(options: {
     plannedBatches: options.previous.plannedBatches,
     completedBatches: Math.max(0, options.previous.plannedBatches - retried.failedBatchIds.length),
     failedBatchIds: retried.failedBatchIds,
+    retainedBatchIds: retried.retainedBatchIds,
+    batchProvenance: [...(options.previous.batchProvenance ?? []).filter(item => !failed.has(item.batchId)), ...(retried.batchProvenance ?? [])],
     expirationPlansByTicker: new Map([...options.previous.expirationPlansByTicker, ...retried.expirationPlansByTicker]),
   };
 }

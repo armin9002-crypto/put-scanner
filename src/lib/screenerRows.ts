@@ -5,6 +5,7 @@ import { exactOptionTradeSessionAge, type MarketDateInput } from './usMarketCale
 import type { OptionsChainData } from './types.ts';
 import { isOptionContractIntegrityInvalid, trustedOptionPrice } from './optionMarketIntegrity.ts';
 import type { OptionIntegrityReasonCode, OptionIntegrityStatus } from './types.ts';
+import type { EvidenceFreshness } from './evidence.ts';
 
 export interface ScreenerRow {
   ticker: string;
@@ -35,6 +36,9 @@ export interface ScreenerRow {
   ivVsRealizedRange: number | null;
   integrityStatus?: OptionIntegrityStatus;
   integrityReasonCodes?: OptionIntegrityReasonCode[];
+  evidenceFreshness?: EvidenceFreshness;
+  observedAt?: number | null;
+  evidenceSource?: string;
 }
 
 export interface ScreenerFilterCriteria {
@@ -252,7 +256,7 @@ export function buildScreenerRows(
         const lastYield = calculateYieldPercent(trustedOptionPrice(put, 'last'), put.strike, dte);
         const volOI = calculateVolumeOpenInterestRatio(put.volume, put.openInterest);
 
-        rows.push({
+        const row: ScreenerRow = {
           ticker,
           currentPrice: price,
           expDate: expiration.date,
@@ -283,7 +287,13 @@ export function buildScreenerRows(
             integrityStatus: put.integrity.status,
             integrityReasonCodes: put.integrity.reasonCodes,
           } : {}),
+        };
+        Object.defineProperties(row, {
+          evidenceFreshness: { value: initialData.chainMeta ? initialData.chainMeta.staleFallbackUsed || initialData.chainMeta.source === 'stale' ? 'retained-stale' : initialData.chainMeta.source === 'cache' ? 'cached-current' : 'current' : 'unavailable', enumerable: false },
+          observedAt: { value: initialData.chainMeta?.fetchedAt ?? null, enumerable: false },
+          evidenceSource: { value: initialData.chainMeta?.source ?? 'unknown', enumerable: false },
         });
+        rows.push(row);
       }
     }
   }

@@ -17,6 +17,7 @@ import { persistShowNominalYield, readShowNominalYield } from '../lib/optionTabl
 import { getUnderlyingHoldingsProxy } from '../lib/underlyingHoldingsProxies';
 import { getLastScannerUrl, isScannerNavigationState } from '../lib/scannerNavigation';
 import { getReturnedOptionExpiration, optionChainMatchesRequestedExpiration, parseRequestedOptionExpiry, resolveOptionExpirySelection } from '../lib/optionExpiryNavigation';
+import { evidenceFreshnessFromChainMeta } from '../lib/evidence';
 import {
   OPTION_QUOTE_DISPLAY_LABELS,
   OPTION_QUOTE_TABLE_DISPLAY_ORDER,
@@ -742,12 +743,17 @@ export default function OptionsPage() {
   );
   const selectedExpiration = optionsData?.expirations.find(exp => exp.date === selectedExp) ?? null;
   const chainMeta = optionsData?.chainMeta ?? null;
+  const evidenceFreshness = evidenceFreshnessFromChainMeta(chainMeta);
+  const hasUsablePriorChain = !!optionsData && (optionsData.puts.length > 0 || optionsData.expirations.length > 0 || optionsData.currentPrice > 0);
   const chainAgeMs = chainMeta ? Date.now() - chainMeta.fetchedAt : null;
-  const staleCachedChain = chainMeta?.source === 'stale' || (chainMeta?.source === 'cache' && chainAgeMs != null && chainAgeMs > 10 * 60 * 1000);
-  const freshnessLabel = chainMeta?.staleFallbackUsed
-    ? 'Refresh failed - showing cached data'
+  const staleCachedChain = evidenceFreshness === 'retained-stale' || (chainMeta?.source === 'cache' && chainAgeMs != null && chainAgeMs > 10 * 60 * 1000);
+  const observedLabel = chainMeta?.fetchedAt ? new Date(chainMeta.fetchedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : null;
+  const freshnessLabel = error && hasUsablePriorChain
+    ? observedLabel ? `Refresh failed - showing retained data observed ${observedLabel}` : 'Refresh failed - showing retained data'
+    : chainMeta?.staleFallbackUsed
+    ? observedLabel ? `Retained stale - observed ${observedLabel}` : 'Retained stale'
     : staleCachedChain
-    ? 'Cached - refresh for latest'
+    ? observedLabel ? `Cached - observed ${observedLabel}` : 'Cached'
     : chainMeta?.source === 'fresh'
       ? 'Fresh'
       : chainMeta?.source === 'cache'
@@ -967,7 +973,7 @@ export default function OptionsPage() {
         {freshnessLabel && <div className="border-b px-3 py-1 text-[10px]" style={{ borderColor: 'var(--border)', color: staleCachedChain ? 'var(--yellow)' : 'var(--text-dim)' }}>{freshnessLabel}</div>}
         {instrument.showLeveragedProductWarning && <div className="border-b px-3 py-2 text-[11px] leading-4" style={{ borderColor: 'var(--border)', color: 'var(--yellow)', backgroundColor: 'var(--surface)' }}>Leveraged ETF · daily reset and compounding make longer-period returns path dependent.</div>}
 
-        {error ? <OptionsEmptyState type="error" onRefresh={handleRefresh} loading={loading} title={detailErrorCode === 'INVALID_SYMBOL' ? `We couldn't find ${ticker}.` : `We couldn't load options for ${ticker}.`} subtitle={detailErrorCode === 'INVALID_SYMBOL' ? 'Check the ticker and try again.' : 'Market data may be temporarily unavailable. Try again without changing or saving anything.'} /> : hasEmptyOptions ? <OptionsEmptyState type="empty" onRefresh={handleRefresh} loading={loading} title={`No listed puts found for ${ticker}`} subtitle="This ticker may not have listed options, or its option chain may currently be unavailable." /> : (
+        {error && !hasUsablePriorChain ? <OptionsEmptyState type="error" onRefresh={handleRefresh} loading={loading} title={detailErrorCode === 'INVALID_SYMBOL' ? `We couldn't find ${ticker}.` : `We couldn't load options for ${ticker}.`} subtitle={detailErrorCode === 'INVALID_SYMBOL' ? 'Check the ticker and try again.' : 'Market data may be temporarily unavailable. Try again without changing or saving anything.'} /> : hasEmptyOptions ? <OptionsEmptyState type="empty" onRefresh={handleRefresh} loading={loading} title={`No listed puts found for ${ticker}`} subtitle="This ticker may not have listed puts, or its option chain may currently be unavailable." /> : (
           <div className="mobile-financial-list mobile-option-chain-table" role="table" aria-label={`${ticker} put option chain`}>
             <div role="row" className="mobile-option-chain-header">
               {['Strike', 'Last Trade', 'OTM/ITM', 'AY Last', 'AY Bid', 'AY Ask'].map(label => <span key={label} role="columnheader">{label}</span>)}
@@ -1143,7 +1149,7 @@ export default function OptionsPage() {
                 Show Volume / OI
               </label>
               {lastUpdated && (
-                <span className="hidden sm:inline">Last updated: {lastUpdated.toLocaleTimeString()}</span>
+                <span className="hidden sm:inline">Refresh completed: {lastUpdated.toLocaleTimeString()}</span>
               )}
               {freshnessLabel && (
                 <span className="text-[11px]" style={{ color: staleCachedChain ? 'var(--yellow)' : 'var(--text-dim)' }}>
@@ -1273,7 +1279,7 @@ export default function OptionsPage() {
         )}
 
         {/* Options table */}
-        {error ? (
+        {error && !hasUsablePriorChain ? (
           <OptionsEmptyState type="error" onRefresh={handleRefresh} loading={loading} title={detailErrorCode === 'INVALID_SYMBOL' ? `We couldn't find ${ticker}.` : `We couldn't load options for ${ticker}.`} subtitle={detailErrorCode === 'INVALID_SYMBOL' ? 'Check the ticker and try again, or return to Scanner.' : 'Market data may be temporarily unavailable. Try again without changing or saving anything.'} />
         ) : hasEmptyOptions ? (
           <OptionsEmptyState
