@@ -22,7 +22,8 @@ import {
   type OptionQuoteDisplayField,
   type OptionSoldPriceBasis,
 } from '../lib/optionQuoteDisplay';
-import type { PutDeltaSource } from '../lib/putDelta';
+import { CALCULATED_PUT_DELTA_MODEL, type PutDeltaSource } from '../lib/putDelta';
+import { exactOptionTradeSessionAge } from '../lib/usMarketCalendar';
 import type { OptionIntegrityReasonCode, OptionIntegrityStatus } from '../lib/types';
 
 export interface OptionDetail {
@@ -33,6 +34,7 @@ export interface OptionDetail {
   ask: number | null;
   delta: number | null;
   deltaSource?: PutDeltaSource | null;
+  deltaModelVersion?: string | null;
   gamma?: number | null;
   theta?: number | null;
   vega?: number | null;
@@ -82,18 +84,11 @@ function formatInteger(value: number | null | undefined): string {
   return formatNumber(value, 0);
 }
 
-function calendarDayDiff(timestamp: number, now = Date.now()): number {
-  const tradeDate = new Date(timestamp);
-  const currentDate = new Date(now);
-  const tradeMidnight = new Date(tradeDate.getFullYear(), tradeDate.getMonth(), tradeDate.getDate()).getTime();
-  const currentMidnight = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate()).getTime();
-  return Math.max(0, Math.floor((currentMidnight - tradeMidnight) / (24 * 60 * 60 * 1000)));
-}
-
 function formatTradeTime(timestamp: number): string {
   return new Date(timestamp).toLocaleTimeString('en-US', {
     hour: 'numeric',
     minute: '2-digit',
+    timeZone: 'America/New_York',
   });
 }
 
@@ -102,49 +97,30 @@ function formatTradeDate(timestamp: number): string {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
+    timeZone: 'America/New_York',
   });
-}
-
-function getLastTradeInfo(value: number | null | undefined): { trade: string; age: string; color?: string } {
-  const timestamp = normalizeTimestampMs(value);
-  if (timestamp == null) return { trade: '—', age: '—' };
-
-  const dayDiff = calendarDayDiff(timestamp);
-  if (dayDiff === 0) {
-    return { trade: `Today ${formatTradeTime(timestamp)}`, age: 'Today', color: 'var(--green)' };
-  }
-  if (dayDiff === 1) {
-    return { trade: `Yesterday ${formatTradeTime(timestamp)}`, age: 'Yesterday', color: 'var(--text-muted)' };
-  }
-  if (dayDiff <= 2) {
-    return { trade: `${dayDiff}d ago`, age: `${dayDiff}d ago`, color: 'var(--text-muted)' };
-  }
-  if (dayDiff <= 7) {
-    return { trade: `${dayDiff}d ago`, age: `${dayDiff}d ago - Stale`, color: 'var(--yellow)' };
-  }
-  return { trade: `${dayDiff}d ago`, age: `${dayDiff}d ago - Very Stale`, color: 'var(--red)' };
 }
 
 function getLastTradeDetail(value: number | null | undefined): { trade: string; date: string; age: string; warning: string | null; color?: string } {
   const timestamp = normalizeTimestampMs(value);
   if (timestamp == null) return { trade: '\u2014', date: '\u2014', age: '\u2014', warning: null };
 
-  const legacyInfo = getLastTradeInfo(value);
-  const dayDiff = calendarDayDiff(timestamp);
+  const sessionAge = exactOptionTradeSessionAge(value, new Date());
+  if (sessionAge == null) return { trade: '\u2014', date: '\u2014', age: '\u2014', warning: null };
   const date = formatTradeDate(timestamp);
-  if (dayDiff === 0) {
-    return { trade: legacyInfo.trade, date, age: 'Today', warning: null, color: 'var(--green)' };
+  const age = sessionAge === 0 ? '0 sessions' : `${sessionAge} session${sessionAge === 1 ? '' : 's'} ago`;
+  const trade = `${date} ${formatTradeTime(timestamp)}`;
+  if (sessionAge <= 2) return { trade, date, age, warning: null, color: sessionAge === 0 ? 'var(--green)' : 'var(--text-muted)' };
+  if (sessionAge <= 7) {
+    return { trade, date, age: `${age} - Stale`, warning: 'Last may be stale; check Last Trade Date.', color: 'var(--yellow)' };
   }
-  if (dayDiff === 1) {
-    return { trade: legacyInfo.trade, date, age: 'Yesterday', warning: null, color: 'var(--text-muted)' };
-  }
-  if (dayDiff <= 2) {
-    return { trade: legacyInfo.trade, date, age: `${dayDiff}d ago`, warning: null, color: 'var(--text-muted)' };
-  }
-  if (dayDiff <= 7) {
-    return { trade: legacyInfo.trade, date, age: `${dayDiff}d ago - Stale`, warning: 'Last may be stale; check Last Trade Date.', color: 'var(--yellow)' };
-  }
-  return { trade: legacyInfo.trade, date, age: `${dayDiff}d ago - Very Stale`, warning: 'Last trade is very stale; use bid/ask with extra care.', color: 'var(--red)' };
+  return { trade, date, age: `${age} - Very Stale`, warning: 'Last trade is very stale; use bid/ask with extra care.', color: 'var(--red)' };
+}
+
+function deltaSourceLabel(option: Pick<OptionDetail, 'deltaSource' | 'deltaModelVersion'>): string {
+  if (option.deltaSource === 'provider') return 'Provider exact-contract Delta';
+  if (option.deltaSource === 'calculated') return `Calculated (${option.deltaModelVersion ?? CALCULATED_PUT_DELTA_MODEL.version})`;
+  return 'Unavailable';
 }
 
 function MetricCard({ label, value, color = 'var(--text)' }: { label: string; value: string; color?: string }) {
@@ -308,6 +284,7 @@ export default function OptionDetailDrawer({
                 <DetailRow label="Nominal Yield" value={formatPercent(securedCashYield)} color="var(--accent-light)" />
                 <DetailRow label="Annualized Yield" value={formatPercent(annualizedSecuredCashYield)} color="var(--green)" />
                 <DetailRow label="Delta" value={formatPlainNumber(option.delta, 3)} />
+                <DetailRow label="Delta source" value={deltaSourceLabel(option)} />
                 <DetailRow label="Moneyness" value={option.otmItmLabel || '—'} color={option.otmItmColor || undefined} />
                 <DetailRow label="Breakeven" value={formatCurrency(topBreakeven)} />
                 <DetailRow label="Implied Volatility" value={isFiniteNumber(option.impliedVolatility) ? `${option.impliedVolatility.toFixed(1)}%` : '—'} />
@@ -399,6 +376,7 @@ export default function OptionDetailDrawer({
               <h3 id="option-risk-heading">Risk</h3>
               <div className="option-detail-mobile-metric-grid option-detail-mobile-metric-grid--risk">
                 <MobileMetric label="Delta" value={formatPlainNumber(option.delta, 3)} />
+                <MobileMetric label="Delta source" value={deltaSourceLabel(option)} />
                 <MobileMetric label="Moneyness" value={option.otmItmLabel || '—'} color={option.otmItmColor || undefined} />
                 <MobileMetric label="Breakeven" value={formatCurrency(topBreakeven)} />
                 <MobileMetric label="IV" value={isFiniteNumber(option.impliedVolatility) ? `${option.impliedVolatility.toFixed(1)}%` : '—'} />
@@ -590,6 +568,7 @@ export default function OptionDetailDrawer({
           <Section title="Risk / Option Metrics">
             <DetailRow label="Strike" value={formatCurrency(option.strike)} />
             <DetailRow label="Delta" value={formatPlainNumber(option.delta, 3)} />
+            <DetailRow label="Delta source" value={deltaSourceLabel(option)} />
             <DetailRow label="IV" value={isFiniteNumber(option.impliedVolatility) ? `${option.impliedVolatility.toFixed(1)}%` : '—'} />
             <DetailRow label="Moneyness" value={option.otmItmLabel || '—'} color={option.otmItmColor || undefined} />
             <DetailRow label="DTE" value={isFiniteNumber(dte) ? `${dte}` : '—'} />

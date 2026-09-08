@@ -4,6 +4,7 @@ import { ETF_LIST } from '../lib/etfs';
 import type { ETFInfo } from '../lib/types';
 import { fetchSparkline, formatPrice, formatNumber } from '../lib/api';
 import { formatOptionLastTradeDate } from '../lib/format';
+import { CALCULATED_PUT_DELTA_MODEL } from '../lib/putDelta';
 import type { SparklineData } from '../lib/api';
 import { getExpirationsCache, setExpirationsCache } from '../lib/cache';
 import { createLatestScreenerScanGate, fetchScreenerExpirations, retryFailedScreenerBatches, runScreenerBatchScan, screenerDatasetScopeKey, type ScreenerScanResult } from '../lib/screenerAcquisition';
@@ -150,6 +151,8 @@ function optionDetailFromScreenerRow(row: ScreenerRow): OptionDetail {
     bid: row.bid,
     ask: row.ask,
     delta: row.delta,
+    deltaSource: row.deltaSource,
+    deltaModelVersion: row.deltaSource === 'calculated' ? CALCULATED_PUT_DELTA_MODEL.version : null,
     impliedVolatility: row.iv,
     volume: row.volume,
     openInterest: row.openInterest,

@@ -31,12 +31,12 @@ test('Nominal Yield account preference defaults off and roundtrips its storage a
 });
 
 test('Last Trade freshness keeps thresholds and maps recent activity to success green', () => {
-  const now = new Date(2026, 7, 13, 12).getTime();
-  const timestamp = daysAgo => new Date(2026, 7, 13 - daysAgo, 12).getTime();
-  assert.deepEqual(getOptionLastTradeFreshness(timestamp(2), now), { freshness: 'recent', ageDays: 2, label: null, color: 'var(--green)' });
-  assert.deepEqual(getOptionLastTradeFreshness(timestamp(3), now), { freshness: 'stale', ageDays: 3, label: 'Stale', color: 'var(--yellow)' });
-  assert.deepEqual(getOptionLastTradeFreshness(timestamp(8), now), { freshness: 'very_stale', ageDays: 8, label: 'Very stale', color: 'var(--red)' });
-  assert.deepEqual(getOptionLastTradeFreshness(null, now), { freshness: 'unavailable', ageDays: null, label: null, color: 'var(--text-muted)' });
+  const now = '2026-08-13T16:00:00Z';
+  const timestamp = date => `${date}T15:00:00Z`;
+  assert.deepEqual(getOptionLastTradeFreshness(timestamp('2026-08-11'), now), { freshness: 'recent', ageSessions: 2, label: null, color: 'var(--green)' });
+  assert.deepEqual(getOptionLastTradeFreshness(timestamp('2026-08-10'), now), { freshness: 'stale', ageSessions: 3, label: 'Stale', color: 'var(--yellow)' });
+  assert.deepEqual(getOptionLastTradeFreshness(timestamp('2026-08-03'), now), { freshness: 'very_stale', ageSessions: 8, label: 'Very stale', color: 'var(--red)' });
+  assert.deepEqual(getOptionLastTradeFreshness(null, now), { freshness: 'unavailable', ageSessions: null, label: null, color: 'var(--text-muted)' });
 });
 
 test('all quote views share deterministic LAST, BID, MID, ASK display order', () => {

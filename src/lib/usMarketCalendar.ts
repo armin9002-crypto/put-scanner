@@ -3,6 +3,7 @@ import {
   calendarDaysBetween as canonicalCalendarDaysBetween,
   usMarketDateIso as canonicalUsMarketDateIso,
 } from '../../shared/marketDate.js';
+import { normalizeMarketTimestamp } from './marketTimestamp.ts';
 
 const DAY_MS = 86_400_000;
 const holidayCache = new Map<number, Set<string>>();
@@ -19,6 +20,34 @@ export function usMarketDateIso(value: MarketDateInput = new Date()): string {
 
 export function calendarDaysBetween(start: string | null | undefined, end: string | null | undefined): number | null {
   return canonicalCalendarDaysBetween(start, end);
+}
+
+const STRUCTURAL_TIMESTAMP_NOW_MS = Number.MAX_SAFE_INTEGER;
+
+function normalizedSessionDate(value: MarketDateInput | null | undefined): string | null {
+  if (value == null) return null;
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
+    return canonicalCalendarDateIso(value.trim());
+  }
+  const timestamp = normalizeMarketTimestamp(value, {
+    nowMs: STRUCTURAL_TIMESTAMP_NOW_MS,
+    maxFutureSkewMs: 0,
+  });
+  return timestamp == null ? null : canonicalUsMarketDateIso(timestamp) ?? null;
+}
+
+/**
+ * Count completed U.S. equity sessions since an exact option contract's last trade.
+ * The input is normalized to New York market dates before the session calendar is used.
+ */
+export function exactOptionTradeSessionAge(
+  lastTrade: MarketDateInput | null | undefined,
+  asOf: MarketDateInput = new Date(),
+): number | null {
+  const lastTradeDate = normalizedSessionDate(lastTrade);
+  const evaluationDate = normalizedSessionDate(asOf);
+  if (!lastTradeDate || !evaluationDate || lastTradeDate > evaluationDate || !isUsEquityTradingSession(lastTradeDate)) return null;
+  return elapsedUsEquityTradingSessions(lastTradeDate, evaluationDate);
 }
 
 function isoDate(year: number, month: number, day: number): string {

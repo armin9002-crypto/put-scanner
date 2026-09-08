@@ -2,6 +2,7 @@ import type { ExpirationDate, OptionContract, OptionsChainData } from './types';
 import type { DataFreshness } from './marketDataRequest';
 import { isOptionContractIntegrityInvalid } from './optionMarketIntegrity.ts';
 import { calculateDte } from './optionMetrics.ts';
+import { exactOptionTradeSessionAge } from './usMarketCalendar.ts';
 
 export type SnapshotConfidence = 'high' | 'normal' | 'reduced' | 'low';
 export type ExpirationSelectionTier = 'ideal' | 'normal' | 'expanded' | 'broad';
@@ -179,76 +180,8 @@ export function selectScannerSnapshotExpiration(
   return rankScannerSnapshotExpirations(expirations, now)[0] ?? null;
 }
 
-function observedFixedHoliday(year: number, month: number, day: number): number {
-  const holiday = new Date(Date.UTC(year, month, day));
-  if (holiday.getUTCDay() === 6) holiday.setUTCDate(holiday.getUTCDate() - 1);
-  if (holiday.getUTCDay() === 0) holiday.setUTCDate(holiday.getUTCDate() + 1);
-  return holiday.getTime();
-}
-
-function nthWeekdayOfMonth(year: number, month: number, weekday: number, occurrence: number): number {
-  const date = new Date(Date.UTC(year, month, 1));
-  date.setUTCDate(1 + ((weekday - date.getUTCDay() + 7) % 7) + (occurrence - 1) * 7);
-  return date.getTime();
-}
-
-function lastWeekdayOfMonth(year: number, month: number, weekday: number): number {
-  const date = new Date(Date.UTC(year, month + 1, 0));
-  date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() - weekday + 7) % 7));
-  return date.getTime();
-}
-
-function easterSundayUtc(year: number): Date {
-  const a = year % 19;
-  const b = Math.floor(year / 100);
-  const c = year % 100;
-  const d = Math.floor(b / 4);
-  const e = b % 4;
-  const f = Math.floor((b + 8) / 25);
-  const g = Math.floor((b - f + 1) / 3);
-  const h = (19 * a + b - d - g + 15) % 30;
-  const i = Math.floor(c / 4);
-  const k = c % 4;
-  const l = (32 + 2 * e + 2 * i - h - k) % 7;
-  const m = Math.floor((a + 11 * h + 22 * l) / 451);
-  const month = Math.floor((h + l - 7 * m + 114) / 31);
-  const day = ((h + l - 7 * m + 114) % 31) + 1;
-  return new Date(Date.UTC(year, month - 1, day));
-}
-
-function isUsMarketHoliday(date: Date): boolean {
-  const year = date.getUTCFullYear();
-  const goodFriday = easterSundayUtc(year);
-  goodFriday.setUTCDate(goodFriday.getUTCDate() - 2);
-  return new Set([
-    observedFixedHoliday(year, 0, 1),
-    observedFixedHoliday(year + 1, 0, 1),
-    nthWeekdayOfMonth(year, 0, 1, 3),
-    nthWeekdayOfMonth(year, 1, 1, 3),
-    goodFriday.getTime(),
-    lastWeekdayOfMonth(year, 4, 1),
-    ...(year >= 2022 ? [observedFixedHoliday(year, 5, 19)] : []),
-    observedFixedHoliday(year, 6, 4),
-    nthWeekdayOfMonth(year, 8, 1, 1),
-    nthWeekdayOfMonth(year, 10, 4, 4),
-    observedFixedHoliday(year, 11, 25),
-  ]).has(date.getTime());
-}
-
 function tradingDaysAgo(lastTradeTimestamp: number | null, now = new Date()): number | null {
-  if (!finitePositive(lastTradeTimestamp)) return null;
-  const last = new Date(lastTradeTimestamp * 1000);
-  const cursor = new Date(Date.UTC(last.getUTCFullYear(), last.getUTCMonth(), last.getUTCDate()));
-  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  if (cursor >= today) return 0;
-  let tradingDays = 0;
-  cursor.setUTCDate(cursor.getUTCDate() + 1);
-  while (cursor <= today) {
-    const weekday = cursor.getUTCDay();
-    if (weekday !== 0 && weekday !== 6 && !isUsMarketHoliday(cursor)) tradingDays += 1;
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-  }
-  return tradingDays;
+  return exactOptionTradeSessionAge(lastTradeTimestamp, now);
 }
 
 function scoreOpenInterest(value: number | null): number {

@@ -5,6 +5,7 @@ import {
   calculateDownsideCushion,
   isFiniteNumber,
 } from '../optionMetrics.ts';
+import { CALCULATED_PUT_DELTA_MODEL } from '../putDelta.ts';
 import type { TradePosture } from '../marketRead/types.ts';
 import type { RecommendationPolicy } from './policy.ts';
 import { RECOMMENDATION_POLICY } from './policy.ts';
@@ -299,6 +300,8 @@ function buildCandidate(
       annualizedYieldBidPct: pricing.directBid != null ? row.annYieldBid : null,
       indicativeAnnualizedYieldRangePct,
       delta: row.delta,
+      deltaSource: row.deltaSource,
+      deltaModelVersion: row.deltaSource === 'calculated' ? CALCULATED_PUT_DELTA_MODEL.version : null,
       moneynessPct: row.moneynessPct,
       breakevenAtBasis: breakeven,
       breakevenCushionAtBasis: breakevenCushion,

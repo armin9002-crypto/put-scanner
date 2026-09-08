@@ -14,9 +14,17 @@ function positiveFinite(value: unknown): value is number {
 
 export type PutDeltaSource = 'provider' | 'calculated';
 
+/** Versioned deterministic contract for calculated put Delta fallback. */
+export const CALCULATED_PUT_DELTA_MODEL = {
+  version: 'black-scholes-put-delta-v1',
+  annualRiskFreeRate: 0.045,
+  dayCount: 365,
+} as const;
+
 export interface ResolvedPutDelta {
   delta: number;
   source: PutDeltaSource;
+  modelVersion?: string;
 }
 
 export function calculatePutDelta(S: number, K: number, T: number, r: number, sigma: number): number | null {
@@ -32,7 +40,7 @@ export function resolvePutDelta({
   strike,
   dte,
   impliedVolatilityPercent,
-  riskFreeRate = 0.045,
+  riskFreeRate = CALCULATED_PUT_DELTA_MODEL.annualRiskFreeRate,
 }: {
   providerDelta: number | null | undefined;
   underlyingPrice: number | null | undefined;
@@ -57,7 +65,7 @@ export function resolvePutDeltaWithSource({
   strike,
   dte,
   impliedVolatilityPercent,
-  riskFreeRate = 0.045,
+  riskFreeRate = CALCULATED_PUT_DELTA_MODEL.annualRiskFreeRate,
 }: {
   providerDelta: number | null | undefined;
   underlyingPrice: number | null | undefined;
@@ -71,6 +79,6 @@ export function resolvePutDeltaWithSource({
     return { delta: providerDelta > 0 ? -providerDelta : providerDelta, source: 'provider' };
   }
   if (!positiveFinite(underlyingPrice) || !positiveFinite(strike) || !positiveFinite(dte) || !positiveFinite(impliedVolatilityPercent)) return null;
-  const delta = calculatePutDelta(underlyingPrice, strike, dte / 365, riskFreeRate, impliedVolatilityPercent / 100);
-  return delta == null ? null : { delta, source: 'calculated' };
+  const delta = calculatePutDelta(underlyingPrice, strike, dte / CALCULATED_PUT_DELTA_MODEL.dayCount, riskFreeRate, impliedVolatilityPercent / 100);
+  return delta == null ? null : { delta, source: 'calculated', modelVersion: CALCULATED_PUT_DELTA_MODEL.version };
 }

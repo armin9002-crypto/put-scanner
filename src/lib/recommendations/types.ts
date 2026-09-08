@@ -1,5 +1,6 @@
 import type { EtfPulseRow } from '../etfPulseMetrics.ts';
 import type { RegimeAnalysis, TradePosture } from '../marketRead/types.ts';
+import type { PutDeltaSource } from '../putDelta.ts';
 import type { ScreenerRow } from '../screenerRows.ts';
 import type { OptionIntegrityReasonCode, OptionIntegrityStatus, OptionsChainData } from '../types.ts';
 import type { UnderlyingTechnicalAssessment } from '../underlyingTechnical.ts';
@@ -165,6 +166,8 @@ export interface PriceNeighborEvidence {
   strikeDistanceRatio: number;
   recentTransaction: boolean;
   delta: number | null;
+  deltaSource: PutDeltaSource | null;
+  deltaModelVersion: string | null;
   iv: number | null;
   openInterest: number | null;
   volume: number | null;
@@ -248,6 +251,8 @@ export interface RecommendationCandidate {
     annualizedYieldBidPct: number | null;
     indicativeAnnualizedYieldRangePct: { low: number; high: number } | null;
     delta: number | null;
+    deltaSource: PutDeltaSource | null;
+    deltaModelVersion: string | null;
     moneynessPct: number | null;
     breakevenAtBasis: number | null;
     breakevenCushionAtBasis: number | null;

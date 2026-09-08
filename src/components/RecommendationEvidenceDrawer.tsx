@@ -11,6 +11,12 @@ function valueOrDash(value: number | null | undefined, decimals = 2): string {
   return value == null || !Number.isFinite(value) ? '—' : value.toFixed(decimals);
 }
 
+function deltaSourceLabel(candidate: RecommendationCandidate): string {
+  if (candidate.economics.deltaSource === 'provider') return 'Provider exact-contract Delta';
+  if (candidate.economics.deltaSource === 'calculated') return `Calculated (${candidate.economics.deltaModelVersion ?? 'version unavailable'})`;
+  return 'Unavailable';
+}
+
 function EvidenceContent({ candidate, run }: { candidate: RecommendationCandidate; run: RecommendationRun }) {
   const range = candidate.pricing.indicativeRange;
   return (
@@ -25,6 +31,7 @@ function EvidenceContent({ candidate, run }: { candidate: RecommendationCandidat
           <EvidenceMetric label="Pricing" value={candidate.pricing.confidence} />
           <EvidenceMetric label="Execution quality" value={candidate.pricing.actionability} />
           <EvidenceMetric label="Market integrity" value={candidate.pricing.integrityStatus.toUpperCase()} />
+          <EvidenceMetric label="Delta source" value={deltaSourceLabel(candidate)} />
           <EvidenceMetric label="Evidence" value={candidate.evidenceQuality} />
           <EvidenceMetric label="Robustness" value={candidate.robustness.classification} />
         </div>
@@ -65,7 +72,7 @@ function EvidenceContent({ candidate, run }: { candidate: RecommendationCandidat
                   <td className="px-1.5 py-1 text-right">{formatCurrency(neighbor.rawAsk)}</td>
                   <td className="px-1.5 py-1 text-right">{formatCurrency(neighbor.rawLast)}</td>
                   <td className="px-1.5 py-1 text-right" title={neighbor.integrityReasonCodes.join(', ')}>{neighbor.integrityStatus.toUpperCase()}</td>
-                  <td className="px-1.5 py-1 text-right">{neighbor.tradingSessionAge == null ? '—' : `${neighbor.tradingSessionAge} td`}</td>
+                  <td className="px-1.5 py-1 text-right">{neighbor.tradingSessionAge == null ? '—' : `${neighbor.tradingSessionAge} session${neighbor.tradingSessionAge === 1 ? '' : 's'}`}</td>
                   <td className="px-1.5 py-1 text-right">{neighbor.side === 'CANDIDATE' ? '—' : `${(neighbor.strikeDistanceRatio * 100).toFixed(1)}%`}</td>
                   <td className="px-1.5 py-1 text-right">{valueOrDash(neighbor.delta)}</td>
                   <td className="px-1.5 py-1 text-right">{neighbor.iv == null ? '—' : formatPercentPoints(neighbor.iv, 1)}</td>
@@ -88,6 +95,7 @@ function EvidenceContent({ candidate, run }: { candidate: RecommendationCandidat
           <AuditTag label={`Proxy ${candidate.pricing.nearbyTransactionProxy.replace(/_/g, ' ')}`} />
         </div>
         <div className="mt-2 space-y-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          <div>Delta provenance is retained for the candidate and same-expiration neighbors; calculated values use their versioned deterministic model.</div>
           {[...new Set(candidate.pricing.surface.reasonCodes)].map(code => <div key={code}>{reasonCopy(code)}</div>)}
         </div>
       </section>

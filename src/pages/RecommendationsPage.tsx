@@ -6,6 +6,7 @@ import type { OptionDetail } from '../components/OptionDetailDrawer.tsx';
 import RecommendationEvidenceDrawer from '../components/RecommendationEvidenceDrawer.tsx';
 import { PageHeader, SectionHeader } from '../components/ui/PageHeader.tsx';
 import { formatCurrency, formatDateTime, formatPercentPoints } from '../lib/format.ts';
+import { CALCULATED_PUT_DELTA_MODEL } from '../lib/putDelta.ts';
 import { persistOnlyEvaluateAtLeast60Dte, readOnlyEvaluateAtLeast60Dte } from '../lib/recommendationPreferences.ts';
 import { createLatestScreenerScanGate } from '../lib/screenerAcquisition.ts';
 import { getInMemoryRecommendationRun, publishInMemoryRecommendationRun, refreshRecommendations, type RecommendationRefreshProgress } from '../lib/recommendations/acquisition.ts';
@@ -34,6 +35,8 @@ function optionDetail(candidate: RecommendationCandidate): OptionDetail {
     bid: row.bid,
     ask: row.ask,
     delta: row.delta,
+    deltaSource: row.deltaSource,
+    deltaModelVersion: row.deltaSource === 'calculated' ? CALCULATED_PUT_DELTA_MODEL.version : null,
     impliedVolatility: row.iv,
     volume: row.volume,
     openInterest: row.openInterest,

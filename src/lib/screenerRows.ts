@@ -1,7 +1,7 @@
-import { resolvePutDelta } from './putDelta.ts';
+import { resolvePutDeltaWithSource, type PutDeltaSource } from './putDelta.ts';
 import { canonicalOptionChainKey } from './optionChainRequests.ts';
 import { calculateDte, calculateMoneyness, calculateVolumeOpenInterestRatio, calculateYieldPercent, sanitizePositive } from './optionMetrics.ts';
-import { elapsedUsEquityTradingSessions, isUsEquityTradingSession, usMarketDateIso } from './usMarketCalendar.ts';
+import { exactOptionTradeSessionAge, type MarketDateInput } from './usMarketCalendar.ts';
 import type { OptionsChainData } from './types.ts';
 import { isOptionContractIntegrityInvalid, trustedOptionPrice } from './optionMarketIntegrity.ts';
 import type { OptionIntegrityReasonCode, OptionIntegrityStatus } from './types.ts';
@@ -17,6 +17,7 @@ export interface ScreenerRow {
   moneynessLabel: string;
   moneynessColor: string;
   delta: number | null;
+  deltaSource: PutDeltaSource | null;
   bid: number | null;
   last: number | null;
   lastTradeDate: number | null;
@@ -150,34 +151,12 @@ function matchIvVsRealizedRange(value: number | null, filter: string): boolean {
   }
 }
 
-function normalizedLastTradeMarketDate(value: unknown): string | null {
-  const numeric = typeof value === 'number'
-    ? value
-    : typeof value === 'string' && value.trim() !== '' && /^[-+]?\d+(?:\.\d+)?$/.test(value.trim())
-      ? Number(value)
-      : null;
-  const timestamp = numeric != null
-    ? numeric < 10_000_000_000 ? numeric * 1_000 : numeric
-    : value instanceof Date ? value.getTime() : typeof value === 'string' ? Date.parse(value) : NaN;
-  if (!Number.isFinite(timestamp) || timestamp <= 0) return null;
-  const marketDate = usMarketDateIso(new Date(timestamp));
-  return marketDate && isUsEquityTradingSession(marketDate) ? marketDate : null;
-}
-
 export function isRecentScreenerTrade(
   row: Pick<ScreenerRow, 'lastTradeDate'>,
-  currentMarketDate: string | Date | number = new Date(),
+  currentMarketDate: MarketDateInput = new Date(),
 ): boolean {
-  const lastTradeMarketDate = normalizedLastTradeMarketDate(row.lastTradeDate);
-  const currentDate = typeof currentMarketDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(currentMarketDate)
-    ? currentMarketDate
-    : usMarketDateIso(currentMarketDate instanceof Date
-      ? currentMarketDate
-      : typeof currentMarketDate === 'number'
-        ? currentMarketDate < 10_000_000_000 ? currentMarketDate * 1_000 : currentMarketDate
-        : new Date());
-  if (!lastTradeMarketDate || !currentDate || lastTradeMarketDate > currentDate) return false;
-  return elapsedUsEquityTradingSessions(lastTradeMarketDate, currentDate) <= 15;
+  const ageSessions = exactOptionTradeSessionAge(row.lastTradeDate, currentMarketDate);
+  return ageSessions != null && ageSessions <= 15;
 }
 
 export function applyScreenerFilters(
@@ -257,7 +236,7 @@ export function buildScreenerRows(
       if (dte == null) continue;
       for (const put of chain.puts) {
         const integrityInvalid = isOptionContractIntegrityInvalid(put);
-        const delta = resolvePutDelta({
+        const resolvedDelta = resolvePutDeltaWithSource({
           providerDelta: integrityInvalid ? null : put.delta,
           underlyingPrice: price,
           strike: put.strike,
@@ -283,7 +262,8 @@ export function buildScreenerRows(
           moneynessPct,
           moneynessLabel,
           moneynessColor: moneyness.color,
-          delta,
+          delta: resolvedDelta?.delta ?? null,
+          deltaSource: resolvedDelta?.source ?? null,
           bid: put.bid,
           last: put.last,
           lastTradeDate: put.lastTradeDate,

@@ -27,7 +27,7 @@ Invalid price, identity, strike, DTE, underlying, or canonical Phase A market in
 
 ## Recommendation price discovery
 
-Recommendation transaction age uses `elapsedUsEquityTradingSessions()` rather than the generic option 2/7-calendar-day display thresholds:
+Recommendation transaction age uses the canonical `exactOptionTradeSessionAge()` helper, which counts U.S. equity trading sessions from the exact contract's New York Last Trade date rather than using the generic option 2/7-calendar-day display thresholds:
 
 - **Recent:** at most 10 U.S. equity trading sessions.
 - **Stale/intermediate:** 11–60 sessions.

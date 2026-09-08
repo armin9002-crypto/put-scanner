@@ -1,7 +1,7 @@
 import { calculateBidAskSpreadPercent, isFiniteNumber } from '../optionMetrics.ts';
-import { resolvePutDelta } from '../putDelta.ts';
+import { resolvePutDeltaWithSource } from '../putDelta.ts';
 import type { OptionContract, OptionsChainData } from '../types.ts';
-import { elapsedUsEquityTradingSessions } from '../usMarketCalendar.ts';
+import { exactOptionTradeSessionAge } from '../usMarketCalendar.ts';
 import type { RecommendationPolicy } from './policy.ts';
 import { RECOMMENDATION_POLICY } from './policy.ts';
 import type {
@@ -21,19 +21,8 @@ function positiveQuote(value: number | null | undefined): number | null {
   return isFiniteNumber(value) && value > 0 ? value : null;
 }
 
-function timestampMs(value: number | null | undefined): number | null {
-  if (!isFiniteNumber(value) || value <= 0) return null;
-  const normalized = value < 100_000_000_000 ? value * 1_000 : value;
-  return Number.isNaN(new Date(normalized).getTime()) ? null : normalized;
-}
-
-export function recommendationTradingSessionAge(lastTradeDate: number | null | undefined, asOf: string | number): number | null {
-  const tradeMs = timestampMs(lastTradeDate);
-  const asOfMs = typeof asOf === 'number' ? asOf : Date.parse(asOf);
-  if (tradeMs == null || !Number.isFinite(asOfMs) || tradeMs > asOfMs) return null;
-  const tradeDate = new Date(tradeMs).toISOString().slice(0, 10);
-  const evaluationDate = new Date(asOfMs).toISOString().slice(0, 10);
-  return elapsedUsEquityTradingSessions(tradeDate, evaluationDate);
+export function recommendationTradingSessionAge(lastTradeDate: number | null | undefined, asOf: string | number | Date): number | null {
+  return exactOptionTradeSessionAge(lastTradeDate, asOf);
 }
 
 type BasePriceEvidence = Omit<PriceNeighborEvidence, 'side' | 'strikeDistanceRatio' | 'recentTransaction'>;
@@ -100,6 +89,13 @@ function baseEvidenceFor(
   const last = integrityInvalid ? null : quote(option.last);
   const lastTradeDate = positiveQuote(option.lastTradeDate);
   const tradingSessionAge = recommendationTradingSessionAge(lastTradeDate, asOf);
+  const resolvedDelta = resolvePutDeltaWithSource({
+    providerDelta: integrityInvalid ? null : option.delta,
+    underlyingPrice: chain.currentPrice,
+    strike: option.strike,
+    dte,
+    impliedVolatilityPercent: integrityInvalid ? null : option.impliedVolatility,
+  });
   return {
     strike: option.strike,
     bid,
@@ -107,13 +103,9 @@ function baseEvidenceFor(
     last,
     lastTradeDate,
     tradingSessionAge,
-    delta: resolvePutDelta({
-      providerDelta: integrityInvalid ? null : option.delta,
-      underlyingPrice: chain.currentPrice,
-      strike: option.strike,
-      dte,
-      impliedVolatilityPercent: integrityInvalid ? null : option.impliedVolatility,
-    }),
+    delta: resolvedDelta?.delta ?? null,
+    deltaSource: resolvedDelta?.source ?? null,
+    deltaModelVersion: resolvedDelta?.modelVersion ?? null,
     iv: integrityInvalid ? null : positiveQuote(option.impliedVolatility),
     openInterest: quote(option.openInterest),
     volume: quote(option.volume),

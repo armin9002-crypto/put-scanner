@@ -474,7 +474,7 @@ test('Screener row reconstruction preserves pricing, Greeks, yields, filters, an
   assert.equal(all.rows[0].ivVsRealizedRange, 42);
   assert.deepEqual(Object.keys(all.rows[0]), [
     'ticker', 'currentPrice', 'expDate', 'expLabel', 'dte', 'strike', 'moneynessPct', 'moneynessLabel',
-    'moneynessColor', 'delta', 'bid', 'last', 'lastTradeDate', 'ask', 'iv', 'nomYieldBid', 'nomYieldAsk',
+    'moneynessColor', 'delta', 'deltaSource', 'bid', 'last', 'lastTradeDate', 'ask', 'iv', 'nomYieldBid', 'nomYieldAsk',
     'nomYieldLast', 'annYieldBid', 'annYieldAsk', 'annYieldLast', 'volume', 'openInterest', 'volOI', 'ivVsRealizedRange',
   ]);
   const exact = buildScreenerRows(data, `date_${EXPIRATION_TWO}`, { asOf: '2027-01-12T12:00:00Z' });

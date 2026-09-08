@@ -1,5 +1,5 @@
 import type { RecommendationPricing, TransactionRecency } from './types.ts';
-import { isUsEquityTradingSession } from '../usMarketCalendar.ts';
+import { isUsEquityTradingSession, usMarketDateIso } from '../usMarketCalendar.ts';
 
 const EASTERN_MARKET_CLOCK = new Intl.DateTimeFormat('en-US', {
   timeZone: 'America/New_York',
@@ -34,16 +34,18 @@ export function recommendationLastTradeText(pricing: RecommendationPricing, asOf
   const value = timestampMs(pricing.lastTradeDate);
   if (value == null) return 'Last trade unavailable';
   const tradeDate = new Date(value);
-  const asOfDate = new Date(asOf);
-  const includeYear = tradeDate.getUTCFullYear() !== asOfDate.getUTCFullYear();
+  const tradeMarketDate = usMarketDateIso(value);
+  const evaluationMarketDate = usMarketDateIso(asOf);
+  const includeYear = tradeMarketDate.slice(0, 4) !== evaluationMarketDate.slice(0, 4);
   const date = tradeDate.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
     ...(includeYear ? { year: 'numeric' as const } : {}),
-    timeZone: 'UTC',
+    timeZone: 'America/New_York',
   });
   const age = pricing.exactTradeSessionAge;
-  return age == null ? `Last trade ${date} · trading-session age unavailable` : `Last trade ${date} · ${age} td ago`;
+  const ageText = age == null ? 'trading-session age unavailable' : age === 0 ? '0 sessions' : `${age} session${age === 1 ? '' : 's'} ago`;
+  return `Last trade ${date} · ${ageText}`;
 }
 
 export function transactionRecencyTone(recency: TransactionRecency): 'positive' | 'warning' | 'danger' | 'muted' {

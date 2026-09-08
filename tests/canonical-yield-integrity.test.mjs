@@ -27,6 +27,7 @@ import {
   historyRealizedIrr,
 } from '../src/lib/portfolioHistoryAnalytics.ts';
 import { applyScreenerFilters, buildScreenerRows } from '../src/lib/screenerRows.ts';
+import { usMarketDateIso } from '../src/lib/usMarketCalendar.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = relative => readFile(path.join(root, relative), 'utf8');
@@ -35,8 +36,10 @@ const close = (actual, expected, message, tolerance = 1e-12) => {
   assert.ok(Math.abs(actual - expected) <= tolerance, `${message}: expected ${expected}, received ${actual}`);
 };
 const isoAtUtcOffset = days => {
-  const now = new Date();
-  const utc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + days);
+  const marketDate = usMarketDateIso(new Date());
+  assert.ok(marketDate);
+  const [year, month, day] = marketDate.split('-').map(Number);
+  const utc = Date.UTC(year, month - 1, day + days);
   return new Date(utc).toISOString().slice(0, 10);
 };
 const portfolioTrade = (overrides = {}) => ({

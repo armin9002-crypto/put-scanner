@@ -17,7 +17,7 @@ test('normalizes Yahoo units, timestamps, put delta sign, expiration metadata, a
   assert.deepEqual(chain.puts.map(put => put.strike), [68, 70, 72, 98, 102]);
   assert.equal(chain.puts[1].impliedVolatility, 48);
   assert.equal(chain.puts[1].delta, -0.2);
-  assert.equal(chain.puts[1].lastTradeDate, 1791936000);
+  assert.equal(chain.puts[1].lastTradeDate, 1786460400);
   assert.equal(chain.chainMeta.putCount, 5);
   assert.equal(chain.chainMeta.callCount, 1);
   assert.equal(chain.expirations.length, 3);

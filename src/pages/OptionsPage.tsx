@@ -51,6 +51,7 @@ interface EnrichedPut {
   ask: number | null;
   delta: number | null;
   deltaSource: PutDeltaSource | null;
+  deltaModelVersion: string | null;
   gamma: number | null;
   theta: number | null;
   vega: number | null;
@@ -610,7 +611,7 @@ export default function OptionsPage() {
 
       return {
         strike: p.strike, last: p.last, lastTradeDate: p.lastTradeDate, bid: p.bid, ask: p.ask,
-        delta: resolvedDelta?.delta ?? null, deltaSource: resolvedDelta?.source ?? null,
+        delta: resolvedDelta?.delta ?? null, deltaSource: resolvedDelta?.source ?? null, deltaModelVersion: resolvedDelta?.modelVersion ?? null,
         gamma: p.gamma ?? null, theta: p.theta ?? null, vega: p.vega ?? null,
         impliedVolatility: integrityInvalid ? null : p.impliedVolatility, volume: p.volume, openInterest: p.openInterest, volOI,
         contractSymbol: p.contractSymbol,
@@ -931,7 +932,7 @@ export default function OptionsPage() {
     const mobileStaleText = (value: number | null | undefined) => {
       const freshness = getOptionLastTradeFreshness(value);
       return freshness.freshness === 'stale' || freshness.freshness === 'very_stale'
-        ? `Last ${freshness.ageDays}d ago`
+        ? freshness.ageSessions === 0 ? 'Last 0 sessions' : `Last ${freshness.ageSessions} session${freshness.ageSessions === 1 ? '' : 's'} ago`
         : null;
     };
 

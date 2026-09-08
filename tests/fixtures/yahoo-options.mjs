@@ -2,7 +2,7 @@ export const EXPIRATIONS = [1792108800, 1795132800, 1797552000];
 
 const symbol = (strike, type = 'P', expiration = '261016') => `TST${expiration}${type}${String(Math.round(strike * 1000)).padStart(8, '0')}`;
 const contract = (strike, overrides = {}) => ({
-  contractSymbol: symbol(strike), strike, lastPrice: 1.9, lastTradeDate: 1791936000,
+  contractSymbol: symbol(strike), strike, lastPrice: 1.9, lastTradeDate: 1786460400,
   bid: 1.8, ask: 2, impliedVolatility: 0.48, volume: 30, openInterest: 600,
   greeks: { delta: -0.2, gamma: 0.01, theta: -0.03, vega: 0.08 }, ...overrides,
 });
