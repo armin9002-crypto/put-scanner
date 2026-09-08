@@ -17,6 +17,7 @@ import {
 } from './requestDiagnostics.ts';
 import type { OptionsChainData, OptionChainSource } from './types.ts';
 import { normalizeOptionChainData } from './yahooOptionAdapter.ts';
+import { calculateDte } from './optionMetrics.ts';
 
 const SCREENER_DATASET_VERSION = 4;
 const BATCH_SOFT_TTL_MS = 5 * 60 * 1_000;
@@ -436,11 +437,12 @@ export async function fetchScreenerExpirationAvailability(options: { signal?: Ab
 
 export async function fetchScreenerExpirations(options: { signal?: AbortSignal } = {}): Promise<Array<{ date: number; dte: number }>> {
   const availability = await fetchScreenerExpirationAvailability(options);
-  const today = new Date();
-  const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()) / 1_000;
   const dates = new Set<number>();
   Object.values(availability.expirationsByTicker).forEach(values => values.forEach(value => {
     if (Number.isInteger(value) && value > 0) dates.add(value);
   }));
-  return [...dates].sort((a, b) => a - b).map(date => ({ date, dte: Math.max(0, Math.round((date - todayUtc) / 86_400)) }));
+  return [...dates]
+    .sort((a, b) => a - b)
+    .map(date => ({ date, dte: calculateDte(date) }))
+    .filter((expiration): expiration is { date: number; dte: number } => expiration.dte != null);
 }

@@ -1,5 +1,25 @@
+import {
+  calendarDateIso as canonicalCalendarDateIso,
+  calendarDaysBetween as canonicalCalendarDaysBetween,
+  usMarketDateIso as canonicalUsMarketDateIso,
+} from '../../shared/marketDate.js';
+
 const DAY_MS = 86_400_000;
 const holidayCache = new Map<number, Set<string>>();
+
+export type MarketDateInput = Date | number | string;
+
+export function calendarDateIso(value: MarketDateInput | null | undefined): string | null {
+  return canonicalCalendarDateIso(value);
+}
+
+export function usMarketDateIso(value: MarketDateInput = new Date()): string {
+  return canonicalUsMarketDateIso(value) ?? '';
+}
+
+export function calendarDaysBetween(start: string | null | undefined, end: string | null | undefined): number | null {
+  return canonicalCalendarDaysBetween(start, end);
+}
 
 function isoDate(year: number, month: number, day: number): string {
   return `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;

@@ -341,7 +341,7 @@ test('one failed batch preserves successful batches and retry reconstruction has
     previous: first,
     fetchBatch: async plan => { retryCalls += 1; return { payload: batchPayload(plan), meta: networkMeta }; },
   });
-  const rebuilt = buildScreenerRows(retried, 'all');
+  const rebuilt = buildScreenerRows(retried, 'all', { asOf: '2027-01-12T12:00:00Z' });
   assert.equal(retried.initialResults.size, 6);
   assert.equal(retried.chainsByKey.size, 12);
   assert.equal(retryCalls, 1);
@@ -460,7 +460,7 @@ test('Screener row reconstruction preserves pricing, Greeks, yields, filters, an
     ]),
     ivVsRealizedRangeByTicker: new Map([['TQQQ', 42]]),
   };
-  const all = buildScreenerRows(data, 'all');
+  const all = buildScreenerRows(data, 'all', { asOf: '2027-01-12T12:00:00Z' });
   assert.equal(all.rows.length, 3);
   assert.equal(all.rows[0].ticker, 'TQQQ');
   assert.equal(all.rows[0].delta, -0.2);
@@ -477,7 +477,7 @@ test('Screener row reconstruction preserves pricing, Greeks, yields, filters, an
     'moneynessColor', 'delta', 'bid', 'last', 'lastTradeDate', 'ask', 'iv', 'nomYieldBid', 'nomYieldAsk',
     'nomYieldLast', 'annYieldBid', 'annYieldAsk', 'annYieldLast', 'volume', 'openInterest', 'volOI', 'ivVsRealizedRange',
   ]);
-  const exact = buildScreenerRows(data, `date_${EXPIRATION_TWO}`);
+  const exact = buildScreenerRows(data, `date_${EXPIRATION_TWO}`, { asOf: '2027-01-12T12:00:00Z' });
   assert.equal(exact.rows.length, 1);
   assert.equal(exact.rows[0].expDate, EXPIRATION_TWO);
   assert.equal(applyScreenerFilters(all.rows, { deltaFilter: 'below_0.25', moneynessFilter: 'all', yieldFilter: 'all', oiFilter: '>50', volFilter: '>10', ivVsRealizedRangeFilter: '20_to_50' }).length, 2);

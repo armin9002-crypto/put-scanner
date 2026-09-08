@@ -194,7 +194,7 @@ test('Screener preserves contract existence but invalid AY cannot pass a yield f
   const assessed = assessPutOptionSurface([option(107, 8, 3.5)]);
   const normalizedChain = chain(assessed.puts, assessed.integrity);
   const data = { initialResults: new Map([['UPRO', normalizedChain]]), chainsByKey: new Map([[`UPRO|${EXPIRATION}`, normalizedChain]]), ivVsRealizedRangeByTicker: new Map([['UPRO', 50]]) };
-  const rows = buildScreenerRows(data, 'all').rows;
+  const rows = buildScreenerRows(data, 'all', { asOf: '2026-09-06T12:00:00Z' }).rows;
   assert.equal(rows.length, 1);
   assert.equal(rows[0].bid, 8);
   assert.equal(rows[0].integrityStatus, 'invalid');

@@ -4,6 +4,7 @@ import {
   SCREENER_TICKERS,
   SCREENER_SERVER_CONCURRENCY,
 } from '../../shared/screenerUniverse.js';
+import { calendarDateIso, calendarDaysBetween, usMarketDateIso } from '../../shared/marketDate.js';
 import { fetchYahooVolatilityContext } from './ivRank.js';
 import { fetchYahooOptions, inspectYahooOptionData, normalizeTimestampSeconds } from './yahoo.js';
 
@@ -59,14 +60,9 @@ function errorMessage(error) {
   return error instanceof Error ? error.message : 'Yahoo acquisition failed';
 }
 
-function utcDaySeconds(nowMs) {
-  const date = new Date(nowMs);
-  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) / 1_000;
-}
-
 /** Selects at most three representative contracts tenors without crawling every chain. */
 export function planRepresentativeExpirations(expirationDates, options = {}) {
-  const today = utcDaySeconds(options.nowMs ?? Date.now());
+  const marketDate = usMarketDateIso(options.nowMs ?? Date.now());
   const minimumDte = Number.isInteger(options.minimumDte) ? Math.max(0, options.minimumDte) : 0;
   const maximumDte = Number.isInteger(options.maximumDte) ? Math.max(minimumDte, options.maximumDte) : 365;
   const maximumCount = Math.max(1, Math.min(3, Number.isInteger(options.maximumCount) ? options.maximumCount : 3));
@@ -74,8 +70,8 @@ export function planRepresentativeExpirations(expirationDates, options = {}) {
     .filter(date => Number.isInteger(date) && date > 0)
     .sort((left, right) => left - right)
     .filter(date => {
-      const dte = Math.max(0, Math.round((date - today) / 86_400));
-      return dte >= minimumDte && dte <= maximumDte;
+      const dte = calendarDaysBetween(marketDate, calendarDateIso(date));
+      return dte != null && dte >= minimumDte && dte <= maximumDte;
     });
   if (eligible.length <= maximumCount) return { eligible, selected: eligible };
   const indexes = maximumCount === 1

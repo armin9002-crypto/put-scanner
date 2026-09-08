@@ -2,6 +2,7 @@ import { normalizeFiniteNumber, normalizeNonNegativeNumber, normalizePositiveNum
 import type { ExpirationDate, OptionChainSource, OptionContract, OptionsChainData } from './types';
 import { normalizeMarketTimestamp } from './marketTimestamp.ts';
 import { assessPutOptionSurface, parseYahooOptionSymbol } from './optionMarketIntegrity.ts';
+import { calculateDte } from './optionMetrics.ts';
 
 export { parseYahooOptionSymbol } from './optionMarketIntegrity.ts';
 
@@ -30,14 +31,6 @@ export interface YahooOptionContract {
   impliedVolatility?: number | null;
   volume?: number | null;
   openInterest?: number | null;
-}
-
-function calculateDte(expirationTimestamp: number): number {
-  const now = new Date();
-  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  const expiry = new Date(expirationTimestamp * 1000);
-  const expiryUtc = Date.UTC(expiry.getUTCFullYear(), expiry.getUTCMonth(), expiry.getUTCDate());
-  return Math.max(0, Math.round((expiryUtc - todayUtc) / 86_400_000));
 }
 
 function formatExpirationLabel(timestamp: number, currentUtcYear: number): string {
@@ -147,7 +140,12 @@ export function normalizeOptionChainData(data: unknown, ticker: string, date: nu
   const putRange = strikeRange(putsRaw);
   const callRange = strikeRange(callsRaw);
   const currentYear = new Date().getUTCFullYear();
-  const expirations: ExpirationDate[] = expirationDates.map(timestamp => ({ date: timestamp, label: formatExpirationLabel(timestamp, currentYear), dte: calculateDte(timestamp) }));
+  const expirations: ExpirationDate[] = expirationDates
+    .map(timestamp => {
+      const dte = calculateDte(timestamp);
+      return dte == null ? null : { date: timestamp, label: formatExpirationLabel(timestamp, currentYear), dte };
+    })
+    .filter((expiration): expiration is ExpirationDate => expiration != null);
   const putsByStrike = new Map<number, OptionContract>();
   putsRaw.filter((put): put is YahooOptionContract & { strike: number } => {
     validateYahooPutContract(put, requestedExpiration, chainExpiration).forEach(warning => validationWarnings.push(`${put.contractSymbol ?? `strike ${put.strike ?? 'unknown'}`}: ${warning}`));

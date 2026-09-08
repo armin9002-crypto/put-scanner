@@ -178,7 +178,7 @@ function initialPolicyChecks(input: {
   valid: boolean;
   integrityInvalid: boolean;
 }): RecommendationCandidate['policyChecks'] {
-  const strikeCushion = input.row.moneynessPct / 100;
+  const strikeCushion = input.row.moneynessPct == null ? null : input.row.moneynessPct / 100;
   const checks: RecommendationCandidate['policyChecks'] = [
     {
       code: input.integrityInvalid ? 'MARKET_INTEGRITY_INVALID' : 'INVALID_CONTRACT',
@@ -193,7 +193,7 @@ function initialPolicyChecks(input: {
     },
     { code: 'DTE_OUTSIDE_POSTURE', passed: input.row.dte >= input.posture.dteMin && input.row.dte <= input.posture.dteMax, severity: 'INFORMATIONAL', phase: 'DURATION_CONTEXT', detail: `${input.row.dte} DTE versus the contextual ${input.posture.dteMin}–${input.posture.dteMax} posture range; this is not a hard veto.` },
     { code: input.row.delta == null ? 'MISSING_DELTA' : 'INSUFFICIENT_CUSHION', passed: input.row.delta != null && Math.abs(input.row.delta) <= input.posture.maxDelta, severity: 'BLOCKING', phase: 'RISK', detail: input.row.delta == null ? 'Delta unavailable.' : `${Math.abs(input.row.delta).toFixed(3)} absolute Delta versus ${input.posture.maxDelta.toFixed(2)} maximum.` },
-    { code: 'INSUFFICIENT_CUSHION', passed: strikeCushion >= input.posture.minDistanceToStrike, severity: 'BLOCKING', phase: 'RISK', detail: `${(strikeCushion * 100).toFixed(1)}% strike cushion versus ${(input.posture.minDistanceToStrike * 100).toFixed(0)}% minimum.` },
+    { code: 'INSUFFICIENT_CUSHION', passed: strikeCushion != null && strikeCushion >= input.posture.minDistanceToStrike, severity: 'BLOCKING', phase: 'RISK', detail: strikeCushion == null ? 'Strike cushion unavailable.' : `${(strikeCushion * 100).toFixed(1)}% strike cushion versus ${(input.posture.minDistanceToStrike * 100).toFixed(0)}% minimum.` },
     { code: 'INSUFFICIENT_CUSHION', passed: input.breakevenCushion != null && input.breakevenCushion >= input.posture.minDistanceToBreakeven, severity: 'BLOCKING', phase: 'RISK', detail: input.breakevenCushion == null ? 'Breakeven cushion unavailable.' : `${(input.breakevenCushion * 100).toFixed(1)}% breakeven cushion versus ${(input.posture.minDistanceToBreakeven * 100).toFixed(0)}% minimum.` },
     { code: input.underlying.qualification === 'HARD_FAIL' ? 'BROKEN_TREND' : 'SUPPORTIVE_UNDERLYING', passed: input.underlying.qualification === 'ELIGIBLE', severity: 'BLOCKING', phase: 'UNDERLYING', detail: `${input.underlying.setup} setup; ${input.underlying.qualification}.` },
   ];
@@ -480,12 +480,13 @@ function recordCandidateComparison(candidate: RecommendationCandidate, compariso
 
 function riskPolicyClears(candidate: RecommendationCandidate, posture: TradePosture, deltaTolerance = 0, cushionTolerance = 0): boolean {
   const delta = candidate.economics.delta == null ? null : Math.abs(candidate.economics.delta);
-  const strikeCushion = candidate.economics.moneynessPct / 100;
+  const strikeCushion = candidate.economics.moneynessPct == null ? null : candidate.economics.moneynessPct / 100;
   const breakevenCushion = candidate.economics.breakevenCushionAtBasis;
   return candidate.underlying.qualification === 'ELIGIBLE'
     && validityCheckPasses(candidate)
     && delta != null
     && delta <= posture.maxDelta + deltaTolerance
+    && strikeCushion != null
     && strikeCushion >= posture.minDistanceToStrike + cushionTolerance
     && breakevenCushion != null
     && breakevenCushion >= posture.minDistanceToBreakeven + cushionTolerance;

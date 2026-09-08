@@ -59,7 +59,7 @@ export function buildRecommendationScaleSnapshot(tickerInput = 37, strikesPerCha
   }
   const expirationPlansByTicker = new Map(tickers.map(ticker => [ticker, { selectedExpirationDates: dtes.map(dte => day + dte * 86_400) }]));
   const built = buildScreenerRows({ initialResults, chainsByKey,
-    ivVsRealizedRangeByTicker: new Map(tickers.map(ticker => [ticker, 75])), expirationPlansByTicker }, 'all');
+    ivVsRealizedRangeByTicker: new Map(tickers.map(ticker => [ticker, 75])), expirationPlansByTicker }, 'all', { asOf: SCALE_AS_OF });
   const marketRegime = regime();
   return {
     asOf: SCALE_AS_OF, engineVersion: RECOMMENDATION_ENGINE_VERSION, policyVersion: RECOMMENDATION_POLICY_VERSION,

@@ -1,3 +1,5 @@
+import { calendarDateIso, calendarDaysBetween, usMarketDateIso } from './usMarketCalendar.ts';
+
 export interface MoneynessMetrics {
   pct: number | null;
   label: string;
@@ -38,6 +40,12 @@ export function sanitizePositive(value: number | null | undefined, allowZero = f
   return value;
 }
 
+export function calculateVolumeOpenInterestRatio(volume: unknown, openInterest: unknown): number | null {
+  if (!isFiniteNumber(volume) || volume < 0 || !isFiniteNumber(openInterest) || openInterest <= 0) return null;
+  const ratio = volume / openInterest;
+  return isFiniteNumber(ratio) ? ratio : null;
+}
+
 /** Put Scanner's canonical simple 365-calendar-day annualization convention. */
 export function calculateSimpleAnnualizedValue(value: number | null | undefined, calendarDays: number | null | undefined): number | null {
   if (!isFiniteNumber(value) || !isFiniteNumber(calendarDays) || calendarDays <= 0) return null;
@@ -45,32 +53,15 @@ export function calculateSimpleAnnualizedValue(value: number | null | undefined,
   return isFiniteNumber(annualized) ? annualized : null;
 }
 
-export function calculateDte(expiration: number | string | Date | null | undefined): number | null {
-  if (expiration == null) return null;
-
-  let expiryUTC: number | null = null;
-  if (typeof expiration === 'number' && Number.isFinite(expiration)) {
-    const date = new Date(expiration > 100000000000 ? expiration : expiration * 1000);
-    expiryUTC = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
-  } else if (typeof expiration === 'string') {
-    const match = expiration.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (match) {
-      const [, year, month, day] = match;
-      expiryUTC = Date.UTC(Number(year), Number(month) - 1, Number(day));
-    } else {
-      const parsed = new Date(expiration);
-      if (!Number.isNaN(parsed.getTime())) {
-        expiryUTC = Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate());
-      }
-    }
-  } else if (expiration instanceof Date && !Number.isNaN(expiration.getTime())) {
-    expiryUTC = Date.UTC(expiration.getUTCFullYear(), expiration.getUTCMonth(), expiration.getUTCDate());
-  }
-
-  if (expiryUTC == null) return null;
-  const now = new Date();
-  const todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  return Math.round((expiryUTC - todayUTC) / (1000 * 60 * 60 * 24));
+export function calculateDte(
+  expiration: number | string | Date | null | undefined,
+  asOf: number | string | Date = new Date(),
+): number | null {
+  const expirationDate = calendarDateIso(expiration);
+  const marketDate = usMarketDateIso(asOf);
+  return expirationDate == null || marketDate == null
+    ? null
+    : calendarDaysBetween(marketDate, expirationDate);
 }
 
 export function calculateMoneyness(underlyingPrice: number | null | undefined, strike: number | null | undefined): MoneynessMetrics {

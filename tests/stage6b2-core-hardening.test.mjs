@@ -70,7 +70,7 @@ test('Screener selects nearest expirations per ticker and preserves truthful 0-D
       [canonicalOptionChainKey('BBB', bDates[1]), bSecond],
     ]),
     ivVsRealizedRangeByTicker: new Map([['AAA', 40], ['BBB', 50]]),
-  }, 'all');
+  }, 'all', { asOf: '2027-01-15T12:00:00Z' });
 
   assert.deepEqual(result.rows.map(row => `${row.ticker}:${row.expDate}`), [
     `AAA:${aDates[0]}`, `AAA:${aDates[1]}`, `BBB:${bDates[0]}`, `BBB:${bDates[1]}`,

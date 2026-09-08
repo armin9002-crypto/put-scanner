@@ -122,7 +122,7 @@ function snapshot({ pulseRows = [pulse('TQQQ')], chains = [chain('TQQQ', surface
     chainsByKey.set(canonicalOptionChainKey(ticker, EXPIRATION), item);
     ivVsRealizedRangeByTicker.set(ticker, 75);
   }
-  const built = buildScreenerRows({ initialResults, chainsByKey, ivVsRealizedRangeByTicker }, 'all');
+  const built = buildScreenerRows({ initialResults, chainsByKey, ivVsRealizedRangeByTicker }, 'all', { asOf: AS_OF });
   const marketRegime = regime(regimeLabel);
   const tickers = pulseRows.map(row => row.ticker).sort();
   return {
@@ -178,7 +178,7 @@ function multiTenorSnapshot(chains, onlyEvaluateAtLeast60Dte = true) {
     chainsByKey,
     ivVsRealizedRangeByTicker: new Map([[ticker, 75]]),
     expirationPlansByTicker: new Map([[ticker, { selectedExpirationDates: expirations.map(item => item.date) }]]),
-  }, 'all');
+  }, 'all', { asOf: AS_OF });
   const marketRegime = regime();
   return {
     asOf: AS_OF,

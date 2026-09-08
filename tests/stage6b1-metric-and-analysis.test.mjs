@@ -117,7 +117,7 @@ test('the same deterministic contract reconciles discovery, Screener, drawer, an
     initialResults: new Map([['TST', chain]]),
     chainsByKey: new Map([['TST:1800576000', chain]]),
     ivVsRealizedRangeByTicker: new Map([['TST', 42]]),
-  }, 'all').rows;
+  }, 'all', { asOf: '2026-12-23T12:00:00Z' }).rows;
   assert.equal(rows.length, 1);
   assert.deepEqual(
     { nominal: rows[0].nomYieldBid, annualized: rows[0].annYieldBid },

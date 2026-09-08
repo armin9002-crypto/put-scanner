@@ -1,20 +1,19 @@
 import { resolvePutDelta } from './putDelta.ts';
 import { canonicalOptionChainKey } from './optionChainRequests.ts';
-import { calculateMoneyness, calculateYieldPercent } from './optionMetrics.ts';
-import { elapsedUsEquityTradingSessions, isUsEquityTradingSession } from './usMarketCalendar.ts';
-import { usMarketDateIso } from './portfolioEntryDelta.ts';
+import { calculateDte, calculateMoneyness, calculateVolumeOpenInterestRatio, calculateYieldPercent, sanitizePositive } from './optionMetrics.ts';
+import { elapsedUsEquityTradingSessions, isUsEquityTradingSession, usMarketDateIso } from './usMarketCalendar.ts';
 import type { OptionsChainData } from './types.ts';
 import { isOptionContractIntegrityInvalid, trustedOptionPrice } from './optionMarketIntegrity.ts';
 import type { OptionIntegrityReasonCode, OptionIntegrityStatus } from './types.ts';
 
 export interface ScreenerRow {
   ticker: string;
-  currentPrice: number;
+  currentPrice: number | null;
   expDate: number;
   expLabel: string;
   dte: number;
   strike: number;
-  moneynessPct: number;
+  moneynessPct: number | null;
   moneynessLabel: string;
   moneynessColor: string;
   delta: number | null;
@@ -79,8 +78,9 @@ function matchDeltaAbs(delta: number | null, filter: string): boolean {
   }
 }
 
-function matchMoneyness(moneynessPct: number, filter: string): boolean {
+function matchMoneyness(moneynessPct: number | null, filter: string): boolean {
   if (filter === 'all') return true;
+  if (moneynessPct == null) return false;
   if (!Number.isFinite(moneynessPct)) return false;
   const isOTM = moneynessPct > 0;
   const isITM = moneynessPct < 0;
@@ -204,10 +204,14 @@ export function getExpsToFetchForFilter(allExps: ScreenerExpirationCandidate[], 
   return allExps.slice(0, 2);
 }
 
-export function collectScreenerExpirations(initialResults: Map<string, OptionsChainData>): ScreenerExpirationCandidate[] {
+export function collectScreenerExpirations(
+  initialResults: Map<string, OptionsChainData>,
+  asOf: number | string | Date = new Date(),
+): ScreenerExpirationCandidate[] {
   const byDate = new Map<number, ScreenerExpirationCandidate>();
   initialResults.forEach(data => data.expirations.forEach(expiration => {
-    if (!byDate.has(expiration.date)) byDate.set(expiration.date, { date: expiration.date, dte: expiration.dte });
+    const dte = calculateDte(expiration.date, asOf);
+    if (dte != null && !byDate.has(expiration.date)) byDate.set(expiration.date, { date: expiration.date, dte });
   }));
   return [...byDate.values()].sort((a, b) => a.date - b.date);
 }
@@ -220,27 +224,37 @@ export function formatScreenerExpiration(timestamp: number, dte: number): string
   return `${month}/${day}/${year} (${dte})`;
 }
 
-export function buildScreenerRows(data: ScreenerAcquiredData, expFilter: string): { rows: ScreenerRow[]; expirations: ScreenerExpirationCandidate[] } {
-  const expirations = collectScreenerExpirations(data.initialResults);
+export function buildScreenerRows(
+  data: ScreenerAcquiredData,
+  expFilter: string,
+  options: { asOf?: number | string | Date } = {},
+): { rows: ScreenerRow[]; expirations: ScreenerExpirationCandidate[] } {
+  const asOf = options.asOf ?? new Date();
+  const expirations = collectScreenerExpirations(data.initialResults, asOf);
   const rows: ScreenerRow[] = [];
 
   for (const [ticker, initialData] of data.initialResults) {
-    const currentPrice = initialData.currentPrice;
+    const initialPrice = sanitizePositive(initialData.currentPrice);
+    const canonicalExpirations = initialData.expirations
+      .map(expiration => {
+        const dte = calculateDte(expiration.date, asOf);
+        return dte == null ? null : { date: expiration.date, dte };
+      })
+      .filter((expiration): expiration is ScreenerExpirationCandidate => expiration != null);
     // "Nearest" is a per-ticker property. Selecting from the global union can
     // exclude a ticker whose own first two expirations differ from another
     // ticker's calendar, even though both chains were acquired successfully.
     const plannedDates = data.expirationPlansByTicker?.get(ticker)?.selectedExpirationDates;
     const tickerExpirations = plannedDates
-      ? initialData.expirations.filter(expiration => plannedDates.includes(expiration.date))
-      : getExpsToFetchForFilter(initialData.expirations, expFilter);
+      ? canonicalExpirations.filter(expiration => plannedDates.includes(expiration.date))
+      : getExpsToFetchForFilter(canonicalExpirations, expFilter);
     for (const expiration of tickerExpirations) {
       const chain = data.chainsByKey.get(canonicalOptionChainKey(ticker, expiration.date))
         ?? (expiration.date === initialData.expirations[0]?.date ? initialData : null);
       if (!chain) continue;
-      const price = chain.currentPrice || currentPrice;
-      // Preserve 0-DTE as 0. Yield annualization and model-Delta fallback are
-      // intentionally unavailable at 0 DTE; provider Delta can still survive.
-      const dte = Math.max(0, expiration.dte);
+      const price = sanitizePositive(chain.currentPrice) ?? initialPrice;
+      const dte = calculateDte(expiration.date, asOf);
+      if (dte == null) continue;
       for (const put of chain.puts) {
         const integrityInvalid = isOptionContractIntegrityInvalid(put);
         const delta = resolvePutDelta({
@@ -252,12 +266,12 @@ export function buildScreenerRows(data: ScreenerAcquiredData, expFilter: string)
         });
 
         const moneyness = calculateMoneyness(price, put.strike);
-        const moneynessPct = moneyness.pct ?? 0;
+        const moneynessPct = moneyness.pct;
         const moneynessLabel = moneyness.label === '—' ? '—' : moneyness.label.replace(/(\d+\.\d)%/, match => `${Number.parseFloat(match).toFixed(2)}%`);
         const bidYield = calculateYieldPercent(trustedOptionPrice(put, 'bid'), put.strike, dte);
         const askYield = calculateYieldPercent(trustedOptionPrice(put, 'ask'), put.strike, dte);
         const lastYield = calculateYieldPercent(trustedOptionPrice(put, 'last'), put.strike, dte);
-        const volOI = put.volume != null && put.volume > 0 && put.openInterest != null && put.openInterest > 0 ? put.volume / put.openInterest : null;
+        const volOI = calculateVolumeOpenInterestRatio(put.volume, put.openInterest);
 
         rows.push({
           ticker,

@@ -1,6 +1,7 @@
 import type { ExpirationDate, OptionContract, OptionsChainData } from './types';
 import type { DataFreshness } from './marketDataRequest';
 import { isOptionContractIntegrityInvalid } from './optionMarketIntegrity.ts';
+import { calculateDte } from './optionMetrics.ts';
 
 export type SnapshotConfidence = 'high' | 'normal' | 'reduced' | 'low';
 export type ExpirationSelectionTier = 'ideal' | 'normal' | 'expanded' | 'broad';
@@ -139,11 +140,8 @@ function minimumConfidence(...values: SnapshotConfidence[]): SnapshotConfidence 
   return CONFIDENCE_ORDER[Math.min(...values.map(value => CONFIDENCE_ORDER.indexOf(value)))];
 }
 
-export function calculateCalendarDte(expirationTimestamp: number, now = new Date()): number {
-  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  const expiration = new Date(expirationTimestamp * 1000);
-  const expirationUtc = Date.UTC(expiration.getUTCFullYear(), expiration.getUTCMonth(), expiration.getUTCDate());
-  return Math.round((expirationUtc - todayUtc) / 86_400_000);
+export function calculateCalendarDte(expirationTimestamp: number, now: Date | number | string = new Date()): number | null {
+  return calculateDte(expirationTimestamp, now);
 }
 
 function expirationTier(dte: number): Pick<ScannerExpirationCandidate, 'tier' | 'confidence'> | null {
@@ -162,6 +160,7 @@ export function rankScannerSnapshotExpirations(
   return [...new Set(expirations.map(expiration => typeof expiration === 'number' ? expiration : expiration.date))]
     .map(date => {
       const dte = calculateCalendarDte(date, now);
+      if (dte == null) return null;
       const selection = expirationTier(dte);
       return selection ? { date, dte, ...selection } : null;
     })
@@ -855,7 +854,7 @@ export function getAllCachedScannerExpirations(): Record<string, number[]> {
   const cached = readRecord<CachedScannerExpirations>(EXPIRATION_CACHE_KEY);
   return Object.fromEntries(Object.entries(cached).map(([ticker, entry]) => [
     ticker,
-    Array.isArray(entry?.dates) ? entry.dates.filter(date => Number.isFinite(date) && calculateCalendarDte(date) > 0) : [],
+    Array.isArray(entry?.dates) ? entry.dates.filter(date => Number.isFinite(date) && (calculateCalendarDte(date) ?? -1) > 0) : [],
   ]));
 }
 

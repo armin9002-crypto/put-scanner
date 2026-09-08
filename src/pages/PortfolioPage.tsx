@@ -9,7 +9,7 @@ import type { OptionsChainData } from '../lib/types';
 import { isOptionContractIntegrityInvalid } from '../lib/optionMarketIntegrity';
 import { acquireOptionChains, canonicalOptionChainKey } from '../lib/optionChainRequests';
 import { formatCurrency, formatDate, formatOptionPrice, formatPercent, formatPercentPoints, normalizeTimestampMs } from '../lib/format';
-import { calculateDte, calculateMoneyness, calculateYieldPercent, isFiniteNumber } from '../lib/optionMetrics';
+import { calculateDte, calculateMoneyness, calculateVolumeOpenInterestRatio, calculateYieldPercent, isFiniteNumber, sanitizePositive } from '../lib/optionMetrics';
 import {
   archiveExpiredOpenTrades,
   getExpirationClosePrice,
@@ -1927,7 +1927,7 @@ export default function PortfolioPage() {
         const key = timestamp == null ? '' : canonicalOptionChainKey(trade.ticker, timestamp);
         const optData = optionsByKey.get(key) ?? null;
         const failed = failedKeys.has(key);
-        const underlying = batchPrices?.[trade.ticker]?.price ?? optData?.currentPrice ?? trade.latestMarketData?.underlyingPrice ?? trade.entrySnapshot?.underlyingPrice ?? null;
+        const underlying = sanitizePositive(batchPrices?.[trade.ticker]?.price) ?? sanitizePositive(optData?.currentPrice);
         const providerMarketSeconds = [
           batchPrices?.[trade.ticker]?.providerMarketTime,
           optData?.chainMeta?.providerMarketTime,
@@ -2090,7 +2090,7 @@ export default function PortfolioPage() {
   }, [persistTrades]);
 
   const openDrawer = useCallback((trade: PortfolioTrade) => {
-    const underlying = trade.latestMarketData?.underlyingPrice ?? trade.entrySnapshot?.underlyingPrice ?? null;
+    const underlying = sanitizePositive(trade.latestMarketData?.underlyingPrice);
     const dte = calculateRemainingDte(trade);
     const moneyness = calculateMoneyness(underlying, trade.strike);
     const bid = trade.latestMarketData?.optionBid ?? trade.entrySnapshot?.bid ?? null;
@@ -2114,7 +2114,7 @@ export default function PortfolioPage() {
         impliedVolatility: trade.latestMarketData?.iv ?? trade.entrySnapshot?.iv ?? null,
         volume: trade.latestMarketData?.volume ?? null,
         openInterest: trade.latestMarketData?.openInterest ?? null,
-        volOI: null,
+        volOI: calculateVolumeOpenInterestRatio(trade.latestMarketData?.volume, trade.latestMarketData?.openInterest),
         nomYieldBid: bidYield.nominal,
         annYieldBid: bidYield.annualized,
         nomYieldAsk: askYield.nominal,

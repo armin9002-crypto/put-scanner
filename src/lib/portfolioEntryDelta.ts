@@ -2,6 +2,7 @@ import { isFiniteNumber } from './optionMetrics.ts';
 import { resolvePutDeltaWithSource } from './putDelta.ts';
 import type { OptionsChainData } from './types.ts';
 import { isOptionContractIntegrityInvalid } from './optionMarketIntegrity.ts';
+import { calendarDaysBetween, usMarketDateIso } from './usMarketCalendar.ts';
 import type {
   PortfolioEntryDeltaSource,
   PortfolioEntryIvSource,
@@ -114,29 +115,14 @@ export function buildEntryIvEditPatch(
   return { entryIv: value, entryIvSource: 'manual', entryIvCapturedAt: capturedAt };
 }
 
-export function usMarketDateIso(value: Date | number = new Date()): string {
-  const date = value instanceof Date ? value : new Date(value);
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(date);
-  const field = (type: Intl.DateTimeFormatPartTypes) => parts.find(part => part.type === type)?.value ?? '';
-  return `${field('year')}-${field('month')}-${field('day')}`;
-}
+export { usMarketDateIso } from './usMarketCalendar.ts';
 
 export function isContemporaneousPortfolioEntry(trade: Pick<PortfolioTrade, 'soldDate' | 'status'>, now = new Date()): boolean {
   return trade.status === 'open' && trade.soldDate === usMarketDateIso(now);
 }
 
 function calculateDteAt(expiration: string, marketDate: string): number | null {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(expiration) || !/^\d{4}-\d{2}-\d{2}$/.test(marketDate)) return null;
-  const expirationTimestamp = Date.parse(`${expiration}T00:00:00Z`);
-  const marketTimestamp = Date.parse(`${marketDate}T00:00:00Z`);
-  return Number.isFinite(expirationTimestamp) && Number.isFinite(marketTimestamp)
-    ? Math.round((expirationTimestamp - marketTimestamp) / 86_400_000)
-    : null;
+  return calendarDaysBetween(marketDate, expiration);
 }
 
 function expirationDateIso(value: number): string | null {

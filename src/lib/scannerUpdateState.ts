@@ -26,7 +26,7 @@ export function buildExpirationState(availability: Record<string, number[]>): Ca
   const expirationMap = new Map<number, { date: number; label: string; dte: number }>();
   Object.values(availability).flat().forEach(date => {
     const dte = calculateCalendarDte(date);
-    if (dte > 0 && !expirationMap.has(date)) expirationMap.set(date, { date, label: formatExpirationDropdownLabel(date), dte });
+    if (dte != null && dte > 0 && !expirationMap.has(date)) expirationMap.set(date, { date, label: formatExpirationDropdownLabel(date), dte });
   });
   return { expirations: [...expirationMap.values()].sort((a, b) => a.date - b.date), availability };
 }
@@ -49,7 +49,7 @@ export function tickerMatchesScannerExpiration(
   if (expirationFilter === 'lte_30dte') {
     return dates.some(date => {
       const dte = calculateCalendarDte(date, now);
-      return dte >= 0 && dte <= 30;
+      return dte != null && dte >= 0 && dte <= 30;
     });
   }
   if (!expirationFilter.startsWith('date_')) return true;

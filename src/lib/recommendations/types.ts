@@ -239,7 +239,7 @@ export interface RecommendationCandidate {
   expirationLabel: string;
   dte: number;
   strike: number;
-  underlyingPrice: number;
+  underlyingPrice: number | null;
   canonicalRow: ScreenerRow;
   underlying: UnderlyingAssessment;
   pricing: RecommendationPricing;
@@ -248,7 +248,7 @@ export interface RecommendationCandidate {
     annualizedYieldBidPct: number | null;
     indicativeAnnualizedYieldRangePct: { low: number; high: number } | null;
     delta: number | null;
-    moneynessPct: number;
+    moneynessPct: number | null;
     breakevenAtBasis: number | null;
     breakevenCushionAtBasis: number | null;
     ivPct: number | null;

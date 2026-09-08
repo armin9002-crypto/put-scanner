@@ -13,7 +13,7 @@ import {
 } from '../lib/watchlist';
 import { fetchOptions, fetchBatchPrices } from '../lib/api';
 import type { OptionsChainData } from '../lib/types';
-import { calculateDte, calculateMoneyness, calculateYieldPercent, isFiniteNumber } from '../lib/optionMetrics';
+import { calculateDte, calculateMoneyness, calculateVolumeOpenInterestRatio, calculateYieldPercent, isFiniteNumber, sanitizePositive } from '../lib/optionMetrics';
 import { formatDate as formatDisplayDate, formatOptionLastTradeDate, formatOptionPrice, formatPercentPoints } from '../lib/format';
 import ErrorBoundary from '../components/ErrorBoundary';
 import type { OptionDetail } from '../components/OptionDetailDrawer';
@@ -44,6 +44,7 @@ interface LiveRow extends WatchlistItem {
   iv: number | null;
   volume: number | null;
   openInterest: number | null;
+  volOI: number | null;
   nomYieldBid: number | null;
   annYieldBid: number | null;
   nomYieldAsk: number | null;
@@ -121,9 +122,9 @@ function statusColor(status: WatchlistStatus, expired: boolean): string {
 function buildRow(item: WatchlistItem): LiveRow {
   const snapshot: WatchlistSnapshot = item.snapshot ?? {};
   const rawDte = calculateDte(item.expiry);
-  const dte = isFiniteNumber(rawDte) ? Math.max(0, rawDte) : snapshot.dte ?? null;
+  const dte = isFiniteNumber(rawDte) ? Math.max(0, rawDte) : null;
   const expired = isPastWatchlistExpirationDte(rawDte);
-  const currentPrice = snapshot.underlyingPrice ?? null;
+  const currentPrice = sanitizePositive(snapshot.underlyingPrice);
   const bid = snapshot.bid ?? null;
   const ask = snapshot.ask ?? null;
   const last = snapshot.last ?? null;
@@ -138,8 +139,8 @@ function buildRow(item: WatchlistItem): LiveRow {
     dte,
     expired,
     currentPrice,
-    moneynessPct: moneyness.pct ?? snapshot.moneynessPct ?? null,
-    moneynessLabel: moneyness.label !== '—' ? moneyness.label : snapshot.moneynessLabel ?? moneyness.label,
+    moneynessPct: moneyness.pct,
+    moneynessLabel: moneyness.label,
     moneynessColor: moneyness.color,
     bid,
     ask,
@@ -149,6 +150,7 @@ function buildRow(item: WatchlistItem): LiveRow {
     iv: snapshot.iv ?? null,
     volume: snapshot.volume ?? null,
     openInterest: snapshot.openInterest ?? null,
+    volOI: calculateVolumeOpenInterestRatio(snapshot.volume, snapshot.openInterest),
     nomYieldBid: bidYield.nominal,
     annYieldBid: bidYield.annualized,
     nomYieldAsk: askYield.nominal,
@@ -171,7 +173,7 @@ function optionDetailFromWatchlistRow(row: LiveRow): OptionDetail {
     impliedVolatility: row.iv,
     volume: row.volume,
     openInterest: row.openInterest,
-    volOI: null,
+    volOI: row.volOI,
     nomYieldBid: row.nomYieldBid,
     annYieldBid: row.annYieldBid,
     nomYieldAsk: row.nomYieldAsk,
@@ -198,9 +200,7 @@ function mergeLiveItem(item: WatchlistItem, optData: OptionsChainData | null, cu
   }
 
   const put = optData.puts.find(candidate => Math.abs(candidate.strike - item.strike) < 0.01);
-  const underlyingPrice = isFiniteNumber(currentPrice) && currentPrice > 0
-    ? currentPrice
-    : optData.currentPrice > 0 ? optData.currentPrice : item.snapshot?.underlyingPrice ?? null;
+  const underlyingPrice = sanitizePositive(currentPrice) ?? sanitizePositive(optData.currentPrice);
 
   if (!put) {
     return {
@@ -339,7 +339,7 @@ export default function WatchlistPage() {
         const hasRequest = optionsByKey.has(key);
         const optData = optionsByKey.get(key) ?? null;
         if (hasRequest && (optData == null || optData.chainMeta?.staleFallbackUsed === true)) partialFailure = true;
-        const price = batchResult?.[item.ticker]?.price ?? optData?.currentPrice ?? item.snapshot?.underlyingPrice ?? null;
+        const price = batchResult?.[item.ticker]?.price ?? optData?.currentPrice ?? null;
         const merged = mergeLiveItem(item, optData, price, hasRequest && (optData == null || optData.chainMeta?.staleFallbackUsed === true));
         if (merged.status === 'quote_inconsistent') partialFailure = true;
         return merged;

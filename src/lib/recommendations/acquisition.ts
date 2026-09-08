@@ -176,7 +176,7 @@ export async function refreshRecommendations(options: {
   if (options.signal?.aborted) throw options.signal.reason ?? new DOMException('Operation aborted', 'AbortError');
   options.onProgress?.({ stage: 'DECISION', completed: 0, total: 1 });
   await yieldForDecisionPaint(options.signal);
-  const built = buildScreenerRows(scan, 'all');
+  const built = buildScreenerRows(scan, 'all', { asOf });
   const chains = chainSnapshots(scan);
   const expirationPlansByTicker = scan.expirationPlansByTicker ?? new Map(
     [...scan.initialResults.entries()].map(([ticker, data]) => {

@@ -102,7 +102,7 @@ function snapshot(rows: EtfPulseRow[], chains: OptionsChainData[], incomplete = 
   const initialResults = new Map(chains.map(item => [item.chainMeta?.ticker ?? '', item]));
   const chainsByKey = new Map(chains.map(item => [canonicalOptionChainKey(item.chainMeta?.ticker ?? '', EXPIRATION), item]));
   const ivVsRealizedRangeByTicker = new Map(chains.map(item => [item.chainMeta?.ticker ?? '', 76]));
-  const built = buildScreenerRows({ initialResults, chainsByKey, ivVsRealizedRangeByTicker }, 'all');
+  const built = buildScreenerRows({ initialResults, chainsByKey, ivVsRealizedRangeByTicker }, 'all', { asOf: AS_OF });
   const regime = market();
   const hardFailed = rows.filter(row => row.technicalAssessment.state === 'BROKEN_TREND').map(row => row.ticker);
   const successful = chains.map(item => item.chainMeta?.ticker ?? '').sort();

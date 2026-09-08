@@ -161,7 +161,7 @@ test('Screener display and filter reuse the same canonical Bid/Ask/Last NY/AY ro
     initialResults: new Map([['TST', chain]]),
     chainsByKey: new Map([[`TST:${expiration}`, chain]]),
     ivVsRealizedRangeByTicker: new Map([['TST', 40]]),
-  }, 'all').rows[0];
+  }, 'all', { asOf: '2027-01-03T12:00:00Z' }).rows[0];
   for (const [basis, price] of [['Bid', 0.25], ['Ask', 0.4], ['Last', 0.3]]) {
     const canonical = calculateYieldPercent(price, 55, 19);
     close(row[`nomYield${basis}`], canonical.nominal, `${basis} displayed NY`);

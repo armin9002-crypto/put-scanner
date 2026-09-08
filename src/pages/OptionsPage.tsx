@@ -6,7 +6,7 @@ import type { ExtendedPriceData, TickerDetailAvailability, TickerDetailErrorCode
 import { addToWatchlist, removeFromWatchlist, isInWatchlist, makeWatchlistId } from '../lib/watchlist';
 import type { WatchlistItem } from '../lib/watchlist';
 import { addPortfolioTrade } from '../lib/portfolioStorage';
-import { calculateMoneyness, calculateYieldPercent } from '../lib/optionMetrics';
+import { calculateDte, calculateMoneyness, calculateVolumeOpenInterestRatio, calculateYieldPercent } from '../lib/optionMetrics';
 import { resolvePutDeltaWithSource, type PutDeltaSource } from '../lib/putDelta';
 import { entrySnapshotFromExactChain, usMarketDateIso } from '../lib/portfolioEntryDelta';
 import { compareNullableValue } from '../lib/metricValue';
@@ -564,7 +564,7 @@ export default function OptionsPage() {
           lastTradeDate: put.lastTradeDate,
           delta: put.delta,
           iv: put.impliedVolatility,
-          dte: exp.dte,
+          dte: calculateDte(exp.date),
           volume: put.volume,
           openInterest: put.openInterest,
           nominalYieldBid: put.nomYieldBid,
@@ -588,7 +588,7 @@ export default function OptionsPage() {
   const enrichedPuts = useMemo((): EnrichedPut[] => {
     if (!optionsData?.puts) return [];
     const exp = optionsData.expirations.find(e => e.date === selectedExp);
-    const dte = exp?.dte ?? 1;
+    const dte = exp ? calculateDte(exp.date) : null;
 
     return optionsData.puts.map(p => {
       const integrityInvalid = isOptionContractIntegrityInvalid(p);
@@ -604,8 +604,7 @@ export default function OptionsPage() {
       const askYield = calculateYieldPercent(trustedOptionPrice(p, 'ask'), p.strike, dte);
       const lastYield = calculateYieldPercent(trustedOptionPrice(p, 'last'), p.strike, dte);
 
-      const volOI = (p.volume != null && p.volume > 0 && p.openInterest != null && p.openInterest > 0)
-        ? p.volume / p.openInterest : null;
+      const volOI = calculateVolumeOpenInterestRatio(p.volume, p.openInterest);
 
       const moneyness = calculateMoneyness(currentPrice, p.strike);
 
@@ -953,7 +952,7 @@ export default function OptionsPage() {
           </div>
           {optionsData && optionsData.expirations.length > 0 && (
             <div className="mobile-scroll-row flex gap-1.5 overflow-x-auto px-3 pb-2">
-              {optionsData.expirations.map(expiration => <button type="button" key={expiration.date} onClick={() => loadExpiration(expiration.date)} className="pressable min-h-11 flex-none rounded-lg px-3 text-[12px] font-semibold" aria-pressed={selectedExp === expiration.date} style={{ backgroundColor: selectedExp === expiration.date ? 'var(--accent)' : 'var(--surface)', color: selectedExp === expiration.date ? 'white' : 'var(--text-muted)', border: `1px solid ${selectedExp === expiration.date ? 'var(--accent)' : 'var(--border)'}` }}>{expiration.label} · {expiration.dte}D</button>)}
+              {optionsData.expirations.map(expiration => <button type="button" key={expiration.date} onClick={() => loadExpiration(expiration.date)} className="pressable min-h-11 flex-none rounded-lg px-3 text-[12px] font-semibold" aria-pressed={selectedExp === expiration.date} style={{ backgroundColor: selectedExp === expiration.date ? 'var(--accent)' : 'var(--surface)', color: selectedExp === expiration.date ? 'white' : 'var(--text-muted)', border: `1px solid ${selectedExp === expiration.date ? 'var(--accent)' : 'var(--border)'}` }}>{expiration.label} · {calculateDte(expiration.date) ?? '—'}D</button>)}
             </div>
           )}
         </header>
@@ -980,7 +979,7 @@ export default function OptionsPage() {
           </div>
         )}
 
-        {selectedOption && <ErrorBoundary title="Option sheet unavailable" message="Close it and try again."><Suspense fallback={null}><OptionDetailDrawer option={selectedOption} ticker={ticker ?? ''} expirationLabel={selectedExpiration?.label ?? ''} dte={selectedExpiration?.dte ?? null} underlyingPrice={currentPrice > 0 ? currentPrice : null} onAddToPortfolio={addSelectedToPortfolio} onClose={() => setSelectedOption(null)} /></Suspense></ErrorBoundary>}
+        {selectedOption && <ErrorBoundary title="Option sheet unavailable" message="Close it and try again."><Suspense fallback={null}><OptionDetailDrawer option={selectedOption} ticker={ticker ?? ''} expirationLabel={selectedExpiration?.label ?? ''} dte={selectedExpiration ? calculateDte(selectedExpiration.date) : null} underlyingPrice={currentPrice > 0 ? currentPrice : null} onAddToPortfolio={addSelectedToPortfolio} onClose={() => setSelectedOption(null)} /></Suspense></ErrorBoundary>}
         {instrument.showHoldings && showUnderlyingHoldings && <ErrorBoundary title="Underlying holdings unavailable" message="Close it and try again."><Suspense fallback={null}><UnderlyingHoldingsModal proxy={holdingsProxy} onClose={() => setShowUnderlyingHoldings(false)} /></Suspense></ErrorBoundary>}
         {showPriceChart && <ErrorBoundary title="Chart unavailable" message="Close it and try again."><Suspense fallback={null}><InteractivePriceChartModal isOpen ticker={ticker ?? ''} displayTicker={ticker ?? ''} showLeverageContext={instrument.showLeverage} onClose={() => setShowPriceChart(false)} /></Suspense></ErrorBoundary>}
       </div>
@@ -1216,7 +1215,7 @@ export default function OptionsPage() {
                   boxShadow: selectedExp === exp.date ? '0 0 12px var(--accent-border)' : 'none',
                 }}
               >
-                {exp.label} ({exp.dte} DTE)
+                {exp.label} ({calculateDte(exp.date) ?? '—'} DTE)
               </button>
             ))}
             {showScannerPreselectBadge && (
@@ -1593,7 +1592,7 @@ export default function OptionsPage() {
               option={selectedOption}
               ticker={ticker ?? ''}
               expirationLabel={selectedExpiration?.label ?? ''}
-              dte={selectedExpiration?.dte ?? null}
+              dte={selectedExpiration ? calculateDte(selectedExpiration.date) : null}
               underlyingPrice={currentPrice > 0 ? currentPrice : null}
               onAddToPortfolio={draft => {
                 if (!ticker || !selectedExpiration) return;

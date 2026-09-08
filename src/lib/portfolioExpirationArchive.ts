@@ -1,5 +1,5 @@
 import { cachedRequest, makeCacheKey } from './dataCache.ts';
-import { isFiniteNumber } from './optionMetrics.ts';
+import { calculateDte, isFiniteNumber } from './optionMetrics.ts';
 import { calculatePremiumCollected } from './portfolioMetrics.ts';
 import type { PortfolioResolutionSource, PortfolioTrade } from './portfolioStorage';
 import { findCachedDailyHistoryForDates, type ChartCorporateAction, type ChartHistoryResponse } from './chartHistory.ts';
@@ -118,10 +118,7 @@ function isValidHistory(value: unknown): value is HistoricalCloseResponse {
 }
 
 function rawDte(expiration: string, now = new Date()): number | null {
-  const expiry = parseIsoDateUtc(expiration);
-  if (expiry == null) return null;
-  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  return Math.round((expiry - today) / 86400000);
+  return calculateDte(expiration, now);
 }
 
 function calendarDaysBetween(start: string, end: string): number | null {
