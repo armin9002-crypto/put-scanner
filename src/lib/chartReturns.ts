@@ -1,3 +1,5 @@
+import type { ChartHistoryResponse, ChartTimeframe } from './chartHistory.ts';
+
 const ONE_DAY_SECONDS = 24 * 60 * 60;
 const ONE_YEAR_DAYS = 365.25;
 
@@ -27,6 +29,22 @@ export function calculateSimpleReturn(startPrice: number | null | undefined, end
   }
   const change = endPrice - startPrice;
   return { change, percent: (change / startPrice) * 100 };
+}
+
+export function getChartPeriodBaseline(data: ChartHistoryResponse | null | undefined, timeframe: ChartTimeframe): number | null {
+  if (!data) return null;
+  if (timeframe === '1D') return isFiniteNumber(data.previousClose) ? data.previousClose : data.points[0]?.price ?? null;
+  if (timeframe === 'YTD') {
+    const baseline = data.ytdBaseline?.price;
+    return isFiniteNumber(baseline) && baseline > 0 ? baseline : null;
+  }
+  return data.points[0]?.price ?? null;
+}
+
+export function calculateChartPeriodReturn(data: ChartHistoryResponse | null | undefined, timeframe: ChartTimeframe): { change: number | null; percent: number | null } {
+  if (!data) return { change: null, percent: null };
+  const end = isFiniteNumber(data.latestPrice) ? data.latestPrice : data.points[data.points.length - 1]?.price ?? null;
+  return calculateSimpleReturn(getChartPeriodBaseline(data, timeframe), end);
 }
 
 export function shouldShowAnnualizedReturn(startTimestamp: number | null | undefined, endTimestamp: number | null | undefined): boolean {

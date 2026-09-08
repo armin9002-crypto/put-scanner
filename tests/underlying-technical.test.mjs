@@ -189,7 +189,7 @@ test('legacy partial-universe row cache is rejected without a market request', (
     const upgraded = readEtfPulseRowsCache();
     assert.equal(requests, 0);
     assert.equal(upgraded, null);
-    assert.equal(storage.getItem('etf_pulse_rows:v4'), null);
+    assert.equal(storage.getItem('etf_pulse_rows:v5'), null);
   } finally {
     globalThis.localStorage = previousStorage;
     globalThis.fetch = previousFetch;

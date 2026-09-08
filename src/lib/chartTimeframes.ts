@@ -1,4 +1,5 @@
 import type { ChartTimeframe } from './chartHistory';
+import { calendarDaysBetween, usMarketDateIso } from './usMarketCalendar.ts';
 
 const FIXED_TIMEFRAMES: Array<{ timeframe: Exclude<ChartTimeframe, 'YTD'>; days: number }> = [
   { timeframe: '1D', days: 1 },
@@ -13,10 +14,9 @@ const FIXED_TIMEFRAMES: Array<{ timeframe: Exclude<ChartTimeframe, 'YTD'>; days:
 ];
 
 function getYtdCalendarDays(now: Date): number {
-  const startOfYear = new Date(now.getFullYear(), 0, 1);
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const elapsedMs = today.getTime() - startOfYear.getTime();
-  return Math.max(1, Math.floor(elapsedMs / (24 * 60 * 60 * 1000)) + 1);
+  const marketDate = usMarketDateIso(now);
+  const elapsed = calendarDaysBetween(`${marketDate.slice(0, 4)}-01-01`, marketDate);
+  return Math.max(1, (elapsed ?? 0) + 1);
 }
 
 export function getOrderedChartTimeframes(now = new Date()): ChartTimeframe[] {

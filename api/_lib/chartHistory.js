@@ -1,4 +1,5 @@
 import { normalizeFiniteNumber, normalizeProviderTimestampSeconds, normalizeTimestampSeconds, readYahooJson, yahooFetch } from './yahoo.js';
+import { buildCanonicalYtdView } from '../../shared/ytdBaseline.js';
 
 function downsample(points, maxPoints) {
   if (points.length <= maxPoints) return points;
@@ -31,14 +32,14 @@ export async function fetchYahooChartHistory({ ticker, timeframe, config, endpoi
 
   const timestamps = result.timestamp || [];
   const closes = result.indicators?.quote?.[0]?.close || [];
-  const startOfYear = Math.floor(Date.UTC(new Date().getUTCFullYear(), 0, 1) / 1000);
-  const rawPoints = timestamps.map((timestamp, index) => {
+  const allPoints = timestamps.map((timestamp, index) => {
     const normalizedTimestamp = normalizeTimestampSeconds(timestamp);
     const normalizedPrice = normalizeFiniteNumber(closes[index]);
     if (normalizedTimestamp == null || normalizedPrice == null) return null;
-    if (config.filterYtd && normalizedTimestamp < startOfYear) return null;
     return { timestamp: normalizedTimestamp, date: new Date(normalizedTimestamp * 1000).toISOString(), price: normalizedPrice };
   }).filter(Boolean);
+  const ytdView = config.filterYtd ? buildCanonicalYtdView(allPoints, new Date()) : null;
+  const rawPoints = ytdView?.points ?? allPoints;
   const points = downsample(rawPoints, config.maxPoints);
   const corporateActions = [
     ...Object.values(result.events?.splits || {}).map(event => ({
@@ -73,11 +74,13 @@ export async function fetchYahooChartHistory({ ticker, timeframe, config, endpoi
     latestPrice: normalizeFiniteNumber(meta.regularMarketPrice) ?? points.at(-1)?.price ?? null,
     providerMarketTime: normalizeProviderTimestampSeconds(meta.regularMarketTime),
     fetchedAt: Date.now(),
+    ...(ytdView ? { ytdBaseline: ytdView.baseline, ytdPreYearPoints: ytdView.preYearPoints } : {}),
     metadata: {
       range: hasDateRange ? config.rangeLabel : config.range,
       interval: config.interval,
       filter: config.filterYtd ? 'year-to-date' : undefined,
       sourcePoints: rawPoints.length,
+      ...(ytdView ? { ytdMarketYear: ytdView.marketYear } : {}),
     },
   };
 }

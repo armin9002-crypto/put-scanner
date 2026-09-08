@@ -103,9 +103,9 @@ test('ETF Pulse browser performs one dataset acquisition, reuses its row cache, 
     assert.equal(stale.stale, true);
     assert.deepEqual(stale.rows, first.rows);
 
-    globalThis.localStorage.removeItem('etf_pulse_rows:v4');
-    globalThis.localStorage.setItem('etf_pulse_rows:v3', JSON.stringify({ ...first, rows: first.rows.slice(0, 44), total: 44, loaded: 44 }));
-    assert.equal(readEtfPulseRowsCache(true), null, 'the prior 44-symbol row cache must not masquerade as the 86-symbol dataset');
+    globalThis.localStorage.removeItem('etf_pulse_rows:v5');
+    globalThis.localStorage.setItem('etf_pulse_rows:v4', JSON.stringify(first));
+    assert.equal(readEtfPulseRowsCache(true), null, 'the prior YTD-semantics row cache must not survive deployment');
   } finally {
     globalThis.fetch = previousFetch;
     globalThis.localStorage = previousStorage;

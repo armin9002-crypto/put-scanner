@@ -4,6 +4,8 @@ import { getChartHistory } from '../src/lib/chartHistory.ts';
 import { calculateTrueLeverage, getTrueLeverageForPeriod, getTrueLeverageForRange } from '../src/lib/trueLeverage.ts';
 import { calculateAnnualizedReturn, calculateRangeReturn, normalizeSelectedRange } from '../src/lib/chartReturns.ts';
 import { getMarketProviderHealth, requestMarketData } from '../src/lib/marketDataRequest.ts';
+import { usMarketDateIso } from '../src/lib/usMarketCalendar.ts';
+import { dailyObservationMarketDate } from '../shared/ytdBaseline.js';
 import { rateLimitError } from './fixtures/yahoo-options.mjs';
 
 class MemoryStorage {
@@ -92,14 +94,47 @@ test('True Leverage is order-independent and uses exact common timestamps', () =
   assert.equal(getTrueLeverageForRange(etf, [point(15, 100), point(25, 110)], 10, 30).leverage, null);
 });
 
-test('1Y daily history supplies 6M/3M/YTD with adequate coverage', async () => {
+test('1Y daily history supplies 6M/3M/YTD with the calculation-only YTD baseline and no request', async () => {
   const now = Math.floor(Date.now() / 1000);
   const points = [400, 250, 150, 60, 1].map(days => point(now - days * 86400, 100 + days));
   await requestMarketData({ key: 'chart_history_cache:DAILY:1Y', source: 'unit', endpoint: 'chart-history', softTtlMs: 999999, hardTtlMs: 999999, schemaVersion: 3, validator: () => true, fetcher: async () => ({ ticker: 'DAILY', displayTicker: 'DAILY', timeframe: '1Y', points, corporateActions: [], fetchedAt: Date.now(), metadata: { interval: '1d' } }) });
   const realFetch = globalThis.fetch;
   globalThis.fetch = async () => { throw new Error('unexpected request'); };
-  try { for (const timeframe of ['6M', '3M', 'YTD']) assert.equal((await getChartHistory('DAILY', timeframe)).metadata.derivedFrom, '1Y'); }
+  try {
+    for (const timeframe of ['6M', '3M']) assert.equal((await getChartHistory('DAILY', timeframe)).metadata.derivedFrom, '1Y');
+    const ytd = await getChartHistory('DAILY', 'YTD');
+    assert.equal(ytd.metadata.derivedFrom, '1Y');
+    assert.ok(ytd.ytdBaseline?.price > 0);
+    assert.ok(ytd.points.every(item => dailyObservationMarketDate(item).slice(0, 4) === usMarketDateIso().slice(0, 4)));
+  }
   finally { globalThis.fetch = realFetch; }
+});
+
+test('legacy exact YTD cache is rejected and the versioned cold request requires calculation references', async () => {
+  const ticker = 'LEGACYYTD';
+  const marketYear = Number(usMarketDateIso().slice(0, 4));
+  const baseline = point(Date.parse(`${marketYear - 1}-12-30T20:00:00Z`) / 1000, 100);
+  const current = point(Date.parse(`${marketYear}-01-02T20:00:00Z`) / 1000, 121);
+  await requestMarketData({
+    key: `chart_history_cache:${ticker}:YTD`, source: 'unit', endpoint: 'chart-history',
+    softTtlMs: 999999, hardTtlMs: 999999, schemaVersion: 3, validator: () => true,
+    fetcher: async () => ({ ticker, displayTicker: ticker, timeframe: 'YTD', points: [current], corporateActions: [], fetchedAt: Date.now(), metadata: { interval: '1d' } }),
+  });
+  const realFetch = globalThis.fetch;
+  let requestedUrl = '';
+  globalThis.fetch = async url => {
+    requestedUrl = String(url);
+    return Response.json({
+      ticker, displayTicker: ticker, timeframe: 'YTD', points: [current], corporateActions: [],
+      ytdBaseline: { ...baseline, marketDate: `${marketYear - 1}-12-30` }, ytdPreYearPoints: [baseline],
+      latestPrice: 121, fetchedAt: Date.now(), metadata: { interval: '1d', ytdMarketYear: marketYear },
+    });
+  };
+  try {
+    const result = await getChartHistory(ticker, 'YTD');
+    assert.equal(result.ytdBaseline?.price, 100);
+    assert.match(requestedUrl, /timeframe=YTD&v=2$/);
+  } finally { globalThis.fetch = realFetch; }
 });
 
 test('5Y weekly supplies 3Y but not a daily timeframe', async () => {

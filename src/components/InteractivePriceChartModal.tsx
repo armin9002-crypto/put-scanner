@@ -2,12 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, RefreshCw, X } from 'lucide-react';
 import { getChartHistory } from '../lib/chartHistory';
 import type { ChartHistoryResponse, ChartPoint, ChartTimeframe } from '../lib/chartHistory';
-import { calculateAnnualizedReturn, calculateRangeReturn, calculateSimpleReturn, normalizeSelectedRange } from '../lib/chartReturns';
+import { calculateAnnualizedReturn, calculateChartPeriodReturn, calculateRangeReturn, calculateSimpleReturn, getChartPeriodBaseline, normalizeSelectedRange } from '../lib/chartReturns';
 import { formatChartYAxisTick, getNiceYAxisScale } from '../lib/chartScale';
 import { getOrderedChartTimeframes } from '../lib/chartTimeframes';
 import { getInstrumentName, isVolatilityInstrument, normalizeDisplayTicker } from '../lib/instrumentNames';
 import { getUnderlyingHoldingsProxy } from '../lib/underlyingHoldingsProxies';
-import { getTrueLeverageForPeriod, getTrueLeverageForRange, type TrueLeverageResult } from '../lib/trueLeverage';
+import { getTrueLeverageForPeriod, getTrueLeverageForRange, getYtdTrueLeverage, type TrueLeverageResult } from '../lib/trueLeverage';
 import DataFreshness from './DataFreshness';
 import { useResponsiveMode } from '../lib/responsive';
 
@@ -213,14 +213,12 @@ export default function InteractivePriceChartModal({
   const proxyPoints = useMemo(() => activeProxyData?.points ?? [], [activeProxyData]);
   const latestPoint = points[points.length - 1] ?? null;
   const latestPrice = isFiniteNumber(activeData?.latestPrice) ? activeData?.latestPrice ?? null : latestPoint?.price ?? null;
-  const baseline = timeframe === '1D'
-    ? (isFiniteNumber(activeData?.previousClose) ? activeData?.previousClose ?? null : points[0]?.price ?? null)
-    : points[0]?.price ?? null;
-  const periodChange = changeFrom(baseline, latestPrice);
+  const baseline = getChartPeriodBaseline(activeData, timeframe);
+  const periodChange = calculateChartPeriodReturn(activeData, timeframe);
   const lineColor = chartColor(periodChange.percent);
   const activeIndex = hoveredIndex ?? rangeIndex ?? points.length - 1;
   const activePoint = activeIndex != null ? points[activeIndex] : latestPoint;
-  const activeBaselinePoint = points[0] ?? null;
+  const activeBaselinePoint = timeframe === 'YTD' ? activeData?.ytdBaseline ?? null : points[0] ?? null;
   const activeChange = changeFrom(timeframe === '1D' ? baseline : activeBaselinePoint?.price, activePoint?.price);
   const activeAnnualizedReturn = calculateAnnualizedReturn(
     timeframe === '1D' ? baseline : activeBaselinePoint?.price,
@@ -236,11 +234,17 @@ export default function InteractivePriceChartModal({
   const rangeAnnualizedReturn = selectedRange
     ? calculateAnnualizedReturn(selectedRange.startPoint.price, selectedRange.endPoint.price, selectedRange.startPoint.timestamp, selectedRange.endPoint.timestamp)
     : null;
-  const periodTrueLeverage = useMemo(() => getTrueLeverageForPeriod(points, proxyPoints), [points, proxyPoints]);
+  const ytdEtfPoints = useMemo(() => [...(activeData?.ytdPreYearPoints ?? []), ...points], [activeData?.ytdPreYearPoints, points]);
+  const ytdProxyPoints = useMemo(() => [...(activeProxyData?.ytdPreYearPoints ?? []), ...proxyPoints], [activeProxyData?.ytdPreYearPoints, proxyPoints]);
+  const periodTrueLeverage = useMemo(() => timeframe === 'YTD'
+    ? getYtdTrueLeverage(ytdEtfPoints, ytdProxyPoints)
+    : getTrueLeverageForPeriod(points, proxyPoints), [points, proxyPoints, timeframe, ytdEtfPoints, ytdProxyPoints]);
   const activeTrueLeverage = useMemo(() => {
     if (!activeBaselinePoint || !activePoint) return null;
-    return getTrueLeverageForRange(points, proxyPoints, activeBaselinePoint.timestamp, activePoint.timestamp);
-  }, [activeBaselinePoint, activePoint, points, proxyPoints]);
+    return timeframe === 'YTD'
+      ? getYtdTrueLeverage(ytdEtfPoints, ytdProxyPoints, new Date(), activePoint.timestamp)
+      : getTrueLeverageForRange(points, proxyPoints, activeBaselinePoint.timestamp, activePoint.timestamp);
+  }, [activeBaselinePoint, activePoint, points, proxyPoints, timeframe, ytdEtfPoints, ytdProxyPoints]);
   const rangeTrueLeverage = useMemo(() => {
     if (!selectedRange) return null;
     return getTrueLeverageForRange(points, proxyPoints, selectedRange.startPoint.timestamp, selectedRange.endPoint.timestamp);

@@ -1,4 +1,5 @@
 import type { ChartPoint } from './chartHistory';
+import { resolveAlignedYtdBaselines, resolveAlignedYtdEnds } from '../../shared/ytdBaseline.js';
 
 export interface TrueLeverageResult {
   etfReturn: number | null;
@@ -75,6 +76,32 @@ export function getTrueLeverageForRange(
     directionDiverged,
     startTimestamp: proxyStart.timestamp,
     endTimestamp: proxyEnd.timestamp,
+  };
+}
+
+export function getYtdTrueLeverage(
+  etfPoints: ChartPoint[],
+  proxyPoints: ChartPoint[],
+  asOf: Date | number | string = new Date(),
+  endAt: Date | number | string = asOf,
+): TrueLeverageResult {
+  const baseline = resolveAlignedYtdBaselines(etfPoints, proxyPoints, asOf);
+  const end = resolveAlignedYtdEnds(etfPoints, proxyPoints, asOf, endAt);
+  if (!baseline || !end) return emptyResult();
+
+  const etfReturn = calculateReturn(baseline.left.price, end.left.price);
+  const proxyReturn = calculateReturn(baseline.right.price, end.right.price);
+  const leverage = calculateTrueLeverage(etfReturn, proxyReturn);
+  const directionDiverged = isFiniteNumber(etfReturn) && isFiniteNumber(proxyReturn)
+    && etfReturn !== 0 && proxyReturn !== 0 && Math.sign(etfReturn) !== Math.sign(proxyReturn);
+
+  return {
+    etfReturn,
+    proxyReturn,
+    leverage,
+    directionDiverged,
+    startTimestamp: baseline.left.timestamp,
+    endTimestamp: end.left.timestamp,
   };
 }
 

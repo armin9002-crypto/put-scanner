@@ -1,6 +1,7 @@
 import { makeCacheKey } from './dataCache.ts';
 import { peekMarketData, requestMarketData, type DataFreshness } from './marketDataRequest.ts';
 import { fetchObservedMarketData } from './requestDiagnostics.ts';
+import { buildCanonicalYtdView, marketYearForAsOf } from '../../shared/ytdBaseline.js';
 
 export type ChartTimeframe = '1D' | '5D' | '30D' | 'YTD' | '3M' | '6M' | '1Y' | '2Y' | '3Y' | '5Y' | 'All';
 
@@ -8,6 +9,10 @@ export interface ChartPoint {
   timestamp: number;
   date: string;
   price: number;
+}
+
+export interface ChartYtdBaseline extends ChartPoint {
+  marketDate: string;
 }
 
 export interface ChartCorporateAction {
@@ -29,6 +34,8 @@ export interface ChartHistoryResponse {
   previousClose?: number | null;
   latestPrice?: number | null;
   providerMarketTime?: number | null;
+  ytdBaseline?: ChartYtdBaseline | null;
+  ytdPreYearPoints?: ChartPoint[];
   fetchedAt: number;
   freshness?: DataFreshness;
   staleFallbackUsed?: boolean;
@@ -37,6 +44,7 @@ export interface ChartHistoryResponse {
     interval?: string;
     sourcePoints?: number;
     derivedFrom?: ChartTimeframe;
+    ytdMarketYear?: number;
   };
 }
 
@@ -83,6 +91,34 @@ function cacheKey(ticker: string, timeframe: ChartTimeframe): string {
   return makeCacheKey(['chart_history_cache', ticker, timeframe]);
 }
 
+function cacheSchemaVersion(timeframe: ChartTimeframe): number {
+  return timeframe === 'YTD' ? 4 : 3;
+}
+
+function isValidChartPoint(point: unknown): point is ChartPoint {
+  if (!point || typeof point !== 'object') return false;
+  const candidate = point as ChartPoint;
+  return Number.isFinite(candidate.timestamp) && typeof candidate.date === 'string' && Number.isFinite(candidate.price);
+}
+
+function isValidYtdContract(data: ChartHistoryResponse): boolean {
+  if (!('ytdBaseline' in data) || !Array.isArray(data.ytdPreYearPoints)) return false;
+  if (!data.ytdPreYearPoints.every(isValidChartPoint)) return false;
+  if (data.ytdBaseline != null && (!isValidChartPoint(data.ytdBaseline)
+    || typeof data.ytdBaseline.marketDate !== 'string' || data.ytdBaseline.price <= 0)) return false;
+  const view = buildCanonicalYtdView([...data.ytdPreYearPoints, ...data.points], new Date());
+  const samePoint = (left: ChartPoint, right: ChartPoint) => left.timestamp === right.timestamp && left.price === right.price;
+  return data.metadata?.ytdMarketYear === view.marketYear
+    && view.points.length === data.points.length
+    && view.points.every((point, index) => samePoint(point, data.points[index]))
+    && view.preYearPoints.length === data.ytdPreYearPoints.length
+    && view.preYearPoints.every((point, index) => samePoint(point, data.ytdPreYearPoints?.[index] as ChartPoint))
+    && (view.baseline == null
+      ? data.ytdBaseline == null
+      : data.ytdBaseline != null && view.baseline.marketDate === data.ytdBaseline.marketDate
+        && samePoint(view.baseline, data.ytdBaseline));
+}
+
 function isValidChartHistory(value: unknown, timeframe: ChartTimeframe): value is ChartHistoryResponse {
   if (!value || typeof value !== 'object') return false;
   const data = value as ChartHistoryResponse;
@@ -99,19 +135,16 @@ function isValidChartHistory(value: unknown, timeframe: ChartTimeframe): value i
       Number.isFinite(action.timestamp) &&
       typeof action.date === 'string'
     ) &&
-    data.points.every(point =>
-      point &&
-      Number.isFinite(point.timestamp) &&
-      typeof point.date === 'string' &&
-      Number.isFinite(point.price)
-    )
+    data.points.every(isValidChartPoint) &&
+    (timeframe !== 'YTD' || (
+      data.metadata?.ytdMarketYear === marketYearForAsOf(new Date()) && isValidYtdContract(data)
+    ))
   );
 }
 
 function clipStart(timeframe: ChartTimeframe, now = new Date()): number | null {
   const start = new Date(now);
-  if (timeframe === 'YTD') start.setUTCMonth(0, 1);
-  else if (timeframe === '3M') start.setUTCMonth(start.getUTCMonth() - 3);
+  if (timeframe === '3M') start.setUTCMonth(start.getUTCMonth() - 3);
   else if (timeframe === '6M') start.setUTCMonth(start.getUTCMonth() - 6);
   else if (timeframe === '1Y') start.setUTCFullYear(start.getUTCFullYear() - 1);
   else if (timeframe === '3Y') start.setUTCFullYear(start.getUTCFullYear() - 3);
@@ -120,9 +153,25 @@ function clipStart(timeframe: ChartTimeframe, now = new Date()): number | null {
   return Math.floor(start.getTime() / 1000);
 }
 
+export function deriveYtdChartHistory(history: ChartHistoryResponse, asOf: Date | number | string = new Date()): ChartHistoryResponse {
+  const view = buildCanonicalYtdView(history.points, asOf);
+  return {
+    ...history,
+    timeframe: 'YTD',
+    points: view.points,
+    ytdBaseline: view.baseline,
+    ytdPreYearPoints: view.preYearPoints,
+    metadata: {
+      ...history.metadata,
+      sourcePoints: view.points.length,
+      ytdMarketYear: view.marketYear ?? undefined,
+    },
+  };
+}
+
 function findReusableHistory(ticker: string, timeframe: ChartTimeframe): ChartHistoryResponse | null {
-  const cutoff = clipStart(timeframe);
-  if (cutoff == null) return null;
+  const cutoff = timeframe === 'YTD' ? null : clipStart(timeframe);
+  if (timeframe !== 'YTD' && cutoff == null) return null;
   const candidates = [
     ...(DAILY_HISTORY_FAMILIES[timeframe] ?? []).map(candidate => ({ candidate, interval: '1d' })),
     ...(WEEKLY_HISTORY_FAMILIES[timeframe] ?? []).map(candidate => ({ candidate, interval: '1wk' })),
@@ -132,11 +181,21 @@ function findReusableHistory(ticker: string, timeframe: ChartTimeframe): ChartHi
       key: cacheKey(ticker, candidate),
       softTtlMs: CHART_TTLS[candidate],
       hardTtlMs: CHART_HARD_TTLS[candidate],
-      schemaVersion: 3,
+      schemaVersion: cacheSchemaVersion(candidate),
       validator: data => isValidChartHistory(data, candidate) && data.metadata?.interval === interval,
     });
     if (!cached || cached.meta.freshness === 'expired') continue;
-    const points = cached.data.points.filter(point => point.timestamp >= cutoff);
+    if (timeframe === 'YTD') {
+      const derived = deriveYtdChartHistory(cached.data);
+      if (derived.points.length === 0) continue;
+      return {
+        ...derived,
+        freshness: cached.meta.freshness,
+        staleFallbackUsed: false,
+        metadata: { ...derived.metadata, derivedFrom: candidate },
+      };
+    }
+    const points = cached.data.points.filter(point => point.timestamp >= (cutoff as number));
     if (points.length < 2) continue;
     return {
       ...cached.data,
@@ -160,11 +219,13 @@ export function findCachedDailyHistoryForDates(ticker: string, dates: string[]):
       key: cacheKey(normalizedTicker, timeframe),
       softTtlMs: CHART_TTLS[timeframe],
       hardTtlMs: CHART_HARD_TTLS[timeframe],
-      schemaVersion: 3,
+      schemaVersion: cacheSchemaVersion(timeframe),
       validator: data => isValidChartHistory(data, timeframe) && data.metadata?.interval === '1d',
     });
     if (!cached || cached.meta.freshness === 'expired') continue;
-    const pointDates = cached.data.points.map(point => point.date.slice(0, 10)).sort();
+    const pointDates = [...(cached.data.ytdPreYearPoints ?? []), ...cached.data.points]
+      .map(point => point.date.slice(0, 10))
+      .sort();
     const coversTargets = targets.every(target => {
       const nearestPrior = [...pointDates].reverse().find(pointDate => pointDate <= target);
       if (!nearestPrior) return false;
@@ -191,7 +252,7 @@ export async function getChartHistory(
       key,
       softTtlMs: CHART_TTLS[timeframe],
       hardTtlMs: CHART_HARD_TTLS[timeframe],
-      schemaVersion: 3,
+      schemaVersion: cacheSchemaVersion(timeframe),
       validator: data => isValidChartHistory(data, timeframe),
     });
     if (exact && exact.meta.freshness !== 'expired') {
@@ -207,12 +268,13 @@ export async function getChartHistory(
     endpoint: 'chart-history',
     softTtlMs: CHART_TTLS[timeframe],
     hardTtlMs: CHART_HARD_TTLS[timeframe],
-    schemaVersion: 3,
+    schemaVersion: cacheSchemaVersion(timeframe),
     mode: options.forceRefresh ? 'revalidate' : 'cache-first',
     allowStaleOnError: true,
     validator: data => isValidChartHistory(data, timeframe),
     fetcher: async signal => {
-      const response = await fetchObservedMarketData('chart-history', `/api/chart-history?ticker=${encodeURIComponent(normalizedTicker)}&timeframe=${encodeURIComponent(timeframe)}`, { signal }, `chartHistory:${timeframe}`);
+      const cacheContract = timeframe === 'YTD' ? '&v=2' : '';
+      const response = await fetchObservedMarketData('chart-history', `/api/chart-history?ticker=${encodeURIComponent(normalizedTicker)}&timeframe=${encodeURIComponent(timeframe)}${cacheContract}`, { signal }, `chartHistory:${timeframe}`);
       if (!response.ok) {
         const error = new Error('Failed to fetch chart history') as Error & { status: number };
         error.status = response.status;

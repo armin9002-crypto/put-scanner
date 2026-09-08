@@ -1,5 +1,7 @@
 import type { ChartPoint } from './chartHistory';
 import type { ETFInfo } from './types';
+import type { MarketDateInput } from './usMarketCalendar.ts';
+import { resolveCanonicalYtdBaseline, resolveCanonicalYtdEnd } from '../../shared/ytdBaseline.js';
 import {
   UNDERLYING_TECHNICAL_CONFIG,
   assessUnderlyingTechnicalMetrics,
@@ -81,16 +83,11 @@ export function calculateReturn(points: ChartPoint[], lookbackTradingDays: numbe
   return ratio == null ? null : ratio - 1;
 }
 
-export function calculateYtdReturn(points: ChartPoint[], year?: number): number | null {
+export function calculateYtdReturn(points: ChartPoint[], asOf: MarketDateInput = new Date()): number | null {
   const clean = cleanPoints(points);
-  const latest = finite(clean[clean.length - 1]?.price);
-  const latestPoint = clean[clean.length - 1];
-  const targetYear = year ?? (latestPoint?.date ? Number(latestPoint.date.slice(0, 4)) : new Date((latestPoint?.timestamp ?? 0) * 1000).getFullYear());
-  const firstOfYear = clean.find(point => {
-    const pointYear = point.date ? Number(point.date.slice(0, 4)) : new Date(point.timestamp * 1000).getFullYear();
-    return pointYear === targetYear;
-  });
-  const ratio = safeRatio(latest, finite(firstOfYear?.price));
+  const baseline = resolveCanonicalYtdBaseline(clean, asOf);
+  const end = resolveCanonicalYtdEnd(clean, asOf);
+  const ratio = safeRatio(finite(end?.price), finite(baseline?.price));
   return ratio == null ? null : ratio - 1;
 }
 
@@ -334,7 +331,7 @@ export function buildEtfPulseRow(etf: ETFInfo, points: ChartPoint[], latestPrice
       thirtyDay,
       threeMonth: calculateReturn(clean, UNDERLYING_TECHNICAL_CONFIG.lookbacks.threeMonthReturn),
       sixMonth: calculateReturn(clean, UNDERLYING_TECHNICAL_CONFIG.lookbacks.sixMonthReturn),
-      yearToDate: calculateYtdReturn(clean),
+      yearToDate: calculateYtdReturn(clean, asOfTimestamp ?? new Date()),
       oneYear: calculateReturn(clean, UNDERLYING_TECHNICAL_CONFIG.lookbacks.oneYearReturn),
     },
     rsi14,

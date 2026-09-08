@@ -1,4 +1,4 @@
-import { buildEtfPulseRow, withEtfPulseTechnicalAssessment, type EtfPulseAssessmentSourceRow, type EtfPulseRow } from './etfPulseMetrics.ts';
+import { buildEtfPulseRow, type EtfPulseRow } from './etfPulseMetrics.ts';
 import type { ETFInfo } from './types.ts';
 import type { ChartPoint } from './chartHistory.ts';
 import { fetchObservedMarketData, recordRequestDiagnostic } from './requestDiagnostics.ts';
@@ -24,8 +24,7 @@ export interface EtfPulseProgress {
   ticker?: string;
 }
 
-const ROW_CACHE_KEY = 'etf_pulse_rows:v4';
-const LEGACY_ROW_CACHE_KEY = 'etf_pulse_rows:v2';
+const ROW_CACHE_KEY = 'etf_pulse_rows:v5';
 const ROW_CACHE_TTL = 6 * 60 * 60 * 1000;
 const ROW_CACHE_HARD_TTL = 24 * 60 * 60 * 1000;
 
@@ -57,7 +56,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-function isValidLegacyPulseRow(value: unknown): value is EtfPulseAssessmentSourceRow {
+function isValidPulseRow(value: unknown): value is EtfPulseRow {
   if (!isRecord(value)) return false;
   return typeof value.ticker === 'string'
     && typeof value.name === 'string'
@@ -67,24 +66,8 @@ function isValidLegacyPulseRow(value: unknown): value is EtfPulseAssessmentSourc
     && ('realizedVolatility20' in value)
     && ('distance20' in value)
     && ('distance50' in value)
-    && ('distance200' in value);
-}
-
-function isValidPulseRow(value: unknown): value is EtfPulseRow {
-  return isValidLegacyPulseRow(value)
-    && isRecord(value)
+    && ('distance200' in value)
     && isUnderlyingTechnicalAssessment(value.technicalAssessment);
-}
-
-function isValidLegacyLoadResult(value: unknown): value is Omit<EtfPulseLoadResult, 'rows'> & { rows: EtfPulseAssessmentSourceRow[] } {
-  if (!isRecord(value)) return false;
-  return typeof value.fetchedAt === 'number'
-    && Array.isArray(value.rows)
-    && value.rows.every(isValidLegacyPulseRow)
-    && typeof value.total === 'number'
-    && typeof value.loaded === 'number'
-    && typeof value.failed === 'number'
-    && Array.isArray(value.errors);
 }
 
 function hasCurrentPulseUniverseShape(rows: Array<{ ticker: string }>, total: number): boolean {
@@ -117,16 +100,7 @@ export function readEtfPulseRowsCache(allowStale = false): EtfPulseLoadResult | 
       const parsed = JSON.parse(raw);
       if (isValidLoadResult(parsed) && Date.now() - parsed.fetchedAt < maxAge) return parsed;
     }
-    const legacyRaw = storage.getItem(LEGACY_ROW_CACHE_KEY);
-    if (!legacyRaw) return null;
-    const legacy = JSON.parse(legacyRaw);
-    if (!isValidLegacyLoadResult(legacy) || !hasCurrentPulseUniverseShape(legacy.rows, legacy.total) || Date.now() - legacy.fetchedAt >= maxAge) return null;
-    const upgraded: EtfPulseLoadResult = {
-      ...legacy,
-      rows: legacy.rows.map(withEtfPulseTechnicalAssessment),
-    };
-    writeRowsCache(upgraded);
-    return upgraded;
+    return null;
   } catch {
     return null;
   }

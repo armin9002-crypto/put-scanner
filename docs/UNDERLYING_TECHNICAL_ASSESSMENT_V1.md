@@ -28,7 +28,7 @@ Every observation at date T uses only closes dated at or before T. Invalid or in
 
 | Family | Exact V1 metric |
 | --- | --- |
-| Existing returns | 1, 5, 30, 63, 126, and 252 trading-observation close returns; YTD begins with the first observation in the latest observation's calendar year |
+| Existing returns | 1, 5, 30, 63, 126, and 252 trading-observation close returns; YTD uses the final valid daily close before January 1 of the applicable America/New_York market year |
 | Existing trend | SMA20, SMA50, SMA200 and latest-close distance from each |
 | Existing momentum/stress | RSI14, 20-observation annualized realized volatility, 30-observation drawdown, 252-observation high/low, position, and drawdown |
 | MA structure | Bullish stack means SMA20 > SMA50 > SMA200; bearish is the inverse; otherwise mixed |
@@ -74,6 +74,8 @@ ETF Pulse renders and filters the shared state. Its legacy `trend` field remains
 
 Market Regime remains a separate cross-universe analysis of SPY, QQQ, breadth, volatility proxies, and aggregate return/volatility context. It is not embedded into `UnderlyingTechnicalAssessment`. Recommendations adds Regime Fit only after consuming the shared ticker assessment.
 
-Calculated row cache key `etf_pulse_rows:v3` stores assessment version 1. A compatible `v2` row cache is upgraded locally with unavailable new orthogonal fields preserved as `null`; it does not force a provider request. The next normal explicit refresh rebuilds the full assessment from cached/acquired histories.
+Calculated row cache key `etf_pulse_rows:v5` stores assessment version 1 plus canonical YTD results. Older row caches are not upgraded because they can encode the retired first-January-close YTD baseline; one normal dataset refill rebuilds them from the existing bounded two-year history acquisition.
+
+Canonical YTD follows the New York market calendar and is unavailable when a valid positive pre-year close or a valid current-year endpoint is absent. The visible YTD chart may begin with the first current-year observation while retaining pre-year closes only as calculation references. YTD True Leverage keeps the formula `ETF return / proxy return`, including the near-zero proxy-return guard, and uses the latest valid common pre-year market date plus the latest common current-year daily market date. Raw daily timestamps need not be identical when they represent the same New York market date.
 
 Deliberately excluded signals are ATR, ADX, volume confirmation, OHLC/candlestick logic, MACD, Bollinger bands, fundamentals, valuation, holdings scores, ML/AI, and benchmark relative strength.
