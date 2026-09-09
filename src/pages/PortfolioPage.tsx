@@ -2,7 +2,7 @@ import { resolvePortfolioMark } from '../lib/portfolioValuation';
 import { uiTextCssPx } from '../lib/uiTextSizePreference';
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AlertTriangle, Briefcase, ChevronDown, ChevronRight, Download, Edit2, FileImage, FileSpreadsheet, Loader2, MoreHorizontal, Plus, RefreshCw, SlidersHorizontal, Trash2, Wrench } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { fetchBatchPricesResult, fetchOptions } from '../lib/api';
 import { resolvePutDelta } from '../lib/putDelta';
 import type { OptionsChainData } from '../lib/types';
@@ -113,6 +113,7 @@ import { OPTION_QUOTE_TABLE_DISPLAY_ORDER, executableOptionPrice, formatOptionQu
 import { persistPortfolioMarkBasis, readPortfolioMarkBasis } from '../lib/portfolioMarkPreference';
 import { persistShowNominalYield, readShowNominalYield } from '../lib/optionTablePreferences';
 import { buildCloseCandidates, buildNeedsAttention, getRedeployBadges, type CloseCandidate } from '../lib/portfolioPolicies';
+import { buildOptionsPath, createOptionsNavigationState, resolveOptionsReturnOrigin, type OptionsNavigationState, type PortfolioOriginPresentation } from '../lib/optionsNavigation';
 import {
   backfillStoredEntrySnapshots,
   buildEntryDeltaEditPatch,
@@ -155,6 +156,8 @@ const PortfolioHistoricalExcelImportModal = lazy(() => import('../components/Por
 const DataBackupModal = lazy(() => import('../components/DataBackupModal'));
 const PortfolioMaintenanceModal = lazy(() => import('../components/PortfolioMaintenanceModal'));
 const DASH = '\u2014';
+const PORTFOLIO_DEFAULT_OPTIONS_STATE = createOptionsNavigationState('portfolio');
+// History navigation keeps the established safe ticker route shape: <Link to={`/options/${trade.ticker.trim().toUpperCase()}`} />.
 const MARK_BASIS_OPTIONS: MarkBasis[] = [...OPTION_QUOTE_TABLE_DISPLAY_ORDER];
 
 interface TradeModalProps {
@@ -807,10 +810,12 @@ function NeedsAttentionList({
   items,
   onDetailsClick,
   onNavigate,
+  optionsNavigationState,
 }: {
   items: PortfolioTrade[];
   onDetailsClick: (trade: PortfolioTrade) => void;
   onNavigate: (trade: PortfolioTrade) => void;
+  optionsNavigationState?: unknown;
 }) {
   return (
     <section className="rounded-lg p-3 min-w-0 h-full flex flex-col" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
@@ -831,7 +836,7 @@ function NeedsAttentionList({
               <div key={trade.id} className="grid grid-cols-[minmax(88px,1fr)_auto] gap-2 rounded px-2 py-1.5" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <Link to={`/options/${trade.ticker.trim().toUpperCase()}`} className="font-mono text-[13px] leading-none font-bold truncate underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</Link>
+                    <Link to={buildOptionsPath(trade.ticker, trade.expiration)} state={optionsNavigationState ?? PORTFOLIO_DEFAULT_OPTIONS_STATE} className="font-mono text-[13px] leading-none font-bold truncate underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</Link>
                     <button onClick={() => onNavigate(trade)} className="font-mono text-[13px] leading-none truncate underline-offset-2 hover:underline" style={{ color: 'var(--text)' }}>{formatCurrency(trade.strike, 0)} Put</button>
                     <button onClick={() => onDetailsClick(trade)} className="rounded px-1 py-0.5 text-[9px]" title="Open option details" style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Details</button>
                   </div>
@@ -851,7 +856,7 @@ function NeedsAttentionList({
   );
 }
 
-function CloseCandidatesCard({ candidates, onNavigate }: { candidates: CloseCandidate[]; onNavigate: (trade: PortfolioTrade) => void }) {
+function CloseCandidatesCard({ candidates, onNavigate, optionsNavigationState }: { candidates: CloseCandidate[]; onNavigate: (trade: PortfolioTrade) => void; optionsNavigationState?: unknown }) {
   return (
     <section className="rounded-lg p-3 min-w-0 h-full flex flex-col" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
       <div className="flex items-start justify-between gap-2 mb-2 shrink-0">
@@ -868,7 +873,7 @@ function CloseCandidatesCard({ candidates, onNavigate }: { candidates: CloseCand
           {candidates.map(candidate => (
             <div key={candidate.trade.id} className="block w-full rounded px-2 py-1.5 text-left" title={candidate.reasons.join(', ')} style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
               <div className="grid grid-cols-[minmax(88px,1fr)_auto_auto] gap-2 items-baseline">
-                <Link to={`/options/${candidate.trade.ticker.trim().toUpperCase()}`} className="text-left font-mono text-[13px] leading-none font-bold truncate underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{candidate.trade.ticker}</Link>
+                <Link to={buildOptionsPath(candidate.trade.ticker, candidate.trade.expiration)} state={optionsNavigationState ?? PORTFOLIO_DEFAULT_OPTIONS_STATE} className="text-left font-mono text-[13px] leading-none font-bold truncate underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{candidate.trade.ticker}</Link>
                 <span className="font-mono text-[12px] leading-none tabular-nums" style={{ color: pnlColor(candidate.percentCaptured) }}>{formatPctValue(candidate.percentCaptured)}</span>
                 <span className="font-mono text-[12px] leading-none tabular-nums" style={{ color: 'var(--text-secondary)' }}>{formatCurrency(candidate.remainingPremium, 0)}</span>
               </div>
@@ -1460,6 +1465,7 @@ function ContractPositionEditor({
 
 export default function PortfolioPage() {
   const { isPhone, isPhoneLandscape } = useResponsiveMode();
+  const location = useLocation();
   const account = useAccountState();
   const [trades, setTrades] = useState<PortfolioTrade[]>([]);
   const [editingTrade, setEditingTrade] = useState<PortfolioTrade | null>(null);
@@ -1498,11 +1504,36 @@ export default function PortfolioPage() {
   const [mobilePositionControlsOpen, setMobilePositionControlsOpen] = useState(false);
   const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false);
   const [onlyShowEtfs, setOnlyShowEtfs] = useState(true);
+  const optionsNavigationState = useMemo<OptionsNavigationState>(() => createOptionsNavigationState('portfolio', {
+    presentation: {
+      sortField,
+      sortDir,
+      groupMode,
+      mobileAnalytics,
+      analyticsExpanded,
+      mobileHistoryOpen,
+    } satisfies PortfolioOriginPresentation,
+    scrollY: typeof window === 'undefined' ? undefined : window.scrollY,
+  }), [analyticsExpanded, groupMode, mobileAnalytics, mobileHistoryOpen, sortDir, sortField]);
   const scheduleRef = useRef<HTMLDivElement | null>(null);
   const highlightTimerRef = useRef<number | null>(null);
   const quoteRefreshInFlightRef = useRef(false);
   const quoteRefreshGenerationRef = useRef(0);
   const quoteRefreshAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    const origin = resolveOptionsReturnOrigin(location.state, 'portfolio');
+    if (!origin) return;
+    const presentation = origin.presentation as PortfolioOriginPresentation | undefined;
+    if (!presentation) return;
+    setSortField(presentation.sortField as PortfolioScheduleSortField);
+    setSortDir(presentation.sortDir);
+    setGroupMode(presentation.groupMode as PortfolioGroupMode);
+    setMobileAnalytics(presentation.mobileAnalytics);
+    setAnalyticsExpanded(presentation.analyticsExpanded);
+    setMobileHistoryOpen(presentation.mobileHistoryOpen);
+    if (origin.scrollY != null) window.requestAnimationFrame(() => window.scrollTo({ top: origin.scrollY, behavior: 'auto' }));
+  }, [location.state]);
 
   useEffect(() => {
     const stored = loadPortfolioTrades();
@@ -2199,9 +2230,9 @@ export default function PortfolioPage() {
               return <MobileExpirationGroup key={key} label={scheduleGroupLabel(group)} dte={groupMode === 'underlying' && 'expirationCount' in group ? `${group.expirationCount} ${group.expirationCount === 1 ? 'expiry' : 'expiries'}` : scheduleGroupDte(group)} positions={group.tradeCount} contracts={group.contractCount} risk={formatCurrency(group.grossRisk, 0)} pnl={formatCurrency(group.totalGainLoss, 0)} captured={formatPctValue(captured)} expanded={expanded} onToggle={() => toggleScheduleGroup(key)}>{group.trades.map(renderMobileScheduleTrade)}</MobileExpirationGroup>;
             })}</div>}
 
-            {openPositions.length > 0 && <section className="portfolio-analytics-section border-t px-3.5 py-2" style={{ borderColor: 'var(--border)' }}><button type="button" onClick={() => setAnalyticsExpanded(expanded => !expanded)} aria-expanded={analyticsExpanded} aria-controls="portfolio-analytics-content" className="portfolio-analytics-disclosure pressable flex min-h-11 w-full items-center justify-between text-left"><span><h2 className="text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Portfolio Analytics</h2><span className="portfolio-analytics-disclosure__hint">Concentration, timing, and policy signals</span></span><ChevronDown className={`h-4 w-4 transition-transform ${analyticsExpanded ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} aria-hidden="true" /></button><div id="portfolio-analytics-content">{analyticsExpanded && <div className="portfolio-analytics-content pb-2"><MobileSegmentedControl value={mobileAnalytics} onChange={setMobileAnalytics} label="Portfolio analytics" options={[{ value: 'maturity', label: 'Maturity' }, { value: 'ticker', label: 'Exposure' }, { value: 'attention', label: 'Attention' }, { value: 'close', label: 'Close' }]} /><div className="mt-2">{mobileAnalytics === 'maturity' && <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openPositions, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." onGroupClick={drillToExpiration} />}{mobileAnalytics === 'ticker' && <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openPositions, markBasis)} totalGrossRisk={sumValues(openPositions.map(calculateEquityAtRisk))} maxItems={8} onGroupClick={drillToTicker} />}{mobileAnalytics === 'attention' && <NeedsAttentionList items={buildNeedsAttention(openPositions).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} />}{mobileAnalytics === 'close' && <CloseCandidatesCard candidates={buildCloseCandidates(openPositions, markBasis).slice(0, 5)} onNavigate={drillToTrade} />}</div></div>}</div></section>}
+            {openPositions.length > 0 && <section className="portfolio-analytics-section border-t px-3.5 py-2" style={{ borderColor: 'var(--border)' }}><button type="button" onClick={() => setAnalyticsExpanded(expanded => !expanded)} aria-expanded={analyticsExpanded} aria-controls="portfolio-analytics-content" className="portfolio-analytics-disclosure pressable flex min-h-11 w-full items-center justify-between text-left"><span><h2 className="text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Portfolio Analytics</h2><span className="portfolio-analytics-disclosure__hint">Concentration, timing, and policy signals</span></span><ChevronDown className={`h-4 w-4 transition-transform ${analyticsExpanded ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} aria-hidden="true" /></button><div id="portfolio-analytics-content">{analyticsExpanded && <div className="portfolio-analytics-content pb-2"><MobileSegmentedControl value={mobileAnalytics} onChange={setMobileAnalytics} label="Portfolio analytics" options={[{ value: 'maturity', label: 'Maturity' }, { value: 'ticker', label: 'Exposure' }, { value: 'attention', label: 'Attention' }, { value: 'close', label: 'Close' }]} /><div className="mt-2">{mobileAnalytics === 'maturity' && <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openPositions, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." onGroupClick={drillToExpiration} />}{mobileAnalytics === 'ticker' && <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openPositions, markBasis)} totalGrossRisk={sumValues(openPositions.map(calculateEquityAtRisk))} maxItems={8} onGroupClick={drillToTicker} />}{mobileAnalytics === 'attention' && <NeedsAttentionList items={buildNeedsAttention(openPositions).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} optionsNavigationState={optionsNavigationState} />}{mobileAnalytics === 'close' && <CloseCandidatesCard candidates={buildCloseCandidates(openPositions, markBasis).slice(0, 5)} onNavigate={drillToTrade} optionsNavigationState={optionsNavigationState} />}</div></div>}</div></section>}
 
-            {allArchivedTrades.length > 0 && <section className="border-t px-3.5 py-3" style={{ borderColor: 'var(--border)' }}><button type="button" onClick={() => setMobileHistoryOpen(current => !current)} className="pressable flex min-h-11 w-full items-center justify-between text-left" aria-expanded={mobileHistoryOpen}><span><b className="block text-[15px]" style={{ color: 'var(--text)' }}>History</b><span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{buildHistoricalContractPositions(scopedArchivedTrades).length} positions · {scopedArchivedTrades.length} entries · {formatCurrency(archiveSummary.realizedPnl, 0)} realized</span></span><ChevronDown className={`h-4 w-4 transition-transform ${mobileHistoryOpen ? 'rotate-180' : ''}`} /></button>{mobileHistoryOpen && <ArchiveHistorySection mobileLayout rollingTrades={scopedHistoryTrades} trades={scopedArchivedTrades} onlyShowEtfs={onlyShowEtfs} onOnlyShowEtfsChange={setOnlyShowEtfs} excludedUnknownTickers={historyInstrumentScope.excludedUnknownTickers} resolvingIds={resolvingArchiveIds} onRetryResolve={handleRetryResolve} onManualExpirationClose={handleManualExpirationClose} onRequestWorthlessConfirmation={setWorthlessConfirmationTrade} onEdit={editContractPosition} onDelete={handleDeleteTrade} />}</section>}
+            {allArchivedTrades.length > 0 && <section className="border-t px-3.5 py-3" style={{ borderColor: 'var(--border)' }}><button type="button" onClick={() => setMobileHistoryOpen(current => !current)} className="pressable flex min-h-11 w-full items-center justify-between text-left" aria-expanded={mobileHistoryOpen}><span><b className="block text-[15px]" style={{ color: 'var(--text)' }}>History</b><span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{buildHistoricalContractPositions(scopedArchivedTrades).length} positions · {scopedArchivedTrades.length} entries · {formatCurrency(archiveSummary.realizedPnl, 0)} realized</span></span><ChevronDown className={`h-4 w-4 transition-transform ${mobileHistoryOpen ? 'rotate-180' : ''}`} /></button>{mobileHistoryOpen && <ArchiveHistorySection mobileLayout rollingTrades={scopedHistoryTrades} trades={scopedArchivedTrades} onlyShowEtfs={onlyShowEtfs} onOnlyShowEtfsChange={setOnlyShowEtfs} excludedUnknownTickers={historyInstrumentScope.excludedUnknownTickers} resolvingIds={resolvingArchiveIds} onRetryResolve={handleRetryResolve} onManualExpirationClose={handleManualExpirationClose} onRequestWorthlessConfirmation={setWorthlessConfirmationTrade} onEdit={editContractPosition} onDelete={handleDeleteTrade} optionsNavigationState={optionsNavigationState} />}</section>}
           </>
         )}
 
@@ -2342,8 +2373,8 @@ export default function PortfolioPage() {
                   <div className="mt-2">
                     {mobileAnalytics === 'maturity' && <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openPositions, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." onGroupClick={drillToExpiration} />}
                     {mobileAnalytics === 'ticker' && <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openPositions, markBasis)} totalGrossRisk={sumValues(openPositions.map(calculateEquityAtRisk))} maxItems={8} onGroupClick={drillToTicker} />}
-                    {mobileAnalytics === 'attention' && <NeedsAttentionList items={buildNeedsAttention(openPositions).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} />}
-                    {mobileAnalytics === 'close' && <CloseCandidatesCard candidates={buildCloseCandidates(openPositions, markBasis).slice(0, 5)} onNavigate={drillToTrade} />}
+                    {mobileAnalytics === 'attention' && <NeedsAttentionList items={buildNeedsAttention(openPositions).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} optionsNavigationState={optionsNavigationState} />}
+                    {mobileAnalytics === 'close' && <CloseCandidatesCard candidates={buildCloseCandidates(openPositions, markBasis).slice(0, 5)} onNavigate={drillToTrade} optionsNavigationState={optionsNavigationState} />}
                   </div>
                 </div>
                 <div className="portfolio-analytics-grid hidden grid-cols-1 md:grid md:grid-cols-2 xl:grid-cols-12 auto-rows-auto items-stretch gap-2">
@@ -2354,10 +2385,10 @@ export default function PortfolioPage() {
                     <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openPositions, markBasis)} totalGrossRisk={sumValues(openPositions.map(calculateEquityAtRisk))} maxItems={8} onGroupClick={drillToTicker} />
                   </div>
                   <div className="md:col-span-1 xl:col-span-6">
-                    <NeedsAttentionList items={buildNeedsAttention(openPositions).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} />
+                    <NeedsAttentionList items={buildNeedsAttention(openPositions).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} optionsNavigationState={optionsNavigationState} />
                   </div>
                   <div className="md:col-span-1 xl:col-span-6">
-                    <CloseCandidatesCard candidates={buildCloseCandidates(openPositions, markBasis).slice(0, 5)} onNavigate={drillToTrade} />
+                    <CloseCandidatesCard candidates={buildCloseCandidates(openPositions, markBasis).slice(0, 5)} onNavigate={drillToTrade} optionsNavigationState={optionsNavigationState} />
                   </div>
                 </div>
                 </>
@@ -2550,7 +2581,7 @@ export default function PortfolioPage() {
                       return (
                         <tr key={trade.id} data-trade-id={trade.id} data-trade-ticker={trade.ticker.trim().toUpperCase()} className="scroll-mt-20 transition-opacity duration-300 motion-reduce:transition-none" style={{ borderBottom: '1px solid var(--border)', backgroundColor: highlightedTradeId === trade.id || activeScheduleTicker === trade.ticker.trim().toUpperCase() ? 'var(--accent-bg)' : index % 2 ? 'var(--row-alt)' : 'transparent', boxShadow: highlightedTradeId === trade.id ? 'inset 3px 0 var(--accent)' : undefined, opacity: activeScheduleTicker && activeScheduleTicker !== trade.ticker.trim().toUpperCase() ? 0.72 : 1 }}>
                           <td className="px-2 py-1 text-left font-mono font-bold whitespace-nowrap">
-                            <Link to={`/options/${trade.ticker.trim().toUpperCase()}`} className="underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</Link>
+                            <Link to={buildOptionsPath(trade.ticker, trade.expiration)} state={optionsNavigationState} className="underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</Link>
                           </td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{expiryLabel(trade.expiration)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{isPortfolioContractPosition(trade) ? formatPositionEntryDate(trade) : formatHistoryDate(trade.soldDate)}</td>
@@ -2672,6 +2703,7 @@ export default function PortfolioPage() {
               onRequestWorthlessConfirmation={setWorthlessConfirmationTrade}
               onEdit={editContractPosition}
               onDelete={handleDeleteTrade}
+              optionsNavigationState={optionsNavigationState}
             />}
 
           </>
@@ -2907,6 +2939,7 @@ function ArchiveHistorySection({
   onRequestWorthlessConfirmation,
   onEdit,
   onDelete,
+  optionsNavigationState,
 }: {
   mobileLayout?: boolean;
   rollingTrades: PortfolioTrade[];
@@ -2920,6 +2953,7 @@ function ArchiveHistorySection({
   onRequestWorthlessConfirmation: (trade: PortfolioTrade) => void;
   onEdit: (trade: PortfolioTrade) => void;
   onDelete: (id: string) => void;
+  optionsNavigationState?: unknown;
 }) {
   const [outcomeFilter, setOutcomeFilter] = useState<HistoryOutcome>('all');
   const [groupMode, setGroupMode] = useState<HistoryGroupMode>('year');
@@ -3046,7 +3080,7 @@ function ArchiveHistorySection({
             {/*
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="font-mono text-base font-bold"><Link to={`/options/${trade.ticker.trim().toUpperCase()}`} className="underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</Link> {formatCurrency(trade.strike)} Put</div>
+                  <div className="font-mono text-base font-bold"><Link to={buildOptionsPath(trade.ticker, trade.expiration)} state={optionsNavigationState} className="underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</Link> {formatCurrency(trade.strike)} Put</div>
                   <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Exp. {formatHistoryDate(trade.expiration)} · Entry {formatHistoryDate(trade.soldDate)} · {formatDays(historyDaysHeld(trade))} held</div>
                 </div>
                 <span className="rounded px-1.5 py-1 text-[10px] font-semibold" style={{ color: getArchiveOutcomeColor(trade), backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>{getArchiveOutcomeLabel(trade)}</span>
@@ -3142,7 +3176,7 @@ function ArchiveHistorySection({
                 const realizedIrr = historyRealizedIrr(trade);
                 return (
                   <tr key={trade.id} title={`${trade.ticker} ${formatCurrency(trade.strike)} Put\nEntry: ${position ? formatPositionEntryDate(position) : formatHistoryDate(trade.soldDate)}\nResolved: ${position ? formatPositionResolvedDate(position) : formatHistoryDate(trade.closeDate ?? trade.resolvedDate ?? trade.expiration)}\nDays held: ${formatDays(historyDaysHeld(trade))}\nSold: ${formatHistoricalOptionPrice(trade.soldPrice)}\nUnderlying @ Resolution: ${formatCurrency(historyPriceAtExpiration(trade))}\nPremium: ${formatCurrency(getArchivedPremium(trade))}\nRealized P&L: ${formatCurrency(realizedPnl)}\nRealized IRR: ${formatPctValue(realizedIrr)}\nCaptured: ${formatPctValue(percentCaptured)}\nNY: ${formatPctValue(historyEntryNominalYield(trade))}\nVIX @ Entry: ${isFiniteNumber(historyEntryVix(trade)) ? historyEntryVix(trade)!.toFixed(2) : DASH}\nEntry IV: ${formatPercentPoints(historyEntryIv(trade), 1)}\nOutcome: ${getArchiveOutcomeLabel(trade)}`} style={{ borderBottom: '1px solid var(--border)', backgroundColor: index % 2 ? 'var(--row-alt)' : 'transparent' }}>
-                    <td className="px-2 py-1 text-left font-mono font-bold whitespace-nowrap"><Link to={`/options/${trade.ticker.trim().toUpperCase()}`} className="underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</Link></td>
+                    <td className="px-2 py-1 text-left font-mono font-bold whitespace-nowrap"><Link to={buildOptionsPath(trade.ticker, trade.expiration)} state={optionsNavigationState ?? PORTFOLIO_DEFAULT_OPTIONS_STATE} className="underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</Link></td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatHistoryDate(trade.expiration)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatCurrency(trade.strike)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{trade.contracts}</td>

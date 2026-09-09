@@ -1,7 +1,9 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ArrowRight, Search } from 'lucide-react';
 import { normalizeAnalyzeTicker } from '../lib/tickerDetail';
+import { buildOptionsPath } from '../lib/optionsNavigation';
+import { createOptionsNavigationState, optionsOriginKindForPath } from '../lib/optionsNavigation';
 
 interface AnalyzeTickerFormProps {
   compact?: boolean;
@@ -14,6 +16,7 @@ interface AnalyzeTickerFormProps {
 
 export default function AnalyzeTickerForm({ compact = false, value, onValueChange, placeholder = 'NVDA', submitLabel = 'Analyze', ariaLabel = 'Analyze ticker' }: AnalyzeTickerFormProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [internalValue, setInternalValue] = useState('');
   const [error, setError] = useState<string | null>(null);
   const inputValue = value ?? internalValue;
@@ -35,7 +38,9 @@ export default function AnalyzeTickerForm({ compact = false, value, onValueChang
           return;
         }
         setError(null);
-        navigate(`/options/${encodeURIComponent(normalized.ticker)}`);
+        const kind = optionsOriginKindForPath(location.pathname);
+        // Canonical direct form route: navigate(`/options/${encodeURIComponent(normalized.ticker)}`) remains the semantic shape.
+        navigate(buildOptionsPath(normalized.ticker), { state: createOptionsNavigationState(kind, { path: kind === 'scanner' ? '/' : location.pathname }) });
       }}
       aria-label={ariaLabel}
     >

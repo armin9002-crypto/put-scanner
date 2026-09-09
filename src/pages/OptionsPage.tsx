@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { OptionIntegrityReasonCode, OptionIntegrityStatus, OptionsChainData, SortField, SortDirection } from '../lib/types';
 import { fetchOptions, fetchTickerDetail, formatPrice, formatYield, yieldColor, formatNumber } from '../lib/api';
 import type { ExtendedPriceData, TickerDetailAvailability, TickerDetailErrorCode, VolatilityContextData } from '../lib/api';
@@ -15,7 +15,7 @@ import { formatOptionLastTradeDate, normalizeTimestampMs } from '../lib/format';
 import { getOptionLastTradeFreshness } from '../lib/optionLastTradeFreshness';
 import { persistShowNominalYield, readShowNominalYield } from '../lib/optionTablePreferences';
 import { getUnderlyingHoldingsProxy } from '../lib/underlyingHoldingsProxies';
-import { getLastScannerUrl, isScannerNavigationState } from '../lib/scannerNavigation';
+import { createOptionsReturnState, optionsReturnLabel, resolveOptionsOrigin } from '../lib/optionsNavigation';
 import { getReturnedOptionExpiration, optionChainMatchesRequestedExpiration, parseRequestedOptionExpiry, resolveOptionExpirySelection } from '../lib/optionExpiryNavigation';
 import { evidenceFreshnessFromChainMeta } from '../lib/evidence';
 import {
@@ -96,12 +96,16 @@ function SkeletonRow({ colCount }: { colCount: number }) {
 function OptionsEmptyState({
   type,
   onRefresh,
+  onBack,
+  backLabel,
   loading,
   title: customTitle,
   subtitle: customSubtitle,
 }: {
   type: 'empty' | 'error';
   onRefresh: () => void;
+  onBack: () => void;
+  backLabel: string;
   loading: boolean;
   title?: string;
   subtitle?: string;
@@ -130,13 +134,14 @@ function OptionsEmptyState({
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           Try Again
         </button>
-        <Link
-          to="/"
+        <button
+          type="button"
+          onClick={onBack}
           className="inline-flex min-h-[44px] items-center rounded-lg px-4 py-2.5 text-sm font-medium sm:min-h-0 sm:py-2"
           style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}
         >
-          Back to Scanner
-        </Link>
+          {backLabel}
+        </button>
       </div>
     </div>
   );
@@ -358,7 +363,8 @@ export default function OptionsPage() {
   const [searchParams] = useSearchParams();
   const expiryParam = searchParams.get('expiry');
   const requestedExpiry = parseRequestedOptionExpiry(expiryParam);
-  const openedFromScanner = isScannerNavigationState(location.state);
+  const origin = useMemo(() => resolveOptionsOrigin(location.state), [location.state]);
+  const openedFromScanner = origin.kind === 'scanner';
 
   const [optionsData, setOptionsData] = useState<OptionsChainData | null>(null);
   const [extendedPrice, setExtendedPrice] = useState<ExtendedPriceData | null>(null);
@@ -389,6 +395,7 @@ export default function OptionsPage() {
   const inFlightFetchKeyRef = useRef<string>('');
   const requestGenerationRef = useRef(0);
   const requestAbortRef = useRef<AbortController | null>(null);
+  const skipNextExpiryUrlLoadRef = useRef(false);
 
   const handleShowNominalYieldChange = useCallback((value: boolean) => {
     setShowNominalYield(value);
@@ -471,6 +478,15 @@ export default function OptionsPage() {
       if (requestGeneration !== requestGenerationRef.current) return;
       setOptionsData(opts);
       setSelectedExp(expDate);
+      if (!bypassCache && !fresh) {
+        const canonicalExpiry = new Date(expDate * 1_000).toISOString().slice(0, 10);
+        if (expiryParam !== canonicalExpiry) {
+          skipNextExpiryUrlLoadRef.current = true;
+          const nextSearch = new URLSearchParams(location.search);
+          nextSearch.set('expiry', canonicalExpiry);
+          navigate({ pathname: location.pathname, search: `?${nextSearch.toString()}` }, { replace: true, state: location.state });
+        }
+      }
       setLastUpdated(new Date());
     } catch (err: unknown) {
       if (requestGeneration !== requestGenerationRef.current) return;
@@ -482,9 +498,13 @@ export default function OptionsPage() {
         setLoading(false);
       }
     }
-  }, [ticker]);
+  }, [expiryParam, location.pathname, location.search, location.state, navigate, ticker]);
 
   useEffect(() => {
+    if (skipNextExpiryUrlLoadRef.current) {
+      skipNextExpiryUrlLoadRef.current = false;
+      return undefined;
+    }
     inFlightFetchKeyRef.current = '';
     setSelectedOption(null);
     setOptionsData(null);
@@ -856,13 +876,11 @@ export default function OptionsPage() {
     else loadData(true, true);
   }, [loadData, loadExpiration, selectedExp]);
 
-  const handleBackToScanner = useCallback(() => {
-    if (isScannerNavigationState(location.state) && window.history.length > 1) {
-      navigate(-1);
-      return;
-    }
-    navigate(getLastScannerUrl(), { replace: true });
-  }, [location.state, navigate]);
+  const handleBackToOrigin = useCallback(() => {
+    navigate(origin.path, { replace: true, state: createOptionsReturnState(origin) });
+  }, [navigate, origin]);
+
+  const returnLabel = optionsReturnLabel(origin.kind);
 
   const mobileSortOptions: Array<{ field: SortField; label: string }> = [
     { field: 'strike', label: 'Strike' },
@@ -900,7 +918,7 @@ export default function OptionsPage() {
         <div className="max-w-md px-6 text-center">
           <h1 className="mb-2 text-lg font-semibold" style={{ color: 'var(--text)' }}>Invalid ticker</h1>
           <p className="mb-4 text-sm" style={{ color: 'var(--text-muted)' }}>{routeNormalization.error ?? 'Enter a valid ticker symbol.'}</p>
-          <Link to="/" className="inline-block px-4 py-2 text-white rounded-lg text-sm" style={{ backgroundColor: 'var(--accent)' }}>Back to Scanner</Link>
+          <button type="button" onClick={handleBackToOrigin} className="inline-block px-4 py-2 text-white rounded-lg text-sm" style={{ backgroundColor: 'var(--accent)' }}>{returnLabel}</button>
         </div>
       </div>
     );
@@ -946,7 +964,7 @@ export default function OptionsPage() {
       <div className="mobile-route-page mobile-option-route-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
         <header ref={mobileOptionHeaderRef} className="mobile-option-header sticky top-0 z-40" style={{ backgroundColor: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
           <div className="grid min-h-[58px] grid-cols-[78px_minmax(0,1fr)_132px] items-center px-1.5">
-            <button type="button" onClick={handleBackToScanner} className="pressable flex min-h-11 items-center gap-0.5 rounded-lg px-1 text-[13px] font-semibold" style={{ color: 'var(--accent-light)' }} aria-label="Back to Scanner"><ArrowLeft className="h-5 w-5" /> Scanner</button>
+            <button type="button" onClick={handleBackToOrigin} className="pressable flex min-h-11 items-center gap-0.5 rounded-lg px-1 text-[13px] font-semibold" style={{ color: 'var(--accent-light)' }} aria-label={returnLabel}><ArrowLeft className="h-5 w-5" /> {origin.kind === 'scanner' ? 'Scanner' : origin.kind === 'pulse' ? 'Pulse' : origin.kind === 'recommendations' ? 'Recs' : returnLabel.replace('Back to ', '')}</button>
             <button type="button" onClick={() => setShowPriceChart(true)} className="pressable min-w-0 text-center" aria-label={`Open ${ticker} price chart`}>
               <div className="truncate font-mono text-[17px] font-bold" style={{ color: 'var(--text)' }}>{ticker}</div>
               <div className="flex items-baseline justify-center gap-1.5 font-mono text-[12px]"><span style={{ color: 'var(--text)' }}>{currentPrice > 0 ? `$${currentPrice.toFixed(2)}` : '—'}</span>{extendedPrice && <span style={{ color: changePositive ? 'var(--green)' : 'var(--red)' }}>{extendedPrice.changePercent >= 0 ? '+' : ''}{extendedPrice.changePercent.toFixed(2)}%</span>}</div>
@@ -973,7 +991,7 @@ export default function OptionsPage() {
         {freshnessLabel && <div className="border-b px-3 py-1 text-[10px]" style={{ borderColor: 'var(--border)', color: staleCachedChain ? 'var(--yellow)' : 'var(--text-dim)' }}>{freshnessLabel}</div>}
         {instrument.showLeveragedProductWarning && <div className="border-b px-3 py-2 text-[11px] leading-4" style={{ borderColor: 'var(--border)', color: 'var(--yellow)', backgroundColor: 'var(--surface)' }}>Leveraged ETF · daily reset and compounding make longer-period returns path dependent.</div>}
 
-        {error && !hasUsablePriorChain ? <OptionsEmptyState type="error" onRefresh={handleRefresh} loading={loading} title={detailErrorCode === 'INVALID_SYMBOL' ? `We couldn't find ${ticker}.` : `We couldn't load options for ${ticker}.`} subtitle={detailErrorCode === 'INVALID_SYMBOL' ? 'Check the ticker and try again.' : 'Market data may be temporarily unavailable. Try again without changing or saving anything.'} /> : hasEmptyOptions ? <OptionsEmptyState type="empty" onRefresh={handleRefresh} loading={loading} title={`No listed puts found for ${ticker}`} subtitle="This ticker may not have listed puts, or its option chain may currently be unavailable." /> : (
+        {error && !hasUsablePriorChain ? <OptionsEmptyState type="error" onRefresh={handleRefresh} onBack={handleBackToOrigin} backLabel={returnLabel} loading={loading} title={detailErrorCode === 'INVALID_SYMBOL' ? `We couldn't find ${ticker}.` : `We couldn't load options for ${ticker}.`} subtitle={detailErrorCode === 'INVALID_SYMBOL' ? 'Check the ticker and try again.' : 'Market data may be temporarily unavailable. Try again without changing or saving anything.'} /> : hasEmptyOptions ? <OptionsEmptyState type="empty" onRefresh={handleRefresh} onBack={handleBackToOrigin} backLabel={returnLabel} loading={loading} title={`No listed puts found for ${ticker}`} subtitle="This ticker may not have listed puts, or its option chain may currently be unavailable." /> : (
           <div className="mobile-financial-list mobile-option-chain-table" role="table" aria-label={`${ticker} put option chain`}>
             <div role="row" className="mobile-option-chain-header">
               {['Strike', 'Last Trade', 'OTM/ITM', 'AY Last', 'AY Bid', 'AY Ask'].map(label => <span key={label} role="columnheader">{label}</span>)}
@@ -1000,12 +1018,12 @@ export default function OptionsPage() {
         <div className="option-page-title-row detail-identity-header flex items-center gap-2 sm:gap-4 mb-4 sm:mb-6 min-w-0">
           <button
             type="button"
-            onClick={handleBackToScanner}
-            aria-label="Back to Scanner"
-            className="icon-button p-2 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center"
+            onClick={handleBackToOrigin}
+            aria-label={returnLabel}
+            className="icon-button flex min-h-[44px] min-w-[44px] items-center justify-center gap-1.5 rounded-lg px-2"
             style={{ color: 'var(--text-muted)' }}
           >
-            <ArrowLeft className="w-5 h-5" />
+            <ArrowLeft className="w-5 h-5" /><span className="hidden sm:inline font-semibold">{returnLabel}</span>
           </button>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 sm:gap-3 min-w-0">
@@ -1280,11 +1298,13 @@ export default function OptionsPage() {
 
         {/* Options table */}
         {error && !hasUsablePriorChain ? (
-          <OptionsEmptyState type="error" onRefresh={handleRefresh} loading={loading} title={detailErrorCode === 'INVALID_SYMBOL' ? `We couldn't find ${ticker}.` : `We couldn't load options for ${ticker}.`} subtitle={detailErrorCode === 'INVALID_SYMBOL' ? 'Check the ticker and try again, or return to Scanner.' : 'Market data may be temporarily unavailable. Try again without changing or saving anything.'} />
+          <OptionsEmptyState type="error" onRefresh={handleRefresh} onBack={handleBackToOrigin} backLabel={returnLabel} loading={loading} title={detailErrorCode === 'INVALID_SYMBOL' ? `We couldn't find ${ticker}.` : `We couldn't load options for ${ticker}.`} subtitle={detailErrorCode === 'INVALID_SYMBOL' ? 'Check the ticker and try again.' : 'Market data may be temporarily unavailable. Try again without changing or saving anything.'} />
         ) : hasEmptyOptions ? (
           <OptionsEmptyState
             type="empty"
             onRefresh={handleRefresh}
+            onBack={handleBackToOrigin}
+            backLabel={returnLabel}
             loading={loading}
             title={`No listed puts found for ${ticker}`}
             subtitle={detailAvailability === 'no_options'

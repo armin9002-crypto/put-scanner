@@ -1,5 +1,5 @@
 import { Fragment, lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import {
   isPastWatchlistExpirationDte,
   markWatchlistItems,
@@ -27,6 +27,7 @@ import { buildWatchlistGroups, type WatchlistGroupMode, type WatchlistSortOverri
 import { PageHeader } from '../components/ui/PageHeader';
 import { isOptionContractIntegrityInvalid } from '../lib/optionMarketIntegrity';
 import { evidenceFreshnessFromChainMeta } from '../lib/evidence';
+import { buildOptionsPath, createOptionsNavigationState, resolveOptionsReturnOrigin, type OptionsNavigationState, type WatchlistOriginPresentation } from '../lib/optionsNavigation';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 
@@ -277,6 +278,7 @@ function mergeLiveItem(item: WatchlistItem, optData: OptionsChainData | null, cu
 
 export default function WatchlistPage() {
   const { isPhone } = useResponsiveMode();
+  const location = useLocation();
   const [items, setItems] = useState<WatchlistItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
@@ -293,6 +295,31 @@ export default function WatchlistPage() {
   const refreshInFlightRef = useRef(false);
   const refreshGenerationRef = useRef(0);
   const refreshAbortRef = useRef<AbortController | null>(null);
+
+  const optionsNavigationState = useMemo<OptionsNavigationState>(() => createOptionsNavigationState('watchlist', {
+    presentation: {
+      sortField,
+      sortDir,
+      sortOverrideField: sortOverride?.field ?? null,
+      sortOverrideDirection: sortOverride?.direction ?? null,
+      groupMode,
+      showNominalYields,
+    } satisfies WatchlistOriginPresentation,
+    scrollY: typeof window === 'undefined' ? undefined : window.scrollY,
+  }), [groupMode, showNominalYields, sortDir, sortField, sortOverride]);
+
+  useEffect(() => {
+    const origin = resolveOptionsReturnOrigin(location.state, 'watchlist');
+    if (!origin) return;
+    const presentation = origin.presentation as WatchlistOriginPresentation | undefined;
+    if (!presentation) return;
+    setSortField(presentation.sortField as SortField);
+    setSortDir(presentation.sortDir);
+    setSortOverride(presentation.sortOverrideField ? { field: presentation.sortOverrideField as SortField, direction: presentation.sortOverrideDirection ?? 'asc' } : null);
+    setGroupMode(presentation.groupMode as WatchlistGroupMode);
+    setShowNominalYields(presentation.showNominalYields);
+    if (origin.scrollY != null) window.requestAnimationFrame(() => window.scrollTo({ top: origin.scrollY, behavior: 'auto' }));
+  }, [location.state]);
 
   useEffect(() => {
     const stored = pruneExpiredWatchlist();
@@ -491,7 +518,7 @@ export default function WatchlistPage() {
         {items.length === 0 ? <div className="px-6 py-16 text-center"><Star className="mx-auto mb-3 h-7 w-7" style={{ color: 'var(--text-dim)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No saved puts</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Star a contract from an option chain to save it here.</p></div> : (
           <div className="mobile-financial-list">{groupedRows.map(group => <section key={group.key} aria-label={groupMode === 'none' ? 'Watchlist' : `${groupMode === 'underlying' ? 'Underlying' : 'Expiry'} ${group.label}`}>{groupMode !== 'none' && <div className="sticky top-0 z-10 border-b px-3.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface-alt)', color: 'var(--text-muted)' }}>{groupMode === 'underlying' ? group.label : `${group.label} · ${group.rows.length} saved`}</div>}{(group.rows as unknown as LiveRow[]).map(row => (
               <div key={row.id} className="mobile-watchlist-entry watchlist-mobile-row" style={{ opacity: row.expired || row.status === 'unavailable' ? 0.65 : 1 }}>
-              <MobileOptionRow ticker={row.ticker} tickerTo={`/options/${row.ticker}?expiry=${row.expiryTimestamp}`} strike={row.strike} expirationLabel={row.expiryFormatted} dte={row.dte} bid={row.bid} ask={row.ask} last={row.last} lastTradeDate={row.lastTradeDate} annualYield={row.annYieldBid} annYieldLast={row.annYieldLast} annYieldBid={row.annYieldBid} annYieldAsk={row.annYieldAsk} delta={row.delta} impliedVolatility={row.iv} openInterest={row.openInterest} moneynessLabel={row.moneynessLabel} moneynessColor={row.moneynessColor} integrityStatus={row.snapshot?.integrityStatus} statusText={`${row.statusLabel} · Last trade ${formatOptionLastTradeDate(row.lastTradeDate)}${showNominalYields ? ` · NY L/B/A ${formatPercentValue(row.nomYieldLast)} / ${formatPercentValue(row.nomYieldBid)} / ${formatPercentValue(row.nomYieldAsk)}` : ''}`} watched onToggleWatchlist={() => handleRemove(row.id)} onSelect={() => setSelectedOption({ option: optionDetailFromWatchlistRow(row), ticker: row.ticker, expirationLabel: row.expiryFormatted, dte: row.dte, underlyingPrice: row.currentPrice })} />
+          <MobileOptionRow ticker={row.ticker} tickerTo={buildOptionsPath(row.ticker, row.expiryTimestamp)} tickerNavigationState={optionsNavigationState} strike={row.strike} expirationLabel={row.expiryFormatted} dte={row.dte} bid={row.bid} ask={row.ask} last={row.last} lastTradeDate={row.lastTradeDate} annualYield={row.annYieldBid} annYieldLast={row.annYieldLast} annYieldBid={row.annYieldBid} annYieldAsk={row.annYieldAsk} delta={row.delta} impliedVolatility={row.iv} openInterest={row.openInterest} moneynessLabel={row.moneynessLabel} moneynessColor={row.moneynessColor} integrityStatus={row.snapshot?.integrityStatus} statusText={`${row.statusLabel} · Last trade ${formatOptionLastTradeDate(row.lastTradeDate)}${showNominalYields ? ` · NY L/B/A ${formatPercentValue(row.nomYieldLast)} / ${formatPercentValue(row.nomYieldBid)} / ${formatPercentValue(row.nomYieldAsk)}` : ''}`} watched onToggleWatchlist={() => handleRemove(row.id)} onSelect={() => setSelectedOption({ option: optionDetailFromWatchlistRow(row), ticker: row.ticker, expirationLabel: row.expiryFormatted, dte: row.dte, underlyingPrice: row.currentPrice })} />
               <div className="watchlist-mobile-note border-b px-3 pb-1" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>{editingNote === row.id ? <input type="text" value={noteText} onChange={event => setNoteText(event.target.value.slice(0, 60))} onBlur={() => handleNoteSave(row.id)} onKeyDown={event => { if (event.key === 'Enter') handleNoteSave(row.id); if (event.key === 'Escape') { setEditingNote(null); setNoteText(''); } }} autoFocus className="mobile-control-field w-full" maxLength={60} aria-label={`Note for ${row.ticker}`} /> : <button type="button" onClick={() => { setEditingNote(row.id); setNoteText(row.note); }} className="flex min-h-11 w-full items-center text-left text-[11px]" style={{ color: row.note ? 'var(--text-secondary)' : 'var(--text-dim)' }}>{row.note || 'Add a note'}</button>}</div>
             </div>
           ))}</section>)}</div>
@@ -554,7 +581,8 @@ export default function WatchlistPage() {
                   >
                     <div className="flex items-start justify-between gap-3">
                       <Link
-                        to={`/options/${row.ticker}?expiry=${row.expiryTimestamp}`}
+                        to={buildOptionsPath(row.ticker, row.expiryTimestamp)}
+                        state={optionsNavigationState}
                         className="min-w-0 text-left"
                       >
                         <div className="font-mono text-lg font-bold" style={{ color: 'var(--accent-light)' }}>{row.ticker}</div>
@@ -721,7 +749,8 @@ export default function WatchlistPage() {
                         </td>
                         <td className="watchlist-ticker-cell px-1.5 py-0.5 text-left whitespace-nowrap" style={mutedStyle}>
                           <Link
-                            to={`/options/${row.ticker}?expiry=${row.expiryTimestamp}`}
+                          to={buildOptionsPath(row.ticker, row.expiryTimestamp)}
+                          state={optionsNavigationState}
                             className="inline-flex items-center font-mono font-bold hover:opacity-80 transition-opacity min-h-[34px]"
                             style={{ color: 'var(--accent-light)' }}
                           >

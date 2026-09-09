@@ -1,4 +1,7 @@
 import type { ExpirationDate } from './types.ts';
+import { buildOptionsPath } from './optionsNavigation.ts';
+
+export { buildOptionsPath } from './optionsNavigation.ts';
 
 export interface OptionExpirySelection {
   date: number | null;
@@ -44,11 +47,9 @@ export function parseRequestedOptionExpiry(value: string | null): number | null 
 }
 
 export function buildScannerOptionsPath(ticker: string, scannerExpiration: string): string {
-  const normalizedTicker = ticker.trim().toUpperCase();
-  const base = `/options/${encodeURIComponent(normalizedTicker)}`;
-  if (!scannerExpiration.startsWith('date_')) return base;
+  if (!scannerExpiration.startsWith('date_')) return buildOptionsPath(ticker);
   const iso = isoFromTimestamp(Number(scannerExpiration.slice(5)));
-  return iso ? `${base}?expiry=${iso}` : base;
+  return iso ? buildOptionsPath(ticker, iso) : buildOptionsPath(ticker);
 }
 
 export function resolveOptionExpirySelection(

@@ -45,8 +45,9 @@ import { fetchScreenerExpirationAvailability } from '../lib/screenerAcquisition'
 import { passesScannerLiquidityFilter, sortScannerEtfs, type ScannerLiquidityFilter, type ScannerSort } from '../lib/scannerDiscovery';
 import { fetchFundAssets, type FundAssetsData } from '../lib/fundAssets';
 import { DEFAULT_SCANNER_STATE, parseScannerState, resolveScannerExpiration, serializeScannerState, type ScannerState } from '../lib/scannerState';
-import { saveLastScannerUrl, type ScannerNavigationState } from '../lib/scannerNavigation';
+import { saveLastScannerUrl } from '../lib/scannerNavigation';
 import { buildScannerOptionsPath } from '../lib/optionExpiryNavigation';
+import { createOptionsNavigationState } from '../lib/optionsNavigation';
 import { useResponsiveMode } from '../lib/responsive';
 import MobileBottomSheet from '../components/mobile/MobileBottomSheet';
 import MobileMarketStrip from '../components/mobile/MobileMarketStrip';
@@ -524,7 +525,7 @@ export default function HomePage() {
               key={etf.ticker}
               etf={etf}
               to={buildScannerOptionsPath(etf.ticker, expFilter)}
-              navigationState={{ fromScanner: true } satisfies ScannerNavigationState}
+              navigationState={createOptionsNavigationState('scanner', { path: serializedScannerState ? `/?${serializedScannerState}` : '/' })}
               priceData={prices[etf.ticker] ?? null}
               optionSnapshot={optionSnapshots[etf.ticker] ?? null}
               optionDiagnostic={snapshotDiagnostics[etf.ticker] ?? null}
@@ -643,7 +644,7 @@ export default function HomePage() {
               key={etf.ticker}
               etf={etf}
               to={buildScannerOptionsPath(etf.ticker, expFilter)}
-              navigationState={{ fromScanner: true } satisfies ScannerNavigationState}
+              navigationState={createOptionsNavigationState('scanner', { path: serializedScannerState ? `/?${serializedScannerState}` : '/' })}
               priceData={prices[etf.ticker] ?? null}
               optionSnapshot={optionSnapshots[etf.ticker] ?? null}
               optionDiagnostic={snapshotDiagnostics[etf.ticker] ?? null}

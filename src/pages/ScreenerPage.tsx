@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { ETF_LIST } from '../lib/etfs';
 import type { ETFInfo } from '../lib/types';
 import { fetchSparkline, formatPrice, formatNumber } from '../lib/api';
@@ -22,6 +22,7 @@ import { annualizedYieldFieldForNominal, OPTION_QUOTE_TABLE_DISPLAY_ORDER, OPTIO
 import { compareNullableValue } from '../lib/metricValue';
 import { PageHeader } from '../components/ui/PageHeader';
 import { SCREENER_CHUNKS } from '../../shared/screenerUniverse.js';
+import { buildOptionsPath, createOptionsNavigationState, resolveOptionsReturnOrigin, type OptionsNavigationState, type ScreenerOriginPresentation } from '../lib/optionsNavigation';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 const FULL_SCAN_BATCH_COUNT = SCREENER_CHUNKS.length;
@@ -47,6 +48,34 @@ interface DrawerSelection {
   expirationLabel: string;
   dte: number | null;
   underlyingPrice: number | null;
+}
+
+interface ScreenerReturnSnapshot {
+  viewSignature: string;
+  rawRows: ScreenerRow[];
+  criteria: ScreenerCriteria;
+  lastLoadedCriteria: ScreenerCriteria;
+  availableExps: { date: number; label: string; dte: number }[];
+  datesLoaded: boolean;
+  datasetObservedAt: number | null;
+  datasetFreshness: EvidenceFreshness;
+  scanFailureCount: number;
+  loadError: string | null;
+  sortField: ScreenerSortField;
+  sortDir: SortDir;
+  scrollY: number;
+}
+
+let latestScreenerReturnSnapshot: ScreenerReturnSnapshot | null = null;
+
+function saveScreenerReturnSnapshot(snapshot: ScreenerReturnSnapshot): void {
+  latestScreenerReturnSnapshot = snapshot;
+}
+
+function consumeScreenerReturnSnapshot(viewSignature: string): ScreenerReturnSnapshot | null {
+  const snapshot = latestScreenerReturnSnapshot;
+  latestScreenerReturnSnapshot = null;
+  return snapshot?.viewSignature === viewSignature ? snapshot : null;
 }
 
 // --- Filter options ---
@@ -232,6 +261,7 @@ function vixLabel(vix: number): { text: string; color: string } {
 
 export default function ScreenerPage() {
   const { isPhone } = useResponsiveMode();
+  const location = useLocation();
 
   // Filters — default expiry to ≤30 DTE (Opt 3)
   const [selectedETFs, setSelectedETFs] = useState<ETFInfo[]>([]);
@@ -404,6 +434,38 @@ export default function ScreenerPage() {
 
   const currentCriteria = useMemo(() => getCurrentCriteria(), [getCurrentCriteria]);
 
+  useEffect(() => {
+    const origin = resolveOptionsReturnOrigin(location.state, 'screener');
+    const presentation = origin?.presentation as ScreenerOriginPresentation | undefined;
+    if (!presentation) return;
+    const snapshot = consumeScreenerReturnSnapshot(presentation.viewSignature);
+    if (!snapshot) return;
+
+    setSelectedETFs(snapshot.criteria.selectedETFs);
+    setExpFilter(snapshot.criteria.expFilter);
+    setDeltaFilter(snapshot.criteria.deltaFilter);
+    setMoneynessFilter(snapshot.criteria.moneynessFilter);
+    setYieldFilter(snapshot.criteria.yieldFilter);
+    setOiFilter(snapshot.criteria.oiFilter);
+    setVolFilter(snapshot.criteria.volFilter);
+    setIvVsRealizedRangeFilter(snapshot.criteria.ivVsRealizedRangeFilter);
+    setRecentTradesOnly(snapshot.criteria.recentTradesOnly);
+    setAvailableExps(snapshot.availableExps);
+    setDatesLoaded(snapshot.datesLoaded);
+    rawRowsRef.current = snapshot.rawRows;
+    setRows(applyScreenerFilters(snapshot.rawRows, snapshot.criteria));
+    setLoaded(true);
+    setLastLoadedCriteria(snapshot.lastLoadedCriteria);
+    setDatasetObservedAt(snapshot.datasetObservedAt);
+    setDatasetFreshness(snapshot.datasetFreshness);
+    setScanFailureCount(snapshot.scanFailureCount);
+    setLoadError(snapshot.loadError);
+    setRetryState(null);
+    setSortField(snapshot.sortField);
+    setSortDir(snapshot.sortDir);
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => window.scrollTo({ top: snapshot.scrollY, behavior: 'auto' })));
+  }, [location.state]);
+
   const criteriaSummary = useMemo(() => {
     const selectedTickers = currentCriteria.selectedETFs.length === 0
       ? 'All ETFs'
@@ -437,6 +499,7 @@ export default function ScreenerPage() {
 
   // Load data
   const executeLoad = useCallback(async (criteria: ScreenerCriteria) => {
+    latestScreenerReturnSnapshot = null;
     const scan = scanGateRef.current.begin();
     const hadPriorDataset = rawRowsRef.current.length > 0;
     setShowConfirm(false);
@@ -551,6 +614,37 @@ export default function ScreenerPage() {
     await executeLoad(criteria);
     setMobileFiltersOpen(false);
   }, [executeLoad, getCurrentCriteria]);
+
+  const screenerViewSignature = lastLoadedCriteria
+    ? screenerDatasetScopeKey(selectedEtfKey(lastLoadedCriteria.selectedETFs), lastLoadedCriteria.expFilter)
+    : screenerDatasetScopeKey(selectedEtfKey(selectedETFs), expFilter);
+  const optionsNavigationState = useMemo<OptionsNavigationState>(() => createOptionsNavigationState('screener', {
+    stateKey: 'latest',
+    presentation: {
+      sortField,
+      sortDir,
+      viewSignature: screenerViewSignature,
+    } satisfies ScreenerOriginPresentation,
+    scrollY: typeof window === 'undefined' ? undefined : window.scrollY,
+  }), [screenerViewSignature, sortDir, sortField]);
+  const rememberScreenerNavigation = useCallback(() => {
+    if (!loaded || !lastLoadedCriteria || rawRowsRef.current.length === 0) return;
+    saveScreenerReturnSnapshot({
+      viewSignature: screenerViewSignature,
+      rawRows: rawRowsRef.current,
+      criteria: currentCriteria,
+      lastLoadedCriteria,
+      availableExps,
+      datesLoaded,
+      datasetObservedAt,
+      datasetFreshness,
+      scanFailureCount,
+      loadError,
+      sortField,
+      sortDir,
+      scrollY: typeof window === 'undefined' ? 0 : window.scrollY,
+    });
+  }, [availableExps, currentCriteria, datasetFreshness, datasetObservedAt, datesLoaded, lastLoadedCriteria, loaded, loadError, scanFailureCount, screenerViewSignature, sortDir, sortField]);
 
   // Sorted rows
   const sortedRows = useMemo(() => {
@@ -701,7 +795,7 @@ export default function ScreenerPage() {
         {hasStructuralCriteriaChanged && <div role="status" className="border-b px-3.5 py-2 text-[11px]" style={{ borderColor: 'var(--border)', color: 'var(--yellow)', backgroundColor: 'rgba(250,204,21,0.08)' }}>ETF or expiration changed since the last Load. Run Screener to refresh the dataset.</div>}
 
         {loadError && !loading ? <div className="screener-mobile-state screener-mobile-state--error px-6 text-center"><AlertTriangle className="mx-auto mb-3 h-6 w-6" style={{ color: 'var(--red)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Screener load failed</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>{loadError}</p><button type="button" onClick={() => void handleLoad()} className="mobile-sheet-action secondary mt-4"><RefreshCw className="h-4 w-4" /> Retry</button></div> : !loaded && !loading ? <div className="screener-mobile-state screener-mobile-state--ready px-6 text-center"><Search className="mx-auto mb-3 h-6 w-6" style={{ color: 'var(--text-dim)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Ready to screen</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Choose criteria, then run the screener.</p></div> : loaded && sortedRows.length === 0 ? <div className="screener-mobile-state screener-mobile-state--empty px-6 text-center"><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No screener matches</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Try widening delta, moneyness, or yield.</p><button type="button" onClick={() => setMobileFiltersOpen(true)} className="mobile-sheet-action secondary mt-4">Adjust filters</button></div> : (
-          <div className="mobile-financial-list">{sortedRows.map(row => <MobileOptionRow key={`${row.ticker}-${row.expDate}-${row.strike}`} ticker={row.ticker} strike={row.strike} expirationLabel={row.expLabel} dte={row.dte} bid={row.bid} ask={row.ask} last={row.last} annualYield={row.annYieldBid} delta={row.delta} impliedVolatility={row.iv} openInterest={row.openInterest} moneynessLabel={row.moneynessLabel} moneynessColor={row.moneynessColor} integrityStatus={row.integrityStatus} statusText={`Vol ${formatNumber(row.volume)} · OI ${formatNumber(row.openInterest)}`} onSelect={() => setSelectedOption({ option: optionDetailFromScreenerRow(row), ticker: row.ticker, expirationLabel: row.expLabel, dte: row.dte, underlyingPrice: row.currentPrice != null && row.currentPrice > 0 ? row.currentPrice : null })} />)}</div>
+          <div className="mobile-financial-list">{sortedRows.map(row => <MobileOptionRow key={`${row.ticker}-${row.expDate}-${row.strike}`} ticker={row.ticker} tickerTo={buildOptionsPath(row.ticker, row.expDate)} tickerNavigationState={optionsNavigationState} onTickerNavigate={rememberScreenerNavigation} strike={row.strike} expirationLabel={row.expLabel} dte={row.dte} bid={row.bid} ask={row.ask} last={row.last} annualYield={row.annYieldBid} delta={row.delta} impliedVolatility={row.iv} openInterest={row.openInterest} moneynessLabel={row.moneynessLabel} moneynessColor={row.moneynessColor} integrityStatus={row.integrityStatus} statusText={`Vol ${formatNumber(row.volume)} · OI ${formatNumber(row.openInterest)}`} onSelect={() => setSelectedOption({ option: optionDetailFromScreenerRow(row), ticker: row.ticker, expirationLabel: row.expLabel, dte: row.dte, underlyingPrice: row.currentPrice != null && row.currentPrice > 0 ? row.currentPrice : null })} />)}</div>
         )}
 
         {mobileFiltersOpen && <MobileBottomSheet title="Screener filters" description="Define the contracts you want to find" onClose={() => setMobileFiltersOpen(false)} footer={<div className="grid grid-cols-2 gap-2"><button type="button" onClick={resetFilters} className="mobile-sheet-action secondary">Reset</button><button type="button" onClick={() => setMobileFiltersOpen(false)} className="mobile-sheet-action primary">Done</button></div>}>
@@ -1057,7 +1151,7 @@ export default function ScreenerPage() {
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <Link to={`/options/${row.ticker}`} className="tap-target inline-flex items-center font-mono text-base font-bold" style={{ color: 'var(--accent-light)' }}>{row.ticker}</Link>
+                    <Link to={buildOptionsPath(row.ticker, row.expDate)} state={optionsNavigationState} onClick={rememberScreenerNavigation} className="tap-target inline-flex items-center font-mono text-base font-bold" style={{ color: 'var(--accent-light)' }}>{row.ticker}</Link>
                     <span className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold" style={{ color: row.moneynessColor, backgroundColor: 'var(--surface-alt)' }}>{row.moneynessLabel}</span>
                     {row.integrityStatus === 'invalid' && <span className="text-[10px] font-semibold" style={{ color: 'var(--yellow)' }}>Quote inconsistent</span>}
                   </div>
@@ -1161,7 +1255,9 @@ export default function ScreenerPage() {
                       <td className="screener-identity-cell px-2 py-1 text-left whitespace-nowrap sticky left-0 z-[2] border-r" style={{ borderColor: 'var(--border)', backgroundColor: bgStyle.backgroundColor || 'var(--surface)' }}>
                         <div className="flex min-h-[44px] flex-col justify-center">
                           <Link
-                            to={`/options/${row.ticker}`}
+                            to={buildOptionsPath(row.ticker, row.expDate)}
+                            state={optionsNavigationState}
+                            onClick={rememberScreenerNavigation}
                             className="inline-flex items-center font-mono font-bold hover:opacity-80 transition-opacity"
                             style={{ color: 'var(--accent-light)' }}
                           >

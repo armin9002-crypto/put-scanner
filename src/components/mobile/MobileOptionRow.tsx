@@ -7,6 +7,8 @@ export interface MobileOptionRowProps {
   // Legacy callers (Screener/Watchlist) still provide the richer card props.
   ticker?: string;
   tickerTo?: string;
+  tickerNavigationState?: unknown;
+  onTickerNavigate?: () => void;
   strike: number;
   expirationLabel?: string;
   dte?: number | null;
@@ -63,7 +65,7 @@ export default function MobileOptionRow(props: MobileOptionRowProps) {
     >
       <div role="cell" className="mobile-option-chain-cell mobile-option-chain-cell--strike">
         <div className="mobile-option-chain-cell__identity">
-          {props.ticker && (props.tickerTo ? <Link to={props.tickerTo} onClick={event => event.stopPropagation()} className="mobile-option-chain-cell__context mobile-option-chain-cell__ticker" style={{ color: 'var(--accent-light)' }}>{props.ticker}</Link> : <small className="mobile-option-chain-cell__context mobile-option-chain-cell__ticker">{props.ticker}</small>)}
+          {props.ticker && (props.tickerTo ? <Link to={props.tickerTo} state={props.tickerNavigationState} onClick={event => { event.stopPropagation(); props.onTickerNavigate?.(); }} className="mobile-option-chain-cell__context mobile-option-chain-cell__ticker" style={{ color: 'var(--accent-light)' }}>{props.ticker}</Link> : <small className="mobile-option-chain-cell__context mobile-option-chain-cell__ticker">{props.ticker}</small>)}
           <span className="mobile-option-chain-cell__strike-value font-mono font-semibold tabular-nums">{money(props.strike)}</span>
           {props.expirationLabel && <small className="mobile-option-chain-cell__context mobile-option-chain-cell__expiry">{props.expirationLabel}</small>}
         </div>

@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, ChevronDown, ChevronRight, Download, Info, Loader2, RefreshCw, Star, X } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import ErrorBoundary from '../components/ErrorBoundary.tsx';
 import type { OptionDetail } from '../components/OptionDetailDrawer.tsx';
 import RecommendationEvidenceDrawer from '../components/RecommendationEvidenceDrawer.tsx';
@@ -18,6 +18,7 @@ import type { CandidateVerdict, RecommendationBand, RecommendationCandidate, Rec
 import { buildRecommendationVisualFixture, type RecommendationVisualFixture } from '../lib/recommendations/visualFixtures.ts';
 import { technicalStateLabel } from '../lib/underlyingTechnical.ts';
 import { addToWatchlist, getWatchlist, makeWatchlistId, removeFromWatchlist, type WatchlistItem } from '../lib/watchlist.ts';
+import { buildOptionsPath, createOptionsNavigationState, resolveOptionsReturnOrigin, type OptionsNavigationState, type RecommendationsOriginPresentation } from '../lib/optionsNavigation.ts';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer.tsx'));
 const DISTINCTION_LABEL: Record<RecommendationDistinction, string> = {
@@ -291,6 +292,7 @@ function HowRecommendationsWork({ run }: { run: RecommendationRun }) {
 
 export default function RecommendationsPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const visualFixture = import.meta.env.DEV || import.meta.env.VITE_UI_VISUAL_FIXTURES === 'true'
     ? new URLSearchParams(window.location.search).get('recommendations-fixture') as RecommendationVisualFixture | null
     : null;
@@ -307,6 +309,24 @@ export default function RecommendationsPage() {
   const [showAllBoardRows, setShowAllBoardRows] = useState(false);
   const [showMethodology, setShowMethodology] = useState(false);
   const refreshGateRef = useRef(createLatestScreenerScanGate());
+
+  const optionsNavigationState = useMemo<OptionsNavigationState>(() => createOptionsNavigationState('recommendations', {
+    presentation: {
+      boardSort,
+      showAllBoardRows,
+    } satisfies RecommendationsOriginPresentation,
+    scrollY: typeof window === 'undefined' ? undefined : window.scrollY,
+  }), [boardSort, showAllBoardRows]);
+
+  useEffect(() => {
+    const origin = resolveOptionsReturnOrigin(location.state, 'recommendations');
+    if (!origin) return;
+    const presentation = origin.presentation as RecommendationsOriginPresentation | undefined;
+    if (!presentation) return;
+    setBoardSort(presentation.boardSort as RecommendationBoardSort);
+    setShowAllBoardRows(presentation.showAllBoardRows);
+    if (origin.scrollY != null) window.requestAnimationFrame(() => window.scrollTo({ top: origin.scrollY, behavior: 'auto' }));
+  }, [location.state]);
 
   useEffect(() => () => refreshGateRef.current.cancel(), []);
 
@@ -462,7 +482,7 @@ export default function RecommendationsPage() {
         )}
       </div>
 
-      {run && evidenceCandidate && <RecommendationEvidenceDrawer candidate={evidenceCandidate} run={run} onClose={() => setEvidenceCandidateId(null)} onOpenContract={() => openContract(evidenceCandidate)} onToggleWatch={() => toggleWatch(evidenceCandidate)} watched={watchIds.has(makeWatchlistId(evidenceCandidate.ticker, evidenceCandidate.expiration, evidenceCandidate.strike))} onViewChain={() => navigate(`/options/${evidenceCandidate.ticker}`)} />}
+      {run && evidenceCandidate && <RecommendationEvidenceDrawer candidate={evidenceCandidate} run={run} onClose={() => setEvidenceCandidateId(null)} onOpenContract={() => openContract(evidenceCandidate)} onToggleWatch={() => toggleWatch(evidenceCandidate)} watched={watchIds.has(makeWatchlistId(evidenceCandidate.ticker, evidenceCandidate.expiration, evidenceCandidate.strike))} onViewChain={() => navigate(buildOptionsPath(evidenceCandidate.ticker, evidenceCandidate.expiration), { state: optionsNavigationState })} />}
       {run && showMethodology && <MethodologyModal run={run} onClose={() => setShowMethodology(false)} onExport={exportSnapshot} />}
       {drawerCandidate && <ErrorBoundary title="Option drawer unavailable" message="Close it and try again."><Suspense fallback={null}><OptionDetailDrawer option={optionDetail(drawerCandidate)} ticker={drawerCandidate.ticker} expirationLabel={drawerCandidate.expirationLabel} dte={drawerCandidate.dte} underlyingPrice={drawerCandidate.underlyingPrice} onClose={() => setDrawerCandidateId(null)} /></Suspense></ErrorBoundary>}
     </div>
