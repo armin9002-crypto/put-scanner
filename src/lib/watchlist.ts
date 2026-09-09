@@ -149,10 +149,6 @@ function formatExpiryLabel(iso: string): string {
   return `${monthDay} '${String(year % 100).padStart(2, '0')}`;
 }
 
-function strikeKey(strike: number): string {
-  return Number(strike.toFixed(4)).toString();
-}
-
 export function getOptionContractKey({
   ticker,
   optionType = 'put',
@@ -166,7 +162,16 @@ export function getOptionContractKey({
 }): string {
   const exp = normalizeExpiration(expiration);
   const expiry = exp?.iso ?? String(expiration);
-  return `${normalizeTicker(ticker)}|${optionType}|${expiry}|${strikeKey(strike)}`;
+  if (optionType !== 'put') {
+    // Preserve the low-level wrapper's legacy behavior for out-of-contract runtime values.
+    return `${normalizeTicker(ticker)}|${optionType}|${expiry}|${serializeExactOptionContractStrike(strike)}`;
+  }
+  return buildExactOptionContractKey({
+    ticker: normalizeTicker(ticker),
+    optionType,
+    expiration: expiry,
+    strike,
+  });
 }
 
 export function makeWatchlistId(ticker: string, expiry: string | number, strike: number): string {
@@ -635,6 +640,7 @@ import {
 } from './durableStorage.ts';
 import { emitDurableMutation } from './cloudState/syncEvents.ts';
 import { getAccountStateStorage } from './cloudState/accountStateStorage.ts';
+import { buildExactOptionContractKey, serializeExactOptionContractStrike } from './portfolioContractIdentity.ts';
 
 /** Expiration day is inclusive in the U.S. market timezone; no quote is needed. */
 export function pruneExpiredWatchlistItems(items: WatchlistItem[], now = new Date()): WatchlistItem[] {
