@@ -142,7 +142,7 @@ async function captureScreener(page: Page, testInfo: TestInfo) {
   const strike = page.getByRole('button', { name: /Open option details/i }).first();
   if (await strike.count()) {
     await strike.click();
-    await expect(page.getByRole('complementary')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('.option-detail-drawer')).toBeVisible({ timeout: 10_000 });
     await capture(page, testInfo, 'screener-option-drawer');
   }
 }

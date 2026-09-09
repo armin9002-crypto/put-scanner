@@ -179,9 +179,9 @@ test('Recommendations loads with zero market calls, refreshes through the bounde
     await evidence.getByRole('button', { name: /Watch|Watching/ }).click();
     expect([...marketHarness.counts.values()].reduce((sum, count) => sum + count, 0)).toBe(afterRefresh);
     await evidence.getByRole('button', { name: 'Open Contract' }).click();
-    await expect(page.getByRole('complementary')).toBeVisible();
+    await expect(page.locator('.option-detail-drawer')).toBeVisible();
     expect([...marketHarness.counts.values()].reduce((sum, count) => sum + count, 0)).toBe(afterRefresh);
-    await page.getByRole('complementary').getByRole('button', { name: /Close option detail/i }).click();
+    await page.locator('.option-detail-drawer').getByRole('button', { name: /Close option detail/i }).click();
   }
 
   const downloadPromise = page.waitForEvent('download');
@@ -278,10 +278,10 @@ test('Scanner reset clears local criteria and option rows use drawer-only detail
   await expect(page.getByText(/Last Trade Date:/)).toHaveCount(0);
   await row.focus();
   await row.press('Enter');
-  await expect(page.getByRole('complementary')).toBeVisible();
-  await page.getByRole('complementary').getByRole('button', { name: /Close option detail/i }).click();
+  await expect(page.locator('.option-detail-drawer')).toBeVisible();
+  await page.locator('.option-detail-drawer').getByRole('button', { name: /Close option detail/i }).click();
   await row.getByRole('button', { name: /watchlist/i }).click();
-  await expect(page.getByRole('complementary')).toHaveCount(0);
+  await expect(page.locator('.option-detail-drawer')).toHaveCount(0);
 });
 
 test('mobile Scanner keeps Reset Filters in the existing filter sheet', async ({ page }, testInfo) => {
@@ -305,7 +305,7 @@ test('detail drawer, transient Pulse cancellation, and Account conflict UI remai
   await expect(page.getByRole('row').filter({ hasText: '90.00' }).last()).toBeVisible();
   const beforeDrawer = [...marketHarness.counts.values()].reduce((sum, count) => sum + count, 0);
   await page.getByRole('row').filter({ hasText: '90.00' }).last().click();
-  const drawer = page.getByRole('complementary');
+  const drawer = page.locator('.option-detail-drawer');
   await expect(drawer.getByRole('heading', { name: 'Position Calculator' })).toBeVisible();
   await drawer.getByRole('textbox', { name: 'Contracts' }).fill('2');
   await expect(drawer.getByText('$400.00', { exact: true }).first()).toBeVisible();

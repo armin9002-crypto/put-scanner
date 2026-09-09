@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Loader2, RefreshCw, X } from 'lucide-react';
 import { getChartHistory } from '../lib/chartHistory';
 import type { ChartHistoryResponse, ChartPoint, ChartTimeframe } from '../lib/chartHistory';
@@ -10,6 +10,7 @@ import { getUnderlyingHoldingsProxy } from '../lib/underlyingHoldingsProxies';
 import { getTrueLeverageForPeriod, getTrueLeverageForRange, getYtdTrueLeverage, type TrueLeverageResult } from '../lib/trueLeverage';
 import DataFreshness from './DataFreshness';
 import { useResponsiveMode } from '../lib/responsive';
+import { useBlockingOverlayBehavior } from '../lib/blockingOverlay';
 
 const CHART_WIDTH = 900;
 const CHART_HEIGHT = 360;
@@ -108,6 +109,10 @@ export default function InteractivePriceChartModal({
   onClose,
 }: InteractivePriceChartModalProps) {
   const { isPhone, isPhoneLandscape } = useResponsiveMode();
+  const titleId = useId();
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const panelRef = useRef<HTMLElement | null>(null);
+  const setPanelRef = (element: HTMLElement | null) => { panelRef.current = element; };
   const [timeframe, setTimeframe] = useState<ChartTimeframe>('1D');
   const [data, setData] = useState<ChartHistoryResponse | null>(null);
   const [proxyData, setProxyData] = useState<ChartHistoryResponse | null>(null);
@@ -190,19 +195,12 @@ export default function InteractivePriceChartModal({
     };
   }, [isOpen, normalizedProxyTicker, shouldFetchProxy, timeframe]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    const handleKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleKey);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener('keydown', handleKey);
-    };
-  }, [isOpen, onClose]);
+  useBlockingOverlayBehavior({
+    isOpen,
+    panelRef,
+    overlayRef,
+    onEscape: onClose,
+  });
 
   const points = useMemo(() => activeData?.points ?? [], [activeData]);
   const activeProxyData = useMemo(() => {
@@ -313,7 +311,7 @@ export default function InteractivePriceChartModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div ref={overlayRef} className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center p-0 sm:p-4">
       <button
         type="button"
         className="motion-backdrop absolute inset-0 cursor-default"
@@ -323,13 +321,18 @@ export default function InteractivePriceChartModal({
       />
 
       <div
+        ref={setPanelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
         className={`chart-modal-panel overlay-panel ${isPhone ? 'is-phone-chart' : ''} ${isPhoneLandscape ? 'is-phone-landscape-chart' : ''} relative z-[91] flex max-h-[96dvh] sm:max-h-[90dvh] w-full sm:w-[min(96vw,900px)] lg:w-[min(94vw,1100px)] flex-col overflow-hidden rounded-t-2xl sm:rounded-[14px]`}
         style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
       >
         <div className="chart-modal-header flex flex-col gap-2 border-b p-3 sm:flex-row sm:items-start sm:justify-between sm:p-5" style={{ borderColor: 'var(--border)' }}>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-lg sm:text-xl font-semibold font-mono" style={{ color: 'var(--text)' }}>
+              <h2 id={titleId} className="text-lg sm:text-xl font-semibold font-mono" style={{ color: 'var(--text)' }}>
                 {titleTicker}
               </h2>
               {instrumentName && (

@@ -122,7 +122,7 @@ async function captureDesktop(page: Page, testInfo: TestInfo) {
 
   await openDetail(page, 'TQQQ'); await capture(page, testInfo, 'detail-leveraged-etf');
   const table = page.getByRole('table').last(); if (await table.count()) await table.screenshot({ path: path.join(outputRoot, testInfo.project.name, 'detail-option-table.png'), animations: 'disabled' });
-  const row = page.getByRole('row').filter({ hasText: '90.00' }).last(); await row.click(); await expect(page.getByRole('complementary')).toBeVisible(); await capture(page, testInfo, 'option-drawer-normal');
+  const row = page.getByRole('row').filter({ hasText: '90.00' }).last(); await row.click(); await expect(page.locator('.option-detail-drawer')).toBeVisible(); await capture(page, testInfo, 'option-drawer-normal');
   await page.getByRole('textbox', { name: 'Contracts' }).fill('3'); await page.getByRole('spinbutton', { name: 'Sold Price', exact: true }).fill('2.05'); await capture(page, testInfo, 'option-drawer-calculator-populated');
   await openDetail(page, 'SPY'); await capture(page, testInfo, 'detail-normal-etf');
   await openDetail(page, 'AAPL'); await expect(page.getByRole('heading', { name: /No listed puts found/i })).toBeVisible(); await capture(page, testInfo, 'detail-stock');

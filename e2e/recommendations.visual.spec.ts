@@ -94,7 +94,7 @@ test.describe('Recommendations visual matrix', () => {
       await expect(desktop.page.getByRole('dialog', { name: /recommendation evidence/i })).toContainText('Market integrity');
       await expect(desktop.page.getByRole('dialog', { name: /recommendation evidence/i })).toContainText('Trusted Bid');
       await capture(desktop.page, theme, 'desktop-evidence-drawer');
-      await desktop.page.getByRole('complementary').getByRole('button', { name: /Close recommendation evidence/i }).click();
+      await desktop.page.getByRole('dialog', { name: /recommendation evidence/i }).getByRole('button', { name: /Close recommendation evidence/i }).click();
       await desktop.page.getByRole('button', { name: 'Methodology' }).click();
       await expect(desktop.page.getByRole('dialog', { name: 'Full Methodology' })).toBeVisible();
       await capture(desktop.page, theme, 'desktop-methodology');

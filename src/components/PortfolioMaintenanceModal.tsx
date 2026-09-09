@@ -1,5 +1,7 @@
+import { useRef } from 'react';
 import { AlertTriangle, CheckCircle2, History, Wrench } from 'lucide-react';
 import type { PortfolioMaintenanceAssessment } from '../lib/portfolioMaintenance';
+import { useBlockingOverlayBehavior } from '../lib/blockingOverlay';
 
 interface PortfolioMaintenanceModalProps {
   assessment: PortfolioMaintenanceAssessment;
@@ -32,6 +34,10 @@ export default function PortfolioMaintenanceModal({
   onRecoverEntrySnapshots,
   onClose,
 }: PortfolioMaintenanceModalProps) {
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const panelRef = useRef<HTMLElement | null>(null);
+  const setPanelRef = (element: HTMLElement | null) => { panelRef.current = element; };
+  useBlockingOverlayBehavior({ panelRef, overlayRef, onEscape: onClose });
   const lifecycleCount = assessment.expiredLifecycleReview.length;
   const entryVixCount = assessment.missingEntryVix.length;
   const recoverableDeltaCount = assessment.recoverableEntryDelta.length;
@@ -43,9 +49,9 @@ export default function PortfolioMaintenanceModal({
     ...assessment.recoverableEntryIv.map(trade => trade.id),
   ]).size;
   return (
-    <div className="fixed inset-0 z-[85]">
+    <div ref={overlayRef} className="fixed inset-0 z-[85]">
       <button type="button" aria-label="Close Portfolio Maintenance" onClick={onClose} className="motion-backdrop absolute inset-0 bg-black/55" />
-      <section role="dialog" aria-modal="true" aria-labelledby="portfolio-maintenance-title" className="motion-modal absolute inset-x-0 bottom-0 max-h-[94dvh] overflow-y-auto rounded-t-2xl p-4 shadow-2xl sm:inset-x-1/2 sm:top-[3dvh] sm:bottom-auto sm:w-[min(680px,calc(100vw-32px))] sm:-translate-x-1/2 sm:rounded-xl sm:p-5" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
+      <section ref={setPanelRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="portfolio-maintenance-title" className="motion-modal absolute inset-x-0 bottom-0 max-h-[94dvh] overflow-y-auto rounded-t-2xl p-4 outline-none shadow-2xl sm:inset-x-1/2 sm:top-[3dvh] sm:bottom-auto sm:w-[min(680px,calc(100vw-32px))] sm:-translate-x-1/2 sm:rounded-xl sm:p-5" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="mb-2 inline-flex h-9 w-9 items-center justify-center rounded-lg" style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)' }}><Wrench className="h-4 w-4" /></div>

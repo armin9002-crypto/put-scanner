@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ChangeEvent } from 'react';
+import { useRef, useState, type ChangeEvent } from 'react';
 import { AlertTriangle, Download, FileCheck2, ShieldCheck, Upload, X } from 'lucide-react';
 import {
   createPutScannerBackupFromCloudState,
@@ -9,6 +9,7 @@ import {
 } from '../lib/userDataBackup';
 import { useAuth } from '../lib/authContext';
 import { useAccountState } from '../lib/cloudState/accountStateContext';
+import { useBlockingOverlayBehavior } from '../lib/blockingOverlay';
 
 interface DataBackupModalProps {
   onClose: () => void;
@@ -29,6 +30,9 @@ export default function DataBackupModal({ onClose, onImported }: DataBackupModal
   const account = useAccountState();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const panelRef = useRef<HTMLElement | null>(null);
+  const setPanelRef = (element: HTMLElement | null) => { panelRef.current = element; };
   const [pendingBackup, setPendingBackup] = useState<PutScannerBackup | null>(null);
   const [recoveryDownloaded, setRecoveryDownloaded] = useState(false);
   const [error, setError] = useState('');
@@ -36,21 +40,12 @@ export default function DataBackupModal({ onClose, onImported }: DataBackupModal
   const [busy, setBusy] = useState(false);
   const accountReady = Boolean(user && account.cloud && (account.phase === 'ready' || account.phase === 'conflict'));
 
-  useEffect(() => {
-    const previousOverflow = document.body.style.overflow;
-    const previousFocus = document.activeElement as HTMLElement | null;
-    document.body.style.overflow = 'hidden';
-    closeButtonRef.current?.focus();
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener('keydown', onKeyDown);
-      previousFocus?.focus();
-    };
-  }, [onClose]);
+  useBlockingOverlayBehavior({
+    panelRef,
+    overlayRef,
+    initialFocusRef: closeButtonRef,
+    onEscape: onClose,
+  });
 
   const exportCurrentData = (prefix = 'put-scanner-backup') => {
     try {
@@ -109,8 +104,8 @@ export default function DataBackupModal({ onClose, onImported }: DataBackupModal
   const summary = pendingBackup ? getPutScannerBackupSummary(pendingBackup) : null;
 
   return (
-    <div className="motion-backdrop-surface fixed inset-0 z-[100] flex items-end justify-center p-0 sm:items-center sm:p-4" style={{ backgroundColor: 'rgba(0,0,0,0.72)' }} role="presentation" onMouseDown={event => { if (event.currentTarget === event.target) onClose(); }}>
-      <section className="motion-modal max-h-[94dvh] w-full overflow-y-auto rounded-t-2xl p-4 shadow-2xl sm:max-w-xl sm:rounded-2xl sm:p-5" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }} role="dialog" aria-modal="true" aria-labelledby="data-backup-title">
+    <div ref={overlayRef} className="motion-backdrop-surface fixed inset-0 z-[100] flex items-end justify-center p-0 sm:items-center sm:p-4" style={{ backgroundColor: 'rgba(0,0,0,0.72)' }} role="presentation" onMouseDown={event => { if (event.currentTarget === event.target) onClose(); }}>
+      <section ref={setPanelRef} tabIndex={-1} className="motion-modal max-h-[94dvh] w-full overflow-y-auto rounded-t-2xl p-4 shadow-2xl outline-none sm:max-w-xl sm:rounded-2xl sm:p-5" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }} role="dialog" aria-modal="true" aria-labelledby="data-backup-title">
         <header className="flex items-start justify-between gap-3">
           <div>
             <h2 id="data-backup-title" className="text-lg font-semibold" style={{ color: 'var(--text)' }}>Data Backup</h2>

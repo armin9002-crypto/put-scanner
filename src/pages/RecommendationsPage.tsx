@@ -20,6 +20,7 @@ import { underlyingTechnicalEvidencePresentation, underlyingTechnicalStatePresen
 import { shortPutMoneynessPresentation } from '../lib/moneynessPresentation.ts';
 import { addToWatchlist, getWatchlist, makeWatchlistId, removeFromWatchlist, type WatchlistItem } from '../lib/watchlist.ts';
 import { buildOptionsPath, createOptionsNavigationState, resolveOptionsReturnOrigin, type OptionsNavigationState, type RecommendationsOriginPresentation } from '../lib/optionsNavigation.ts';
+import { useBlockingOverlayBehavior } from '../lib/blockingOverlay.ts';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer.tsx'));
 const DISTINCTION_LABEL: Record<RecommendationDistinction, string> = {
@@ -247,9 +248,13 @@ function DecisionTrace({ run }: { run: RecommendationRun }) {
 }
 
 function MethodologyModal({ run, onClose, onExport }: { run: RecommendationRun; onClose: () => void; onExport: () => void }) {
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const panelRef = useRef<HTMLElement | null>(null);
+  const setPanelRef = (element: HTMLElement | null) => { panelRef.current = element; };
+  useBlockingOverlayBehavior({ panelRef, overlayRef, onEscape: onClose });
   return (
-    <div className="recommendation-methodology-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
-      <section className="recommendation-methodology-modal" role="dialog" aria-modal="true" aria-labelledby="recommendation-methodology-title">
+    <div ref={overlayRef} className="recommendation-methodology-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+      <section ref={setPanelRef} tabIndex={-1} className="recommendation-methodology-modal outline-none" role="dialog" aria-modal="true" aria-labelledby="recommendation-methodology-title">
         <header><div><span>DETERMINISTIC POLICY</span><h2 id="recommendation-methodology-title">Full Methodology</h2></div><button type="button" aria-label="Close methodology" onClick={onClose}><X className="h-4 w-4" /></button></header>
         <div className="recommendation-methodology-modal__content">
           <p className="recommendation-methodology-lead">Hard gates first, then deterministic relative ranking. There is no numerical score, recommendation quota, or minimum shortlist size.</p>

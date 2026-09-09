@@ -1,5 +1,6 @@
-import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { useId, useRef, type ReactNode } from 'react';
 import { X } from 'lucide-react';
+import { useBlockingOverlayBehavior } from '../../lib/blockingOverlay';
 
 interface MobileBottomSheetProps {
   title: string;
@@ -20,44 +21,18 @@ export default function MobileBottomSheet({
 }: MobileBottomSheetProps) {
   const titleId = useId();
   const descriptionId = useId();
+  const overlayRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    const previousOverflow = document.body.style.overflow;
-    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    document.body.style.overflow = 'hidden';
-    panelRef.current?.focus();
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-      if (event.key !== 'Tab' || !panelRef.current) return;
-      const focusable = Array.from(panelRef.current.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
-      ));
-      if (focusable.length === 0) {
-        event.preventDefault();
-        panelRef.current.focus();
-        return;
-      }
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener('keydown', handleKeyDown);
-      previousFocus?.focus();
-    };
-  }, [onClose]);
+  useBlockingOverlayBehavior({
+    panelRef,
+    overlayRef,
+    initialFocusRef: panelRef,
+    onEscape: onClose,
+  });
 
   return (
-    <div className="mobile-sheet-layer fixed inset-0 z-[95] flex items-end justify-center">
+    <div ref={overlayRef} className="mobile-sheet-layer fixed inset-0 z-[95] flex items-end justify-center">
       <button type="button" className="motion-backdrop absolute inset-0 bg-black/60" aria-label={`Close ${title}`} onClick={onClose} />
       <div
         ref={panelRef}

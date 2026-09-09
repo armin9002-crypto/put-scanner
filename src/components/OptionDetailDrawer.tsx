@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { X } from 'lucide-react';
 import {
@@ -25,6 +25,7 @@ import {
 import { shortPutMoneynessPresentation, type ShortPutMoneynessState } from '../lib/moneynessPresentation';
 import { CALCULATED_PUT_DELTA_MODEL, type PutDeltaSource } from '../lib/putDelta';
 import { exactOptionTradeSessionAge } from '../lib/usMarketCalendar';
+import { useBlockingOverlayBehavior } from '../lib/blockingOverlay';
 import type { OptionIntegrityReasonCode, OptionIntegrityStatus } from '../lib/types';
 
 export interface OptionDetail {
@@ -180,6 +181,10 @@ export default function OptionDetailDrawer({
   onAddToPortfolio,
 }: OptionDetailDrawerProps) {
   const { isPhone } = useResponsiveMode();
+  const titleId = useId();
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const panelRef = useRef<HTMLElement | null>(null);
+  const setPanelRef = (element: HTMLElement | null) => { panelRef.current = element; };
   const moneyness = option?.otmItmState ? shortPutMoneynessPresentation(option.otmItmState) : null;
   const moneynessLabel = option?.otmItmLabel || moneyness?.label || '—';
   const moneynessColor = moneyness?.color ?? option?.otmItmColor;
@@ -195,19 +200,12 @@ export default function OptionDetailDrawer({
     setSoldPriceBasis(defaultPrice?.basis ?? null);
   }, [defaultPrice, option?.strike]);
 
-  useEffect(() => {
-    if (!option) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener('keydown', onKeyDown);
-    };
-  }, [option, onClose]);
+  useBlockingOverlayBehavior({
+    isOpen: Boolean(option),
+    panelRef,
+    overlayRef,
+    onEscape: onClose,
+  });
 
   if (!option) return null;
 
@@ -259,13 +257,13 @@ export default function OptionDetailDrawer({
   if (isPhone && preserveRecommendationContract) {
     const quoteOptions = orderedOptionQuoteEntries({ last: usableLast, bid, mid, ask });
     return (
-      <div className="fixed inset-0 z-[90] option-drawer-mobile" role="dialog" aria-modal="true" aria-label={`${ticker} ${formatCurrency(option.strike)} put details`}>
-        <div className="mobile-trade-sheet absolute inset-0 overflow-y-auto" style={{ backgroundColor: 'var(--bg)' }}>
+      <div ref={overlayRef} className="fixed inset-0 z-[120] option-drawer-mobile">
+        <div ref={setPanelRef} className="mobile-trade-sheet absolute inset-0 overflow-y-auto outline-none" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} style={{ backgroundColor: 'var(--bg)' }}>
           <header className="mobile-trade-sheet__header drawer-header sticky top-0 z-20 border-b px-3 pb-2 pt-1" style={{ borderColor: 'var(--border)', backgroundColor: 'color-mix(in srgb, var(--bg) 96%, transparent)' }}>
             <div className="mx-auto mb-1.5 h-1 w-10 rounded-full" aria-hidden="true" style={{ backgroundColor: 'var(--border-strong)' }} />
             <div className="flex min-h-11 items-center justify-between gap-3">
               <div className="min-w-0">
-                <h2 className="truncate font-mono text-[18px] font-bold" style={{ color: 'var(--text)' }}>{ticker} {formatCurrency(option.strike, option.strike % 1 === 0 ? 0 : 2)} Put</h2>
+                <h2 id={titleId} className="truncate font-mono text-[18px] font-bold" style={{ color: 'var(--text)' }}>{ticker} {formatCurrency(option.strike, option.strike % 1 === 0 ? 0 : 2)} Put</h2>
                 <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>{expirationLabel || '—'} · {isFiniteNumber(dte) ? `${dte} DTE` : '— DTE'} · Underlying {formatCurrency(underlyingPrice)}</p>
               </div>
               <button type="button" onClick={onClose} className="pressable flex h-11 w-11 flex-none items-center justify-center rounded-full" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }} aria-label="Close option details"><X className="h-5 w-5" /></button>
@@ -335,13 +333,13 @@ export default function OptionDetailDrawer({
       onAddToPortfolio({ option, soldPrice: activeSoldPrice, contracts: validContracts, underlyingPrice });
     };
     return (
-      <div className="fixed inset-0 z-[90] option-drawer-mobile" role="dialog" aria-modal="true" aria-label={`${ticker} ${formatCurrency(option.strike)} put details`}>
-        <div className="mobile-trade-sheet absolute inset-0 overflow-y-auto" style={{ backgroundColor: 'var(--bg)' }}>
+      <div ref={overlayRef} className="fixed inset-0 z-[120] option-drawer-mobile">
+        <div ref={setPanelRef} className="mobile-trade-sheet absolute inset-0 overflow-y-auto outline-none" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} style={{ backgroundColor: 'var(--bg)' }}>
           <header className="mobile-trade-sheet__header drawer-header sticky top-0 z-20 border-b px-3 pb-2 pt-1" style={{ borderColor: 'var(--border)', backgroundColor: 'color-mix(in srgb, var(--bg) 96%, transparent)' }}>
             <div className="mx-auto mb-1.5 h-1 w-10 rounded-full" aria-hidden="true" style={{ backgroundColor: 'var(--border-strong)' }} />
             <div className="flex min-h-11 items-center justify-between gap-3">
               <div className="min-w-0">
-                <h2 className="truncate font-mono text-[18px] font-bold" style={{ color: 'var(--text)' }}>{ticker} {formatCurrency(option.strike, option.strike % 1 === 0 ? 0 : 2)} Put</h2>
+                <h2 id={titleId} className="truncate font-mono text-[18px] font-bold" style={{ color: 'var(--text)' }}>{ticker} {formatCurrency(option.strike, option.strike % 1 === 0 ? 0 : 2)} Put</h2>
                 <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>{expirationLabel || '—'} · {isFiniteNumber(dte) ? `${dte} DTE` : '— DTE'} · Underlying {formatCurrency(underlyingPrice)}</p>
               </div>
               <button type="button" onClick={onClose} className="pressable flex h-11 w-11 flex-none items-center justify-center rounded-full" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }} aria-label="Close option details"><X className="h-5 w-5" /></button>
@@ -431,7 +429,7 @@ export default function OptionDetailDrawer({
   }
 
   return (
-    <div className="fixed inset-0 z-[70] option-drawer-desktop">
+    <div ref={overlayRef} className="fixed inset-0 z-[120] option-drawer-desktop">
       <button
         type="button"
         aria-label="Close option detail drawer"
@@ -439,13 +437,18 @@ export default function OptionDetailDrawer({
         className="motion-backdrop absolute inset-0 bg-black/50"
       />
       <aside
+        ref={setPanelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
         className="option-detail-drawer drawer-shell overlay-panel absolute inset-x-0 bottom-0 max-h-[94dvh] w-full overflow-y-auto rounded-t-2xl p-3 sm:inset-y-0 sm:left-auto sm:right-0 sm:h-full sm:max-h-none sm:w-[480px] md:w-[520px] lg:w-[560px] sm:rounded-l-[14px] sm:rounded-r-none sm:p-5"
         style={{ backgroundColor: 'var(--bg)', borderLeft: '1px solid var(--border)' }}
       >
         <div className="mx-auto mb-2 h-1 w-10 rounded-full sm:hidden" aria-hidden="true" style={{ backgroundColor: 'var(--border-strong)' }} />
         <div className="option-detail-drawer__header sticky -top-3 z-10 -mx-3 mb-3 flex min-w-0 items-start justify-between gap-3 px-3 pb-3 sm:static sm:mx-0 sm:mb-4 sm:p-0">
           <div className="min-w-0">
-            <h2 className="text-lg sm:text-xl font-bold font-mono break-words" style={{ color: 'var(--text)' }}>
+            <h2 id={titleId} className="text-lg sm:text-xl font-bold font-mono break-words" style={{ color: 'var(--text)' }}>
               {ticker} {formatCurrency(option.strike, option.strike % 1 === 0 ? 0 : 2)} Put
             </h2>
             <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>

@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { AlertCircle, RefreshCw, X } from 'lucide-react';
 import type { UnderlyingHoldingsProxy } from '../lib/underlyingHoldingsProxies';
 import { fetchUnderlyingHoldings, getCachedUnderlyingHoldings } from '../lib/underlyingHoldings';
 import type { UnderlyingHoldingsData } from '../lib/underlyingHoldings';
 import DataFreshness from './DataFreshness';
+import { useBlockingOverlayBehavior } from '../lib/blockingOverlay';
 
 interface UnderlyingHoldingsModalProps {
   proxy: UnderlyingHoldingsProxy;
@@ -16,6 +17,10 @@ function formatWeight(value: number | null | undefined): string {
 }
 
 export default function UnderlyingHoldingsModal({ proxy, onClose }: UnderlyingHoldingsModalProps) {
+  const titleId = useId();
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const panelRef = useRef<HTMLElement | null>(null);
+  const setPanelRef = (element: HTMLElement | null) => { panelRef.current = element; };
   const [data, setData] = useState<UnderlyingHoldingsData | null>(() => (
     proxy.meaningful && proxy.proxyTicker ? getCachedUnderlyingHoldings(proxy.proxyTicker) : null
   ));
@@ -38,18 +43,11 @@ export default function UnderlyingHoldingsModal({ proxy, onClose }: UnderlyingHo
     }
   };
 
-  useEffect(() => {
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener('keydown', onKeyDown);
-    };
-  }, [onClose]);
+  useBlockingOverlayBehavior({
+    panelRef,
+    overlayRef,
+    onEscape: onClose,
+  });
 
   useEffect(() => {
     if (!proxy.meaningful || !proxy.proxyTicker || data) return;
@@ -63,7 +61,7 @@ export default function UnderlyingHoldingsModal({ proxy, onClose }: UnderlyingHo
     : data?.unavailableReason ?? error;
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-end justify-center sm:items-center sm:px-6 sm:py-4">
+    <div ref={overlayRef} className="fixed inset-0 z-[80] flex items-end justify-center sm:items-center sm:px-6 sm:py-4">
       <button
         type="button"
         aria-label="Close underlying holdings modal"
@@ -71,12 +69,17 @@ export default function UnderlyingHoldingsModal({ proxy, onClose }: UnderlyingHo
         className="motion-backdrop absolute inset-0 bg-black/60"
       />
       <section
-        className="underlying-holdings-sheet relative flex max-h-[94dvh] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl shadow-2xl sm:max-h-[86dvh] sm:rounded-2xl"
+        ref={setPanelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className="underlying-holdings-sheet relative flex max-h-[94dvh] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl shadow-2xl outline-none sm:max-h-[86dvh] sm:rounded-2xl"
         style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}
       >
         <div className="flex items-start justify-between gap-2 border-b p-3 sm:gap-3 sm:p-5" style={{ borderColor: 'var(--border)' }}>
           <div className="min-w-0">
-            <h2 className="text-base font-semibold sm:text-lg" style={{ color: 'var(--text)' }}>Underlying Holdings</h2>
+            <h2 id={titleId} className="text-base font-semibold sm:text-lg" style={{ color: 'var(--text)' }}>Underlying Holdings</h2>
             <p className="mt-0.5 line-clamp-2 text-xs sm:mt-1 sm:text-sm" style={{ color: 'var(--text-muted)' }}>
               {proxy.meaningful && proxy.proxyTicker
                 ? `${proxy.proxyTicker} holdings used as proxy for ${proxy.sourceTicker}.`

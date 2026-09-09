@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, Loader2, ShieldCheck, Upload, X } from 'lucide-react';
 import { useAccountState } from '../lib/cloudState/accountStateContext.ts';
 import {
@@ -17,6 +17,7 @@ import {
 } from '../lib/portfolioHistoricalCsvExport.ts';
 import type { MarkBasis } from '../lib/portfolioMetrics.ts';
 import { downloadPutScannerBackup } from '../lib/userDataBackup.ts';
+import { useBlockingOverlayBehavior } from '../lib/blockingOverlay.ts';
 
 interface Props {
   trades: PortfolioTrade[];
@@ -71,6 +72,9 @@ export default function PortfolioHistoricalExcelImportModal({ trades, markBasis,
   const account = useAccountState();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const panelRef = useRef<HTMLElement | null>(null);
+  const setPanelRef = (element: HTMLElement | null) => { panelRef.current = element; };
   const [result, setResult] = useState<HistoricalExcelParseResult | null>(null);
   const [reviewPortfolioRevision, setReviewPortfolioRevision] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
@@ -82,21 +86,13 @@ export default function PortfolioHistoricalExcelImportModal({ trades, markBasis,
   const [mode, setMode] = useState<'import' | 'export'>('import');
   const accountReady = account.phase === 'ready' && account.cloud !== null && account.userId !== null;
 
-  useEffect(() => {
-    const previousOverflow = document.body.style.overflow;
-    const previousFocus = document.activeElement as HTMLElement | null;
-    document.body.style.overflow = 'hidden';
-    closeButtonRef.current?.focus();
-    const keydown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && busy === null) onClose();
-    };
-    window.addEventListener('keydown', keydown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener('keydown', keydown);
-      previousFocus?.focus();
-    };
-  }, [busy, onClose]);
+  useBlockingOverlayBehavior({
+    panelRef,
+    overlayRef,
+    initialFocusRef: closeButtonRef,
+    onEscape: onClose,
+    escapeEnabled: busy === null,
+  });
 
   const summary = useMemo(() => result ? summarizeHistoricalExcelImport(result) : null, [result]);
   const visibleRows = useMemo(() => result?.rows.filter(row => !showProblemsOnly || row.state !== 'ready') ?? [], [result, showProblemsOnly]);
@@ -199,8 +195,8 @@ export default function PortfolioHistoricalExcelImportModal({ trades, markBasis,
   });
 
   return (
-    <div className="fixed inset-0 z-[110] flex items-end justify-center bg-black/75 p-0 md:items-center md:p-3" role="presentation" onMouseDown={event => { if (event.currentTarget === event.target && busy === null) onClose(); }}>
-      <section className="flex max-h-[96dvh] w-full flex-col overflow-hidden rounded-t-2xl shadow-2xl md:max-w-[98vw] md:rounded-2xl" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }} role="dialog" aria-modal="true" aria-labelledby="historical-excel-title">
+    <div ref={overlayRef} className="fixed inset-0 z-[110] flex items-end justify-center bg-black/75 p-0 md:items-center md:p-3" role="presentation" onMouseDown={event => { if (event.currentTarget === event.target && busy === null) onClose(); }}>
+      <section ref={setPanelRef} tabIndex={-1} className="flex max-h-[96dvh] w-full flex-col overflow-hidden rounded-t-2xl outline-none shadow-2xl md:max-w-[98vw] md:rounded-2xl" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }} role="dialog" aria-modal="true" aria-labelledby="historical-excel-title">
         <header className="flex flex-none items-start justify-between gap-3 border-b px-4 py-3 md:px-5" style={{ borderColor: 'var(--border)' }}>
           <div className="min-w-0">
             <div className="flex items-center gap-2"><FileSpreadsheet className="h-5 w-5" style={{ color: 'var(--accent-light)' }} /><h2 id="historical-excel-title" className="text-base font-semibold" style={{ color: 'var(--text)' }}>Import / Export Historical Excel</h2></div>

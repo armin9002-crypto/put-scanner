@@ -1,5 +1,5 @@
 import { uiTextCssPx } from '../lib/uiTextSizePreference';
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Activity, AlertTriangle, Loader2, RefreshCw, X, SlidersHorizontal, ChevronDown } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { buildEtfPulseRows, getEtfPulseUniverse, type EtfPulseLoadResult, type EtfPulseProgress } from '../lib/etfPulseData';
@@ -12,6 +12,7 @@ import { analyzeRegime } from '../lib/marketRead/regime';
 import type { RegimeAnalysis, TradePosture } from '../lib/marketRead/types';
 import DataFreshness from '../components/DataFreshness';
 import { useResponsiveMode } from '../lib/responsive';
+import { useBlockingOverlayBehavior } from '../lib/blockingOverlay';
 import MobileBottomSheet from '../components/mobile/MobileBottomSheet';
 import MobileSegmentedControl from '../components/mobile/MobileSegmentedControl';
 import { underlyingTechnicalEvidencePresentation, underlyingTechnicalStatePresentation } from '../lib/underlyingTechnicalPresentation';
@@ -224,32 +225,32 @@ function MarketReadStrip({
 }
 
 function MarketReadModal({ regime, posture, onClose }: { regime: RegimeAnalysis; posture: TradePosture; onClose: () => void }) {
-  useEffect(() => {
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    const handleKeyDown = (event: KeyboardEvent) => event.key === 'Escape' && onClose();
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [onClose]);
+  const titleId = useId();
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const panelRef = useRef<HTMLElement | null>(null);
+  const setPanelRef = (element: HTMLElement | null) => { panelRef.current = element; };
+
+  useBlockingOverlayBehavior({
+    panelRef,
+    overlayRef,
+    onEscape: onClose,
+  });
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-end sm:block">
+    <div ref={overlayRef} className="fixed inset-0 z-[90] flex items-end sm:block">
       <button type="button" aria-label="Close market read" onClick={onClose} className="motion-backdrop absolute inset-0 bg-black/55" />
-      <section className="market-read-sheet relative z-10 w-full max-h-[92dvh] overflow-y-auto rounded-t-2xl p-3 sm:absolute sm:inset-x-1/2 sm:top-6 sm:w-[680px] sm:-translate-x-1/2 sm:rounded-lg sm:max-h-[85dvh] sm:p-4 shadow-2xl" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
+      <section ref={setPanelRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className="market-read-sheet relative z-10 w-full max-h-[92dvh] overflow-y-auto rounded-t-2xl p-3 outline-none sm:absolute sm:inset-x-1/2 sm:top-6 sm:w-[680px] sm:-translate-x-1/2 sm:rounded-lg sm:max-h-[85dvh] sm:p-4 shadow-2xl" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
         <div className="mx-auto mb-2 h-1 w-10 rounded-full sm:hidden" aria-hidden="true" style={{ backgroundColor: 'var(--border-strong)' }} />
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="min-w-0">
-            <div className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--text-dim)' }}>Market Read</div>
+            <h2 id={titleId} className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--text-dim)' }}>Market Read</h2>
             <div className="flex flex-wrap items-center gap-1.5">
               <MarketBadge label={regime.label} />
               <MarketBadge label={`${regime.confidence} confidence`} tone="confidence" />
               <MarketBadge label={posture.label} tone="posture" />
             </div>
           </div>
-          <button type="button" onClick={onClose} className="rounded-lg p-2 min-h-[44px] min-w-[44px] inline-flex items-center justify-center" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+          <button type="button" aria-label="Close market read" onClick={onClose} className="rounded-lg p-2 min-h-[44px] min-w-[44px] inline-flex items-center justify-center" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
             <X className="w-4 h-4" />
           </button>
         </div>

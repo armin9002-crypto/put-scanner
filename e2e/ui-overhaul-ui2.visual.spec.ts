@@ -124,7 +124,7 @@ test.describe('UI-2 discovery workflow visual matrix', () => {
       await expect(page.getByRole('row').filter({ hasText: '90.00' }).last()).toBeVisible();
       await capture(page, testInfo, 'option-table');
       await page.getByRole('row').filter({ hasText: '90.00' }).last().click();
-      await expect(page.getByRole('complementary')).toBeVisible();
+      await expect(page.locator('.option-detail-drawer')).toBeVisible();
       await capture(page, testInfo, 'option-drawer-calculator');
 
       await openDetail(page, 'SPY');
@@ -141,7 +141,7 @@ test.describe('UI-2 discovery workflow visual matrix', () => {
         await openDetail(page);
         await capture(page, testInfo, `theme-${theme}-detail`);
         await page.getByRole('row').filter({ hasText: '90.00' }).last().click();
-        await expect(page.getByRole('complementary')).toBeVisible();
+        await expect(page.locator('.option-detail-drawer')).toBeVisible();
         await capture(page, testInfo, `theme-${theme}-drawer`);
       }
     } else if (project === 'portrait-390x844') {

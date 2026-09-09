@@ -292,7 +292,7 @@ test.describe('UI-3 portfolio and watchlist visual matrix', () => {
       }
       const firstPosition = page.locator('[data-trade-id]:visible').first();
       const strikeButton = firstPosition.locator('button').first();
-      if (await strikeButton.count()) { await strikeButton.click(); await expect(page.getByRole('complementary')).toBeVisible({ timeout: 10_000 }); await capture(page, testInfo, 'portfolio-trade-drawer'); await page.getByRole('button', { name: 'Close option detail drawer' }).last().click(); }
+      if (await strikeButton.count()) { await strikeButton.click(); await expect(page.locator('.option-detail-drawer')).toBeVisible({ timeout: 10_000 }); await capture(page, testInfo, 'portfolio-trade-drawer'); await page.getByRole('button', { name: 'Close option detail drawer' }).last().click(); }
       await openWatchlist(page);
       for (const theme of ['light', 'dark', 'sepia', 'dark-blue']) {
         await page.evaluate(value => localStorage.setItem('put_scanner_theme', value), theme);
@@ -303,7 +303,7 @@ test.describe('UI-3 portfolio and watchlist visual matrix', () => {
         if (await themeHistory.count()) { await themeHistory.scrollIntoViewIfNeeded(); await capture(page, testInfo, `theme-${theme}-portfolio-history`); await assertRenderedHistoryDensity(page); }
         const themePosition = page.locator('[data-trade-id]:visible').first();
         const themeStrike = themePosition.locator('button').first();
-        if (await themeStrike.count()) { await themeStrike.click(); if (await page.getByRole('complementary').count()) { await capture(page, testInfo, `theme-${theme}-portfolio-drawer`); await page.getByRole('button', { name: 'Close option detail drawer' }).last().click(); } }
+        if (await themeStrike.count()) { await themeStrike.click(); if (await page.locator('.option-detail-drawer').count()) { await capture(page, testInfo, `theme-${theme}-portfolio-drawer`); await page.getByRole('button', { name: 'Close option detail drawer' }).last().click(); } }
       }
     } else if (project === 'tablet-1024x768') {
       await openWatchlist(page); await capture(page, testInfo, 'watchlist-tablet');

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Clipboard, Copy, FileImage, Upload, X } from 'lucide-react';
 import { formatCurrency, formatDate, formatOptionPrice } from '../lib/format';
+import { useBlockingOverlayBehavior } from '../lib/blockingOverlay';
 import { makePortfolioContractKey } from '../lib/portfolioContractIdentity';
 import type { PortfolioTrade } from '../lib/portfolioStorage';
 import {
@@ -41,6 +42,11 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [showMissing, setShowMissing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const panelRef = useRef<HTMLElement | null>(null);
+  const setPanelRef = (element: HTMLElement | null) => { panelRef.current = element; };
+
+  useBlockingOverlayBehavior({ panelRef, overlayRef, onEscape: onClose });
 
   useEffect(() => {
     return () => {
@@ -144,19 +150,6 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
     return () => window.removeEventListener('paste', onPaste);
   }, [handleFile]);
 
-  useEffect(() => {
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener('keydown', onKeyDown);
-    };
-  }, [onClose]);
-
   const applyImport = () => {
     if (!hasPortfolioImportMutations(plan)) {
       onClose();
@@ -167,12 +160,12 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
   };
 
   return (
-    <div className="fixed inset-0 z-[85]">
+    <div ref={overlayRef} className="fixed inset-0 z-[85]">
       <button type="button" aria-label="Close import modal" onClick={onClose} className="absolute inset-0 bg-black/55" />
-      <div className="portfolio-import-sheet absolute inset-x-0 bottom-0 max-h-[96dvh] md:inset-x-4 md:top-4 md:bottom-4 md:max-h-none xl:inset-x-1/2 xl:top-[4dvh] xl:bottom-auto xl:w-[min(96vw,1600px)] xl:h-[min(92dvh,1000px)] xl:-translate-x-1/2 rounded-t-2xl md:rounded-lg overflow-hidden p-2 sm:p-4 shadow-2xl flex flex-col" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
+      <div ref={setPanelRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="portfolio-screenshot-import-title" className="portfolio-import-sheet absolute inset-x-0 bottom-0 max-h-[96dvh] md:inset-x-4 md:top-4 md:bottom-4 md:max-h-none xl:inset-x-1/2 xl:top-[4dvh] xl:bottom-auto xl:w-[min(96vw,1600px)] xl:h-[min(92dvh,1000px)] xl:-translate-x-1/2 rounded-t-2xl md:rounded-lg overflow-hidden p-2 sm:p-4 shadow-2xl flex flex-col outline-none" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
         <div className="flex items-start justify-between gap-3 mb-3 flex-shrink-0">
           <div className="min-w-0">
-            <h2 className="text-lg font-bold" style={{ color: 'var(--text)' }}>Import Screenshot</h2>
+            <h2 id="portfolio-screenshot-import-title" className="text-lg font-bold" style={{ color: 'var(--text)' }}>Import Screenshot</h2>
             <p className="text-xs mt-1 max-w-2xl" style={{ color: 'var(--text-muted)' }}>
               Paste or drag a brokerage positions screenshot. The app will extract sold put positions and let you review before importing.
             </p>

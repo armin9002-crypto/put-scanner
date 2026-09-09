@@ -1,10 +1,11 @@
-import { lazy, Suspense, useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { lazy, Suspense, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { CircleUserRound, Loader2, LogOut, Mail, X } from 'lucide-react';
 import { useAuth } from '../lib/authContext';
 import { useResponsiveMode } from '../lib/responsive';
 import MobileAccountSheet from './MobileAccountSheet';
 import { useAccountState } from '../lib/cloudState/accountStateContext';
+import { useBlockingOverlayBehavior } from '../lib/blockingOverlay';
 
 const CloudAccountStatus = lazy(() => import('./CloudSyncSection'));
 
@@ -190,44 +191,20 @@ function AccountError({ children }: { children: ReactNode }) {
 
 export function DesktopAccountDialog({ onClose, accountSyncContent }: { onClose: () => void; accountSyncContent?: ReactNode }) {
   const titleId = useId();
+  const overlayRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    const previousOverflow = document.body.style.overflow;
-    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    document.body.style.overflow = 'hidden';
-    panelRef.current?.focus();
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-      if (event.key !== 'Tab' || !panelRef.current) return;
-      const focusable = Array.from(panelRef.current.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      ));
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener('keydown', handleKeyDown);
-      previousFocus?.focus();
-    };
-  }, [onClose]);
+  useBlockingOverlayBehavior({
+    panelRef,
+    overlayRef,
+    initialFocusRef: panelRef,
+    onEscape: onClose,
+  });
 
   if (typeof document === 'undefined') return null;
 
   const dialog = (
-    <div className="fixed inset-0 z-[95] flex items-center justify-center p-4" data-account-overlay="desktop">
+    <div ref={overlayRef} className="fixed inset-0 z-[95] flex items-center justify-center p-4" data-account-overlay="desktop">
       <button type="button" className="motion-backdrop absolute inset-0 bg-black/60" aria-label="Close account" onClick={onClose} />
       <div
         ref={panelRef}

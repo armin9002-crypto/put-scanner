@@ -103,7 +103,7 @@ async function captureDesktop(page: Page, testInfo: TestInfo, marketHarness: Awa
   const optionTable = page.getByRole('table').last();
   await optionTable.screenshot({ path: path.join(outputRoot, testInfo.project.name, 'ticker-detail-option-table.png'), animations: 'disabled' });
   await page.getByRole('row').filter({ hasText: '90.00' }).last().click();
-  await expect(page.getByRole('complementary')).toBeVisible();
+  await expect(page.locator('.option-detail-drawer')).toBeVisible();
   await capture(page, testInfo, 'option-drawer');
 
   await page.goto('/pulse');
