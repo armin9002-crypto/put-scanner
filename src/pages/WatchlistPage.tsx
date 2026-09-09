@@ -14,6 +14,7 @@ import {
 import { fetchOptions, fetchBatchPricesResult } from '../lib/api';
 import type { OptionsChainData } from '../lib/types';
 import { calculateDte, calculateMoneyness, calculateVolumeOpenInterestRatio, calculateYieldPercent, isFiniteNumber, sanitizePositive } from '../lib/optionMetrics';
+import type { ShortPutMoneynessState } from '../lib/moneynessPresentation';
 import { formatDate as formatDisplayDate, formatOptionLastTradeDate, formatOptionPrice, formatPercentPoints } from '../lib/format';
 import ErrorBoundary from '../components/ErrorBoundary';
 import type { OptionDetail } from '../components/OptionDetailDrawer';
@@ -38,6 +39,7 @@ interface LiveRow extends WatchlistItem {
   moneynessPct: number | null;
   moneynessLabel: string;
   moneynessColor: string;
+  moneynessState: ShortPutMoneynessState;
   bid: number | null;
   ask: number | null;
   last: number | null;
@@ -146,6 +148,7 @@ function buildRow(item: WatchlistItem): LiveRow {
     moneynessPct: moneyness.pct,
     moneynessLabel: moneyness.label,
     moneynessColor: moneyness.color,
+    moneynessState: moneyness.state,
     bid,
     ask,
     last,
@@ -189,6 +192,7 @@ function optionDetailFromWatchlistRow(row: LiveRow): OptionDetail {
     otmItmPct: row.moneynessPct,
     otmItmLabel: row.moneynessLabel,
     otmItmColor: row.moneynessColor,
+    otmItmState: row.moneynessState,
     integrityStatus: row.snapshot?.integrityStatus,
     integrityReasonCodes: row.snapshot?.integrityReasonCodes as OptionDetail['integrityReasonCodes'],
   };
@@ -518,7 +522,7 @@ export default function WatchlistPage() {
         {items.length === 0 ? <div className="px-6 py-16 text-center"><Star className="mx-auto mb-3 h-7 w-7" style={{ color: 'var(--text-dim)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No saved puts</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Star a contract from an option chain to save it here.</p></div> : (
           <div className="mobile-financial-list">{groupedRows.map(group => <section key={group.key} aria-label={groupMode === 'none' ? 'Watchlist' : `${groupMode === 'underlying' ? 'Underlying' : 'Expiry'} ${group.label}`}>{groupMode !== 'none' && <div className="sticky top-0 z-10 border-b px-3.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface-alt)', color: 'var(--text-muted)' }}>{groupMode === 'underlying' ? group.label : `${group.label} · ${group.rows.length} saved`}</div>}{(group.rows as unknown as LiveRow[]).map(row => (
               <div key={row.id} className="mobile-watchlist-entry watchlist-mobile-row" style={{ opacity: row.expired || row.status === 'unavailable' ? 0.65 : 1 }}>
-          <MobileOptionRow ticker={row.ticker} tickerTo={buildOptionsPath(row.ticker, row.expiryTimestamp)} tickerNavigationState={optionsNavigationState} strike={row.strike} expirationLabel={row.expiryFormatted} dte={row.dte} bid={row.bid} ask={row.ask} last={row.last} lastTradeDate={row.lastTradeDate} annualYield={row.annYieldBid} annYieldLast={row.annYieldLast} annYieldBid={row.annYieldBid} annYieldAsk={row.annYieldAsk} delta={row.delta} impliedVolatility={row.iv} openInterest={row.openInterest} moneynessLabel={row.moneynessLabel} moneynessColor={row.moneynessColor} integrityStatus={row.snapshot?.integrityStatus} statusText={`${row.statusLabel} · Last trade ${formatOptionLastTradeDate(row.lastTradeDate)}${showNominalYields ? ` · NY L/B/A ${formatPercentValue(row.nomYieldLast)} / ${formatPercentValue(row.nomYieldBid)} / ${formatPercentValue(row.nomYieldAsk)}` : ''}`} watched onToggleWatchlist={() => handleRemove(row.id)} onSelect={() => setSelectedOption({ option: optionDetailFromWatchlistRow(row), ticker: row.ticker, expirationLabel: row.expiryFormatted, dte: row.dte, underlyingPrice: row.currentPrice })} />
+          <MobileOptionRow ticker={row.ticker} tickerTo={buildOptionsPath(row.ticker, row.expiryTimestamp)} tickerNavigationState={optionsNavigationState} strike={row.strike} expirationLabel={row.expiryFormatted} dte={row.dte} bid={row.bid} ask={row.ask} last={row.last} lastTradeDate={row.lastTradeDate} annualYield={row.annYieldBid} annYieldLast={row.annYieldLast} annYieldBid={row.annYieldBid} annYieldAsk={row.annYieldAsk} delta={row.delta} impliedVolatility={row.iv} openInterest={row.openInterest} moneynessLabel={row.moneynessLabel} moneynessColor={row.moneynessColor} moneynessState={row.moneynessState} integrityStatus={row.snapshot?.integrityStatus} statusText={`${row.statusLabel} · Last trade ${formatOptionLastTradeDate(row.lastTradeDate)}${showNominalYields ? ` · NY L/B/A ${formatPercentValue(row.nomYieldLast)} / ${formatPercentValue(row.nomYieldBid)} / ${formatPercentValue(row.nomYieldAsk)}` : ''}`} watched onToggleWatchlist={() => handleRemove(row.id)} onSelect={() => setSelectedOption({ option: optionDetailFromWatchlistRow(row), ticker: row.ticker, expirationLabel: row.expiryFormatted, dte: row.dte, underlyingPrice: row.currentPrice })} />
               <div className="watchlist-mobile-note border-b px-3 pb-1" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>{editingNote === row.id ? <input type="text" value={noteText} onChange={event => setNoteText(event.target.value.slice(0, 60))} onBlur={() => handleNoteSave(row.id)} onKeyDown={event => { if (event.key === 'Enter') handleNoteSave(row.id); if (event.key === 'Escape') { setEditingNote(null); setNoteText(''); } }} autoFocus className="mobile-control-field w-full" maxLength={60} aria-label={`Note for ${row.ticker}`} /> : <button type="button" onClick={() => { setEditingNote(row.id); setNoteText(row.note); }} className="flex min-h-11 w-full items-center text-left text-[11px]" style={{ color: row.note ? 'var(--text-secondary)' : 'var(--text-dim)' }}>{row.note || 'Add a note'}</button>}</div>
             </div>
           ))}</section>)}</div>

@@ -14,7 +14,8 @@ import DataFreshness from '../components/DataFreshness';
 import { useResponsiveMode } from '../lib/responsive';
 import MobileBottomSheet from '../components/mobile/MobileBottomSheet';
 import MobileSegmentedControl from '../components/mobile/MobileSegmentedControl';
-import { technicalStateLabel, type UnderlyingTechnicalState } from '../lib/underlyingTechnical';
+import { underlyingTechnicalEvidencePresentation, underlyingTechnicalStatePresentation } from '../lib/underlyingTechnicalPresentation';
+import type { UnderlyingTechnicalState } from '../lib/underlyingTechnical';
 import { buildOptionsPath, createOptionsNavigationState, resolveOptionsReturnOrigin, type OptionsNavigationState, type PulseOriginPresentation } from '../lib/optionsNavigation';
 
 const DASH = '\u2014';
@@ -40,7 +41,7 @@ interface PulseColumn {
 const VISUAL_PERIODS: VisualPeriod[] = ['1D', '5D', '30D', '3M', '6M', 'YTD', '1Y'];
 
 function trendOptionLabel(option: string): string {
-  return option === 'All' ? option : technicalStateLabel(option as UnderlyingTechnicalState);
+  return option === 'All' ? option : underlyingTechnicalStatePresentation(option as UnderlyingTechnicalState).label;
 }
 
 function formatPct(value: number | null | undefined, decimals = 1): string {
@@ -348,6 +349,7 @@ function UniverseHeatmap({ rows, period, navigationState }: { rows: EtfPulseRow[
       {items.map(row => {
         const value = getReturnForPeriod(row, period);
         const trend = trendStyle(row);
+        const evidence = underlyingTechnicalEvidencePresentation(row.technicalAssessment.evidenceQuality);
         const style = heatmapTileStyle(value);
         return (
           <Link
@@ -356,7 +358,7 @@ function UniverseHeatmap({ rows, period, navigationState }: { rows: EtfPulseRow[
             state={navigationState}
             aria-label={`Open ${row.ticker} ETF detail`}
             className="rounded-md p-2 min-h-[64px] overflow-hidden text-left cursor-pointer pulse-heatmap-tile focus:outline-none focus:ring-2 focus:ring-blue-400/40 flex flex-col justify-between"
-            title={`${row.ticker} - ${row.name}\n${period}: ${formatPct(value)}\nRSI: ${isFiniteNumber(row.rsi14) ? row.rsi14.toFixed(1) : DASH}\nTrend: ${trend.label}\n20D RV: ${formatPct(row.realizedVolatility20)}\nRecent DD: ${formatPct(row.recentDrawdown30)}\nvs 50D: ${formatPct(row.distance50)}\nvs 200D: ${formatPct(row.distance200)}\n52W Pos: ${formatPct(row.position52Week)}\n52W DD: ${formatPct(row.drawdown52Week)}`}
+            title={`${row.ticker} - ${row.name}\n${period}: ${formatPct(value)}\nRSI: ${isFiniteNumber(row.rsi14) ? row.rsi14.toFixed(1) : DASH}\nTrend: ${trend.label}\nTechnical evidence: ${evidence.label}\n20D RV: ${formatPct(row.realizedVolatility20)}\nRecent DD: ${formatPct(row.recentDrawdown30)}\nvs 50D: ${formatPct(row.distance50)}\nvs 200D: ${formatPct(row.distance200)}\n52W Pos: ${formatPct(row.position52Week)}\n52W DD: ${formatPct(row.drawdown52Week)}`}
             style={{ backgroundColor: style.backgroundColor, border: `1px solid ${style.borderColor}` }}
           >
             <div className="flex items-start justify-between gap-2">
@@ -748,8 +750,9 @@ export default function EtfPulsePage() {
       sortField: 'trend',
       render: row => {
         const trend = trendStyle(row);
+        const evidence = underlyingTechnicalEvidencePresentation(row.technicalAssessment.evidenceQuality);
         return (
-          <span className="inline-flex rounded px-1.5 py-0.5 text-[10px] font-semibold" title={`RSI ${isFiniteNumber(row.rsi14) ? row.rsi14.toFixed(1) : DASH}`} style={{ color: trend.color, backgroundColor: trend.bg, border: `1px solid ${trend.border}` }}>
+          <span className="inline-flex rounded px-1.5 py-0.5 text-[10px] font-semibold" data-technical-tone={underlyingTechnicalStatePresentation(row.technicalAssessment.state).tone} title={`RSI ${isFiniteNumber(row.rsi14) ? row.rsi14.toFixed(1) : DASH} · Evidence ${evidence.label}`} style={{ color: trend.color, backgroundColor: trend.bg, border: `1px solid ${trend.border}` }}>
             {trend.label}
           </span>
         );
@@ -828,7 +831,7 @@ export default function EtfPulsePage() {
 
          {mobileVisual === 'list' ? <div className="mobile-financial-list">{loading && rows.length === 0 ? <div role="status" aria-label="ETF Pulse loading" className="pulse-mobile-loading">{Array.from({ length: 6 }).map((_, index) => <div key={index} className="mobile-pulse-row pulse-mobile-skeleton animate-pulse"><div className="h-4 w-24 rounded" style={{ backgroundColor: 'var(--border)' }} /><div className="mt-5 h-3 w-full rounded" style={{ backgroundColor: 'var(--border)' }} /></div>)}</div> : filteredRows.length === 0 ? <div className="pulse-mobile-empty-state px-6 py-14 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No ETFs match these filters.</div> : filteredRows.map(row => {
           const trend = trendStyle(row);
-           return <Link key={row.ticker} to={buildOptionsPath(row.ticker)} state={optionsNavigationState} className="pressable mobile-pulse-row mobile-pulse-list-item"><div className="mobile-pulse-list-item__main"><div className="min-w-0"><div className="mobile-pulse-list-item__identity font-mono text-[16px] font-bold" style={{ color: 'var(--accent-light)' }}>{row.ticker}</div><div className="mobile-pulse-list-item__name text-[11px]" style={{ color: 'var(--text-muted)' }} title={row.name}>{row.name}</div></div><div className="mobile-pulse-list-item__quote text-right"><div className="font-mono text-[15px] font-semibold" style={{ color: 'var(--text)' }}>{formatPrice(row.price)}</div><div className="text-[10px] font-semibold" style={{ color: trend.color }}>{trend.label}</div></div></div><div className="pulse-mobile-performance mobile-pulse-list-item__performance mt-2 grid grid-cols-3 gap-2 border-y py-1.5" style={{ borderColor: 'var(--border)' }}>{([['1M', row.returns.thirtyDay], ['3M', row.returns.threeMonth], ['YTD', row.returns.yearToDate]] as const).map(([label, value]) => <span key={label} className="text-[11px]"><span style={{ color: 'var(--text-dim)' }}>{label} </span><b className="font-mono" style={{ color: valueColor(value) }}>{formatPct(value)}</b></span>)}</div><div className="pulse-mobile-support mobile-pulse-list-item__footer mt-1.5 grid grid-cols-3 gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}><span>RSI <b className="font-mono" style={{ color: rsiColor(row.rsi14) }}>{isFiniteNumber(row.rsi14) ? row.rsi14.toFixed(0) : DASH}</b></span><span>vs 50D <b className="font-mono" style={{ color: valueColor(row.distance50) }}>{formatPct(row.distance50)}</b></span><span className="text-right">DD <b className="font-mono" style={{ color: drawdownColor(row.drawdown52Week) }}>{formatPct(row.drawdown52Week)}</b></span></div></Link>;
+           return <Link key={row.ticker} to={buildOptionsPath(row.ticker)} state={optionsNavigationState} className="pressable mobile-pulse-row mobile-pulse-list-item"><div className="mobile-pulse-list-item__main"><div className="min-w-0"><div className="mobile-pulse-list-item__identity font-mono text-[16px] font-bold" style={{ color: 'var(--accent-light)' }}>{row.ticker}</div><div className="mobile-pulse-list-item__name text-[11px]" style={{ color: 'var(--text-muted)' }} title={row.name}>{row.name}</div></div><div className="mobile-pulse-list-item__quote text-right"><div className="font-mono text-[15px] font-semibold" style={{ color: 'var(--text)' }}>{formatPrice(row.price)}</div><div className="text-[10px] font-semibold" style={{ color: trend.color }} title={`Evidence ${underlyingTechnicalEvidencePresentation(row.technicalAssessment.evidenceQuality).label}`}>{trend.label}</div></div></div><div className="pulse-mobile-performance mobile-pulse-list-item__performance mt-2 grid grid-cols-3 gap-2 border-y py-1.5" style={{ borderColor: 'var(--border)' }}>{([['1M', row.returns.thirtyDay], ['3M', row.returns.threeMonth], ['YTD', row.returns.yearToDate]] as const).map(([label, value]) => <span key={label} className="text-[11px]"><span style={{ color: 'var(--text-dim)' }}>{label} </span><b className="font-mono" style={{ color: valueColor(value) }}>{formatPct(value)}</b></span>)}</div><div className="pulse-mobile-support mobile-pulse-list-item__footer mt-1.5 grid grid-cols-3 gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}><span>RSI <b className="font-mono" style={{ color: rsiColor(row.rsi14) }}>{isFiniteNumber(row.rsi14) ? row.rsi14.toFixed(0) : DASH}</b></span><span>vs 50D <b className="font-mono" style={{ color: valueColor(row.distance50) }}>{formatPct(row.distance50)}</b></span><span className="text-right">DD <b className="font-mono" style={{ color: drawdownColor(row.drawdown52Week) }}>{formatPct(row.drawdown52Week)}</b></span></div></Link>;
         })}</div> : <section className="px-3.5 py-3">{mobileVisual === 'heatmap' ? <UniverseHeatmap rows={filteredRows} period={selectedVisualPeriod} navigationState={optionsNavigationState} /> : <MomentumQuadrant rows={filteredRows} period={selectedVisualPeriod} navigationState={optionsNavigationState} />}</section>}
 
         {mobileFiltersOpen && <MobileBottomSheet title="ETF Pulse filters" description="Filter and sort loaded market intelligence" onClose={() => setMobileFiltersOpen(false)} footer={<div className="grid grid-cols-2 gap-2"><button type="button" onClick={() => { setSearch(''); setLeverageFilter('All'); setTypeFilter('All'); setTrendFilter('All'); }} className="mobile-sheet-action secondary">Reset</button><button type="button" onClick={() => setMobileFiltersOpen(false)} className="mobile-sheet-action primary">Done</button></div>}><div className="space-y-4"><label><span className="mobile-sheet-label">Search</span><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Ticker, name, or theme" className="mobile-control-field w-full" /></label><Select label="Leverage" value={leverageFilter} options={leverageOptions} onChange={setLeverageFilter} /><Select label="Type" value={typeFilter} options={typeOptions} onChange={setTypeFilter} /><Select label="Trend" value={trendFilter} options={trendOptions} formatOption={trendOptionLabel} onChange={value => setTrendFilter(value as TrendFilter)} /><label className="block"><span className="mobile-sheet-label">Sort list</span><select value={sort.field} onChange={event => setSort(current => ({ ...current, field: event.target.value as PulseSortField }))} className="mobile-control-field w-full"><option value="ticker">Ticker</option><option value="oneDay">1D return</option><option value="thirtyDay">30D return</option><option value="threeMonth">3M return</option><option value="rsi14">RSI</option><option value="realizedVolatility20">20D volatility</option><option value="drawdown52Week">52W drawdown</option><option value="trend">Trend</option></select></label><button type="button" onClick={() => void loadRows(true)} disabled={loading} className="mobile-sheet-action secondary w-full"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh data</button></div></MobileBottomSheet>}

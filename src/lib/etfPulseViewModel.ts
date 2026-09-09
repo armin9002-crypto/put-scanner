@@ -1,5 +1,6 @@
 import type { EtfPulseRow } from './etfPulseMetrics';
-import { technicalStateLabel, type UnderlyingTechnicalState } from './underlyingTechnical.ts';
+import { underlyingTechnicalStatePresentation } from './underlyingTechnicalPresentation.ts';
+import type { UnderlyingTechnicalState } from './underlyingTechnical.ts';
 
 export type PulseSortField = 'ticker' | 'name' | 'type' | 'leverage' | 'price' | 'oneDay' | 'fiveDay' | 'thirtyDay' | 'threeMonth' | 'sixMonth' | 'yearToDate' | 'oneYear' | 'recentDrawdown30' | 'rsi14' | 'realizedVolatility20' | 'distance20' | 'distance50' | 'distance200' | 'high52Week' | 'percentOf52WeekHigh' | 'position52Week' | 'drawdown52Week' | 'trend';
 export type TrendFilter = 'All' | UnderlyingTechnicalState;
@@ -21,15 +22,13 @@ export function heatmapTileStyle(value: number | null): { backgroundColor: strin
 }
 
 export function trendStyle(row: EtfPulseRow): { label: string; color: string; bg: string; border: string } {
-  const state = row.technicalAssessment.state;
-  const label = technicalStateLabel(state);
-  if (state === 'STRONG_TREND') return { label, color: 'var(--green)', bg: 'rgba(34,197,94,0.10)', border: 'rgba(34,197,94,0.25)' };
-  if (state === 'CONSTRUCTIVE_PULLBACK' || state === 'RECOVERY_RECLAIM') return { label, color: 'var(--green)', bg: 'rgba(34,197,94,0.06)', border: 'rgba(34,197,94,0.18)' };
-  if (state === 'OVERSOLD_INTACT') return { label, color: 'var(--accent-light)', bg: 'var(--accent-bg)', border: 'var(--accent-border)' };
-  if (state === 'EXTENDED') return { label, color: 'var(--orange)', bg: 'rgba(251,146,60,0.10)', border: 'rgba(251,146,60,0.28)' };
-  if (state === 'TRANSITION_DETERIORATING') return { label, color: 'var(--yellow)', bg: 'rgba(250,204,21,0.10)', border: 'rgba(250,204,21,0.25)' };
-  if (state === 'BROKEN_TREND') return { label, color: 'var(--red)', bg: 'rgba(239,68,68,0.10)', border: 'rgba(239,68,68,0.25)' };
-  return { label, color: 'var(--text-muted)', bg: 'var(--surface-alt)', border: 'var(--border)' };
+  const presentation = underlyingTechnicalStatePresentation(row.technicalAssessment.state);
+  return {
+    label: presentation.label,
+    color: presentation.color,
+    bg: presentation.backgroundColor,
+    border: presentation.borderColor,
+  };
 }
 
 export function sortValue(row: EtfPulseRow, field: PulseSortField): number | string | null {

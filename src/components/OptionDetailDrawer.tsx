@@ -22,6 +22,7 @@ import {
   type OptionQuoteDisplayField,
   type OptionSoldPriceBasis,
 } from '../lib/optionQuoteDisplay';
+import { shortPutMoneynessPresentation, type ShortPutMoneynessState } from '../lib/moneynessPresentation';
 import { CALCULATED_PUT_DELTA_MODEL, type PutDeltaSource } from '../lib/putDelta';
 import { exactOptionTradeSessionAge } from '../lib/usMarketCalendar';
 import type { OptionIntegrityReasonCode, OptionIntegrityStatus } from '../lib/types';
@@ -51,6 +52,7 @@ export interface OptionDetail {
   otmItmPct: number | null;
   otmItmLabel: string;
   otmItmColor: string;
+  otmItmState?: ShortPutMoneynessState;
   integrityStatus?: OptionIntegrityStatus;
   integrityReasonCodes?: OptionIntegrityReasonCode[];
 }
@@ -178,6 +180,9 @@ export default function OptionDetailDrawer({
   onAddToPortfolio,
 }: OptionDetailDrawerProps) {
   const { isPhone } = useResponsiveMode();
+  const moneyness = option?.otmItmState ? shortPutMoneynessPresentation(option.otmItmState) : null;
+  const moneynessLabel = option?.otmItmLabel || moneyness?.label || '—';
+  const moneynessColor = moneyness?.color ?? option?.otmItmColor;
   const preserveRecommendationContract = window.location.pathname === '/recommendations';
   const defaultPrice = useMemo(() => option ? option.integrityStatus === 'invalid' ? null : preserveRecommendationContract ? selectLegacyRecommendationSoldPrice(option) : selectDefaultSoldPrice(option) : null, [option, preserveRecommendationContract]);
   const [contracts, setContracts] = useState('1');
@@ -285,7 +290,7 @@ export default function OptionDetailDrawer({
                 <DetailRow label="Annualized Yield" value={formatPercent(annualizedSecuredCashYield)} color="var(--green)" />
                 <DetailRow label="Delta" value={formatPlainNumber(option.delta, 3)} />
                 <DetailRow label="Delta source" value={deltaSourceLabel(option)} />
-                <DetailRow label="Moneyness" value={option.otmItmLabel || '—'} color={option.otmItmColor || undefined} />
+                <DetailRow label="Moneyness" value={moneynessLabel} color={moneynessColor || undefined} />
                 <DetailRow label="Breakeven" value={formatCurrency(topBreakeven)} />
                 <DetailRow label="Implied Volatility" value={isFiniteNumber(option.impliedVolatility) ? `${option.impliedVolatility.toFixed(1)}%` : '—'} />
                 <DetailRow label="Open Interest" value={formatInteger(option.openInterest)} />
@@ -377,7 +382,7 @@ export default function OptionDetailDrawer({
               <div className="option-detail-mobile-metric-grid option-detail-mobile-metric-grid--risk">
                 <MobileMetric label="Delta" value={formatPlainNumber(option.delta, 3)} />
                 <MobileMetric label="Delta source" value={deltaSourceLabel(option)} />
-                <MobileMetric label="Moneyness" value={option.otmItmLabel || '—'} color={option.otmItmColor || undefined} />
+                <MobileMetric label="Moneyness" value={moneynessLabel} color={moneynessColor || undefined} />
                 <MobileMetric label="Breakeven" value={formatCurrency(topBreakeven)} />
                 <MobileMetric label="IV" value={isFiniteNumber(option.impliedVolatility) ? `${option.impliedVolatility.toFixed(1)}%` : '—'} />
               </div>
@@ -570,7 +575,7 @@ export default function OptionDetailDrawer({
             <DetailRow label="Delta" value={formatPlainNumber(option.delta, 3)} />
             <DetailRow label="Delta source" value={deltaSourceLabel(option)} />
             <DetailRow label="IV" value={isFiniteNumber(option.impliedVolatility) ? `${option.impliedVolatility.toFixed(1)}%` : '—'} />
-            <DetailRow label="Moneyness" value={option.otmItmLabel || '—'} color={option.otmItmColor || undefined} />
+            <DetailRow label="Moneyness" value={moneynessLabel} color={moneynessColor || undefined} />
             <DetailRow label="DTE" value={isFiniteNumber(dte) ? `${dte}` : '—'} />
             <DetailRow label="Expiration" value={expirationLabel || '—'} />
             <DetailRow label="Distance to Strike" value={formatPercent(distanceToStrike)} />

@@ -1,5 +1,6 @@
 import { Star } from 'lucide-react';
 import { formatOptionLastTradeDate } from '../../lib/format';
+import { shortPutMoneynessPresentation, type ShortPutMoneynessState } from '../../lib/moneynessPresentation';
 import { Link } from 'react-router-dom';
 import type { OptionIntegrityStatus } from '../../lib/types';
 
@@ -29,6 +30,7 @@ export interface MobileOptionRowProps {
   statusText?: string;
   moneynessLabel?: string;
   moneynessColor?: string;
+  moneynessState?: ShortPutMoneynessState;
   staleText?: string | null;
   integrityStatus?: OptionIntegrityStatus;
   watched?: boolean;
@@ -48,6 +50,7 @@ function percent(value: number | null | undefined): string {
 export default function MobileOptionRow(props: MobileOptionRowProps) {
   const title = `$${money(props.strike)} Put`;
   const annYieldBid = props.annYieldBid ?? props.annualYield;
+  const moneyness = props.moneynessState ? shortPutMoneynessPresentation(props.moneynessState) : null;
   return (
     <article
       role="row"
@@ -85,8 +88,8 @@ export default function MobileOptionRow(props: MobileOptionRowProps) {
       <div role="cell" className="mobile-option-chain-cell" data-field="last" style={{ color: props.staleText ? 'var(--yellow)' : props.lastTradeDate ? 'var(--text)' : 'var(--text-dim)' }} title={`${formatOptionLastTradeDate(props.lastTradeDate ?? null)}${props.staleText ? ` · ${props.staleText}` : ''}`}>
         <span className="font-mono tabular-nums">{formatOptionLastTradeDate(props.lastTradeDate ?? null)}</span>
       </div>
-      <div role="cell" className="mobile-option-chain-cell" data-field="moneyness" style={{ color: props.moneynessColor ?? 'var(--text-muted)' }}>
-        <span className="font-mono tabular-nums">{props.moneynessLabel || '\u2014'}</span>
+      <div role="cell" className="mobile-option-chain-cell" data-field="moneyness" title={moneyness?.accessibleLabel} style={{ color: moneyness?.color ?? props.moneynessColor ?? 'var(--text-muted)' }}>
+        <span className="font-mono tabular-nums">{props.moneynessLabel || moneyness?.label || '\u2014'}</span>
         {props.integrityStatus === 'invalid' && <small className="mobile-option-chain-cell__context" style={{ color: 'var(--yellow)' }}>Quote inconsistent</small>}
         {props.statusText && <small className="mobile-option-chain-cell__context">{props.statusText}</small>}
       </div>

@@ -1,10 +1,11 @@
 import { calendarDateIso, calendarDaysBetween, usMarketDateIso } from './usMarketCalendar.ts';
+import { shortPutMoneynessPresentation, type ShortPutMoneynessState } from './moneynessPresentation.ts';
 
 export interface MoneynessMetrics {
   pct: number | null;
   label: string;
   color: string;
-  state: 'itm' | 'otm' | 'atm' | 'unknown';
+  state: ShortPutMoneynessState;
 }
 
 export interface YieldMetrics {
@@ -68,18 +69,18 @@ export function calculateMoneyness(underlyingPrice: number | null | undefined, s
   const underlying = sanitizePositive(underlyingPrice);
   const validStrike = sanitizePositive(strike);
   if (underlying == null || validStrike == null) {
-    return { pct: null, label: '—', color: 'var(--text-dim)', state: 'unknown' };
+    return { pct: null, label: '—', color: shortPutMoneynessPresentation('unknown').color, state: 'unknown' };
   }
 
   const signedPct = ((underlying - validStrike) / underlying) * 100;
   const absPct = Math.abs(signedPct);
   if (absPct < 0.5) {
-    return { pct: signedPct, label: 'ATM', color: 'var(--yellow)', state: 'atm' };
+    return { pct: signedPct, label: 'ATM', color: shortPutMoneynessPresentation('atm').color, state: 'atm' };
   }
   if (validStrike < underlying) {
-    return { pct: signedPct, label: `${absPct.toFixed(1)}% OTM`, color: 'var(--red)', state: 'otm' };
+    return { pct: signedPct, label: `${absPct.toFixed(1)}% OTM`, color: shortPutMoneynessPresentation('otm').color, state: 'otm' };
   }
-  return { pct: signedPct, label: `${absPct.toFixed(1)}% ITM`, color: 'var(--green)', state: 'itm' };
+  return { pct: signedPct, label: `${absPct.toFixed(1)}% ITM`, color: shortPutMoneynessPresentation('itm').color, state: 'itm' };
 }
 
 export function calculateBreakeven(strike: number | null | undefined, optionPrice: number | null | undefined): number | null {

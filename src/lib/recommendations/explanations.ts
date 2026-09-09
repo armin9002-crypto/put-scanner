@@ -1,5 +1,5 @@
 import type { RecommendationCandidate, RecommendationReasonCode } from './types.ts';
-import { technicalStateLabel } from '../underlyingTechnical.ts';
+import { underlyingTechnicalStatePresentation } from '../underlyingTechnicalPresentation.ts';
 
 const REASON_COPY: Record<RecommendationReasonCode, string> = {
   ABSOLUTE_HURDLE_CLEARED: 'Seller compensation clears the versioned absolute hurdle.',
@@ -78,7 +78,7 @@ export function buildCandidateExplanation(candidate: RecommendationCandidate): {
           ? reasonCopy('EXTENDED_UNDERLYING')
           : technicalState === 'TRANSITION_DETERIORATING'
             ? reasonCopy('DETERIORATING_UNDERLYING')
-            : `Shared technical assessment: ${technicalStateLabel(technicalState)}.`;
+            : `Shared technical assessment: ${underlyingTechnicalStatePresentation(technicalState).label}.`;
   const discoveryEvidence = candidate.pricing.discoveryTier === 'DIRECT_RECENT'
     ? reasonCopy('RECENT_DIRECT_TRANSACTION')
     : candidate.pricing.discoveryTier === 'RECENT_NEARBY_CONFIRMED'

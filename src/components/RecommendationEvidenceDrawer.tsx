@@ -4,6 +4,8 @@ import { reasonCopy } from '../lib/recommendations/explanations.ts';
 import { recommendationLastTradeText, transactionRecencyTone } from '../lib/recommendations/presentation.ts';
 import { priceDiscoveryLabel } from '../lib/recommendations/ranking.ts';
 import type { RecommendationCandidate, RecommendationRun } from '../lib/recommendations/types.ts';
+import { presentUnderlyingTechnicalAssessment, underlyingTechnicalEvidencePresentation, underlyingTechnicalStatePresentation } from '../lib/underlyingTechnicalPresentation.ts';
+import { shortPutMoneynessPresentation } from '../lib/moneynessPresentation.ts';
 import { useResponsiveMode } from '../lib/responsive.ts';
 import MobileBottomSheet from './mobile/MobileBottomSheet.tsx';
 
@@ -19,6 +21,10 @@ function deltaSourceLabel(candidate: RecommendationCandidate): string {
 
 function EvidenceContent({ candidate, run }: { candidate: RecommendationCandidate; run: RecommendationRun }) {
   const range = candidate.pricing.indicativeRange;
+  const technical = underlyingTechnicalStatePresentation(candidate.underlying.technicalAssessment.state);
+  const technicalEvidence = underlyingTechnicalEvidencePresentation(candidate.underlying.technicalAssessment.evidenceQuality);
+  const technicalPresentation = presentUnderlyingTechnicalAssessment(candidate.underlying.technicalAssessment);
+  const moneyness = candidate.canonicalRow.moneynessState ? shortPutMoneynessPresentation(candidate.canonicalRow.moneynessState) : null;
   return (
     <div className="recommendation-evidence-content space-y-3">
       <section className="recommendation-evidence-section">
@@ -32,7 +38,9 @@ function EvidenceContent({ candidate, run }: { candidate: RecommendationCandidat
           <EvidenceMetric label="Execution quality" value={candidate.pricing.actionability} />
           <EvidenceMetric label="Market integrity" value={candidate.pricing.integrityStatus.toUpperCase()} />
           <EvidenceMetric label="Delta source" value={deltaSourceLabel(candidate)} />
-          <EvidenceMetric label="Evidence" value={candidate.evidenceQuality} />
+          <EvidenceMetric label="Technical state" value={technical.label} color={technical.color} />
+          <EvidenceMetric label="Technical evidence" value={technicalEvidence.label} color={technicalEvidence.color} />
+          <EvidenceMetric label="Moneyness" value={candidate.canonicalRow.moneynessLabel || `${valueOrDash(candidate.economics.moneynessPct)} OTM`} color={moneyness?.color ?? candidate.canonicalRow.moneynessColor} />
           <EvidenceMetric label="Robustness" value={candidate.robustness.classification} />
         </div>
         <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -103,7 +111,14 @@ function EvidenceContent({ candidate, run }: { candidate: RecommendationCandidat
       <section className="recommendation-evidence-section">
         <div className="recommendation-evidence-section__title">Underlying and market context</div>
         <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-          {candidate.underlying.evidence.map(item => <EvidenceMetric key={item.label} label={item.label} value={item.value} />)}
+          <EvidenceMetric label="Technical state" value={technicalPresentation.state.label} color={technicalPresentation.state.color} />
+          <EvidenceMetric label="Evidence quality" value={technicalPresentation.evidenceQuality.label} color={technicalPresentation.evidenceQuality.color} />
+          <EvidenceMetric label="Structure" value={technicalPresentation.signals.structure} />
+          <EvidenceMetric label="Momentum" value={technicalPresentation.signals.momentum} />
+          <EvidenceMetric label="Reset / extension" value={technicalPresentation.signals.resetExtension} />
+          <EvidenceMetric label="Volatility stress" value={technicalPresentation.signals.volatilityStress} />
+          <EvidenceMetric label="Technical reason" value={technicalPresentation.reasonExplanations[0] ?? 'No technical reason is available.'} />
+          {candidate.underlying.evidence.filter(item => !['Technical state', 'Structure', 'Momentum'].includes(item.label)).map(item => <EvidenceMetric key={item.label} label={item.label} value={item.value} />)}
         </div>
         <p className="mt-2 text-xs leading-5" style={{ color: 'var(--text-secondary)' }}>
           {run.market.regime.label} · {run.market.posture.label} · {run.market.regime.putSellingImplication}
@@ -173,8 +188,8 @@ function EvidenceContent({ candidate, run }: { candidate: RecommendationCandidat
   );
 }
 
-function EvidenceMetric({ label, value }: { label: string; value: string }) {
-  return <div className="flex min-w-0 items-start justify-between gap-2 border-b py-1" style={{ borderColor: 'var(--border)' }}><span style={{ color: 'var(--text-muted)' }}>{label}</span><span className="text-right font-mono" style={{ color: 'var(--text)' }}>{value}</span></div>;
+function EvidenceMetric({ label, value, color }: { label: string; value: string; color?: string }) {
+  return <div className="flex min-w-0 items-start justify-between gap-2 border-b py-1" style={{ borderColor: 'var(--border)' }}><span style={{ color: 'var(--text-muted)' }}>{label}</span><span className="text-right font-mono" style={{ color: color ?? 'var(--text)' }}>{value}</span></div>;
 }
 
 function KeyFigure({ label, value }: { label: string; value: string }) {

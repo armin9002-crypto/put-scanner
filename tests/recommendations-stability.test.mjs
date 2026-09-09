@@ -42,9 +42,9 @@ test('production-scale Recommendation path is deterministic and structurally bou
   assert.equal(snapshot.screenerRows.length, 3_996);
   const firstProjection = financialProjection(first);
   assert.deepEqual(firstProjection, financialProjection(second));
-  // Captured after the Phase B integrity/execution-quality policy change and bounded comparison-detail normalization.
+  // Presentation-only update: canonical short-put moneyness colors now use OTM=favorable and ITM=adverse.
   assert.equal(createHash('sha256').update(JSON.stringify(firstProjection)).digest('hex'),
-    '3d5a3899424f32b351e6f2c36871c9ba8e96d4b7f750e9f2ead678a517498501',
+    '8a5bce52cdab1c641cebe2418fd3dc21b274e5ae50613fa954760980047bd14e',
     'the production-scale financial golden changed');
   assert.equal(firstDiagnostics.rankFactorComputations, first.candidates.length);
   assert.equal(firstDiagnostics.dominancePairVisits, firstDiagnostics.relativeHurdlePairVisits);

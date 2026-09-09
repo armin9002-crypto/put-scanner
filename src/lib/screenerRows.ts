@@ -1,6 +1,7 @@
 import { resolvePutDeltaWithSource, type PutDeltaSource } from './putDelta.ts';
 import { canonicalOptionChainKey } from './optionChainRequests.ts';
 import { calculateDte, calculateMoneyness, calculateVolumeOpenInterestRatio, calculateYieldPercent, sanitizePositive } from './optionMetrics.ts';
+import type { ShortPutMoneynessState } from './moneynessPresentation.ts';
 import { exactOptionTradeSessionAge, type MarketDateInput } from './usMarketCalendar.ts';
 import type { OptionsChainData } from './types.ts';
 import { isOptionContractIntegrityInvalid, trustedOptionPrice } from './optionMarketIntegrity.ts';
@@ -17,6 +18,8 @@ export interface ScreenerRow {
   moneynessPct: number | null;
   moneynessLabel: string;
   moneynessColor: string;
+  /** Runtime presentation state; non-enumerable to preserve the compact row snapshot contract. */
+  moneynessState?: ShortPutMoneynessState;
   delta: number | null;
   deltaSource: PutDeltaSource | null;
   bid: number | null;
@@ -289,6 +292,7 @@ export function buildScreenerRows(
           } : {}),
         };
         Object.defineProperties(row, {
+          moneynessState: { value: moneyness.state, enumerable: false },
           evidenceFreshness: { value: initialData.chainMeta ? initialData.chainMeta.staleFallbackUsed || initialData.chainMeta.source === 'stale' ? 'retained-stale' : initialData.chainMeta.source === 'cache' ? 'cached-current' : 'current' : 'unavailable', enumerable: false },
           observedAt: { value: initialData.chainMeta?.fetchedAt ?? null, enumerable: false },
           evidenceSource: { value: initialData.chainMeta?.source ?? 'unknown', enumerable: false },

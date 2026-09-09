@@ -2155,6 +2155,7 @@ export default function PortfolioPage() {
         otmItmPct: moneyness.pct,
         otmItmLabel: moneyness.label,
         otmItmColor: moneyness.color,
+        otmItmState: moneyness.state,
       },
     });
   }, []);

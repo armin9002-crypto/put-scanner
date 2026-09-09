@@ -16,7 +16,8 @@ import { recommendationLastTradeText, recommendationMarketClosedText, transactio
 import { priceDiscoveryLabel } from '../lib/recommendations/ranking.ts';
 import type { CandidateVerdict, RecommendationBand, RecommendationCandidate, RecommendationDistinction, RecommendationRun, RecommendationSelection } from '../lib/recommendations/types.ts';
 import { buildRecommendationVisualFixture, type RecommendationVisualFixture } from '../lib/recommendations/visualFixtures.ts';
-import { technicalStateLabel } from '../lib/underlyingTechnical.ts';
+import { underlyingTechnicalEvidencePresentation, underlyingTechnicalStatePresentation } from '../lib/underlyingTechnicalPresentation.ts';
+import { shortPutMoneynessPresentation } from '../lib/moneynessPresentation.ts';
 import { addToWatchlist, getWatchlist, makeWatchlistId, removeFromWatchlist, type WatchlistItem } from '../lib/watchlist.ts';
 import { buildOptionsPath, createOptionsNavigationState, resolveOptionsReturnOrigin, type OptionsNavigationState, type RecommendationsOriginPresentation } from '../lib/optionsNavigation.ts';
 
@@ -51,6 +52,7 @@ function optionDetail(candidate: RecommendationCandidate): OptionDetail {
     otmItmPct: row.moneynessPct,
     otmItmLabel: row.moneynessLabel,
     otmItmColor: row.moneynessColor,
+    otmItmState: row.moneynessState,
     integrityStatus: row.integrityStatus,
     integrityReasonCodes: row.integrityReasonCodes,
   };
@@ -169,6 +171,8 @@ function RecommendationCard({
       ? `${percent(ayRange.low)}–${percent(ayRange.high)}`
       : '—';
   const distinctions = selection.distinctions.map(distinction => DISTINCTION_LABEL[distinction]);
+  const technical = underlyingTechnicalStatePresentation(candidate.underlying.technicalAssessment.state);
+  const moneyness = candidate.canonicalRow.moneynessState ? shortPutMoneynessPresentation(candidate.canonicalRow.moneynessState) : null;
   return (
     <article className="recommendation-card surface-card">
       <button type="button" className="recommendation-card__summary" onClick={onEvidence}>
@@ -176,9 +180,9 @@ function RecommendationCard({
           <div className="recommendation-card__eyebrow">#{selection.shortlistRank} {distinctions.length > 0 ? `· ${distinctions.join(' · ')}` : '· RANKED OPPORTUNITY'}</div>
           <div className="recommendation-card__identity">{candidate.ticker} ${candidate.strike.toFixed(2)} Put <span>· {candidate.expirationLabel}</span></div>
           <div className="recommendation-card__hero-metric"><strong>{headlineAy}</strong><span>{displaysExecutableBidAy ? 'AY at Bid' : ayRange ? 'Indicative AY Range' : 'AY unavailable'}</span></div>
-          <div className="recommendation-card__metrics">{delta(candidate.economics.delta)} Δ <span>·</span> {percent(candidate.economics.moneynessPct, 0)} OTM <span>·</span> {candidate.dte} DTE</div>
+          <div className="recommendation-card__metrics">{delta(candidate.economics.delta)} Δ <span>·</span> <span style={{ color: moneyness?.color ?? candidate.canonicalRow.moneynessColor }}>{percent(candidate.economics.moneynessPct, 0)} OTM</span> <span>·</span> {candidate.dte} DTE</div>
           <div className="recommendation-card__last-trade" data-recency={transactionRecencyTone(candidate.pricing.exactTradeRecency)}>{recommendationLastTradeText(candidate.pricing, asOf)}</div>
-          <div className="recommendation-card__discovery">{priceDiscoveryLabel(candidate.pricing.discoveryTier)} · Execution {candidate.pricing.actionability} · Integrity {candidate.pricing.integrityStatus.toUpperCase()}</div>
+          <div className="recommendation-card__discovery"><span style={{ color: technical.color }}>{technical.label}</span> · {priceDiscoveryLabel(candidate.pricing.discoveryTier)} · Execution {candidate.pricing.actionability} · Integrity {candidate.pricing.integrityStatus.toUpperCase()}</div>
         </div>
         <div className="flex flex-none items-center gap-2"><VerdictBadge verdict={candidate.verdict} /><ChevronRight className="h-4 w-4" style={{ color: 'var(--text-dim)' }} /></div>
       </button>
@@ -506,12 +510,19 @@ function FrontierRows({ run, ticker, onEvidence }: { run: RecommendationRun; tic
   return <div className="recommendations-frontier-list">{candidates.map(candidate => <button type="button" key={candidate.id} onClick={() => onEvidence(candidate.id)}><span className="font-mono font-semibold">${candidate.strike.toFixed(2)}P · {candidate.dte} DTE</span><span>{compactCandidateLine(candidate)} · {delta(candidate.economics.delta)} Δ · {percent(candidate.economics.moneynessPct, 0)} OTM</span><VerdictBadge verdict={candidate.verdict} /></button>)}</div>;
 }
 
+function TechnicalStateBadge({ assessment }: { assessment: RecommendationBoardRow['underlying']['technicalAssessment'] }) {
+  const state = underlyingTechnicalStatePresentation(assessment.state);
+  const evidence = underlyingTechnicalEvidencePresentation(assessment.evidenceQuality);
+  return <span className="inline-flex rounded px-1.5 py-0.5 text-[10px] font-semibold" data-technical-tone={state.tone} title={`${state.accessibleLabel} ${evidence.accessibleLabel}`} style={{ color: state.color, backgroundColor: state.backgroundColor, border: `1px solid ${state.borderColor}` }}>{state.label}</span>;
+}
+
 function BoardDesktopRow({ row, expanded, onToggle, onEvidence, run }: { row: RecommendationBoardRow; expanded: boolean; onToggle: () => void; onEvidence: (candidateId: string) => void; run: RecommendationRun }) {
   const candidate = row.candidate;
-  return <><tr className="recommendations-board-row" data-hard-fail={row.hardFailed || undefined}><td className="px-1 py-1"><button type="button" className="recommendations-expand-button" onClick={onToggle} aria-expanded={expanded}>{expanded ? <ChevronDown /> : <ChevronRight />}</button></td><td className="px-2 py-1 text-right font-mono">{candidate?.rank ? `#${candidate.rank.ordinal}` : '—'}</td><td className="px-2 py-1 text-left font-mono font-bold">{row.underlying.ticker}</td><td className="px-2 py-1 text-right">{technicalStateLabel(row.underlying.technicalAssessment.state)}</td><td className="px-2 py-1 text-right">{row.underlying.setup}</td><td className="px-2 py-1 text-right">{candidate ? <button type="button" className="font-mono underline-offset-2 hover:underline" onClick={() => onEvidence(candidate.id)}>${candidate.strike.toFixed(2)}P · {candidate.dte}D</button> : '—'}</td><td className="px-2 py-1 text-right">{candidate ? compactCandidateLine(candidate) : row.hardFailed ? 'Rejected before chain scan' : '—'}</td><td className="px-2 py-1 text-right font-mono">{candidate ? delta(candidate.economics.delta) : '—'}</td><td className="px-2 py-1 text-right font-mono">{candidate ? percent(candidate.economics.moneynessPct, 0) : '—'}</td><td className="px-2 py-1 text-right">{candidate ? <><span className="block">{priceDiscoveryLabel(candidate.pricing.discoveryTier)}</span><small>{candidate.pricing.actionability}</small></> : '—'}</td><td className="px-2 py-1 text-right"><VerdictBadge verdict={row.verdict} /></td></tr>{expanded && <tr className="recommendations-frontier-row"><td colSpan={11}><FrontierRows run={run} ticker={row.underlying.ticker} onEvidence={onEvidence} /></td></tr>}</>;
+  return <><tr className="recommendations-board-row" data-hard-fail={row.hardFailed || undefined}><td className="px-1 py-1"><button type="button" className="recommendations-expand-button" onClick={onToggle} aria-expanded={expanded}>{expanded ? <ChevronDown /> : <ChevronRight />}</button></td><td className="px-2 py-1 text-right font-mono">{candidate?.rank ? `#${candidate.rank.ordinal}` : '—'}</td><td className="px-2 py-1 text-left font-mono font-bold">{row.underlying.ticker}</td><td className="px-2 py-1 text-right"><TechnicalStateBadge assessment={row.underlying.technicalAssessment} /></td><td className="px-2 py-1 text-right">{row.underlying.setup}</td><td className="px-2 py-1 text-right">{candidate ? <button type="button" className="font-mono underline-offset-2 hover:underline" onClick={() => onEvidence(candidate.id)}>${candidate.strike.toFixed(2)}P · {candidate.dte}D</button> : '—'}</td><td className="px-2 py-1 text-right">{candidate ? compactCandidateLine(candidate) : row.hardFailed ? 'Rejected before chain scan' : '—'}</td><td className="px-2 py-1 text-right font-mono">{candidate ? delta(candidate.economics.delta) : '—'}</td><td className="px-2 py-1 text-right font-mono" style={{ color: candidate?.canonicalRow.moneynessColor }}>{candidate ? percent(candidate.economics.moneynessPct, 0) : '—'}</td><td className="px-2 py-1 text-right">{candidate ? <><span className="block">{priceDiscoveryLabel(candidate.pricing.discoveryTier)}</span><small>{candidate.pricing.actionability}</small></> : '—'}</td><td className="px-2 py-1 text-right"><VerdictBadge verdict={row.verdict} /></td></tr>{expanded && <tr className="recommendations-frontier-row"><td colSpan={11}><FrontierRows run={run} ticker={row.underlying.ticker} onEvidence={onEvidence} /></td></tr>}</>;
 }
 
 function BoardMobileRow({ row, expanded, onToggle, onEvidence, run }: { row: RecommendationBoardRow; expanded: boolean; onToggle: () => void; onEvidence: (candidateId: string) => void; run: RecommendationRun }) {
   const candidate = row.candidate;
-  return <div className="recommendations-board-mobile-row" data-hard-fail={row.hardFailed || undefined}><button type="button" className="recommendations-board-mobile-row__summary" onClick={onToggle} aria-expanded={expanded}><div><span className="font-mono font-bold">{candidate?.rank ? `#${candidate.rank.ordinal} · ` : ''}{row.underlying.ticker}</span><small>{technicalStateLabel(row.underlying.technicalAssessment.state)} · {row.underlying.setup}</small></div><div className="text-right"><span className="font-mono">{candidate ? `$${candidate.strike.toFixed(2)}P · ${compactCandidateLine(candidate)}` : row.hardFailed ? 'Rejected pre-chain' : 'No valid contract'}</span><small>{candidate ? `${priceDiscoveryLabel(candidate.pricing.discoveryTier)} · ${candidate.pricing.actionability} · ${delta(candidate.economics.delta)} Δ` : `Evidence ${row.underlying.evidenceQuality}`}</small></div><VerdictBadge verdict={row.verdict} /><ChevronRight className={`h-4 w-4 transition-transform ${expanded ? 'rotate-90' : ''}`} /></button>{expanded && <FrontierRows run={run} ticker={row.underlying.ticker} onEvidence={onEvidence} />}</div>;
+  const evidence = underlyingTechnicalEvidencePresentation(row.underlying.technicalAssessment.evidenceQuality);
+  return <div className="recommendations-board-mobile-row" data-hard-fail={row.hardFailed || undefined}><button type="button" className="recommendations-board-mobile-row__summary" onClick={onToggle} aria-expanded={expanded}><div><span className="font-mono font-bold">{candidate?.rank ? `#${candidate.rank.ordinal} · ` : ''}{row.underlying.ticker}</span><small><TechnicalStateBadge assessment={row.underlying.technicalAssessment} /> · {row.underlying.setup}</small></div><div className="text-right"><span className="font-mono">{candidate ? `$${candidate.strike.toFixed(2)}P · ${compactCandidateLine(candidate)}` : row.hardFailed ? 'Rejected pre-chain' : 'No valid contract'}</span><small>{candidate ? `${priceDiscoveryLabel(candidate.pricing.discoveryTier)} · ${candidate.pricing.actionability} · ${delta(candidate.economics.delta)} Δ` : `Evidence ${evidence.label}`}</small></div><VerdictBadge verdict={row.verdict} /><ChevronRight className={`h-4 w-4 transition-transform ${expanded ? 'rotate-90' : ''}`} /></button>{expanded && <FrontierRows run={run} ticker={row.underlying.ticker} onEvidence={onEvidence} />}</div>;
 }

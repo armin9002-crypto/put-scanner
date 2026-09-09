@@ -7,6 +7,7 @@ import { addToWatchlist, removeFromWatchlist, isInWatchlist, makeWatchlistId } f
 import type { WatchlistItem } from '../lib/watchlist';
 import { addPortfolioTrade } from '../lib/portfolioStorage';
 import { calculateDte, calculateMoneyness, calculateVolumeOpenInterestRatio, calculateYieldPercent } from '../lib/optionMetrics';
+import { shortPutMoneynessPresentation, type ShortPutMoneynessState } from '../lib/moneynessPresentation';
 import { resolvePutDeltaWithSource, type PutDeltaSource } from '../lib/putDelta';
 import { entrySnapshotFromExactChain, usMarketDateIso } from '../lib/portfolioEntryDelta';
 import { compareNullableValue } from '../lib/metricValue';
@@ -77,6 +78,7 @@ interface EnrichedPut {
   otmItmPct: number | null;
   otmItmLabel: string;
   otmItmColor: string;
+  moneynessState: ShortPutMoneynessState;
   integrityStatus: OptionIntegrityStatus;
   integrityReasonCodes: OptionIntegrityReasonCode[];
 }
@@ -257,29 +259,15 @@ function MobileOptionCard({
   onSelect,
 }: {
   put: EnrichedPut;
-  moneyness: 'itm' | 'otm' | 'atm';
+  moneyness: ShortPutMoneynessState;
   watched: boolean;
   showVolOI: boolean;
   showNominalYield: boolean;
   onToggleWatchlist: () => void;
   onSelect: () => void;
 }) {
-  const statusColor = moneyness === 'itm'
-    ? 'var(--green)'
-    : moneyness === 'atm'
-      ? 'var(--yellow)'
-      : 'var(--red)';
-  const statusBg = moneyness === 'itm'
-    ? 'rgba(34,197,94,0.14)'
-    : moneyness === 'atm'
-      ? 'rgba(234,179,8,0.14)'
-      : 'rgba(239,68,68,0.14)';
-  const statusBorder = moneyness === 'itm'
-    ? 'rgba(34,197,94,0.26)'
-    : moneyness === 'atm'
-      ? 'rgba(234,179,8,0.26)'
-      : 'rgba(239,68,68,0.26)';
-  const statusLabel = moneyness.toUpperCase();
+  const presentation = shortPutMoneynessPresentation(moneyness);
+  const statusLabel = presentation.label;
 
   return (
     <div
@@ -303,7 +291,8 @@ function MobileOptionCard({
             </span>
             <span
               className="rounded px-1.5 py-0.5 text-[10px] font-bold"
-              style={{ backgroundColor: statusBg, color: statusColor, border: `1px solid ${statusBorder}` }}
+              title={presentation.accessibleLabel}
+              style={{ backgroundColor: presentation.backgroundColor ?? 'var(--surface-alt)', color: presentation.color, border: `1px solid ${presentation.borderColor}` }}
             >
               {statusLabel}
             </span>
@@ -652,6 +641,7 @@ export default function OptionsPage() {
         otmItmPct: moneyness.pct != null ? Math.abs(moneyness.pct) : null,
         otmItmLabel: moneyness.label === '—' ? '' : moneyness.label,
         otmItmColor: moneyness.color,
+        moneynessState: moneyness.state,
         integrityStatus: p.integrity?.status ?? 'clean',
         integrityReasonCodes: p.integrity?.reasonCodes ?? [],
       };
@@ -705,20 +695,6 @@ export default function OptionsPage() {
     return sortDir === 'asc'
       ? <ChevronUp className="w-3 h-3" style={{ color: 'var(--accent)' }} />
       : <ChevronDown className="w-3 h-3" style={{ color: 'var(--accent)' }} />;
-  }
-
-  function getMoneyness(strike: number): 'itm' | 'otm' | 'atm' {
-    if (currentPrice <= 0) return 'otm';
-    const ratio = Math.abs(strike - currentPrice) / currentPrice;
-    if (ratio < 0.005) return 'atm';
-    return strike > currentPrice ? 'itm' : 'otm';
-  }
-
-  function rowBg(strike: number): string {
-    const m = getMoneyness(strike);
-    if (m === 'itm') return 'rgba(34,197,94,0.03)';
-    if (m === 'atm') return 'rgba(234,179,8,0.06)';
-    return 'rgba(239,68,68,0.04)';
   }
 
   // Column definitions
@@ -999,7 +975,7 @@ export default function OptionsPage() {
             {loading && enrichedPuts.length === 0 ? Array.from({ length: 6 }).map((_, index) => <div role="row" key={index} className="mobile-option-chain-row mobile-option-chain-row--skeleton animate-pulse"><span /><span /><span /><span /><span /><span /></div>) : sortedPuts.map(put => {
               const expirationIso = selectedExp ? new Date(selectedExp * 1000).toISOString().split('T')[0] : '';
               const watchlistId = makeWatchlistId(ticker ?? '', expirationIso, put.strike);
-              return <MobileOptionRow key={put.strike} strike={put.strike} last={put.last} lastTradeDate={put.lastTradeDate} bid={put.bid} ask={put.ask} annYieldLast={put.annYieldLast} annYieldBid={put.annYieldBid} annYieldAsk={put.annYieldAsk} moneynessLabel={put.otmItmLabel} moneynessColor={put.otmItmColor} staleText={mobileStaleText(put.lastTradeDate)} integrityStatus={put.integrityStatus} watched={watchlistIds.has(watchlistId)} onToggleWatchlist={() => toggleWatchlist(put)} onSelect={() => setSelectedOption(put)} />;
+              return <MobileOptionRow key={put.strike} strike={put.strike} last={put.last} lastTradeDate={put.lastTradeDate} bid={put.bid} ask={put.ask} annYieldLast={put.annYieldLast} annYieldBid={put.annYieldBid} annYieldAsk={put.annYieldAsk} moneynessLabel={put.otmItmLabel} moneynessColor={put.otmItmColor} moneynessState={put.moneynessState} staleText={mobileStaleText(put.lastTradeDate)} integrityStatus={put.integrityStatus} watched={watchlistIds.has(watchlistId)} onToggleWatchlist={() => toggleWatchlist(put)} onSelect={() => setSelectedOption(put)} />;
             })}
           </div>
         )}
@@ -1396,7 +1372,7 @@ export default function OptionsPage() {
                     <MobileOptionCard
                       key={put.strike}
                       put={put}
-                      moneyness={getMoneyness(put.strike)}
+                      moneyness={put.moneynessState}
                       watched={watchlistIds.has(wlId)}
                       showVolOI={showVolOI}
                       showNominalYield={showNominalYield}
@@ -1497,16 +1473,15 @@ export default function OptionsPage() {
                         dividerInserted = true;
                       }
 
-                      const moneyness = getMoneyness(put.strike);
+                      const moneyness = shortPutMoneynessPresentation(put.moneynessState);
                       const rowIdx = rows.length;
-                      const bg = rowBg(put.strike);
                       const altBg = rowIdx % 2 !== 0 ? 'var(--row-alt)' : 'transparent';
                       const expForId = optionsData?.expirations.find(e => e.date === selectedExp);
                       const expiryIso = expForId ? new Date(expForId.date * 1000).toISOString().split('T')[0] : '';
                       const wlId = makeWatchlistId(ticker ?? '', expiryIso, put.strike);
                       const isWatched = watchlistIds.has(wlId);
                       const isSelected = selectedOption?.strike === put.strike;
-                      const rowBackground = isSelected ? 'var(--accent-bg)' : altBg;
+                      const rowBackground = isSelected ? 'var(--accent-bg)' : moneyness.backgroundColor ?? altBg;
 
                       rows.push(
                         <tr
@@ -1545,19 +1520,11 @@ export default function OptionsPage() {
                               />
                             </button>
                           </td>
-                          <td className="sticky-stack left-0 z-[2] px-1.5 sm:px-2 py-1.5 text-left text-xs whitespace-nowrap border-r w-[88px]" style={{ borderColor: 'var(--border)', backgroundColor: isSelected ? 'var(--accent-bg)' : bg }}>
+                          <td className="sticky-stack left-0 z-[2] px-1.5 sm:px-2 py-1.5 text-left text-xs whitespace-nowrap border-r w-[88px]" style={{ borderColor: 'var(--border)', backgroundColor: isSelected ? 'var(--accent-bg)' : moneyness.backgroundColor ?? altBg }}>
                             <div className="flex items-center gap-1.5">
                               <span className="font-mono font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{formatPrice(put.strike)}</span>
                               {put.integrityStatus === 'invalid' && <span title={`Quote inconsistent: ${put.integrityReasonCodes.join(', ')}`} aria-label="Quote inconsistent"><AlertTriangle className="h-3.5 w-3.5" style={{ color: 'var(--yellow)' }} /></span>}
-                              {moneyness === 'itm' && (
-                                <span className="text-[9px] font-bold px-1 py-0.5 rounded" style={{ backgroundColor: 'rgba(34,197,94,0.15)', color: 'var(--green)', border: '1px solid rgba(34,197,94,0.2)' }}>ITM</span>
-                              )}
-                              {moneyness === 'otm' && (
-                                <span className="text-[9px] font-bold px-1 py-0.5 rounded" style={{ backgroundColor: 'rgba(239,68,68,0.15)', color: 'var(--red)', border: '1px solid rgba(239,68,68,0.2)' }}>OTM</span>
-                              )}
-                              {moneyness === 'atm' && (
-                                <span className="text-[9px] font-bold px-1 py-0.5 rounded" style={{ backgroundColor: 'rgba(234,179,8,0.15)', color: 'var(--yellow)', border: '1px solid rgba(234,179,8,0.2)' }}>ATM</span>
-                              )}
+                              <span className="text-[9px] font-bold px-1 py-0.5 rounded" title={moneyness.accessibleLabel} style={{ backgroundColor: moneyness.backgroundColor ?? 'var(--surface-alt)', color: moneyness.color, border: `1px solid ${moneyness.borderColor}` }}>{moneyness.label}</span>
                             </div>
                           </td>
                           <td className="w-20 px-1.5 py-1.5 text-right font-mono text-xs tabular-nums hidden md:table-cell" title={`${formatLastTradeDate(put.lastTradeDate)}${getOptionLastTradeFreshness(put.lastTradeDate).label ? ` · ${getOptionLastTradeFreshness(put.lastTradeDate).label}` : ''}`} style={{ color: getOptionLastTradeFreshness(put.lastTradeDate).color }}>{formatOptionLastTradeDate(put.lastTradeDate)}</td>
