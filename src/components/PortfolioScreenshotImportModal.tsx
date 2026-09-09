@@ -161,8 +161,8 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
 
   return (
     <div ref={overlayRef} className="fixed inset-0 z-[85]">
-      <button type="button" aria-label="Close import modal" onClick={onClose} className="absolute inset-0 bg-black/55" />
-      <div ref={setPanelRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="portfolio-screenshot-import-title" className="portfolio-import-sheet absolute inset-x-0 bottom-0 max-h-[96dvh] md:inset-x-4 md:top-4 md:bottom-4 md:max-h-none xl:inset-x-1/2 xl:top-[4dvh] xl:bottom-auto xl:w-[min(96vw,1600px)] xl:h-[min(92dvh,1000px)] xl:-translate-x-1/2 rounded-t-2xl md:rounded-lg overflow-hidden p-2 sm:p-4 shadow-2xl flex flex-col outline-none" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
+      <button type="button" aria-label="Close import modal" onClick={onClose} className="motion-backdrop absolute inset-0 bg-black/55" />
+      <div ref={setPanelRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="portfolio-screenshot-import-title" className="motion-modal portfolio-import-sheet absolute inset-x-0 bottom-0 max-h-[96dvh] md:inset-x-4 md:top-4 md:bottom-4 md:max-h-none xl:inset-x-1/2 xl:top-[4dvh] xl:bottom-auto xl:w-[min(96vw,1600px)] xl:h-[min(92dvh,1000px)] xl:-translate-x-1/2 rounded-t-2xl md:rounded-lg overflow-hidden p-2 sm:p-4 shadow-2xl flex flex-col outline-none" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
         <div className="flex items-start justify-between gap-3 mb-3 flex-shrink-0">
           <div className="min-w-0">
             <h2 id="portfolio-screenshot-import-title" className="text-lg font-bold" style={{ color: 'var(--text)' }}>Import Screenshot</h2>

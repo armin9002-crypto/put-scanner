@@ -1026,7 +1026,7 @@ export default function ScreenerPage() {
             <div className="mt-3">
               <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--border)' }}>
                 <div
-                  className="h-full rounded-full transition-all duration-300"
+                  className="h-full rounded-full"
                   style={{ width: `${progressPct}%`, backgroundColor: 'var(--accent)' }}
                 />
               </div>

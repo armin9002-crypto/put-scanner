@@ -4577,7 +4577,7 @@ td {
   min-height: 2px;
   transform: translateX(-50%);
   border-radius: 3px 3px 0 0;
-  transition: opacity 120ms ease;
+  transition: opacity var(--transition-ui);
 }
 
 .portfolio-realized-pnl-chart__bar:hover {
@@ -5712,10 +5712,10 @@ input[type="number"] {
 
 /* Shared microinteractions: individual translate/scale preserve layout transforms.
    Rows, tab indicators, sticky headers and static analytical surfaces stay still. */
-:is(.button-primary, .button-secondary, .button-ghost, .icon-button, button.pressable, a.pressable, .mobile-sheet-action):not([role="tab"]):not([role="row"]):not(.mobile-etf-row, .mobile-option-row, .mobile-option-card, .mobile-segmented__item):not(th *) {
+:is(.button-primary, .button-secondary, .button-ghost, .icon-button, button.pressable, a.pressable, .mobile-sheet-action):not([role="tab"]):not([role="row"]):not(.mobile-etf-row, .mobile-option-row, .mobile-option-card, .mobile-segmented__item, .mobile-pulse-list-item, .drawer-quote-selector > button):not(th *) {
   transition: color var(--transition-ui), background-color var(--transition-ui), border-color var(--transition-ui), opacity var(--transition-ui), translate var(--motion-fast) var(--ease-emphasized), scale var(--motion-instant) var(--ease-emphasized);
 }
-:is(.app-nav-item, .app-utility-button, [role="tab"], .mobile-segmented__item, .recommendation-card__summary, .mobile-option-card, .mobile-option-row, .mobile-etf-row, .portfolio-priority-item, th button) {
+:is(.app-nav-item, .app-utility-button, [role="tab"], .mobile-segmented__item, .mobile-pulse-list-item, .drawer-quote-selector > button, .recommendation-card__summary, .mobile-option-card, .mobile-option-row, .mobile-etf-row, .portfolio-priority-item, th button) {
   transition: color var(--transition-ui), background-color var(--transition-ui), border-color var(--transition-ui), opacity var(--transition-ui);
 }
 :is(.instrument-card, .scanner-market-card, .pulse-heatmap-tile) {
@@ -5723,7 +5723,7 @@ input[type="number"] {
 }
 @media (prefers-reduced-motion: no-preference) {
   @media (hover: hover) and (pointer: fine) {
-    :is(.button-primary, .button-secondary, .button-ghost, .icon-button, button.pressable, a.pressable, .mobile-sheet-action):not([role="tab"]):not([role="row"]):not(.mobile-etf-row, .mobile-option-row, .mobile-option-card, .mobile-segmented__item):not(th *):not(:disabled):not([aria-disabled="true"]):hover {
+    :is(.button-primary, .button-secondary, .button-ghost, .icon-button, button.pressable, a.pressable, .mobile-sheet-action):not([role="tab"]):not([role="row"]):not(.mobile-etf-row, .mobile-option-row, .mobile-option-card, .mobile-segmented__item, .mobile-pulse-list-item, .drawer-quote-selector > button):not(th *):not(:disabled):not([aria-disabled="true"]):hover {
       translate: 0 -2px;
     }
     :is(.instrument-card, .scanner-market-card, .pulse-heatmap-tile):hover {
@@ -5732,7 +5732,7 @@ input[type="number"] {
       box-shadow: 0 6px 16px color-mix(in srgb, var(--bg) 28%, transparent);
     }
   }
-  :is(.button-primary, .button-secondary, .button-ghost, .icon-button, button.pressable, a.pressable, .mobile-sheet-action):not([role="tab"]):not([role="row"]):not(.mobile-etf-row, .mobile-option-row, .mobile-option-card, .mobile-segmented__item):not(th *):not(:disabled):not([aria-disabled="true"]):active {
+  :is(.button-primary, .button-secondary, .button-ghost, .icon-button, button.pressable, a.pressable, .mobile-sheet-action):not([role="tab"]):not([role="row"]):not(.mobile-etf-row, .mobile-option-row, .mobile-option-card, .mobile-segmented__item, .mobile-pulse-list-item, .drawer-quote-selector > button):not(th *):not(:disabled):not([aria-disabled="true"]):active {
     translate: 0 0;
     scale: .985;
     /* A short touch must reach the pressed state; release uses motion-instant. */

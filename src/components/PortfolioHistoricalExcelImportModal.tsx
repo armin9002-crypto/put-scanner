@@ -195,8 +195,8 @@ export default function PortfolioHistoricalExcelImportModal({ trades, markBasis,
   });
 
   return (
-    <div ref={overlayRef} className="fixed inset-0 z-[110] flex items-end justify-center bg-black/75 p-0 md:items-center md:p-3" role="presentation" onMouseDown={event => { if (event.currentTarget === event.target && busy === null) onClose(); }}>
-      <section ref={setPanelRef} tabIndex={-1} className="flex max-h-[96dvh] w-full flex-col overflow-hidden rounded-t-2xl outline-none shadow-2xl md:max-w-[98vw] md:rounded-2xl" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }} role="dialog" aria-modal="true" aria-labelledby="historical-excel-title">
+    <div ref={overlayRef} className="motion-backdrop-surface fixed inset-0 z-[110] flex items-end justify-center bg-black/75 p-0 md:items-center md:p-3" role="presentation" onMouseDown={event => { if (event.currentTarget === event.target && busy === null) onClose(); }}>
+      <section ref={setPanelRef} tabIndex={-1} className="motion-modal flex max-h-[96dvh] w-full flex-col overflow-hidden rounded-t-2xl outline-none shadow-2xl md:max-w-[98vw] md:rounded-2xl" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }} role="dialog" aria-modal="true" aria-labelledby="historical-excel-title">
         <header className="flex flex-none items-start justify-between gap-3 border-b px-4 py-3 md:px-5" style={{ borderColor: 'var(--border)' }}>
           <div className="min-w-0">
             <div className="flex items-center gap-2"><FileSpreadsheet className="h-5 w-5" style={{ color: 'var(--accent-light)' }} /><h2 id="historical-excel-title" className="text-base font-semibold" style={{ color: 'var(--text)' }}>Import / Export Historical Excel</h2></div>
