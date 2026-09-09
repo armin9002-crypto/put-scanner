@@ -14,17 +14,16 @@ import { formatCurrency, formatNumber, formatPercent, normalizeTimestampMs } fro
 import { useResponsiveMode } from '../lib/responsive';
 import {
   OPTION_QUOTE_DISPLAY_LABELS,
-  calculateExecutableMidPrice,
+  buildOptionDrawerQuoteState,
   executableOptionPrice,
   formatOptionQuoteValue,
   orderedOptionQuoteEntries,
-  selectDefaultSoldPrice,
   type OptionQuoteDisplayField,
   type OptionSoldPriceBasis,
 } from '../lib/optionQuoteDisplay';
 import { shortPutMoneynessPresentation, type ShortPutMoneynessState } from '../lib/moneynessPresentation';
 import { CALCULATED_PUT_DELTA_MODEL, type PutDeltaSource } from '../lib/putDelta';
-import { exactOptionTradeSessionAge } from '../lib/usMarketCalendar';
+import { getOptionLastTradeFreshness } from '../lib/optionLastTradeFreshness';
 import { useBlockingOverlayBehavior } from '../lib/blockingOverlay';
 import type { OptionIntegrityReasonCode, OptionIntegrityStatus } from '../lib/types';
 
@@ -56,6 +55,8 @@ export interface OptionDetail {
   otmItmState?: ShortPutMoneynessState;
   integrityStatus?: OptionIntegrityStatus;
   integrityReasonCodes?: OptionIntegrityReasonCode[];
+  /** Defensive provenance marker; valuation-only Last is omitted from quote authority. */
+  lastFallbackOnly?: boolean;
 }
 
 export interface AddToPortfolioDraft {
@@ -73,6 +74,8 @@ interface OptionDetailDrawerProps {
   underlyingPrice: number | null;
   onClose: () => void;
   onAddToPortfolio?: (draft: AddToPortfolioDraft) => void;
+  /** Visual-only mobile arrangement for the Recommendations route. */
+  mobileLayout?: 'recommendations';
 }
 
 function formatPlainNumber(value: number | null | undefined, decimals = 2): string {
@@ -104,20 +107,24 @@ function formatTradeDate(timestamp: number): string {
   });
 }
 
-function getLastTradeDetail(value: number | null | undefined): { trade: string; date: string; age: string; warning: string | null; color?: string } {
+function getLastTradeDetail(
+  value: number | null | undefined,
+  freshness = getOptionLastTradeFreshness(value),
+): { trade: string; date: string; age: string; warning: string | null; color?: string } {
   const timestamp = normalizeTimestampMs(value);
   if (timestamp == null) return { trade: '\u2014', date: '\u2014', age: '\u2014', warning: null };
 
-  const sessionAge = exactOptionTradeSessionAge(value, new Date());
-  if (sessionAge == null) return { trade: '\u2014', date: '\u2014', age: '\u2014', warning: null };
   const date = formatTradeDate(timestamp);
-  const age = sessionAge === 0 ? '0 sessions' : `${sessionAge} session${sessionAge === 1 ? '' : 's'} ago`;
   const trade = `${date} ${formatTradeTime(timestamp)}`;
-  if (sessionAge <= 2) return { trade, date, age, warning: null, color: sessionAge === 0 ? 'var(--green)' : 'var(--text-muted)' };
-  if (sessionAge <= 7) {
-    return { trade, date, age: `${age} - Stale`, warning: 'Last may be stale; check Last Trade Date.', color: 'var(--yellow)' };
+  if (freshness.ageSessions == null) {
+    return { trade, date, age: 'Age unavailable', warning: 'Last trade age unavailable; use Last as a reference only.', color: 'var(--yellow)' };
   }
-  return { trade, date, age: `${age} - Very Stale`, warning: 'Last trade is very stale; use bid/ask with extra care.', color: 'var(--red)' };
+  const age = freshness.ageSessions === 0 ? '0 sessions' : `${freshness.ageSessions} session${freshness.ageSessions === 1 ? '' : 's'} ago`;
+  if (freshness.freshness === 'recent') return { trade, date, age, warning: null, color: freshness.ageSessions === 0 ? 'var(--green)' : 'var(--text-muted)' };
+  if (freshness.freshness === 'stale') {
+    return { trade, date, age: `${age} - Stale`, warning: 'Last may be stale; use it only as an explicit reference.', color: freshness.color };
+  }
+  return { trade, date, age: `${age} - Very Stale`, warning: 'Last trade is very stale; use it only as an explicit reference.', color: freshness.color };
 }
 
 function deltaSourceLabel(option: Pick<OptionDetail, 'deltaSource' | 'deltaModelVersion'>): string {
@@ -162,15 +169,6 @@ function MobileMetric({ label, value, color }: { label: string; value: string; c
   );
 }
 
-function selectLegacyRecommendationSoldPrice(option: OptionDetail) {
-  if (option.integrityStatus === 'invalid') return null;
-  if (isFiniteNumber(option.bid) && option.bid >= 0) return { basis: 'bid' as const, value: option.bid };
-  const mid = calculateExecutableMidPrice(option);
-  if (mid != null) return { basis: 'mid' as const, value: mid };
-  const last = executableOptionPrice(option.last);
-  return last != null ? { basis: 'last' as const, value: last } : null;
-}
-
 export default function OptionDetailDrawer({
   option,
   ticker,
@@ -179,6 +177,7 @@ export default function OptionDetailDrawer({
   underlyingPrice,
   onClose,
   onAddToPortfolio,
+  mobileLayout,
 }: OptionDetailDrawerProps) {
   const { isPhone } = useResponsiveMode();
   const titleId = useId();
@@ -188,8 +187,15 @@ export default function OptionDetailDrawer({
   const moneyness = option?.otmItmState ? shortPutMoneynessPresentation(option.otmItmState) : null;
   const moneynessLabel = option?.otmItmLabel || moneyness?.label || '—';
   const moneynessColor = moneyness?.color ?? option?.otmItmColor;
-  const preserveRecommendationContract = window.location.pathname === '/recommendations';
-  const defaultPrice = useMemo(() => option ? option.integrityStatus === 'invalid' ? null : preserveRecommendationContract ? selectLegacyRecommendationSoldPrice(option) : selectDefaultSoldPrice(option) : null, [option, preserveRecommendationContract]);
+  const quoteState = useMemo(() => option ? buildOptionDrawerQuoteState({
+    last: option.last,
+    lastTradeDate: option.lastFallbackOnly ? null : option.lastTradeDate,
+    bid: option.bid,
+    ask: option.ask,
+    integrityStatus: option.integrityStatus,
+    lastFallbackOnly: option.lastFallbackOnly,
+  }) : null, [option]);
+  const defaultPrice = quoteState?.defaultSoldPrice ?? null;
   const [contracts, setContracts] = useState('1');
   const [soldPrice, setSoldPrice] = useState('');
   const [soldPriceBasis, setSoldPriceBasis] = useState<OptionSoldPriceBasis | null>(null);
@@ -209,20 +215,23 @@ export default function OptionDetailDrawer({
 
   if (!option) return null;
 
-  const quoteIntegrityInvalid = option.integrityStatus === 'invalid';
+  const quoteIntegrityInvalid = quoteState?.integrityStatus === 'invalid';
+  const quoteIntegrityDegraded = quoteState?.integrityStatus === 'degraded';
   const bid = option.bid;
   const ask = option.ask;
-  const executableBid = quoteIntegrityInvalid ? null : executableOptionPrice(bid);
-  const executableAsk = quoteIntegrityInvalid ? null : executableOptionPrice(ask);
-  const mid = quoteIntegrityInvalid ? null : calculateExecutableMidPrice(option);
-  const spread = calculateBidAskSpread(preserveRecommendationContract ? bid : executableBid, preserveRecommendationContract ? ask : executableAsk);
-  const spreadPct = calculateBidAskSpreadPercent(preserveRecommendationContract ? bid : executableBid, preserveRecommendationContract ? ask : executableAsk);
-  const lastTradeInfo = getLastTradeDetail(option.lastTradeDate);
+  const displayLast = option.lastFallbackOnly ? null : option.last;
+  const displayLastTradeDate = option.lastFallbackOnly ? null : option.lastTradeDate;
+  const executableBid = quoteState?.trustedBid ?? null;
+  const executableAsk = quoteState?.trustedAsk ?? null;
+  const mid = quoteState?.mid ?? null;
+  const spread = calculateBidAskSpread(executableBid, executableAsk);
+  const spreadPct = calculateBidAskSpreadPercent(executableBid, executableAsk);
+  const lastTradeInfo = getLastTradeDetail(displayLastTradeDate, quoteState?.lastTradeFreshness);
   const compactLastTradeAge = lastTradeInfo.age.replace(/ - (?:Very )?Stale$/, '');
-  const usableLast = quoteIntegrityInvalid ? null : executableOptionPrice(option.last);
+  const usableLast = quoteState?.trustedLast ?? null;
 
   const parsedSoldPrice = soldPrice.trim() === '' ? null : Number(soldPrice);
-  const validSoldPrice = isFiniteNumber(parsedSoldPrice) && (preserveRecommendationContract ? parsedSoldPrice >= 0 : parsedSoldPrice > 0) ? parsedSoldPrice : null;
+  const validSoldPrice = isFiniteNumber(parsedSoldPrice) && parsedSoldPrice > 0 ? parsedSoldPrice : null;
   const activeSoldPrice = validSoldPrice;
   const distanceToStrike = isFiniteNumber(underlyingPrice) && underlyingPrice > 0
     ? (underlyingPrice - option.strike) / underlyingPrice
@@ -243,19 +252,25 @@ export default function OptionDetailDrawer({
 
   const setSoldPriceFromQuote = (basis: OptionQuoteDisplayField, value: number | null | undefined) => {
     if (quoteIntegrityInvalid) return;
-    if (preserveRecommendationContract && isFiniteNumber(value) && value >= 0) {
-      setSoldPrice(value.toFixed(2));
-      setSoldPriceBasis(basis);
-      return;
-    }
     const executable = executableOptionPrice(value);
     if (executable == null) return;
     setSoldPrice(executable.toFixed(2));
     setSoldPriceBasis(basis);
   };
 
-  if (isPhone && preserveRecommendationContract) {
-    const quoteOptions = orderedOptionQuoteEntries({ last: usableLast, bid, mid, ask });
+  const selectedBasisWarning = soldPriceBasis === 'last' ? lastTradeInfo.warning ?? (usableLast != null ? 'Last trade age unavailable; use it only as an explicit reference.' : null)
+    : soldPriceBasis === 'manual' ? 'Manual price · hypothetical calculator basis.'
+    : null;
+  const selectedBasisWarningColor = soldPriceBasis === 'last' ? lastTradeInfo.color ?? 'var(--yellow)' : 'var(--text-muted)';
+
+  const integrityWarning = quoteIntegrityInvalid
+    ? 'Quote inconsistent · raw provider prices remain visible for audit; executable metrics are unavailable.'
+    : quoteIntegrityDegraded
+      ? 'Quote integrity degraded · usable evidence remains available with caution.'
+      : null;
+
+  if (isPhone && mobileLayout === 'recommendations') {
+    const quoteOptions = orderedOptionQuoteEntries({ last: usableLast, bid: executableBid, mid, ask: executableAsk });
     return (
       <div ref={overlayRef} className="fixed inset-0 z-[120] option-drawer-mobile">
         <div ref={setPanelRef} className="mobile-trade-sheet absolute inset-0 overflow-y-auto outline-none" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} style={{ backgroundColor: 'var(--bg)' }}>
@@ -271,18 +286,19 @@ export default function OptionDetailDrawer({
           </header>
 
           <div className="space-y-5 px-4 py-4">
-            {quoteIntegrityInvalid && <p role="status" className="rounded-lg border px-3 py-2 text-xs" style={{ color: 'var(--yellow)', borderColor: 'var(--border)', backgroundColor: 'var(--surface-alt)' }}>Quote inconsistent · raw provider prices are shown for audit; executable metrics are unavailable.</p>}
+            {integrityWarning && <p role="status" className="rounded-lg border px-3 py-2 text-xs" style={{ color: 'var(--yellow)', borderColor: 'var(--border)', backgroundColor: 'var(--surface-alt)' }}>{integrityWarning}</p>}
             <section>
               <div className="mobile-segmented drawer-quote-selector" role="group" aria-label="Select sold price quote">
                 {quoteOptions.map(({ field, label, value }) => {
-                  const selected = isFiniteNumber(value) && activeSoldPrice === value;
+                  const selected = field === soldPriceBasis && isFiniteNumber(value) && activeSoldPrice === value;
                   return <button type="button" key={field} disabled={!isFiniteNumber(value)} onClick={() => setSoldPriceFromQuote(field, value)} className="pressable mobile-segmented__item disabled:opacity-35" data-selected={selected ? 'true' : 'false'} aria-pressed={selected}>{label}</button>;
                 })}
               </div>
               <div className="mt-3 flex items-end justify-between border-b pb-3" style={{ borderColor: 'var(--border)' }}>
-                <span className="text-[13px]" style={{ color: 'var(--text-muted)' }}>Selected price</span>
+                <span className="text-[13px]" style={{ color: 'var(--text-muted)' }}>{activeSoldPrice == null ? 'No executable quote' : `Selected price · ${soldPriceBasis === 'manual' ? 'Manual' : soldPriceBasis ? OPTION_QUOTE_DISPLAY_LABELS[soldPriceBasis] : 'Quote'}`}</span>
                 <span className="font-mono text-[26px] font-semibold tabular-nums" style={{ color: 'var(--accent-light)' }}>{formatCurrency(activeSoldPrice)}</span>
               </div>
+              {selectedBasisWarning && <p className="mt-2 text-[11px] leading-4" style={{ color: selectedBasisWarningColor }}>{selectedBasisWarning}</p>}
               <div className="mt-1 divide-y" style={{ borderColor: 'var(--border)' }}>
                 <DetailRow label="Nominal Yield" value={formatPercent(securedCashYield)} color="var(--accent-light)" />
                 <DetailRow label="Annualized Yield" value={formatPercent(annualizedSecuredCashYield)} color="var(--green)" />
@@ -299,7 +315,7 @@ export default function OptionDetailDrawer({
               <h3 className="mb-3 text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Position Calculator</h3>
               <div className="grid grid-cols-2 gap-3">
                 <label><span className="mobile-sheet-label">Contracts</span><input type="text" inputMode="numeric" value={contracts} onChange={event => /^\d*$/.test(event.target.value) && setContracts(event.target.value)} onBlur={() => { const value = Number(contracts); setContracts(Number.isInteger(value) && value >= 1 ? String(value) : '1'); }} className="mobile-control-field w-full font-mono" /></label>
-                <label><span className="mobile-sheet-label">Sold Price</span><input type="number" inputMode="decimal" min={0} step="0.01" value={soldPrice} onChange={event => { const next = event.target.value; if (next === '' || Number(next) >= 0) setSoldPrice(next); }} className="mobile-control-field w-full font-mono" /></label>
+                <label><span className="mobile-sheet-label">Sold Price</span><input type="number" inputMode="decimal" min={0.01} step="0.01" value={soldPrice} onChange={event => { const next = event.target.value; if (next === '' || Number(next) >= 0) { setSoldPrice(next); setSoldPriceBasis(next === '' ? null : 'manual'); } }} className="mobile-control-field w-full font-mono" /></label>
               </div>
               <div className="mt-3 divide-y" style={{ borderColor: 'var(--border)' }}>
                 <DetailRow label="Premium" value={formatCurrency(positionMetrics.totalPremium)} color="var(--green)" />
@@ -312,7 +328,7 @@ export default function OptionDetailDrawer({
             <details className="border-t pt-3" style={{ borderColor: 'var(--border)' }}>
               <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Market details <span style={{ color: 'var(--text-dim)' }}>+</span></summary>
               <div className="divide-y pb-4" style={{ borderColor: 'var(--border)' }}>
-                {orderedOptionQuoteEntries({ last: option.last, bid, mid, ask }).map(({ field, label, value }) => <DetailRow key={field} label={label} value={formatCurrency(value)} />)}
+              {orderedOptionQuoteEntries({ last: displayLast, bid, mid, ask }).map(({ field, label, value }) => <DetailRow key={field} label={label} value={formatOptionQuoteValue(field, value, price => formatCurrency(price))} />)}
                 <DetailRow label="Last Trade Date" value={lastTradeInfo.date} color={lastTradeInfo.color} />
                 <DetailRow label="Last Trade Age" value={lastTradeInfo.age} color={lastTradeInfo.color} />
                 <DetailRow label="Spread" value={`${formatCurrency(spread)} · ${formatPercent(spreadPct)}`} />
@@ -347,7 +363,7 @@ export default function OptionDetailDrawer({
           </header>
 
           <div className="space-y-4 px-4 py-3">
-            {quoteIntegrityInvalid && <p role="status" className="rounded-lg border px-3 py-2 text-xs" style={{ color: 'var(--yellow)', borderColor: 'var(--border)', backgroundColor: 'var(--surface-alt)' }}>Quote inconsistent · raw provider prices are shown for audit; executable metrics are unavailable.</p>}
+            {integrityWarning && <p role="status" className="rounded-lg border px-3 py-2 text-xs" style={{ color: 'var(--yellow)', borderColor: 'var(--border)', backgroundColor: 'var(--surface-alt)' }}>{integrityWarning}</p>}
             <section className="option-detail-mobile-group" aria-labelledby="option-price-execution-heading">
               <h3 id="option-price-execution-heading">Price / Execution</h3>
               <div className="mobile-segmented drawer-quote-selector" role="group" aria-label="Select sold price quote">
@@ -360,6 +376,7 @@ export default function OptionDetailDrawer({
                 <span style={{ color: 'var(--text-muted)' }}>{activeSoldPrice == null ? 'No executable quote' : `Selected price · ${soldPriceBasis === 'manual' ? 'Manual' : soldPriceBasis ? OPTION_QUOTE_DISPLAY_LABELS[soldPriceBasis] : 'Quote'}`}</span>
                 <strong className="font-mono tabular-nums" style={{ color: activeSoldPrice == null ? 'var(--text-dim)' : 'var(--accent-light)' }}>{formatCurrency(activeSoldPrice)}</strong>
               </div>
+              {selectedBasisWarning && <p className="mt-2 text-[11px] leading-4" style={{ color: selectedBasisWarningColor }}>{selectedBasisWarning}</p>}
               <div className="option-detail-mobile-metric-grid option-detail-mobile-metric-grid--quotes mt-2">
                 <MobileMetric label="Bid" value={formatOptionQuoteValue('bid', bid, value => formatCurrency(value))} />
                 <MobileMetric label="Ask" value={formatOptionQuoteValue('ask', ask, value => formatCurrency(value))} />
@@ -389,7 +406,7 @@ export default function OptionDetailDrawer({
             <section className="option-detail-mobile-group" aria-labelledby="option-market-liquidity-heading">
               <h3 id="option-market-liquidity-heading">Market / Liquidity</h3>
               <div className="option-detail-mobile-metric-grid option-detail-mobile-metric-grid--market">
-                <MobileMetric label="Last" value={formatOptionQuoteValue('last', option.last, value => formatCurrency(value))} />
+                <MobileMetric label="Last" value={formatOptionQuoteValue('last', displayLast, value => formatCurrency(value))} />
                 <MobileMetric label="Age" value={compactLastTradeAge} color={lastTradeInfo.color} />
                 <MobileMetric label="Vol" value={formatInteger(option.volume)} />
                 <MobileMetric label="OI" value={formatInteger(option.openInterest)} />
@@ -414,7 +431,7 @@ export default function OptionDetailDrawer({
             <details className="border-t pt-3" style={{ borderColor: 'var(--border)' }}>
               <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Market details <span style={{ color: 'var(--text-dim)' }}>+</span></summary>
               <div className="divide-y pb-4" style={{ borderColor: 'var(--border)' }}>
-                {orderedOptionQuoteEntries({ last: option.last, bid, mid, ask }).map(({ field, label, value }) => <DetailRow key={field} label={label} value={formatOptionQuoteValue(field, value, price => formatCurrency(price))} />)}
+                {orderedOptionQuoteEntries({ last: displayLast, bid, mid, ask }).map(({ field, label, value }) => <DetailRow key={field} label={label} value={formatOptionQuoteValue(field, value, price => formatCurrency(price))} />)}
                 <DetailRow label="Last Trade Date" value={lastTradeInfo.date} color={lastTradeInfo.color} />
                 <DetailRow label="Last Trade Age" value={lastTradeInfo.age} color={lastTradeInfo.color} />
                 <DetailRow label="Spread" value={`${formatCurrency(spread)} · ${formatPercent(spreadPct)}`} />
@@ -469,7 +486,7 @@ export default function OptionDetailDrawer({
         </div>
 
         <div className="drawer-key-figures grid grid-cols-1 min-[390px]:grid-cols-2 gap-2 mb-3 min-w-0">
-          {quoteIntegrityInvalid && <div role="status" className="col-span-full rounded-lg border px-3 py-2 text-xs" style={{ color: 'var(--yellow)', borderColor: 'var(--border)', backgroundColor: 'var(--surface-alt)' }}>Quote inconsistent · raw provider prices remain visible; executable metrics are unavailable.</div>}
+          {integrityWarning && <div role="status" className="col-span-full rounded-lg border px-3 py-2 text-xs" style={{ color: 'var(--yellow)', borderColor: 'var(--border)', backgroundColor: 'var(--surface-alt)' }}>{integrityWarning}</div>}
           <MetricCard label="Option Price" value={formatCurrency(activeSoldPrice)} color="var(--accent-light)" />
           <MetricCard label="Breakeven" value={formatCurrency(topBreakeven)} />
           <MetricCard label="Downside Cushion" value={formatPercent(positionMetrics.downsideCushion)} color={isFiniteNumber(positionMetrics.downsideCushion) && positionMetrics.downsideCushion >= 0 ? 'var(--green)' : 'var(--red)'} />
@@ -503,7 +520,7 @@ export default function OptionDetailDrawer({
                 <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Sold Price</span>
                 <input
                   type="number"
-                  min={preserveRecommendationContract ? 0 : 0.01}
+                  min={0.01}
                   step="0.01"
                   inputMode="decimal"
                   value={soldPrice}
@@ -520,21 +537,19 @@ export default function OptionDetailDrawer({
               </label>
             </div>
             <div className="grid grid-cols-4 gap-1 mb-3 rounded-xl p-1 drawer-quote-selector" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }} role="group" aria-label="Use market quote as sold price">
-              {orderedOptionQuoteEntries({ last: usableLast, bid: preserveRecommendationContract ? bid : executableBid, mid, ask: preserveRecommendationContract ? ask : executableAsk }).map(({ field, label, value }) => (
+              {orderedOptionQuoteEntries({ last: usableLast, bid: executableBid, mid, ask: executableAsk }).map(({ field, label, value }) => (
                 <button
                   key={field}
                   onClick={() => setSoldPriceFromQuote(field, value)}
                   disabled={!isFiniteNumber(value)}
                   className="pressable min-h-[44px] rounded-lg px-2 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-[40px]"
-                  style={{ backgroundColor: (preserveRecommendationContract ? activeSoldPrice === value : soldPriceBasis === field && activeSoldPrice === value) ? 'var(--accent)' : 'transparent', color: (preserveRecommendationContract ? activeSoldPrice === value : soldPriceBasis === field && activeSoldPrice === value) ? 'white' : 'var(--accent-light)' }}
+                  style={{ backgroundColor: soldPriceBasis === field && activeSoldPrice === value ? 'var(--accent)' : 'transparent', color: soldPriceBasis === field && activeSoldPrice === value ? 'white' : 'var(--accent-light)' }}
                 >
                   {label}
                 </button>
               ))}
             </div>
-            <p className="mb-3 text-[11px] leading-4" style={{ color: lastTradeInfo.warning ? lastTradeInfo.color : 'var(--text-dim)' }}>
-              Last may be stale; check Last Trade Date{lastTradeInfo.warning ? ` - ${lastTradeInfo.warning}` : '.'}
-            </p>
+            {selectedBasisWarning && <p className="mb-3 text-[11px] leading-4" style={{ color: selectedBasisWarningColor }}>{selectedBasisWarning}</p>}
             {onAddToPortfolio && (
               <button
                 type="button"
@@ -563,7 +578,7 @@ export default function OptionDetailDrawer({
           </Section>
 
           <Section title="Market Quote">
-            {orderedOptionQuoteEntries({ last: option.last, bid, mid, ask }).map(({ field, label, value }) => <DetailRow key={field} label={label} value={preserveRecommendationContract ? formatCurrency(value) : formatOptionQuoteValue(field, value, price => formatCurrency(price))} />)}
+            {orderedOptionQuoteEntries({ last: displayLast, bid, mid, ask }).map(({ field, label, value }) => <DetailRow key={field} label={label} value={formatOptionQuoteValue(field, value, price => formatCurrency(price))} />)}
             <DetailRow label="Last Trade Date" value={lastTradeInfo.date} color={lastTradeInfo.color} />
             <DetailRow label="Last Trade" value={lastTradeInfo.trade} color={lastTradeInfo.color} />
             <DetailRow label="Last Trade Age" value={lastTradeInfo.age} color={lastTradeInfo.color} />

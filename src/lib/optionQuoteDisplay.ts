@@ -1,4 +1,7 @@
 import { PUT_METRIC_CONTRACT } from './putMetricContract.ts';
+import { getOptionLastTradeFreshness, type OptionLastTradeFreshnessPresentation } from './optionLastTradeFreshness.ts';
+import type { MarketDateInput } from './usMarketCalendar.ts';
+import type { OptionIntegrityStatus } from './types.ts';
 
 export const OPTION_QUOTE_DISPLAY_ORDER = ['last', 'bid', 'mid', 'ask'] as const;
 export const OPTION_QUOTE_TABLE_DISPLAY_ORDER = ['last', 'bid', 'ask'] as const;
@@ -28,6 +31,29 @@ export type OptionSoldPriceBasis = OptionQuoteDisplayField | 'manual';
 export interface OptionSoldPriceSelection {
   basis: Exclude<OptionSoldPriceBasis, 'ask' | 'manual'>;
   value: number;
+}
+
+export interface OptionDrawerQuoteInput {
+  last: number | null | undefined;
+  lastTradeDate?: MarketDateInput | null;
+  bid: number | null | undefined;
+  ask: number | null | undefined;
+  integrityStatus?: OptionIntegrityStatus;
+  /** Valuation-only Portfolio Last must never enter generic Drawer quote authority. */
+  lastFallbackOnly?: boolean;
+}
+
+export interface OptionDrawerQuoteState {
+  rawLast: number | null | undefined;
+  rawBid: number | null | undefined;
+  rawAsk: number | null | undefined;
+  trustedLast: number | null;
+  trustedBid: number | null;
+  trustedAsk: number | null;
+  mid: number | null;
+  lastTradeFreshness: OptionLastTradeFreshnessPresentation;
+  defaultSoldPrice: OptionSoldPriceSelection | null;
+  integrityStatus?: OptionIntegrityStatus;
 }
 
 export const OPTION_QUOTE_DISPLAY_LABELS: Record<OptionQuoteDisplayField, string> = {
@@ -88,16 +114,57 @@ export function calculateExecutableMidPrice({
   return executableBid != null && executableAsk != null ? (executableBid + executableAsk) / 2 : null;
 }
 
-/** Preserve the existing Bid -> Mid -> Last default order without selecting a zero quote. */
+/**
+ * Select the canonical automatic sold-price basis. Last is automatic only when
+ * its exact trade is recent; stale, future-invalid, and undated Last remain
+ * available as explicit reference evidence but never become the default.
+ */
 export function selectDefaultSoldPrice(
-  quote: Pick<Record<OptionQuoteDisplayField, number | null | undefined>, 'last' | 'bid' | 'ask'>,
+  quote: Pick<Record<OptionQuoteDisplayField, number | null | undefined>, 'last' | 'bid' | 'ask'> & Pick<OptionDrawerQuoteInput, 'lastTradeDate' | 'integrityStatus' | 'lastFallbackOnly'>,
+  now: MarketDateInput = new Date(),
 ): OptionSoldPriceSelection | null {
+  if (quote.integrityStatus === 'invalid' || quote.lastFallbackOnly) return null;
   const bid = executableOptionPrice(quote.bid);
   if (bid != null) return { basis: 'bid', value: bid };
   const mid = calculateExecutableMidPrice(quote);
   if (mid != null) return { basis: 'mid', value: mid };
   const last = executableOptionPrice(quote.last);
-  return last != null ? { basis: 'last', value: last } : null;
+  const freshness = getOptionLastTradeFreshness(quote.lastTradeDate, now);
+  return last != null && freshness.freshness === 'recent' ? { basis: 'last', value: last } : null;
+}
+
+/** Build the small source-neutral quote contract consumed by OptionDetailDrawer. */
+export function buildOptionDrawerQuoteState(
+  input: OptionDrawerQuoteInput,
+  now: MarketDateInput = new Date(),
+): OptionDrawerQuoteState {
+  const integrityAllowsEconomics = input.integrityStatus !== 'invalid';
+  const trustedBid = integrityAllowsEconomics ? executableOptionPrice(input.bid) : null;
+  const trustedAsk = integrityAllowsEconomics ? executableOptionPrice(input.ask) : null;
+  const trustedLast = integrityAllowsEconomics && !input.lastFallbackOnly ? executableOptionPrice(input.last) : null;
+  const mid = calculateExecutableMidPrice({ bid: trustedBid, ask: trustedAsk });
+  const lastTradeFreshness = getOptionLastTradeFreshness(input.lastTradeDate, now);
+  const defaultSoldPrice = selectDefaultSoldPrice({
+    last: trustedLast,
+    bid: trustedBid,
+    ask: trustedAsk,
+    lastTradeDate: input.lastTradeDate,
+    integrityStatus: input.integrityStatus,
+    lastFallbackOnly: input.lastFallbackOnly,
+  }, now);
+
+  return {
+    rawLast: input.last,
+    rawBid: input.bid,
+    rawAsk: input.ask,
+    trustedLast,
+    trustedBid,
+    trustedAsk,
+    mid,
+    lastTradeFreshness,
+    defaultSoldPrice,
+    integrityStatus: input.integrityStatus,
+  };
 }
 
 export function formatOptionQuoteValue(

@@ -2121,12 +2121,21 @@ export default function PortfolioPage() {
   }, [persistTrades]);
 
   const openDrawer = useCallback((trade: PortfolioTrade) => {
-    const underlying = sanitizePositive(trade.latestMarketData?.underlyingPrice);
+    const market = trade.latestMarketData;
+    const underlying = sanitizePositive(market?.underlyingPrice);
     const dte = calculateRemainingDte(trade);
     const moneyness = calculateMoneyness(underlying, trade.strike);
-    const bid = trade.latestMarketData?.optionBid ?? trade.entrySnapshot?.bid ?? null;
-    const ask = trade.latestMarketData?.optionAsk ?? trade.entrySnapshot?.ask ?? null;
-    const last = trade.latestMarketData?.optionLast ?? trade.entrySnapshot?.last ?? null;
+    const bid = market?.optionBid ?? null;
+    const ask = market?.optionAsk ?? null;
+    const lastFallbackOnly = market?.lastFallbackOnly === true;
+    const last = lastFallbackOnly ? null : market?.optionLast ?? null;
+    const lastTradeDate = lastFallbackOnly
+      ? null
+      : typeof market?.lastTradeDate === 'number'
+        ? normalizeTimestampMs(market.lastTradeDate)
+        : typeof market?.lastTradeDate === 'string'
+          ? normalizeTimestampMs(Date.parse(market.lastTradeDate))
+          : null;
     const bidYield = calculateYieldPercent(executableOptionPrice(bid), trade.strike, dte);
     const askYield = calculateYieldPercent(executableOptionPrice(ask), trade.strike, dte);
     const lastYield = calculateYieldPercent(executableOptionPrice(last), trade.strike, dte);
@@ -2138,14 +2147,14 @@ export default function PortfolioPage() {
       option: {
         strike: trade.strike,
         last,
-        lastTradeDate: typeof trade.latestMarketData?.lastTradeDate === 'number' ? trade.latestMarketData.lastTradeDate : null,
+        lastTradeDate,
         bid,
         ask,
-        delta: trade.latestMarketData?.delta ?? trade.entrySnapshot?.delta ?? null,
-        impliedVolatility: trade.latestMarketData?.iv ?? trade.entrySnapshot?.iv ?? null,
-        volume: trade.latestMarketData?.volume ?? null,
-        openInterest: trade.latestMarketData?.openInterest ?? null,
-        volOI: calculateVolumeOpenInterestRatio(trade.latestMarketData?.volume, trade.latestMarketData?.openInterest),
+        delta: market?.delta ?? trade.entrySnapshot?.delta ?? null,
+        impliedVolatility: market?.iv ?? trade.entrySnapshot?.iv ?? null,
+        volume: market?.volume ?? null,
+        openInterest: market?.openInterest ?? null,
+        volOI: calculateVolumeOpenInterestRatio(market?.volume, market?.openInterest),
         nomYieldBid: bidYield.nominal,
         annYieldBid: bidYield.annualized,
         nomYieldAsk: askYield.nominal,
@@ -2156,6 +2165,9 @@ export default function PortfolioPage() {
         otmItmLabel: moneyness.label,
         otmItmColor: moneyness.color,
         otmItmState: moneyness.state,
+        integrityStatus: market?.optionIntegrityStatus ?? (market ? 'degraded' : undefined),
+        integrityReasonCodes: market?.optionIntegrityReasonCodes,
+        lastFallbackOnly,
       },
     });
   }, []);

@@ -493,7 +493,7 @@ export default function RecommendationsPage() {
 
       {run && evidenceCandidate && <RecommendationEvidenceDrawer candidate={evidenceCandidate} run={run} onClose={() => setEvidenceCandidateId(null)} onOpenContract={() => openContract(evidenceCandidate)} onToggleWatch={() => toggleWatch(evidenceCandidate)} watched={watchIds.has(makeWatchlistId(evidenceCandidate.ticker, evidenceCandidate.expiration, evidenceCandidate.strike))} onViewChain={() => navigate(buildOptionsPath(evidenceCandidate.ticker, evidenceCandidate.expiration), { state: optionsNavigationState })} />}
       {run && showMethodology && <MethodologyModal run={run} onClose={() => setShowMethodology(false)} onExport={exportSnapshot} />}
-      {drawerCandidate && <ErrorBoundary title="Option drawer unavailable" message="Close it and try again."><Suspense fallback={null}><OptionDetailDrawer option={optionDetail(drawerCandidate)} ticker={drawerCandidate.ticker} expirationLabel={drawerCandidate.expirationLabel} dte={drawerCandidate.dte} underlyingPrice={drawerCandidate.underlyingPrice} onClose={() => setDrawerCandidateId(null)} /></Suspense></ErrorBoundary>}
+      {drawerCandidate && <ErrorBoundary title="Option drawer unavailable" message="Close it and try again."><Suspense fallback={null}><OptionDetailDrawer option={optionDetail(drawerCandidate)} ticker={drawerCandidate.ticker} expirationLabel={drawerCandidate.expirationLabel} dte={drawerCandidate.dte} underlyingPrice={drawerCandidate.underlyingPrice} mobileLayout="recommendations" onClose={() => setDrawerCandidateId(null)} /></Suspense></ErrorBoundary>}
     </div>
   );
 }

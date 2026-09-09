@@ -38,8 +38,8 @@ test('required blocking overlays consume the shared primitive without changing r
   }
 
   const optionDrawer = await read('src/components/OptionDetailDrawer.tsx');
-  assert.match(optionDrawer, /selectLegacyRecommendationSoldPrice/);
-  assert.match(optionDrawer, /window\.location\.pathname === '\/recommendations'/);
+  assert.match(optionDrawer, /buildOptionDrawerQuoteState/);
+  assert.doesNotMatch(optionDrawer, /selectLegacyRecommendationSoldPrice|window\.location\.pathname/);
   assert.doesNotMatch(optionDrawer, /document\.body\.style\.overflow/);
 
   const chart = await read('src/components/InteractivePriceChartModal.tsx');

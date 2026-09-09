@@ -18,9 +18,10 @@ test('zero bid is non-executable while positive and fallback quotes retain their
   assert.equal(executableOptionPrice(0), null);
   assert.equal(formatOptionQuoteValue('bid', 0, value => `$${value.toFixed(2)}`), 'No Bid');
   assert.deepEqual(selectDefaultSoldPrice({ bid: 1.25, ask: 1.4, last: 1.3 }), { basis: 'bid', value: 1.25 });
-  assert.deepEqual(selectDefaultSoldPrice({ bid: null, ask: 1.4, last: 1.3 }), { basis: 'last', value: 1.3 });
-  assert.deepEqual(selectDefaultSoldPrice({ bid: 0, ask: 1.4, last: 1.3 }), { basis: 'last', value: 1.3 });
-  assert.equal(selectDefaultSoldPrice({ bid: 0, ask: null, last: 0 }), null);
+  const recentLast = { lastTradeDate: '2026-09-04T15:00:00Z' };
+  assert.deepEqual(selectDefaultSoldPrice({ bid: null, ask: 1.4, last: 1.3, ...recentLast }, '2026-09-08T16:00:00Z'), { basis: 'last', value: 1.3 });
+  assert.deepEqual(selectDefaultSoldPrice({ bid: 0, ask: 1.4, last: 1.3, ...recentLast }, '2026-09-08T16:00:00Z'), { basis: 'last', value: 1.3 });
+  assert.equal(selectDefaultSoldPrice({ bid: 0, ask: null, last: 0, lastTradeDate: null }, '2026-09-08T16:00:00Z'), null);
 });
 
 test('missing executable prices fail dependent yield closed without changing legitimate non-price zero display', () => {
@@ -61,9 +62,10 @@ test('portrait Portfolio exposes the exact eight-metric headline and one direct 
   assert.doesNotMatch(portrait.slice(actionsStart, actionsEnd), /Refresh Open Trades/);
 });
 
-test('Recommendations retains its legacy shared-drawer contract while other mobile routes use the refined hierarchy', async () => {
+test('Recommendations uses a visual-only mobile drawer layout with the shared quote contract', async () => {
   const source = await readFile(path.join(root, 'src/components/OptionDetailDrawer.tsx'), 'utf8');
-  assert.match(source, /window\.location\.pathname === '\/recommendations'/);
-  assert.match(source, /if \(isPhone && preserveRecommendationContract\)/);
+  assert.match(source, /mobileLayout\?: 'recommendations'/);
+  assert.match(source, /if \(isPhone && mobileLayout === 'recommendations'\)/);
+  assert.doesNotMatch(source, /preserveRecommendationContract|selectLegacyRecommendationSoldPrice|window\.location\.pathname/);
   assert.match(source, /if \(isPhone\) \{[\s\S]*option-detail-mobile-group/);
 });
