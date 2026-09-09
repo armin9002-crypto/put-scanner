@@ -70,7 +70,7 @@ export default function ExpirationFilter({
       <select
         value={value}
         onChange={e => onChange(e.target.value)}
-        className="w-full sm:w-auto max-w-full rounded-lg px-3 py-2 sm:py-1.5 text-base sm:text-xs outline-none cursor-pointer min-h-[44px] sm:min-h-0"
+        className="scanner-filter-control w-full sm:w-auto max-w-full rounded-lg px-3 py-2 sm:py-1.5 text-base sm:text-xs outline-none cursor-pointer min-h-[44px] sm:min-h-0"
         style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
       >
         {loadingDates && !datesLoaded && <option value={value} disabled>Loading...</option>}

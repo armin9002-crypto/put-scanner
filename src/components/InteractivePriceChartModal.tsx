@@ -128,7 +128,9 @@ export default function InteractivePriceChartModal({
   const timeframes = useMemo(() => getOrderedChartTimeframes(), []);
 
   const requestedTicker = ticker.trim().toUpperCase();
-  const activeData = data && data.timeframe === timeframe && data.ticker.toUpperCase() === requestedTicker ? data : null;
+  const activeData = data && data.ticker.toUpperCase() === requestedTicker ? data : null;
+  const displayedTimeframe = activeData?.timeframe ?? null;
+  const chartTimeframe = displayedTimeframe ?? timeframe;
   const titleTicker = normalizeDisplayTicker(displayTicker || activeData?.displayTicker || requestedTicker);
   const instrumentName = getInstrumentName(requestedTicker, titleTicker);
   const isVolatility = isVolatilityInstrument(requestedTicker, titleTicker);
@@ -206,21 +208,21 @@ export default function InteractivePriceChartModal({
   const activeProxyData = useMemo(() => {
     if (!proxy.meaningful || !normalizedProxyTicker) return null;
     if (normalizedProxyTicker === requestedTicker) return activeData;
-    return proxyData && proxyData.timeframe === timeframe && proxyData.ticker.toUpperCase() === normalizedProxyTicker ? proxyData : null;
-  }, [activeData, normalizedProxyTicker, proxy.meaningful, proxyData, requestedTicker, timeframe]);
+    return proxyData && proxyData.timeframe === displayedTimeframe && proxyData.ticker.toUpperCase() === normalizedProxyTicker ? proxyData : null;
+  }, [activeData, displayedTimeframe, normalizedProxyTicker, proxy.meaningful, proxyData, requestedTicker]);
   const proxyPoints = useMemo(() => activeProxyData?.points ?? [], [activeProxyData]);
   const latestPoint = points[points.length - 1] ?? null;
   const latestPrice = isFiniteNumber(activeData?.latestPrice) ? activeData?.latestPrice ?? null : latestPoint?.price ?? null;
-  const baselineReference = getChartPeriodBaselineReference(activeData, timeframe);
+  const baselineReference = getChartPeriodBaselineReference(activeData, chartTimeframe);
   const baseline = baselineReference.value;
-  const periodChange = calculateChartPeriodReturn(activeData, timeframe);
+  const periodChange = calculateChartPeriodReturn(activeData, chartTimeframe);
   const lineColor = chartColor(periodChange.percent);
   const activeIndex = hoveredIndex ?? rangeIndex ?? points.length - 1;
   const activePoint = activeIndex != null ? points[activeIndex] : latestPoint;
-  const activeBaselinePoint = timeframe === 'YTD' ? activeData?.ytdBaseline ?? null : points[0] ?? null;
-  const activeChange = changeFrom(timeframe === '1D' ? baseline : activeBaselinePoint?.price, activePoint?.price);
+  const activeBaselinePoint = chartTimeframe === 'YTD' ? activeData?.ytdBaseline ?? null : points[0] ?? null;
+  const activeChange = changeFrom(chartTimeframe === '1D' ? baseline : activeBaselinePoint?.price, activePoint?.price);
   const activeAnnualizedReturn = calculateAnnualizedReturn(
-    timeframe === '1D' ? baseline : activeBaselinePoint?.price,
+    chartTimeframe === '1D' ? baseline : activeBaselinePoint?.price,
     activePoint?.price,
     activeBaselinePoint?.timestamp,
     activePoint?.timestamp
@@ -235,15 +237,15 @@ export default function InteractivePriceChartModal({
     : null;
   const ytdEtfPoints = useMemo(() => [...(activeData?.ytdPreYearPoints ?? []), ...points], [activeData?.ytdPreYearPoints, points]);
   const ytdProxyPoints = useMemo(() => [...(activeProxyData?.ytdPreYearPoints ?? []), ...proxyPoints], [activeProxyData?.ytdPreYearPoints, proxyPoints]);
-  const periodTrueLeverage = useMemo(() => timeframe === 'YTD'
+  const periodTrueLeverage = useMemo(() => chartTimeframe === 'YTD'
     ? getYtdTrueLeverage(ytdEtfPoints, ytdProxyPoints)
-    : getTrueLeverageForPeriod(points, proxyPoints), [points, proxyPoints, timeframe, ytdEtfPoints, ytdProxyPoints]);
+    : getTrueLeverageForPeriod(points, proxyPoints), [chartTimeframe, points, proxyPoints, ytdEtfPoints, ytdProxyPoints]);
   const activeTrueLeverage = useMemo(() => {
     if (!activeBaselinePoint || !activePoint) return null;
-    return timeframe === 'YTD'
+    return chartTimeframe === 'YTD'
       ? getYtdTrueLeverage(ytdEtfPoints, ytdProxyPoints, new Date(), activePoint.timestamp)
       : getTrueLeverageForRange(points, proxyPoints, activeBaselinePoint.timestamp, activePoint.timestamp);
-  }, [activeBaselinePoint, activePoint, points, proxyPoints, timeframe, ytdEtfPoints, ytdProxyPoints]);
+  }, [activeBaselinePoint, activePoint, chartTimeframe, points, proxyPoints, ytdEtfPoints, ytdProxyPoints]);
   const rangeTrueLeverage = useMemo(() => {
     if (!selectedRange) return null;
     return getTrueLeverageForRange(points, proxyPoints, selectedRange.startPoint.timestamp, selectedRange.endPoint.timestamp);
@@ -309,6 +311,16 @@ export default function InteractivePriceChartModal({
     setRangeIndex(null);
   }, []);
 
+  const requestStatus = loading
+    ? displayedTimeframe && displayedTimeframe !== timeframe
+      ? `Loading ${timeframe} · showing ${displayedTimeframe} until ready`
+      : `Loading ${timeframe}…`
+    : error && displayedTimeframe && displayedTimeframe !== timeframe
+      ? `${timeframe} unavailable · still showing ${displayedTimeframe}`
+      : error && displayedTimeframe
+        ? `Unable to refresh ${timeframe} · still showing ${displayedTimeframe}`
+        : null;
+
   if (!isOpen) return null;
 
   return (
@@ -342,7 +354,7 @@ export default function InteractivePriceChartModal({
                 </span>
               )}
               <span className="rounded-md px-2 py-1 text-[10px] font-medium uppercase tracking-wider" style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)', border: '1px solid var(--accent-border)' }}>
-                {timeframe}
+                {chartTimeframe}
               </span>
             </div>
             <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1 sm:mt-2">
@@ -354,6 +366,7 @@ export default function InteractivePriceChartModal({
               </span>
               {!isPhone && <DataFreshness updatedAt={activeData?.fetchedAt} status={loading ? 'updating' : error && activeData ? 'failed' : activeData?.freshness === 'stale' ? 'stale' : activeData ? 'cached' : 'stale'} label={`${titleTicker} chart`} />}
             </div>
+            {requestStatus && <div className="chart-request-status mt-1 break-words text-[11px]" data-error={Boolean(error)} role="status" aria-live="polite">{requestStatus}</div>}
           </div>
 
           <div className="flex items-center gap-2 sm:flex-shrink-0">
@@ -449,7 +462,7 @@ export default function InteractivePriceChartModal({
             </div>}
           </div>
 
-          {error ? (
+          {error && !activeData ? (
             <div className="rounded-xl p-8 text-center" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
               <p className="text-sm font-medium" style={{ color: 'var(--text)' }}>Unable to load chart data</p>
               <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>{error}</p>
@@ -477,12 +490,12 @@ export default function InteractivePriceChartModal({
             </div>
           ) : (
             <>
-              <div className="rounded-xl p-3 sm:p-4" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
+              <div key={`${activeData?.timeframe}-${activeData?.fetchedAt ?? 'cached'}`} className="chart-data-surface rounded-xl p-3 sm:p-4" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
                 <div className="chart-metric-strip mobile-scroll-row mb-2 grid grid-cols-1 gap-2 md:mb-3 md:grid-cols-3">
                   <div className="rounded-lg p-3" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
                     <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Active Point</div>
                     <div className="mt-1 font-mono text-sm tabular-nums" style={{ color: 'var(--text)' }}>{formatValue(activePoint?.price, isVolatility)}</div>
-                    <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDateTime(activePoint, timeframe)}</div>
+                    <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDateTime(activePoint, chartTimeframe)}</div>
                   </div>
                   <div className="rounded-lg p-3" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
                     <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Point Return</div>
@@ -522,7 +535,7 @@ export default function InteractivePriceChartModal({
                           </div>
                         )}
                         <div className="truncate text-xs" style={{ color: 'var(--text-muted)' }}>
-                          {formatDateTime(selectedRange?.startPoint, timeframe)} to {formatDateTime(selectedRange?.endPoint, timeframe)}
+                          {formatDateTime(selectedRange?.startPoint, chartTimeframe)} to {formatDateTime(selectedRange?.endPoint, chartTimeframe)}
                         </div>
                       </>
                     ) : (
@@ -542,7 +555,7 @@ export default function InteractivePriceChartModal({
                   onPointerMove={updateHoveredPoint}
                   onPointerLeave={() => setHoveredIndex(null)}
                   role="img"
-                  aria-label={`${titleTicker} ${timeframe} price chart`}
+                  aria-label={`${titleTicker} ${chartTimeframe} price chart`}
                 >
                   <rect x="0" y="0" width={CHART_WIDTH} height={CHART_HEIGHT} rx="12" fill="transparent" />
                   {chart.yTicks.map(tick => {
@@ -642,7 +655,7 @@ export default function InteractivePriceChartModal({
                 {selectedPoint && (
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs" style={{ color: 'var(--text-muted)' }}>
                     <span>
-                      Range start: <span className="font-mono" style={{ color: 'var(--text)' }}>{formatValue(selectedPoint.price, isVolatility)}</span> at {formatDateTime(selectedPoint, timeframe)}
+                      Range start: <span className="font-mono" style={{ color: 'var(--text)' }}>{formatValue(selectedPoint.price, isVolatility)}</span> at {formatDateTime(selectedPoint, chartTimeframe)}
                     </span>
                     <button
                       type="button"

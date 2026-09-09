@@ -77,6 +77,10 @@ function chartReferenceClose(data: SparklineData): number | null {
   return data.sparkline.length > 0 ? data.sparkline[0] : null;
 }
 
+function ScannerResultCount({ count }: { count: number }) {
+  return <span className="scanner-results-count" aria-live="polite" aria-atomic="true"><span key={count} className="scanner-results-count__value">{count}</span> results</span>;
+}
+
 function MarketChartCard({
   ticker,
   chartTicker,
@@ -107,7 +111,7 @@ function MarketChartCard({
           onOpenChart(chartTicker, ticker);
         }
       }}
-      className="scanner-market-card surface-inset min-w-0 cursor-pointer p-2 transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-indigo-500/60"
+      className="scanner-market-card surface-inset min-w-0 cursor-pointer p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500/60"
       style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
       aria-label={`Open ${ticker} interactive price chart`}
     >
@@ -588,11 +592,11 @@ export default function HomePage() {
           <div className="mobile-scanner-filter-row grid grid-cols-[minmax(0,1fr)_auto] gap-2">
             <label className="min-w-0">
               <span className="sr-only">Expiration</span>
-              <select value={expFilter} onChange={event => handleExpirationChange(event.target.value)} className="mobile-control-field w-full" aria-label="Scanner expiration" aria-busy={expirationDatesLoading}>
+              <select value={expFilter} onChange={event => handleExpirationChange(event.target.value)} className="scanner-filter-control mobile-control-field w-full" aria-label="Scanner expiration" aria-busy={expirationDatesLoading}>
                 {expDropdownOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
             </label>
-            <button type="button" onClick={() => setMobileFiltersOpen(true)} className="pressable mobile-control-button" aria-haspopup="dialog">
+            <button type="button" onClick={() => setMobileFiltersOpen(true)} className="scanner-filter-control pressable mobile-control-button" aria-haspopup="dialog">
               <SlidersHorizontal className="h-4 w-4" /> Filters{activeControlCount > 0 ? ` ${activeControlCount}` : ''}
             </button>
           </div>
@@ -614,7 +618,7 @@ export default function HomePage() {
           <div className="min-w-0">
             <h2 className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>ETF opportunities</h2>
             {expirationScope && <p className="text-[10px]" style={{ color: expirationScope.unverified > 0 || expirationState.coverage !== 'complete' ? 'var(--yellow)' : 'var(--text-muted)' }}>{expirationScope.confirmed} confirmed · {expirationScope.unverified} unverified{expirationState.coverage !== 'complete' ? ' · availability incomplete' : ''}</p>}
-            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{filtered.length} results · {expDropdownOptions.find(option => option.value === expFilter)?.label ?? 'All dates'}</p>
+            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}><ScannerResultCount count={filtered.length} /> · {expDropdownOptions.find(option => option.value === expFilter)?.label ?? 'All dates'}</p>
           </div>
           {(pricesLoading || marketLoading) && <span className="flex items-center gap-1 text-[11px]" style={{ color: 'var(--text-muted)' }}><Loader2 className="h-3 w-3 animate-spin" /> Updating</span>}
         </div>
@@ -652,17 +656,17 @@ export default function HomePage() {
             <div className="space-y-5">
               <fieldset>
                 <legend className="mobile-sheet-label">Leverage</legend>
-                <div className="grid grid-cols-3 gap-2">{LEVERAGE_OPTIONS.map(option => <button type="button" key={option} onClick={() => handleLeverageChange(option)} className="mobile-choice" data-selected={leverageFilter === option}>{option}</button>)}</div>
+                <div className="grid grid-cols-3 gap-2">{LEVERAGE_OPTIONS.map(option => <button type="button" key={option} onClick={() => handleLeverageChange(option)} className="scanner-filter-control mobile-choice" data-selected={leverageFilter === option}>{option}</button>)}</div>
               </fieldset>
               <fieldset>
                 <legend className="mobile-sheet-label">Type</legend>
-                <div className="grid grid-cols-2 gap-2">{TYPE_OPTIONS.map(option => <button type="button" key={option} onClick={() => handleTypeChange(option)} className="mobile-choice" data-selected={typeFilter === option}>{option === 'Broad Index' ? 'Broad' : option}</button>)}</div>
+                <div className="grid grid-cols-2 gap-2">{TYPE_OPTIONS.map(option => <button type="button" key={option} onClick={() => handleTypeChange(option)} className="scanner-filter-control mobile-choice" data-selected={typeFilter === option}>{option === 'Broad Index' ? 'Broad' : option}</button>)}</div>
               </fieldset>
               <fieldset>
                 <legend className="mobile-sheet-label">Liquidity</legend>
-                <div className="grid grid-cols-3 gap-2">{([['all', 'All'], ['mediumPlus', 'Medium+'], ['liquidPlus', 'Liquid+']] as const).map(([value, label]) => <button type="button" key={value} onClick={() => handleLiquidityChange(value)} className="mobile-choice" data-selected={liquidityFilter === value}>{label}</button>)}</div>
+                <div className="grid grid-cols-3 gap-2">{([['all', 'All'], ['mediumPlus', 'Medium+'], ['liquidPlus', 'Liquid+']] as const).map(([value, label]) => <button type="button" key={value} onClick={() => handleLiquidityChange(value)} className="scanner-filter-control mobile-choice" data-selected={liquidityFilter === value}>{label}</button>)}</div>
               </fieldset>
-              <label className="block"><span className="mobile-sheet-label">Sort</span><select value={scannerSort} onChange={event => handleSortChange(event.target.value as ScannerSort)} className="mobile-control-field w-full">{SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+              <label className="block"><span className="mobile-sheet-label">Sort</span><select value={scannerSort} onChange={event => handleSortChange(event.target.value as ScannerSort)} className="scanner-filter-control mobile-control-field w-full">{SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
               <div className="flex items-center gap-2">
                 <button type="button" onClick={() => void updateVisibleOptionSnapshots()} disabled={snapshotUpdateRunningRef.current} className="mobile-sheet-action secondary min-w-0 flex-1 whitespace-normal">{snapshotProgress && !snapshotProgress.complete ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}{snapshotProgressLabel(snapshotProgress)}</button>
                 <SnapshotIssueDisclosure issue={snapshotIssue} details={snapshotDetails} rows={snapshotIssueRows} />
@@ -715,15 +719,15 @@ export default function HomePage() {
               <div className="min-w-0">
                 <span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Leverage</span>
                 <div className="flex gap-1">
-                  {LEVERAGE_OPTIONS.map(opt => <button key={opt} onClick={() => handleLeverageChange(opt)} className="pressable h-8 w-[26px] rounded-md px-0 text-[11px] font-medium" style={{ backgroundColor: leverageFilter === opt ? 'var(--accent)' : 'var(--surface-alt)', color: leverageFilter === opt ? 'white' : 'var(--text-muted)', border: `1px solid ${leverageFilter === opt ? 'var(--accent)' : 'var(--border)'}` }}>{opt}</button>)}
+                  {LEVERAGE_OPTIONS.map(opt => <button key={opt} onClick={() => handleLeverageChange(opt)} className="scanner-filter-control pressable h-8 w-[26px] rounded-md px-0 text-[11px] font-medium" style={{ backgroundColor: leverageFilter === opt ? 'var(--accent)' : 'var(--surface-alt)', color: leverageFilter === opt ? 'white' : 'var(--text-muted)', border: `1px solid ${leverageFilter === opt ? 'var(--accent)' : 'var(--border)'}` }}>{opt}</button>)}
                 </div>
               </div>
               <div className="scanner-control-plane__expiration"><ExpirationFilter value={expFilter} onChange={handleExpirationChange} options={expDropdownOptions} loadingDates={expirationDatesLoading} datesLoaded={availableExps.length > 0} /><p className="mt-1 text-[10px] leading-4" style={{ color: 'var(--text-dim)' }}>Selected expiration confirms exact listed availability; IV60 and liquidity use a bounded ~60 DTE benchmark.</p></div>
-              <label className="min-w-0"><span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Sort</span><select value={scannerSort} onChange={event => handleSortChange(event.target.value as ScannerSort)} className="h-8 w-full rounded-md px-1.5 text-[11px] outline-none" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>{SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-              <label className="min-w-0"><span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Liquidity</span><select value={liquidityFilter} onChange={event => handleLiquidityChange(event.target.value as ScannerLiquidityFilter)} className="h-8 w-full rounded-md px-1.5 text-[11px] outline-none" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}><option value="all">All</option><option value="mediumPlus">Medium+</option><option value="liquidPlus">Liquid+</option></select></label>
+              <label className="min-w-0"><span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Sort</span><select value={scannerSort} onChange={event => handleSortChange(event.target.value as ScannerSort)} className="scanner-filter-control h-8 w-full rounded-md px-1.5 text-[11px] outline-none" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>{SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+              <label className="min-w-0"><span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Liquidity</span><select value={liquidityFilter} onChange={event => handleLiquidityChange(event.target.value as ScannerLiquidityFilter)} className="scanner-filter-control h-8 w-full rounded-md px-1.5 text-[11px] outline-none" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}><option value="all">All</option><option value="mediumPlus">Medium+</option><option value="liquidPlus">Liquid+</option></select></label>
             </div>
               </div>
-              <div className="scanner-control-plane__types min-w-0"><span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Type</span><div className="grid min-w-0 grid-cols-6 gap-1">{TYPE_OPTIONS.map(opt => <button key={opt} title={opt} onClick={() => handleTypeChange(opt)} className="pressable h-8 min-w-0 truncate rounded-md px-1 text-[10px] font-medium" style={{ backgroundColor: typeFilter === opt ? 'var(--accent)' : 'var(--surface-alt)', color: typeFilter === opt ? 'white' : 'var(--text-muted)', border: `1px solid ${typeFilter === opt ? 'var(--accent)' : 'var(--border)'}` }}>{opt === 'Broad Index' ? 'Broad' : opt}</button>)}</div></div>
+              <div className="scanner-control-plane__types min-w-0"><span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Type</span><div className="grid min-w-0 grid-cols-6 gap-1">{TYPE_OPTIONS.map(opt => <button key={opt} title={opt} onClick={() => handleTypeChange(opt)} className="scanner-filter-control pressable h-8 min-w-0 truncate rounded-md px-1 text-[10px] font-medium" style={{ backgroundColor: typeFilter === opt ? 'var(--accent)' : 'var(--surface-alt)', color: typeFilter === opt ? 'white' : 'var(--text-muted)', border: `1px solid ${typeFilter === opt ? 'var(--accent)' : 'var(--border)'}` }}>{opt === 'Broad Index' ? 'Broad' : opt}</button>)}</div></div>
             </div>
           </section>
           <section className="scanner-market-rail" aria-label="Market context">
@@ -744,7 +748,7 @@ export default function HomePage() {
         </section>
 
         <section aria-label="ETF opportunities">
-          <SectionHeader title="ETF opportunities" actions={<div className="scanner-results-meta"><DataFreshness updatedAt={pricesUpdatedAt} status={pricesFreshness} label="Scanner prices" />{pricesError && <span className="scanner-status-line__error">{pricesError}</span>}{expirationScope && <span className="scanner-expiration-coverage">{expirationScope.confirmed} confirmed · {expirationScope.unverified} unverified{expirationState.coverage !== 'complete' ? ' · incomplete' : ''}</span>}<span className="scanner-results-count">{filtered.length} results</span></div>} />
+          <SectionHeader title="ETF opportunities" actions={<div className="scanner-results-meta"><DataFreshness updatedAt={pricesUpdatedAt} status={pricesFreshness} label="Scanner prices" />{pricesError && <span className="scanner-status-line__error">{pricesError}</span>}{expirationScope && <span className="scanner-expiration-coverage">{expirationScope.confirmed} confirmed · {expirationScope.unverified} unverified{expirationState.coverage !== 'complete' ? ' · incomplete' : ''}</span>}<ScannerResultCount count={filtered.length} /></div>} />
           <div className="scanner-results-grid">
           {filtered.map(etf => (
             <ETFCard

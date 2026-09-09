@@ -55,7 +55,7 @@ export default function MobileEtfRow({
       <Link
         to={to}
         state={navigationState}
-        className="pressable block"
+        className="block"
         aria-label={`Open ${etf.ticker} options. Price ${priceData?.price?.toFixed(2) ?? 'unavailable'}, IV60 ${ivText(optionSnapshot)}, liquidity ${liquidity}`}
         title={optionDiagnostic?.reason}
       >

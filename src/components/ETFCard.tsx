@@ -155,7 +155,7 @@ export default function ETFCard({
         borderLeftWidth: rangeStyle ? '2px' : '1px',
       }}
     >
-      <Link to={to} state={navigationState} aria-label={`Open ${etf.ticker} options`} className="absolute inset-0 z-0 rounded-xl focus:outline-none" />
+      <Link to={to} state={navigationState} aria-label={`Open ${etf.ticker} options`} className="scanner-card-link absolute inset-0 z-0 rounded-xl focus:outline-none" />
 
       <div className="instrument-card__body pointer-events-none relative z-10 flex flex-row gap-2 pr-1 min-w-0">
         <div className="instrument-card__primary flex flex-col justify-between flex-shrink-0 w-[50%] min-w-0">

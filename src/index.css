@@ -2355,6 +2355,11 @@ table,
   transition: color var(--transition-ui), background-color var(--transition-ui), border-color var(--transition-ui), opacity var(--transition-ui);
 }
 
+.scanner-filter-control {
+  -webkit-tap-highlight-color: transparent;
+  transition: color var(--transition-ui), background-color var(--transition-ui), border-color var(--transition-ui), opacity var(--transition-ui);
+}
+
 .mobile-scroll-row {
   scrollbar-width: none;
   scroll-snap-type: x proximity;
@@ -3174,6 +3179,23 @@ td {
 .instrument-card:hover {
   border-color: var(--border-emphasis) !important;
   box-shadow: 0 4px 14px color-mix(in srgb, var(--bg-inset) 28%, transparent);
+}
+
+.scanner-results-count__value {
+  display: inline-block;
+}
+
+.chart-request-status {
+  color: var(--text-muted);
+}
+
+.chart-request-status[data-error="true"] {
+  color: var(--warning);
+}
+
+.scanner-card-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .instrument-card__primary {
@@ -5763,18 +5785,26 @@ input[type="number"] {
 
 /* Shared microinteractions: individual translate/scale preserve layout transforms.
    Rows, tab indicators, sticky headers and static analytical surfaces stay still. */
-:is(.button-primary, .button-secondary, .button-ghost, .icon-button, button.pressable, a.pressable, .mobile-sheet-action):not([role="tab"]):not([role="row"]):not(.mobile-etf-row, .mobile-option-row, .mobile-option-card, .mobile-segmented__item, .mobile-pulse-list-item, .drawer-quote-selector > button):not(th *) {
+:is(.button-primary, .button-secondary, .button-ghost, .icon-button, button.pressable, a.pressable, .mobile-sheet-action):not([role="tab"]):not([role="row"]):not(.mobile-etf-row, .mobile-option-row, .mobile-option-card, .mobile-segmented__item, .mobile-pulse-list-item, .scanner-filter-control, .drawer-quote-selector > button):not(th *) {
   transition: color var(--transition-ui), background-color var(--transition-ui), border-color var(--transition-ui), opacity var(--transition-ui), translate var(--motion-fast) var(--ease-emphasized), scale var(--motion-instant) var(--ease-emphasized);
 }
 :is(.app-nav-item, .app-utility-button, [role="tab"], .mobile-segmented__item, .mobile-pulse-list-item, .drawer-quote-selector > button, .recommendation-card__summary, .mobile-option-card, .mobile-option-row, .mobile-etf-row, .portfolio-priority-item, th button) {
   transition: color var(--transition-ui), background-color var(--transition-ui), border-color var(--transition-ui), opacity var(--transition-ui);
 }
 :is(.instrument-card, .scanner-market-card, .pulse-heatmap-tile) {
-  transition: border-color var(--transition-ui), background-color var(--transition-ui), box-shadow var(--transition-ui), translate var(--motion-fast) var(--ease-emphasized);
+  transition: border-color var(--transition-ui), background-color var(--transition-ui), box-shadow var(--transition-ui), translate var(--motion-fast) var(--ease-emphasized), scale var(--motion-instant) var(--ease-emphasized);
 }
+.chart-data-surface {
+  animation: chart-data-crossfade var(--motion-fast) var(--ease-ui);
+}
+@keyframes chart-data-crossfade { from { opacity: 0.72; } to { opacity: 1; } }
+@keyframes scanner-result-count-ack { from { opacity: 0.45; } to { opacity: 1; } }
+@keyframes scanner-card-enter { from { opacity: 0.72; } to { opacity: 1; } }
 @media (prefers-reduced-motion: no-preference) {
+  .scanner-results-count__value { animation: scanner-result-count-ack var(--motion-fast) var(--ease-ui); }
+  .scanner-results-grid > .instrument-card { animation: scanner-card-enter var(--motion-fast) var(--ease-ui); }
   @media (hover: hover) and (pointer: fine) {
-    :is(.button-primary, .button-secondary, .button-ghost, .icon-button, button.pressable, a.pressable, .mobile-sheet-action):not([role="tab"]):not([role="row"]):not(.mobile-etf-row, .mobile-option-row, .mobile-option-card, .mobile-segmented__item, .mobile-pulse-list-item, .drawer-quote-selector > button):not(th *):not(:disabled):not([aria-disabled="true"]):hover {
+    :is(.button-primary, .button-secondary, .button-ghost, .icon-button, button.pressable, a.pressable, .mobile-sheet-action):not([role="tab"]):not([role="row"]):not(.mobile-etf-row, .mobile-option-row, .mobile-option-card, .mobile-segmented__item, .mobile-pulse-list-item, .scanner-filter-control, .drawer-quote-selector > button):not(th *):not(:disabled):not([aria-disabled="true"]):hover {
       translate: 0 -2px;
     }
     :is(.instrument-card, .scanner-market-card, .pulse-heatmap-tile):hover {
@@ -5783,10 +5813,15 @@ input[type="number"] {
       box-shadow: 0 6px 16px color-mix(in srgb, var(--bg) 28%, transparent);
     }
   }
-  :is(.button-primary, .button-secondary, .button-ghost, .icon-button, button.pressable, a.pressable, .mobile-sheet-action):not([role="tab"]):not([role="row"]):not(.mobile-etf-row, .mobile-option-row, .mobile-option-card, .mobile-segmented__item, .mobile-pulse-list-item, .drawer-quote-selector > button):not(th *):not(:disabled):not([aria-disabled="true"]):active {
+  :is(.button-primary, .button-secondary, .button-ghost, .icon-button, button.pressable, a.pressable, .mobile-sheet-action):not([role="tab"]):not([role="row"]):not(.mobile-etf-row, .mobile-option-row, .mobile-option-card, .mobile-segmented__item, .mobile-pulse-list-item, .scanner-filter-control, .drawer-quote-selector > button):not(th *):not(:disabled):not([aria-disabled="true"]):active {
     translate: 0 0;
     scale: .985;
     /* A short touch must reach the pressed state; release uses motion-instant. */
+    transition-duration: 0ms;
+  }
+  :is(.instrument-card, .scanner-market-card):active {
+    translate: 0 0;
+    scale: .985;
     transition-duration: 0ms;
   }
   :is(.motion-backdrop-surface, .recommendation-methodology-backdrop) { animation: ui-backdrop-surface var(--motion-fast) var(--ease-ui); }
@@ -5795,6 +5830,15 @@ input[type="number"] {
   :is(.mobile-sheet-panel, .mobile-account-sheet, .mobile-trade-sheet) { animation: ui-sheet var(--motion-medium) var(--ease-emphasized); }
   :is(.option-detail-drawer, .recommendation-evidence-drawer) { animation: ui-drawer var(--motion-medium) var(--ease-emphasized); }
   .scanner-snapshot-tooltip { animation: ui-tooltip var(--motion-instant) var(--ease-ui); }
+}
+.scanner-market-card {
+  transition: border-color var(--transition-ui), background-color var(--transition-ui), box-shadow var(--transition-ui), opacity var(--transition-ui), translate var(--motion-fast) var(--ease-emphasized), scale var(--motion-instant) var(--ease-emphasized);
+}
+@media (prefers-reduced-motion: no-preference) and (hover: hover) and (pointer: fine) {
+  .scanner-market-card:hover {
+    translate: 0 -1px;
+    box-shadow: 0 4px 10px color-mix(in srgb, var(--bg) 20%, transparent);
+  }
 }
 @keyframes ui-backdrop-surface { from { background-color: transparent; } }
 @keyframes ui-backdrop { from { opacity: 0; } to { opacity: 1; } }
