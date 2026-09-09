@@ -3,6 +3,7 @@ import { fetchBatchPricesResult, fetchOptions, fetchSparkline, fetchWithConcurre
 import type { SparklineData } from '../lib/api';
 import type { BatchPriceData } from '../lib/cache';
 import ETFCard from '../components/ETFCard';
+import ScannerEvidencePopover from '../components/ScannerSnapshotEvidence';
 import ExpirationFilter, { buildExpirationOptions } from '../components/ExpirationFilter';
 import SparklineChart from '../components/SparklineChart';
 import ErrorBoundary from '../components/ErrorBoundary';
@@ -37,6 +38,7 @@ import {
   snapshotProgressDetails,
   snapshotProgressLabel,
   summarizeSnapshotOutcomes,
+  scannerExpirationMatch,
   tickerMatchesScannerExpiration,
   type CachedExpirationState,
   type SnapshotUpdateProgress,
@@ -155,6 +157,27 @@ function MarketChartCard({
   );
 }
 
+function SnapshotIssueDisclosure({
+  issue,
+  details,
+  rows,
+}: {
+  issue: string | null;
+  details: string | null;
+  rows: Array<{ ticker: string; status: string; reason: string }>;
+}) {
+  if (!issue) return null;
+  return (
+    <details className="scanner-issue-disclosure">
+      <summary className="scanner-liquidity-issues" data-visible="true" aria-label="Show liquidity refresh issue details">{issue}</summary>
+      <div className="scanner-issue-disclosure__body surface-inset" id="scanner-liquidity-issue-details">
+        {details && <div className="mb-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>{details}</div>}
+        {rows.length > 0 ? rows.map(row => <div key={row.ticker} className="break-words"><strong>{row.ticker}</strong> — {row.status} — {row.reason}</div>) : <div>No issue details were returned.</div>}
+      </div>
+    </details>
+  );
+}
+
 export default function HomePage() {
   const { isPhone } = useResponsiveMode();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -174,15 +197,17 @@ export default function HomePage() {
   const [liquidityFilter, setLiquidityFilter] = useState<ScannerLiquidityFilter>(initialScannerState.liquidity);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [expirationState, setExpirationState] = useState<CachedExpirationState>(initialExpirationStateRef.current!);
-  const [expirationAvailabilityReady, setExpirationAvailabilityReady] = useState(false);
   const [expirationDatesLoading, setExpirationDatesLoading] = useState(true);
   const [optionSnapshots, setOptionSnapshots] = useState<Record<string, ScannerOptionSnapshot>>(() => getScannerOptionSnapshots());
   const [snapshotDiagnostics, setSnapshotDiagnostics] = useState<Record<string, ScannerSnapshotDiagnostic>>(() => getScannerSnapshotDiagnostics());
-  const [snapshotIssuesOpen, setSnapshotIssuesOpen] = useState(false);
   const [snapshotIssueRows, setSnapshotIssueRows] = useState<{ ticker: string; status: string; reason: string }[]>([]);
   const [snapshotProgress, setSnapshotProgress] = useState<SnapshotUpdateProgress | null>(null);
   const snapshotUpdateRunningRef = useRef(false);
+  const [activeEvidence, setActiveEvidence] = useState<{ ticker: string; anchor: HTMLButtonElement } | null>(null);
+  const activeEvidenceRef = useRef<{ ticker: string; anchor: HTMLButtonElement } | null>(null);
+  activeEvidenceRef.current = activeEvidence;
   const { expirations: availableExps, availability: expiryAvailability } = expirationState;
+  const expirationAvailabilityReady = expirationState.coverage !== 'cached';
 
   // Batch price data
   const [prices, setPrices] = useState<BatchPriceData>({});
@@ -277,13 +302,21 @@ export default function HomePage() {
     fetchScreenerExpirationAvailability({ signal: controller.signal })
       .then(result => {
         if (controller.signal.aborted) return;
-        setExpirationState(buildExpirationState(result.expirationsByTicker));
-        setExpirationAvailabilityReady(true);
+        setExpirationState(buildExpirationState(
+          result.expirationsByTicker,
+          result.complete ? 'complete' : 'partial',
+          result.errors,
+        ));
       })
       .catch(() => {
-        // Keep locally observed dates as a dropdown fallback, but never use them as
-        // authoritative evidence that another ticker lacks an expiration.
-        if (!controller.signal.aborted) setExpirationAvailabilityReady(false);
+        if (!controller.signal.aborted) {
+          setExpirationState(current => ({
+            ...current,
+            coverage: 'failed',
+            errors: [...current.errors, { message: 'Expiration availability refresh failed.' }],
+            retentionReason: 'Expiration refresh failed; prior availability evidence was retained.',
+          }));
+        }
       })
       .finally(() => {
         if (!controller.signal.aborted) setExpirationDatesLoading(false);
@@ -353,15 +386,44 @@ export default function HomePage() {
     };
   }, [loadMarketData]);
 
-  useEffect(() => {
-    if (!snapshotProgress?.complete) return;
-    const timer = window.setTimeout(() => setSnapshotProgress(null), 12_000);
-    return () => window.clearTimeout(timer);
-  }, [snapshotProgress?.complete]);
+  const openEvidence = useCallback((ticker: string, anchor: HTMLButtonElement) => {
+    setActiveEvidence({ ticker, anchor });
+  }, []);
 
-  const filtered = useMemo(() => {
+  const closeEvidence = useCallback((restoreFocus = false) => {
+    const active = activeEvidenceRef.current;
+    setActiveEvidence(null);
+    if (restoreFocus && active?.anchor.isConnected) active.anchor.focus();
+  }, []);
+
+  const handleSearchChange = useCallback((value: string) => {
+    closeEvidence();
+    setSearch(value);
+  }, [closeEvidence]);
+
+  const handleLeverageChange = useCallback((value: string) => {
+    closeEvidence();
+    setLeverageFilter(value);
+  }, [closeEvidence]);
+
+  const handleTypeChange = useCallback((value: string) => {
+    closeEvidence();
+    setTypeFilter(value);
+  }, [closeEvidence]);
+
+  const handleSortChange = useCallback((value: ScannerSort) => {
+    closeEvidence();
+    setScannerSort(value);
+  }, [closeEvidence]);
+
+  const handleLiquidityChange = useCallback((value: ScannerLiquidityFilter) => {
+    closeEvidence();
+    setLiquidityFilter(value);
+  }, [closeEvidence]);
+
+  const candidates = useMemo(() => {
     const q = search.toLowerCase().trim();
-    const matches = ETF_LIST.filter(e => {
+    return ETF_LIST.filter(e => {
       if (q && !e.ticker.toLowerCase().includes(q) && !e.underlying.toLowerCase().includes(q) && !e.name.toLowerCase().includes(q)) {
         return false;
       }
@@ -372,38 +434,66 @@ export default function HomePage() {
         return false;
       }
       if (!passesScannerLiquidityFilter(optionSnapshots[e.ticker], liquidityFilter)) return false;
-      if (!tickerMatchesScannerExpiration(e.ticker, expFilter, expiryAvailability, expirationAvailabilityReady)) return false;
       return true;
     });
+  }, [search, leverageFilter, typeFilter, liquidityFilter, optionSnapshots]);
+
+  const filtered = useMemo(() => {
+    const matches = candidates.filter(etf => tickerMatchesScannerExpiration(
+      etf.ticker,
+      expFilter,
+      expiryAvailability,
+      expirationAvailabilityReady,
+      new Date(),
+      expirationState.coverage,
+    ));
     return sortScannerEtfs(matches, scannerSort, prices, optionSnapshots);
-  }, [search, leverageFilter, typeFilter, liquidityFilter, scannerSort, prices, optionSnapshots, expFilter, expiryAvailability, expirationAvailabilityReady]);
+  }, [candidates, expFilter, expiryAvailability, expirationAvailabilityReady, expirationState.coverage, prices, scannerSort, optionSnapshots]);
+
+  const expirationScope = useMemo(() => {
+    if (expFilter === 'all') return null;
+    return candidates.reduce((summary, etf) => {
+      const match = scannerExpirationMatch(etf.ticker, expFilter, expiryAvailability, expirationState.coverage);
+      if (match === 'present') summary.confirmed += 1;
+      if (match === 'unknown') summary.unverified += 1;
+      return summary;
+    }, { confirmed: 0, unverified: 0 });
+  }, [candidates, expFilter, expirationState.coverage, expiryAvailability]);
+
+  useEffect(() => {
+    if (!activeEvidence) return;
+    if (!filtered.some(etf => etf.ticker === activeEvidence.ticker) || !activeEvidence.anchor.isConnected) closeEvidence();
+  }, [activeEvidence, closeEvidence, filtered]);
 
   const expDropdownOptions = useMemo(() => buildExpirationOptions(availableExps, expFilter), [availableExps, expFilter]);
 
   const handleExpirationChange = useCallback((value: string) => {
+    closeEvidence();
     setExpFilter(value);
-  }, []);
+  }, [closeEvidence]);
 
   const resetScannerFilters = useCallback(() => {
+    closeEvidence();
     setSearch(DEFAULT_SCANNER_STATE.search);
     setLeverageFilter(DEFAULT_SCANNER_STATE.leverage);
     setTypeFilter(DEFAULT_SCANNER_STATE.type);
     setExpFilter(DEFAULT_SCANNER_STATE.expiration);
     setScannerSort(DEFAULT_SCANNER_STATE.sort);
     setLiquidityFilter(DEFAULT_SCANNER_STATE.liquidity);
-  }, []);
+  }, [closeEvidence]);
 
   const updateVisibleOptionSnapshots = useCallback(async () => {
+    closeEvidence();
     if (snapshotUpdateRunningRef.current) return;
     const tickers = [...new Set(filtered.map(etf => etf.ticker.trim().toUpperCase()))]
       .filter(ticker => isScannerOptionSnapshotStale(optionSnapshots[ticker]) || snapshotDiagnostics[ticker]?.status === 'failed');
+    setSnapshotIssueRows([]);
     if (tickers.length === 0) {
       setSnapshotProgress({ current: 0, total: 0, updated: 0, expanded: 0, unavailable: 0, failed: 0, complete: true });
       return;
     }
 
     snapshotUpdateRunningRef.current = true;
-    setSnapshotIssueRows([]);
     setSnapshotProgress({ current: 0, total: tickers.length, updated: 0, expanded: 0, unavailable: 0, failed: 0, complete: false });
     const tasks = tickers.map(ticker => async () => {
       try {
@@ -452,7 +542,7 @@ export default function HomePage() {
     } finally {
       snapshotUpdateRunningRef.current = false;
     }
-  }, [filtered, optionSnapshots, prices, snapshotDiagnostics]);
+  }, [closeEvidence, filtered, optionSnapshots, prices, snapshotDiagnostics]);
 
   const activeControlCount = [
     search.trim().length > 0,
@@ -462,9 +552,18 @@ export default function HomePage() {
     liquidityFilter !== DEFAULT_SCANNER_STATE.liquidity,
     scannerSort !== DEFAULT_SCANNER_STATE.sort,
   ].filter(Boolean).length;
-  const snapshotIssue = snapshotIssueLabel(snapshotProgress) ?? (snapshotIssueRows.length ? `${snapshotIssueRows.length} issues` : null);
+  const snapshotIssue = snapshotIssueLabel(snapshotProgress) ?? (snapshotIssueRows.length ? `${snapshotIssueRows.length} issues / ${snapshotProgress?.total ?? 0} checked` : null);
   const snapshotDetails = snapshotProgressDetails(snapshotProgress);
-  const snapshotIssueSurface = snapshotIssuesOpen && <MobileBottomSheet title="Liquidity refresh details" description={`${filtered.length} visible ETFs; only missing or stale snapshots need refresh.`} onClose={() => setSnapshotIssuesOpen(false)}><div className="space-y-3 text-xs">{snapshotIssueRows.map(row => <div key={row.ticker} className="break-words"><strong>{row.ticker}</strong> — {row.status} — {row.reason}</div>)}</div></MobileBottomSheet>;
+  const scannerEvidenceSurface = activeEvidence && (
+    <ScannerEvidencePopover
+      id={`scanner-option-snapshot-${activeEvidence.ticker}`}
+      ticker={activeEvidence.ticker}
+      anchor={activeEvidence.anchor}
+      snapshot={optionSnapshots[activeEvidence.ticker] ?? null}
+      diagnostic={snapshotDiagnostics[activeEvidence.ticker] ?? null}
+      onClose={closeEvidence}
+    />
+  );
 
   if (isPhone) {
     const marketItems = [
@@ -480,7 +579,7 @@ export default function HomePage() {
             <AnalyzeTickerForm
               compact
               value={search}
-              onValueChange={setSearch}
+              onValueChange={handleSearchChange}
               placeholder="Filter / Search by Ticker"
               submitLabel="Go to Option Chain"
               ariaLabel="Filter Scanner or go to option chain"
@@ -498,6 +597,8 @@ export default function HomePage() {
             </button>
           </div>
 
+          <p className="mt-2 text-[10px] leading-4" style={{ color: 'var(--text-dim)' }}>Selected expiration confirms exact listed availability; IV60 and liquidity use a bounded ~60 DTE benchmark.</p>
+
         </div>
 
         <MobileMarketStrip items={marketItems.map(item => ({
@@ -512,6 +613,7 @@ export default function HomePage() {
         <div className="mobile-scanner-results-header flex items-center justify-between gap-3 border-y px-3.5 py-2" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
           <div className="min-w-0">
             <h2 className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>ETF opportunities</h2>
+            {expirationScope && <p className="text-[10px]" style={{ color: expirationScope.unverified > 0 || expirationState.coverage !== 'complete' ? 'var(--yellow)' : 'var(--text-muted)' }}>{expirationScope.confirmed} confirmed · {expirationScope.unverified} unverified{expirationState.coverage !== 'complete' ? ' · availability incomplete' : ''}</p>}
             <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{filtered.length} results · {expDropdownOptions.find(option => option.value === expFilter)?.label ?? 'All dates'}</p>
           </div>
           {(pricesLoading || marketLoading) && <span className="flex items-center gap-1 text-[11px]" style={{ color: 'var(--text-muted)' }}><Loader2 className="h-3 w-3 animate-spin" /> Updating</span>}
@@ -529,12 +631,16 @@ export default function HomePage() {
               priceData={prices[etf.ticker] ?? null}
               optionSnapshot={optionSnapshots[etf.ticker] ?? null}
               optionDiagnostic={snapshotDiagnostics[etf.ticker] ?? null}
+              isEvidenceOpen={activeEvidence?.ticker === etf.ticker}
+              onEvidenceOpen={anchor => openEvidence(etf.ticker, anchor)}
+              onEvidenceClose={closeEvidence}
               netAssets={fundAssets[etf.ticker] ?? null}
             />
           ))}
         </div>
 
-        {filtered.length === 0 && !pricesLoading && <div className="mobile-scanner-empty-state px-6 py-12 text-center"><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No matching ETFs</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Try clearing search or widening your filters.</p><button type="button" onClick={resetScannerFilters} className="tap-target mt-3 rounded-lg px-4 text-xs font-semibold" style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)' }}>Reset Filters</button></div>}
+        {expirationScope && expirationState.coverage !== 'complete' && expirationScope.confirmed === 0 && <div className="px-4 py-3 text-center text-[11px]" style={{ color: 'var(--yellow)' }}>No confirmed matches yet · availability incomplete. Unverified ETFs remain available below.</div>}
+        {filtered.length === 0 && !pricesLoading && <div className="mobile-scanner-empty-state px-6 py-12 text-center"><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>{expirationScope && expirationState.coverage !== 'complete' ? 'No confirmed matches yet · availability incomplete' : 'No matching ETFs'}</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Try clearing search or widening your filters.</p><button type="button" onClick={resetScannerFilters} className="tap-target mt-3 rounded-lg px-4 text-xs font-semibold" style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)' }}>Reset Filters</button></div>}
 
         {mobileFiltersOpen && (
           <MobileBottomSheet
@@ -546,26 +652,26 @@ export default function HomePage() {
             <div className="space-y-5">
               <fieldset>
                 <legend className="mobile-sheet-label">Leverage</legend>
-                <div className="grid grid-cols-3 gap-2">{LEVERAGE_OPTIONS.map(option => <button type="button" key={option} onClick={() => setLeverageFilter(option)} className="mobile-choice" data-selected={leverageFilter === option}>{option}</button>)}</div>
+                <div className="grid grid-cols-3 gap-2">{LEVERAGE_OPTIONS.map(option => <button type="button" key={option} onClick={() => handleLeverageChange(option)} className="mobile-choice" data-selected={leverageFilter === option}>{option}</button>)}</div>
               </fieldset>
               <fieldset>
                 <legend className="mobile-sheet-label">Type</legend>
-                <div className="grid grid-cols-2 gap-2">{TYPE_OPTIONS.map(option => <button type="button" key={option} onClick={() => setTypeFilter(option)} className="mobile-choice" data-selected={typeFilter === option}>{option === 'Broad Index' ? 'Broad' : option}</button>)}</div>
+                <div className="grid grid-cols-2 gap-2">{TYPE_OPTIONS.map(option => <button type="button" key={option} onClick={() => handleTypeChange(option)} className="mobile-choice" data-selected={typeFilter === option}>{option === 'Broad Index' ? 'Broad' : option}</button>)}</div>
               </fieldset>
               <fieldset>
                 <legend className="mobile-sheet-label">Liquidity</legend>
-                <div className="grid grid-cols-3 gap-2">{([['all', 'All'], ['mediumPlus', 'Medium+'], ['liquidPlus', 'Liquid+']] as const).map(([value, label]) => <button type="button" key={value} onClick={() => setLiquidityFilter(value)} className="mobile-choice" data-selected={liquidityFilter === value}>{label}</button>)}</div>
+                <div className="grid grid-cols-3 gap-2">{([['all', 'All'], ['mediumPlus', 'Medium+'], ['liquidPlus', 'Liquid+']] as const).map(([value, label]) => <button type="button" key={value} onClick={() => handleLiquidityChange(value)} className="mobile-choice" data-selected={liquidityFilter === value}>{label}</button>)}</div>
               </fieldset>
-              <label className="block"><span className="mobile-sheet-label">Sort</span><select value={scannerSort} onChange={event => setScannerSort(event.target.value as ScannerSort)} className="mobile-control-field w-full">{SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+              <label className="block"><span className="mobile-sheet-label">Sort</span><select value={scannerSort} onChange={event => handleSortChange(event.target.value as ScannerSort)} className="mobile-control-field w-full">{SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
               <div className="flex items-center gap-2">
                 <button type="button" onClick={() => void updateVisibleOptionSnapshots()} disabled={snapshotUpdateRunningRef.current} className="mobile-sheet-action secondary min-w-0 flex-1 whitespace-normal">{snapshotProgress && !snapshotProgress.complete ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}{snapshotProgressLabel(snapshotProgress)}</button>
-                <button type="button" onClick={() => { setMobileFiltersOpen(false); setSnapshotIssuesOpen(true); }} className="scanner-liquidity-issues flex-none min-h-11" data-visible={Boolean(snapshotIssue)} aria-hidden={!snapshotIssue} disabled={!snapshotIssue} title={snapshotDetails ?? undefined}>{snapshotIssue ?? '0 issues'}</button>
+                <SnapshotIssueDisclosure issue={snapshotIssue} details={snapshotDetails} rows={snapshotIssueRows} />
               </div>
             </div>
           </MobileBottomSheet>
         )}
 
-        {snapshotIssueSurface}
+        {scannerEvidenceSurface}
         {chartModal && <ErrorBoundary title="Chart unavailable" message="The chart modal could not render. Close it and try again."><Suspense fallback={null}><InteractivePriceChartModal isOpen ticker={chartModal.ticker} displayTicker={chartModal.displayTicker} onClose={() => setChartModal(null)} /></Suspense></ErrorBoundary>}
       </div>
     );
@@ -576,7 +682,7 @@ export default function HomePage() {
       <div className="page-frame page-frame--standard scanner-page">
         <PageHeader
           title="Scanner"
-          actions={<div className="scanner-command-search"><AnalyzeTickerForm compact value={search} onValueChange={setSearch} placeholder="Filter / Search by Ticker" submitLabel="Go to Option Chain" ariaLabel="Filter Scanner or go to option chain" /></div>}
+          actions={<div className="scanner-command-search"><AnalyzeTickerForm compact value={search} onValueChange={handleSearchChange} placeholder="Filter / Search by Ticker" submitLabel="Go to Option Chain" ariaLabel="Filter Scanner or go to option chain" /></div>}
         />
 
         <section className="scanner-workspace surface-card" aria-label="Scanner workspace">
@@ -589,7 +695,8 @@ export default function HomePage() {
             <div className="scanner-control-plane__utilities">
               <div className="scanner-control-plane__summary">{activeControlCount} active controls</div>
               <button type="button" onClick={() => void updateVisibleOptionSnapshots()} disabled={snapshotUpdateRunningRef.current} className="scanner-control-plane__update inline-flex h-8 flex-none items-center gap-1 rounded-md px-2 text-[10px] font-medium whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-60" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)', color: 'var(--text-muted)' }} title={snapshotDetails ?? 'Update missing or stale IV60 and liquidity snapshots for visible ETFs'}>{snapshotProgress && !snapshotProgress.complete ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}{snapshotProgressLabel(snapshotProgress)}</button>
-              <button type="button" onClick={() => setSnapshotIssuesOpen(true)} className="scanner-liquidity-issues" data-visible={Boolean(snapshotIssue)} aria-hidden={!snapshotIssue} disabled={!snapshotIssue} title={snapshotDetails ?? undefined}>{snapshotIssue ?? '0 issues'}</button>
+              <SnapshotIssueDisclosure issue={snapshotIssue} details={snapshotDetails} rows={snapshotIssueRows} />
+              {snapshotDetails && <span className="scanner-refresh-summary" aria-live="polite">{snapshotDetails}</span>}
               <button
                 type="button"
                 onClick={resetScannerFilters}
@@ -608,15 +715,15 @@ export default function HomePage() {
               <div className="min-w-0">
                 <span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Leverage</span>
                 <div className="flex gap-1">
-                  {LEVERAGE_OPTIONS.map(opt => <button key={opt} onClick={() => setLeverageFilter(opt)} className="pressable h-8 w-[26px] rounded-md px-0 text-[11px] font-medium" style={{ backgroundColor: leverageFilter === opt ? 'var(--accent)' : 'var(--surface-alt)', color: leverageFilter === opt ? 'white' : 'var(--text-muted)', border: `1px solid ${leverageFilter === opt ? 'var(--accent)' : 'var(--border)'}` }}>{opt}</button>)}
+                  {LEVERAGE_OPTIONS.map(opt => <button key={opt} onClick={() => handleLeverageChange(opt)} className="pressable h-8 w-[26px] rounded-md px-0 text-[11px] font-medium" style={{ backgroundColor: leverageFilter === opt ? 'var(--accent)' : 'var(--surface-alt)', color: leverageFilter === opt ? 'white' : 'var(--text-muted)', border: `1px solid ${leverageFilter === opt ? 'var(--accent)' : 'var(--border)'}` }}>{opt}</button>)}
                 </div>
               </div>
-              <div className="scanner-control-plane__expiration"><ExpirationFilter value={expFilter} onChange={handleExpirationChange} options={expDropdownOptions} loadingDates={expirationDatesLoading} datesLoaded={availableExps.length > 0} /></div>
-              <label className="min-w-0"><span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Sort</span><select value={scannerSort} onChange={event => setScannerSort(event.target.value as ScannerSort)} className="h-8 w-full rounded-md px-1.5 text-[11px] outline-none" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>{SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-              <label className="min-w-0"><span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Liquidity</span><select value={liquidityFilter} onChange={event => setLiquidityFilter(event.target.value as ScannerLiquidityFilter)} className="h-8 w-full rounded-md px-1.5 text-[11px] outline-none" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}><option value="all">All</option><option value="mediumPlus">Medium+</option><option value="liquidPlus">Liquid+</option></select></label>
+              <div className="scanner-control-plane__expiration"><ExpirationFilter value={expFilter} onChange={handleExpirationChange} options={expDropdownOptions} loadingDates={expirationDatesLoading} datesLoaded={availableExps.length > 0} /><p className="mt-1 text-[10px] leading-4" style={{ color: 'var(--text-dim)' }}>Selected expiration confirms exact listed availability; IV60 and liquidity use a bounded ~60 DTE benchmark.</p></div>
+              <label className="min-w-0"><span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Sort</span><select value={scannerSort} onChange={event => handleSortChange(event.target.value as ScannerSort)} className="h-8 w-full rounded-md px-1.5 text-[11px] outline-none" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>{SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+              <label className="min-w-0"><span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Liquidity</span><select value={liquidityFilter} onChange={event => handleLiquidityChange(event.target.value as ScannerLiquidityFilter)} className="h-8 w-full rounded-md px-1.5 text-[11px] outline-none" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}><option value="all">All</option><option value="mediumPlus">Medium+</option><option value="liquidPlus">Liquid+</option></select></label>
             </div>
               </div>
-              <div className="scanner-control-plane__types min-w-0"><span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Type</span><div className="grid min-w-0 grid-cols-6 gap-1">{TYPE_OPTIONS.map(opt => <button key={opt} title={opt} onClick={() => setTypeFilter(opt)} className="pressable h-8 min-w-0 truncate rounded-md px-1 text-[10px] font-medium" style={{ backgroundColor: typeFilter === opt ? 'var(--accent)' : 'var(--surface-alt)', color: typeFilter === opt ? 'white' : 'var(--text-muted)', border: `1px solid ${typeFilter === opt ? 'var(--accent)' : 'var(--border)'}` }}>{opt === 'Broad Index' ? 'Broad' : opt}</button>)}</div></div>
+              <div className="scanner-control-plane__types min-w-0"><span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Type</span><div className="grid min-w-0 grid-cols-6 gap-1">{TYPE_OPTIONS.map(opt => <button key={opt} title={opt} onClick={() => handleTypeChange(opt)} className="pressable h-8 min-w-0 truncate rounded-md px-1 text-[10px] font-medium" style={{ backgroundColor: typeFilter === opt ? 'var(--accent)' : 'var(--surface-alt)', color: typeFilter === opt ? 'white' : 'var(--text-muted)', border: `1px solid ${typeFilter === opt ? 'var(--accent)' : 'var(--border)'}` }}>{opt === 'Broad Index' ? 'Broad' : opt}</button>)}</div></div>
             </div>
           </section>
           <section className="scanner-market-rail" aria-label="Market context">
@@ -637,7 +744,7 @@ export default function HomePage() {
         </section>
 
         <section aria-label="ETF opportunities">
-          <SectionHeader title="ETF opportunities" actions={<div className="scanner-results-meta"><DataFreshness updatedAt={pricesUpdatedAt} status={pricesFreshness} label="Scanner prices" />{pricesError && <span className="scanner-status-line__error">{pricesError}</span>}<span className="scanner-results-count">{filtered.length} results</span></div>} />
+          <SectionHeader title="ETF opportunities" actions={<div className="scanner-results-meta"><DataFreshness updatedAt={pricesUpdatedAt} status={pricesFreshness} label="Scanner prices" />{pricesError && <span className="scanner-status-line__error">{pricesError}</span>}{expirationScope && <span className="scanner-expiration-coverage">{expirationScope.confirmed} confirmed · {expirationScope.unverified} unverified{expirationState.coverage !== 'complete' ? ' · incomplete' : ''}</span>}<span className="scanner-results-count">{filtered.length} results</span></div>} />
           <div className="scanner-results-grid">
           {filtered.map(etf => (
             <ETFCard
@@ -648,6 +755,9 @@ export default function HomePage() {
               priceData={prices[etf.ticker] ?? null}
               optionSnapshot={optionSnapshots[etf.ticker] ?? null}
               optionDiagnostic={snapshotDiagnostics[etf.ticker] ?? null}
+              isEvidenceOpen={activeEvidence?.ticker === etf.ticker}
+              onEvidenceOpen={anchor => openEvidence(etf.ticker, anchor)}
+              onEvidenceClose={closeEvidence}
               netAssets={fundAssets[etf.ticker] ?? null}
               priceError={!pricesLoading && !!pricesError && !prices[etf.ticker]}
               onRetry={() => loadPrices(true)}
@@ -655,9 +765,10 @@ export default function HomePage() {
           ))}
           </div>
 
+        {expirationScope && expirationState.coverage !== 'complete' && expirationScope.confirmed === 0 && <div className="scanner-incomplete-availability" role="status">No confirmed matches yet · availability incomplete. Unverified ETFs remain available below.</div>}
         {filtered.length === 0 && (
           <div className="scanner-empty-state surface-inset">
-            <p className="font-semibold" style={{ color: 'var(--text)' }}>No ETFs match your filters.</p>
+            <p className="font-semibold" style={{ color: 'var(--text)' }}>{expirationScope && expirationState.coverage !== 'complete' ? 'No confirmed matches yet · availability incomplete' : 'No ETFs match your filters.'}</p>
             <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Try clearing search or widening the opportunity set.</p>
             <button type="button" className="button-secondary mt-3 rounded-md px-3 py-1.5 text-xs" onClick={resetScannerFilters}>Reset Filters</button>
           </div>
@@ -669,7 +780,7 @@ export default function HomePage() {
         </footer>
       </div>
 
-      {snapshotIssueSurface}
+      {scannerEvidenceSurface}
       {chartModal && (
         <ErrorBoundary title="Chart unavailable" message="The chart modal could not render. Close it and try again.">
           <Suspense fallback={null}>

@@ -1,4 +1,4 @@
-import type { ExpirationDate, OptionContract, OptionsChainData } from './types';
+import type { ExpirationDate, OptionContract, OptionIntegrityReasonCode, OptionIntegrityStatus, OptionsChainData } from './types';
 import type { DataFreshness } from './marketDataRequest';
 import { isOptionContractIntegrityInvalid } from './optionMarketIntegrity.ts';
 import { calculateDte } from './optionMetrics.ts';
@@ -67,6 +67,8 @@ export interface ScannerOptionSnapshot {
   evidenceFreshness?: 'current' | 'cached-current' | 'retained-stale' | 'unavailable';
   evidenceSource?: string;
   retentionReason?: string | null;
+  integrityStatus?: OptionIntegrityStatus;
+  integrityReasonCodes?: OptionIntegrityReasonCode[];
 }
 
 export interface ScannerSnapshotDiagnostic {
@@ -378,6 +380,8 @@ function emptySnapshot(
   underlyingPriceSource: UnderlyingPriceSource,
   updatedAt: string,
   unavailableReason: string,
+  integrityStatus?: OptionIntegrityStatus,
+  integrityReasonCodes: OptionIntegrityReasonCode[] = [],
 ): ScannerOptionSnapshot {
   return {
     schemaVersion: 2,
@@ -421,6 +425,8 @@ function emptySnapshot(
       : null,
     unavailableReason,
     updatedAt,
+    integrityStatus,
+    integrityReasonCodes,
   };
 }
 
@@ -439,18 +445,22 @@ export function buildScannerOptionSnapshot(
     : chain.chainMeta?.source === 'cache' ? 'cached-current' as const : 'current' as const;
   const evidenceSource = chain.chainMeta?.source ?? 'unknown';
   const retentionReason = evidenceFreshness === 'retained-stale' ? 'Scanner refresh failed; the prior trusted option evidence was retained.' : null;
+  const chainIntegrity = chain.chainMeta?.integrity;
   const { price: underlyingPrice, source: underlyingPriceSource } = resolveUnderlyingPrice(chain, scannerPrice);
   if (!normalizedTicker) return emptySnapshot('', selectedExpiration, underlyingPrice, underlyingPriceSource, updatedAt, 'Ticker is unavailable.');
   const returnedExpiration = chain.chainMeta?.returnedExpiration ?? chain.chainMeta?.expirationDate ?? null;
   if (returnedExpiration !== selectedExpiration.date) {
-    return emptySnapshot(normalizedTicker, selectedExpiration, underlyingPrice, underlyingPriceSource, updatedAt, 'The returned chain did not match the selected expiration.');
+    return emptySnapshot(normalizedTicker, selectedExpiration, underlyingPrice, underlyingPriceSource, updatedAt, 'The returned chain did not match the selected expiration.', 'invalid', ['CHAIN_EXPIRATION_MISMATCH']);
   }
   if (!finitePositive(underlyingPrice)) {
-    return emptySnapshot(normalizedTicker, selectedExpiration, null, 'unavailable', updatedAt, 'Underlying price is unavailable.');
+    return emptySnapshot(normalizedTicker, selectedExpiration, null, 'unavailable', updatedAt, 'Underlying price is unavailable.', chainIntegrity?.status, chainIntegrity?.reasonCodes ?? []);
+  }
+  if (chainIntegrity?.status === 'invalid') {
+    return emptySnapshot(normalizedTicker, selectedExpiration, underlyingPrice, underlyingPriceSource, updatedAt, 'Option-market integrity is invalid; trusted IV and liquidity are unavailable.', 'invalid', chainIntegrity.reasonCodes);
   }
   const puts = chain.puts.filter(put => Number.isFinite(put.strike) && !isOptionContractIntegrityInvalid(put));
   if (puts.length === 0) {
-    return emptySnapshot(normalizedTicker, selectedExpiration, underlyingPrice, underlyingPriceSource, updatedAt, 'No integrity-trusted put observations were available for IV or liquidity.');
+    return emptySnapshot(normalizedTicker, selectedExpiration, underlyingPrice, underlyingPriceSource, updatedAt, 'No integrity-trusted put observations were available for IV or liquidity.', chainIntegrity?.status, chainIntegrity?.reasonCodes ?? []);
   }
 
   const atm = selectAtmIv(puts, underlyingPrice);
@@ -475,6 +485,8 @@ export function buildScannerOptionSnapshot(
       atmConfidence: minimumConfidence(selectedExpiration.confidence, atm.atmConfidence),
       fallbackReason: fallbackReasons.length > 0 ? fallbackReasons.join(' ') : null,
       confidence: minimumConfidence(selectedExpiration.confidence, atm.atmConfidence, 'low'),
+      integrityStatus: chainIntegrity?.status,
+      integrityReasonCodes: chainIntegrity?.reasonCodes ?? [],
     };
   }
 
@@ -569,6 +581,8 @@ export function buildScannerOptionSnapshot(
     evidenceFreshness,
     evidenceSource,
     retentionReason,
+    integrityStatus: chainIntegrity?.status,
+    integrityReasonCodes: chainIntegrity?.reasonCodes ?? [],
   };
 }
 

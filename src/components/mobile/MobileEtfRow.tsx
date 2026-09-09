@@ -31,6 +31,9 @@ export default function MobileEtfRow({
   priceData,
   optionSnapshot,
   optionDiagnostic,
+  isEvidenceOpen = false,
+  onEvidenceOpen,
+  onEvidenceClose,
   netAssets,
 }: {
   etf: ETFInfo;
@@ -39,38 +42,70 @@ export default function MobileEtfRow({
   priceData?: MobileEtfPriceData | null;
   optionSnapshot?: ScannerOptionSnapshot | null;
   optionDiagnostic?: ScannerSnapshotDiagnostic | null;
+  isEvidenceOpen?: boolean;
+  onEvidenceOpen?: (anchor: HTMLButtonElement) => void;
+  onEvidenceClose?: (restoreFocus?: boolean) => void;
   netAssets?: number | null;
 }) {
   const liquidity = scannerLiquidityCompactText(optionSnapshot?.liquidityLabel ?? 'unavailable');
+  const evidenceId = `scanner-option-snapshot-${etf.ticker}`;
   return (
-    <Link
-      to={to}
-      state={navigationState}
-      className="pressable mobile-etf-row"
-      aria-label={`Open ${etf.ticker} options. Price ${priceData?.price?.toFixed(2) ?? 'unavailable'}, IV60 ${ivText(optionSnapshot)}, liquidity ${liquidity}`}
-      title={optionDiagnostic?.reason}
-    >
-      <div className="mobile-etf-row__main">
-        <div className="mobile-etf-row__identity">
-          <div className="mobile-etf-row__identity-line flex items-center gap-2">
-            <span className="font-mono text-[17px] font-bold tracking-tight" style={{ color: 'var(--text)' }}>{etf.ticker}</span>
-            <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold" style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)' }}>{etf.leverage}</span>
+    <div className="pressable mobile-etf-row">
+      <div className="relative">
+      <Link
+        to={to}
+        state={navigationState}
+        className="pressable block"
+        aria-label={`Open ${etf.ticker} options. Price ${priceData?.price?.toFixed(2) ?? 'unavailable'}, IV60 ${ivText(optionSnapshot)}, liquidity ${liquidity}`}
+        title={optionDiagnostic?.reason}
+      >
+        <div className="mobile-etf-row__main">
+          <div className="mobile-etf-row__identity">
+            <div className="mobile-etf-row__identity-line flex items-center gap-2">
+              <span className="font-mono text-[17px] font-bold tracking-tight" style={{ color: 'var(--text)' }}>{etf.ticker}</span>
+              <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold" style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)' }}>{etf.leverage}</span>
+            </div>
+            <div className="mobile-etf-row__name text-[12px] leading-tight" style={{ color: 'var(--text-muted)' }} title={etf.name}>{etf.name}</div>
           </div>
-          <div className="mobile-etf-row__name text-[12px] leading-tight" style={{ color: 'var(--text-muted)' }} title={etf.name}>{etf.name}</div>
+          <div className="mobile-etf-row__quote flex-none text-right">
+            <div className="font-mono text-[16px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{priceData?.price != null ? `$${priceData.price.toFixed(2)}` : '—'}</div>
+            <div className="font-mono text-[12px] font-semibold tabular-nums" style={{ color: valueColor(priceData?.changePct) }}>{signedPercent(priceData?.changePct, 2)}</div>
+          </div>
         </div>
-        <div className="mobile-etf-row__quote flex-none text-right">
-          <div className="font-mono text-[16px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{priceData?.price != null ? `$${priceData.price.toFixed(2)}` : '—'}</div>
-          <div className="font-mono text-[12px] font-semibold tabular-nums" style={{ color: valueColor(priceData?.changePct) }}>{signedPercent(priceData?.changePct, 2)}</div>
+        <div className="mobile-etf-row__performance mt-1 grid grid-cols-4 gap-x-2 gap-y-0">
+          {([['5D', priceData?.fiveDay], ['1M', priceData?.oneMonth], ['3M', priceData?.threeMonth], ['52W', priceData?.fiftyTwoWeekHighPct]] as const).map(([label, value]) => (
+            <span key={label} className="min-w-0 text-[11px]"><span style={{ color: 'var(--text-dim)' }}>{label} </span><span className="font-mono tabular-nums" style={{ color: valueColor(value) }}>{signedPercent(value)}</span></span>
+          ))}
         </div>
+        <div className="mobile-etf-row__footer mt-1 truncate border-t pt-1 text-[11px] font-medium" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+          <span style={{ color: 'var(--text-secondary)' }}>IV60 {ivText(optionSnapshot)}</span><span aria-hidden="true"> · </span><span>{liquidity}</span><span aria-hidden="true"> · </span><span>Assets {formatFundAssets(netAssets)}</span>
+        </div>
+      </Link>
+        <button
+        type="button"
+        className="tap-target absolute bottom-1 right-1 z-10 inline-flex h-9 w-9 items-center justify-center rounded-md"
+        style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)', border: '1px solid var(--accent-border)' }}
+        aria-label={`Show ${etf.ticker} options evidence`}
+        aria-expanded={isEvidenceOpen}
+        aria-controls={isEvidenceOpen ? evidenceId : undefined}
+        onMouseEnter={event => onEvidenceOpen?.(event.currentTarget)}
+        onFocus={event => onEvidenceOpen?.(event.currentTarget)}
+        onClick={event => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (isEvidenceOpen) onEvidenceClose?.(false);
+          else onEvidenceOpen?.(event.currentTarget);
+        }}
+        onKeyDown={event => {
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            onEvidenceClose?.(true);
+          }
+        }}
+      >
+        <span aria-hidden="true">ⓘ</span>
+        </button>
       </div>
-      <div className="mobile-etf-row__performance mt-1 grid grid-cols-4 gap-x-2 gap-y-0">
-        {([['5D', priceData?.fiveDay], ['1M', priceData?.oneMonth], ['3M', priceData?.threeMonth], ['52W', priceData?.fiftyTwoWeekHighPct]] as const).map(([label, value]) => (
-          <span key={label} className="min-w-0 text-[11px]"><span style={{ color: 'var(--text-dim)' }}>{label} </span><span className="font-mono tabular-nums" style={{ color: valueColor(value) }}>{signedPercent(value)}</span></span>
-        ))}
-      </div>
-      <div className="mobile-etf-row__footer mt-1 truncate border-t pt-1 text-[11px] font-medium" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-        <span style={{ color: 'var(--text-secondary)' }}>IV60 {ivText(optionSnapshot)}</span><span aria-hidden="true"> · </span><span>{liquidity}</span><span aria-hidden="true"> · </span><span>Assets {formatFundAssets(netAssets)}</span>
-      </div>
-    </Link>
+    </div>
   );
 }

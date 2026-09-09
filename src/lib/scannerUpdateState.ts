@@ -10,6 +10,9 @@ function formatExpirationDropdownLabel(timestamp: number): string {
 export interface CachedExpirationState {
   expirations: { date: number; label: string; dte: number }[];
   availability: Record<string, number[]>;
+  coverage: 'complete' | 'partial' | 'failed' | 'cached';
+  errors: Array<{ ticker?: string; message: string }>;
+  retentionReason: string | null;
 }
 
 export interface SnapshotUpdateProgress {
@@ -22,17 +25,52 @@ export interface SnapshotUpdateProgress {
   complete: boolean;
 }
 
-export function buildExpirationState(availability: Record<string, number[]>): CachedExpirationState {
+export function buildExpirationState(
+  availability: Record<string, number[]>,
+  coverage: CachedExpirationState['coverage'] = 'cached',
+  errors: Array<{ ticker?: string; message: string }> = [],
+  retentionReason: string | null = null,
+): CachedExpirationState {
   const expirationMap = new Map<number, { date: number; label: string; dte: number }>();
   Object.values(availability).flat().forEach(date => {
     const dte = calculateCalendarDte(date);
     if (dte != null && dte > 0 && !expirationMap.has(date)) expirationMap.set(date, { date, label: formatExpirationDropdownLabel(date), dte });
   });
-  return { expirations: [...expirationMap.values()].sort((a, b) => a.date - b.date), availability };
+  return {
+    expirations: [...expirationMap.values()].sort((a, b) => a.date - b.date),
+    availability,
+    coverage,
+    errors,
+    retentionReason,
+  };
 }
 
 export function buildCachedExpirationState(): CachedExpirationState {
-  return buildExpirationState(getAllCachedScannerExpirations());
+  return buildExpirationState(getAllCachedScannerExpirations(), 'cached');
+}
+
+export type ScannerExpirationMatch = 'present' | 'absent' | 'unknown';
+
+export function scannerExpirationMatch(
+  ticker: string,
+  expirationFilter: string,
+  availability: Record<string, number[]>,
+  coverage: CachedExpirationState['coverage'],
+  now = new Date(),
+): ScannerExpirationMatch {
+  if (expirationFilter === 'all') return 'present';
+  if (coverage === 'cached') return 'unknown';
+  const dates = availability[ticker.trim().toUpperCase()];
+  if (!dates) return 'unknown';
+  if (expirationFilter === 'lte_30dte') {
+    return dates.some(date => {
+      const dte = calculateCalendarDte(date, now);
+      return dte != null && dte >= 0 && dte <= 30;
+    }) ? 'present' : 'absent';
+  }
+  if (!expirationFilter.startsWith('date_')) return 'present';
+  const targetDate = Number(expirationFilter.slice(5));
+  return Number.isSafeInteger(targetDate) && dates.includes(targetDate) ? 'present' : 'absent';
 }
 
 export function tickerMatchesScannerExpiration(
@@ -41,20 +79,15 @@ export function tickerMatchesScannerExpiration(
   availability: Record<string, number[]>,
   authoritativeAvailabilityReady: boolean,
   now = new Date(),
+  coverage: CachedExpirationState['coverage'] | null = null,
 ): boolean {
   if (expirationFilter === 'all' || !authoritativeAvailabilityReady) return true;
-  const dates = availability[ticker.trim().toUpperCase()];
-  // Partial endpoint failures are unknown, not evidence that the ticker has no options.
-  if (!dates) return true;
-  if (expirationFilter === 'lte_30dte') {
-    return dates.some(date => {
-      const dte = calculateCalendarDte(date, now);
-      return dte != null && dte >= 0 && dte <= 30;
-    });
+  if (!coverage) {
+    const dates = availability[ticker.trim().toUpperCase()];
+    // Partial endpoint failures are unknown, not evidence that the ticker has no options.
+    if (!dates) return true;
   }
-  if (!expirationFilter.startsWith('date_')) return true;
-  const targetDate = Number(expirationFilter.slice(5));
-  return Number.isSafeInteger(targetDate) && dates.includes(targetDate);
+  return scannerExpirationMatch(ticker, expirationFilter, availability, coverage ?? 'complete', now) !== 'absent';
 }
 
 export function summarizeSnapshotOutcomes(outcomes: ScannerSnapshotUpdateOutcome[]): Pick<SnapshotUpdateProgress, 'updated' | 'expanded' | 'unavailable' | 'failed'> {
@@ -75,12 +108,12 @@ export function snapshotProgressLabel(progress: SnapshotUpdateProgress | null): 
 export function snapshotIssueLabel(progress: SnapshotUpdateProgress | null): string | null {
   if (!progress?.complete) return null;
   const issues = progress.unavailable + progress.failed;
-  return issues > 0 ? `${issues} ${issues === 1 ? 'issue' : 'issues'}` : null;
+  return issues > 0 ? `${issues} ${issues === 1 ? 'issue' : 'issues'} / ${progress.total} checked` : null;
 }
 
 export function snapshotProgressDetails(progress: SnapshotUpdateProgress | null): string | null {
   if (!progress?.complete || progress.total === 0) return null;
-  return `Updated ${progress.updated} \u00b7 Expanded ${progress.expanded} \u00b7 ${progress.unavailable} unavailable \u00b7 ${progress.failed} failed`;
+  return `Last refresh: ${progress.total} checked \u00b7 ${progress.updated} updated \u00b7 ${progress.unavailable} unavailable \u00b7 ${progress.failed} failed`;
 }
 
 export function diagnosticForOutcome(outcome: ScannerSnapshotUpdateOutcome): { status: ScannerSnapshotDiagnostic['status']; reason: string } | null {

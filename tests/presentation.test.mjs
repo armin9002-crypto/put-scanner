@@ -45,7 +45,7 @@ test('all quote views share deterministic LAST, BID, MID, ASK display order', ()
   const watchlistSource = readFileSync(new URL('../src/pages/WatchlistPage.tsx', import.meta.url), 'utf8');
   const drawerSource = readFileSync(new URL('../src/components/OptionDetailDrawer.tsx', import.meta.url), 'utf8');
   const portfolioSource = readFileSync(new URL('../src/pages/PortfolioPage.tsx', import.meta.url), 'utf8');
-  const scannerCardSource = readFileSync(new URL('../src/components/ETFCard.tsx', import.meta.url), 'utf8');
+  const scannerEvidenceSource = readFileSync(new URL('../src/components/ScannerSnapshotEvidence.tsx', import.meta.url), 'utf8');
   const mobileSource = readFileSync(new URL('../src/components/mobile/MobileOptionRow.tsx', import.meta.url), 'utf8');
   assert.deepEqual(OPTION_QUOTE_DISPLAY_ORDER, ['last', 'bid', 'mid', 'ask']);
   assert.deepEqual(OPTION_QUOTE_TABLE_DISPLAY_ORDER, ['last', 'bid', 'ask']);
@@ -62,7 +62,7 @@ test('all quote views share deterministic LAST, BID, MID, ASK display order', ()
   assert.match(mobileSource, /data-field="ay-ask"/);
   assert.match(drawerSource, /orderedOptionQuoteEntries\(\{ last: usableLast, bid: executableBid, mid, ask: executableAsk \}\)/);
   assert.match(portfolioSource, /orderedOptionQuoteEntries\(\{[\s\S]*?last: trade\.latestMarketData\?\.optionLast,[\s\S]*?bid: trade\.latestMarketData\?\.optionBid,[\s\S]*?mid: getPortfolioMidMark\(trade\),[\s\S]*?ask: trade\.latestMarketData\?\.optionAsk/);
-  assert.match(scannerCardSource, /orderedOptionQuoteEntries\(\{ last: snapshot\?\.last, bid: snapshot\?\.bid, mid: snapshot\?\.midpoint, ask: snapshot\?\.ask \}\)/);
+  assert.match(scannerEvidenceSource, /orderedOptionQuoteEntries\(\{ last: snapshot\?\.last, bid: snapshot\?\.bid, mid: snapshot\?\.midpoint, ask: snapshot\?\.ask \}\)/);
 });
 
 test('derived yield columns and values follow LAST, BID, ASK order', () => {

@@ -471,7 +471,7 @@ test('Scanner uses one controlled local filter/direct-submit form and the suppli
   assert.match(page, /placeholder="Filter \/ Search by Ticker"/, 'unified placeholder is exact');
   assert.match(form, /className="analyze-ticker-input[^\"]*uppercase/, 'typed ticker input keeps existing uppercase behavior');
   assert.match(styles, /\.analyze-ticker-input::placeholder\s*\{\s*text-transform: none;/, 'placeholder casing is corrected at the pseudo-element only');
-  assert.match(page, /setSearch\(event\.target\.value\)|onValueChange=\{setSearch\}/, 'typing remains local state-driven');
+  assert.match(page, /handleSearchChange|setSearch\(value\)/, 'typing remains local state-driven and closes evidence synchronously');
   assert.match(page, /ticker\.toLowerCase\(\).*underlying|underlying\.toLowerCase\(\).*ticker/s, 'local filter preserves ticker/underlying search semantics');
   assert.match(form, /navigate\(`\/options\//, 'explicit submit preserves direct option-chain navigation');
   assert.doesNotMatch(form, /fetch\(|fetchBatch|requestMarketData/, 'typing and submit form do not add provider fetch behavior');

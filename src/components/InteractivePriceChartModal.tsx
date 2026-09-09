@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Loader2, RefreshCw, X } from 'lucide-react';
 import { getChartHistory } from '../lib/chartHistory';
 import type { ChartHistoryResponse, ChartPoint, ChartTimeframe } from '../lib/chartHistory';
-import { calculateAnnualizedReturn, calculateChartPeriodReturn, calculateRangeReturn, calculateSimpleReturn, getChartPeriodBaseline, normalizeSelectedRange } from '../lib/chartReturns';
+import { calculateAnnualizedReturn, calculateChartPeriodReturn, calculateRangeReturn, calculateSimpleReturn, getChartPeriodBaselineReference, normalizeSelectedRange } from '../lib/chartReturns';
 import { formatChartYAxisTick, getNiceYAxisScale } from '../lib/chartScale';
 import { getOrderedChartTimeframes } from '../lib/chartTimeframes';
 import { getInstrumentName, isVolatilityInstrument, normalizeDisplayTicker } from '../lib/instrumentNames';
@@ -211,7 +211,8 @@ export default function InteractivePriceChartModal({
   const proxyPoints = useMemo(() => activeProxyData?.points ?? [], [activeProxyData]);
   const latestPoint = points[points.length - 1] ?? null;
   const latestPrice = isFiniteNumber(activeData?.latestPrice) ? activeData?.latestPrice ?? null : latestPoint?.price ?? null;
-  const baseline = getChartPeriodBaseline(activeData, timeframe);
+  const baselineReference = getChartPeriodBaselineReference(activeData, timeframe);
+  const baseline = baselineReference.value;
   const periodChange = calculateChartPeriodReturn(activeData, timeframe);
   const lineColor = chartColor(periodChange.percent);
   const activeIndex = hoveredIndex ?? rangeIndex ?? points.length - 1;
@@ -253,7 +254,7 @@ export default function InteractivePriceChartModal({
       return { scaledPoints: [] as ScaledPoint[], linePath: '', referenceY: null as number | null, yTicks: [] as number[] };
     }
 
-    const reference = isFiniteNumber(activeData?.previousClose) ? activeData?.previousClose ?? null : points[0]?.price ?? null;
+    const reference = baselineReference.value;
     const prices = points.map(point => point.price);
     if (isFiniteNumber(reference)) prices.push(reference);
     const scale = getNiceYAxisScale(prices, 5);
@@ -272,7 +273,7 @@ export default function InteractivePriceChartModal({
       : null;
 
     return { scaledPoints, linePath: buildPath(scaledPoints), referenceY, yTicks: scale?.ticks ?? [] };
-  }, [activeData?.previousClose, points]);
+  }, [baselineReference.value, points]);
 
   const pointIndexFromClientX = useCallback((clientX: number) => {
     if (points.length === 0 || !svgRef.current) return;
@@ -547,7 +548,7 @@ export default function InteractivePriceChartModal({
                   {chart.yTicks.map(tick => {
                     const plotHeight = CHART_HEIGHT - PAD_Y * 2;
                     const prices = points.map(point => point.price);
-                    const reference = isFiniteNumber(activeData?.previousClose) ? activeData?.previousClose ?? null : points[0]?.price ?? null;
+                    const reference = baselineReference.value;
                     if (isFiniteNumber(reference)) prices.push(reference);
                     const scale = getNiceYAxisScale(prices, 5);
                     if (!scale || scale.max === scale.min) return null;
@@ -603,7 +604,7 @@ export default function InteractivePriceChartModal({
                         className="fill-current text-[10px]"
                         style={{ color: 'var(--text-dim)' }}
                       >
-                        Prev close
+                        {baselineReference.label}
                       </text>
                     </>
                   )}

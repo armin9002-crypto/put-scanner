@@ -16,8 +16,8 @@ test('scanner refresh summaries and diagnostics stay deterministic outside the p
   assert.equal(snapshotProgressLabel(null), 'Update liquidity');
   assert.equal(snapshotProgressLabel({ ...complete, current: 2, complete: false }), 'Updating 2/4 needing refresh');
   assert.equal(snapshotProgressLabel(complete), 'Update liquidity');
-  assert.equal(snapshotIssueLabel(complete), '2 issues');
-  assert.equal(snapshotProgressDetails(complete), 'Updated 2 · Expanded 1 · 1 unavailable · 1 failed');
+  assert.equal(snapshotIssueLabel(complete), '2 issues / 4 checked');
+  assert.equal(snapshotProgressDetails(complete), 'Last refresh: 4 checked · 2 updated · 1 unavailable · 1 failed');
   assert.deepEqual(diagnosticForOutcome(outcomes[2]), { status: 'unavailable', reason: 'no quote' });
 });
 

@@ -23,6 +23,11 @@ function isFiniteNumber(value: number | null | undefined): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
+export interface ChartPeriodBaselineReference {
+  value: number | null;
+  label: 'Prev close' | 'Period start' | 'Year start' | 'Series start';
+}
+
 export function calculateSimpleReturn(startPrice: number | null | undefined, endPrice: number | null | undefined): { change: number | null; percent: number | null } {
   if (!isFiniteNumber(startPrice) || !isFiniteNumber(endPrice) || startPrice === 0) {
     return { change: null, percent: null };
@@ -31,14 +36,21 @@ export function calculateSimpleReturn(startPrice: number | null | undefined, end
   return { change, percent: (change / startPrice) * 100 };
 }
 
-export function getChartPeriodBaseline(data: ChartHistoryResponse | null | undefined, timeframe: ChartTimeframe): number | null {
-  if (!data) return null;
-  if (timeframe === '1D') return isFiniteNumber(data.previousClose) ? data.previousClose : data.points[0]?.price ?? null;
+export function getChartPeriodBaselineReference(data: ChartHistoryResponse | null | undefined, timeframe: ChartTimeframe): ChartPeriodBaselineReference {
+  if (!data) return { value: null, label: timeframe === '1D' ? 'Prev close' : timeframe === 'YTD' ? 'Year start' : timeframe === 'All' ? 'Series start' : 'Period start' };
+  if (timeframe === '1D') return {
+    value: isFiniteNumber(data.previousClose) ? data.previousClose : data.points[0]?.price ?? null,
+    label: 'Prev close',
+  };
   if (timeframe === 'YTD') {
     const baseline = data.ytdBaseline?.price;
-    return isFiniteNumber(baseline) && baseline > 0 ? baseline : null;
+    return { value: isFiniteNumber(baseline) && baseline > 0 ? baseline : null, label: 'Year start' };
   }
-  return data.points[0]?.price ?? null;
+  return { value: data.points[0]?.price ?? null, label: timeframe === 'All' ? 'Series start' : 'Period start' };
+}
+
+export function getChartPeriodBaseline(data: ChartHistoryResponse | null | undefined, timeframe: ChartTimeframe): number | null {
+  return getChartPeriodBaselineReference(data, timeframe).value;
 }
 
 export function calculateChartPeriodReturn(data: ChartHistoryResponse | null | undefined, timeframe: ChartTimeframe): { change: number | null; percent: number | null } {

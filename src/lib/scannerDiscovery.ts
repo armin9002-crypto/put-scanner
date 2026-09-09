@@ -11,6 +11,7 @@ const LIQUIDITY_RANK: Record<ScannerLiquidityLabel, number> = {
 
 export function passesScannerLiquidityFilter(snapshot: ScannerOptionSnapshot | null | undefined, filter: ScannerLiquidityFilter): boolean {
   if (filter === 'all') return true;
+  if (filter === 'liquidPlus' && (snapshot?.integrityStatus === 'degraded' || snapshot?.integrityStatus === 'invalid')) return false;
   const rank = snapshot ? LIQUIDITY_RANK[snapshot.liquidityLabel] : 0;
   return filter === 'mediumPlus' ? rank >= 3 : rank >= 4;
 }
