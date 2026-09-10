@@ -1,4 +1,5 @@
 import { isFiniteNumber } from './optionMetrics.ts';
+import { normalizeMarketTimestamp } from './marketTimestamp.ts';
 
 export const EMPTY_VALUE = '—';
 
@@ -53,7 +54,9 @@ export function formatDate(value: number | string | Date | null | undefined): st
 }
 
 export function formatOptionLastTradeDate(value: number | null | undefined): string {
-  const timestamp = normalizeTimestampMs(value);
+  // Last Trade is evidence, not a generic timestamp: future or malformed
+  // observations must remain unavailable instead of looking actionable.
+  const timestamp = normalizeMarketTimestamp(value, { maxFutureSkewMs: 0 });
   if (timestamp == null) return EMPTY_VALUE;
   return new Date(timestamp).toLocaleDateString('en-US', {
     month: '2-digit',

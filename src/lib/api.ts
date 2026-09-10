@@ -224,18 +224,41 @@ export interface SparklineData {
   providerMarketTime?: number | null;
 }
 
-export async function fetchSparkline(ticker: string, options: { signal?: AbortSignal } = {}): Promise<SparklineData> {
+export interface SparklineRequestResult {
+  data: SparklineData;
+  freshness: DataFreshness;
+  source: 'memory' | 'persistent' | 'network' | 'stale-fallback';
+  observedAt: number;
+  cachedAt?: number;
+  staleFallbackUsed: boolean;
+}
+
+function isSparklineData(value: SparklineData): boolean {
+  return value != null
+    && Number.isFinite(value.price)
+    && Number.isFinite(value.change)
+    && Number.isFinite(value.changePercent)
+    && Array.isArray(value.sparkline);
+}
+
+export async function fetchSparklineResult(ticker: string, options: { signal?: AbortSignal } = {}): Promise<SparklineRequestResult> {
   const cacheKey = `sparkline_${ticker}`;
-  return threeLayerCache<SparklineData>(
-    cacheKey,
-    SPARKLINE_MEM_TTL,
-    SPARKLINE_LS_TTL,
-    async signal => {
+  const result = await requestMarketData<SparklineData>({
+    key: cacheKey,
+    source: 'fetchSparkline',
+    endpoint: 'price',
+    softTtlMs: Math.min(SPARKLINE_MEM_TTL, SPARKLINE_LS_TTL),
+    hardTtlMs: Math.max(SPARKLINE_LS_TTL * 4, SPARKLINE_LS_TTL + 30 * 60 * 1000),
+    schemaVersion: 1,
+    mode: 'cache-first',
+    allowStaleOnError: true,
+    signal: options.signal,
+    validator: isSparklineData,
+    fetcher: async signal => {
       const res = await fetchObservedMarketData('price', `${API_BASE}/price?ticker=${encodeURIComponent(ticker)}&range=1d&interval=1m`, { signal }, 'fetchSparkline');
       if (!res.ok) throw new Error(`Failed to fetch sparkline for ${ticker}`);
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-
       return {
         price: data.price,
         change: data.change,
@@ -245,13 +268,19 @@ export async function fetchSparkline(ticker: string, options: { signal?: AbortSi
         providerMarketTime: data.providerMarketTime ?? null,
       };
     },
-    undefined,
-    {
-      diagnosticsEndpoint: 'price',
-      diagnosticsSource: 'fetchSparkline',
-      signal: options.signal,
-    }
-  );
+  });
+  return {
+    data: result.data,
+    freshness: result.meta.freshness,
+    source: result.meta.source,
+    observedAt: result.meta.fetchedAt,
+    cachedAt: result.meta.cachedAt,
+    staleFallbackUsed: result.meta.staleFallbackUsed,
+  };
+}
+
+export async function fetchSparkline(ticker: string, options: { signal?: AbortSignal } = {}): Promise<SparklineData> {
+  return (await fetchSparklineResult(ticker, options)).data;
 }
 
 export interface ExtendedPriceData {

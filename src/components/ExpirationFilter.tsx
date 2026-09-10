@@ -1,4 +1,6 @@
+import { useId } from 'react';
 import { Loader2 } from 'lucide-react';
+import { calculateDte } from '../lib/optionMetrics';
 
 export interface ExpirationOption {
   value: string;
@@ -24,15 +26,19 @@ export function formatExpirationDropdownLabel(ts: number): string {
 export function buildExpirationOptions(availableExps: ExpirationInfo[], selectedValue = 'all'): ExpirationOption[] {
   const selectedDate = selectedValue.startsWith('date_') ? Number(selectedValue.slice(5)) : null;
   const selectedDte = selectedDate != null && Number.isSafeInteger(selectedDate) && selectedDate > 0
-    ? Math.max(0, Math.round((selectedDate * 1_000 - Date.now()) / 86_400_000))
+    ? calculateDte(selectedDate)
     : null;
+  const currentExpirations = availableExps.filter(expiration => Number.isFinite(expiration.dte) && expiration.dte >= 0);
   const expirations = selectedDate != null
     && selectedDte != null
     && selectedDte > 30
-    && !availableExps.some(expiration => expiration.date === selectedDate)
-    ? [...availableExps, { date: selectedDate, label: formatExpirationDropdownLabel(selectedDate), dte: selectedDte }].sort((a, b) => a.date - b.date)
-    : availableExps;
-  const opts: ExpirationOption[] = [{ value: 'all', label: 'All dates' }];
+    && !currentExpirations.some(expiration => expiration.date === selectedDate)
+    ? [...currentExpirations, { date: selectedDate, label: formatExpirationDropdownLabel(selectedDate), dte: selectedDte }].sort((a, b) => a.date - b.date)
+    : currentExpirations;
+  const opts: ExpirationOption[] = [
+    { value: 'all', label: 'All scanned dates' },
+    { value: 'nearest', label: 'Nearest per ETF' },
+  ];
   const hasShortDated = expirations.some(e => e.dte <= 30);
   if (hasShortDated) {
     opts.push({ value: 'lte_30dte', label: '\u226430 DTE' });
@@ -61,13 +67,15 @@ export default function ExpirationFilter({
   loadingDates: boolean;
   datesLoaded: boolean;
 }) {
+  const selectId = useId();
   return (
     <div className="w-full sm:w-auto min-w-0">
-      <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>
+      <label htmlFor={selectId} className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>
         Expiration
         {loadingDates && <Loader2 className="w-3 h-3 inline ml-1 animate-spin" />}
       </label>
       <select
+        id={selectId}
         value={value}
         onChange={e => onChange(e.target.value)}
         className="scanner-filter-control w-full sm:w-auto max-w-full rounded-lg px-3 py-2 sm:py-1.5 text-base sm:text-xs outline-none cursor-pointer min-h-[44px] sm:min-h-0"

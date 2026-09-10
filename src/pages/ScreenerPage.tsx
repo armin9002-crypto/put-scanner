@@ -2,14 +2,16 @@ import { lazy, Suspense, useState, useMemo, useCallback, useRef, useEffect } fro
 import { Link, useLocation } from 'react-router-dom';
 import { ETF_LIST } from '../lib/etfs';
 import type { ETFInfo } from '../lib/types';
-import { fetchSparkline, formatPrice, formatNumber } from '../lib/api';
-import { formatOptionLastTradeDate } from '../lib/format';
+import { fetchSparklineResult, formatPrice, formatNumber } from '../lib/api';
+import { formatDateTime, formatOptionLastTradeDate } from '../lib/format';
 import { CALCULATED_PUT_DELTA_MODEL } from '../lib/putDelta';
 import type { SparklineData } from '../lib/api';
 import { getExpirationsCache, setExpirationsCache } from '../lib/cache';
-import { createLatestScreenerScanGate, fetchScreenerExpirations, retryFailedScreenerBatches, runScreenerBatchScan, screenerDatasetScopeKey, type ScreenerScanResult } from '../lib/screenerAcquisition';
+import { createLatestScreenerScanGate, emptyScreenerCoverage, fetchScreenerExpirations, retryFailedScreenerBatches, runScreenerBatchScan, screenerDatasetScopeKey, type ScreenerCoverage, type ScreenerScanResult } from '../lib/screenerAcquisition';
 import type { EvidenceFreshness } from '../lib/evidence';
 import { applyScreenerFilters, buildScreenerRows, type ScreenerRow } from '../lib/screenerRows';
+import { calculateDte } from '../lib/optionMetrics';
+import { getOptionLastTradeFreshness } from '../lib/optionLastTradeFreshness';
 import SparklineChart from '../components/SparklineChart';
 import ExpirationFilter, { buildExpirationOptions, formatExpirationDropdownLabel } from '../components/ExpirationFilter';
 import ErrorBoundary from '../components/ErrorBoundary';
@@ -24,6 +26,7 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { SCREENER_CHUNKS } from '../../shared/screenerUniverse.js';
 import { buildOptionsPath, createOptionsNavigationState, resolveOptionsReturnOrigin, type OptionsNavigationState, type ScreenerOriginPresentation } from '../lib/optionsNavigation';
 import { shortPutMoneynessPresentation } from '../lib/moneynessPresentation';
+import { useBlockingOverlayBehavior } from '../lib/blockingOverlay';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 const FULL_SCAN_BATCH_COUNT = SCREENER_CHUNKS.length;
@@ -61,6 +64,7 @@ interface ScreenerReturnSnapshot {
   datasetObservedAt: number | null;
   datasetFreshness: EvidenceFreshness;
   scanFailureCount: number;
+  coverage: ScreenerCoverage;
   loadError: string | null;
   sortField: ScreenerSortField;
   sortDir: SortDir;
@@ -77,6 +81,16 @@ function consumeScreenerReturnSnapshot(viewSignature: string): ScreenerReturnSna
   const snapshot = latestScreenerReturnSnapshot;
   latestScreenerReturnSnapshot = null;
   return snapshot?.viewSignature === viewSignature ? snapshot : null;
+}
+
+function normalizeAvailableExpirations(expirations: Array<{ date: number; label: string; dte: number }>): { date: number; label: string; dte: number }[] {
+  return expirations
+    .map(expiration => {
+      const dte = calculateDte(expiration.date);
+      return dte == null || dte < 0 ? null : { ...expiration, dte };
+    })
+    .filter((expiration): expiration is { date: number; label: string; dte: number } => expiration != null)
+    .sort((left, right) => left.date - right.date);
 }
 
 // --- Filter options ---
@@ -292,6 +306,7 @@ export default function ScreenerPage() {
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [datasetObservedAt, setDatasetObservedAt] = useState<number | null>(null);
   const [datasetFreshness, setDatasetFreshness] = useState<EvidenceFreshness>('unavailable');
+  const [coverage, setCoverage] = useState<ScreenerCoverage>(() => emptyScreenerCoverage());
   const [slowWarning, setSlowWarning] = useState(false);
   const [scanFailureCount, setScanFailureCount] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -308,13 +323,27 @@ export default function ScreenerPage() {
   // Raw rows support network-free changes to non-structural filters.
   const rawRowsRef = useRef<ScreenerRow[]>([]);
   const scanGateRef = useRef(createLatestScreenerScanGate());
+  const confirmOverlayRef = useRef<HTMLDivElement | null>(null);
+  const confirmPanelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => () => scanGateRef.current.cancel(), []);
+  useBlockingOverlayBehavior({
+    isOpen: showConfirm && !isPhone,
+    panelRef: confirmPanelRef,
+    overlayRef: confirmOverlayRef,
+    onEscape: () => setShowConfirm(false),
+  });
 
   // VIX data — manual refresh only
   const [vixData, setVixData] = useState<SparklineData | null>(null);
   const [vixLoading, setVixLoading] = useState(true);
-  const [lastVixUpdate, setLastVixUpdate] = useState<Date | null>(null);
+  const [vixEvidence, setVixEvidence] = useState<{
+    freshness: 'fresh' | 'stale' | 'expired';
+    source: 'memory' | 'persistent' | 'network' | 'stale-fallback';
+    observedAt: number;
+    cachedAt?: number;
+    staleFallbackUsed: boolean;
+  } | null>(null);
   const vixAbortRef = useRef<AbortController | null>(null);
 
   const loadVix = useCallback(async () => {
@@ -323,10 +352,10 @@ export default function ScreenerPage() {
     vixAbortRef.current = controller;
     setVixLoading(true);
     try {
-      const data = await fetchSparkline('^VIX', { signal: controller.signal });
+      const result = await fetchSparklineResult('^VIX', { signal: controller.signal });
       if (controller.signal.aborted) return;
-      setVixData(data);
-      setLastVixUpdate(new Date());
+      setVixData(result.data);
+      setVixEvidence({ freshness: result.freshness, source: result.source, observedAt: result.observedAt, cachedAt: result.cachedAt, staleFallbackUsed: result.staleFallbackUsed });
     } catch { /* ignore */ }
     if (vixAbortRef.current === controller) {
       vixAbortRef.current = null;
@@ -344,11 +373,21 @@ export default function ScreenerPage() {
 
   const vixLineColor = vixData ? vixColor(vixData.price) : 'var(--yellow)';
   const vixStatus = vixData ? vixLabel(vixData.price) : { text: '', color: '' };
+  const vixEvidenceLabel = !vixData
+    ? 'Unavailable'
+    : vixEvidence?.staleFallbackUsed || vixEvidence?.source === 'stale-fallback'
+      ? 'Retained stale'
+      : vixEvidence?.source === 'network'
+        ? 'Current'
+        : 'Cached-current';
+  const vixObservationLabel = vixData?.providerMarketTime != null
+    ? `Market observation ${formatDateTime(vixData.providerMarketTime)}`
+    : 'Market observation unavailable';
 
   useEffect(() => {
     const cached = getExpirationsCache();
     if (cached && cached.expirations.length > 0) {
-      setAvailableExps(cached.expirations);
+      setAvailableExps(normalizeAvailableExpirations(cached.expirations));
       setDatesLoaded(true);
       return;
     }
@@ -359,10 +398,10 @@ export default function ScreenerPage() {
       try {
         const expirations = await fetchScreenerExpirations({ signal: controller.signal });
         if (controller.signal.aborted) return;
-        const sorted = expirations.map(expiration => ({
+        const sorted = normalizeAvailableExpirations(expirations.map(expiration => ({
           ...expiration,
           label: formatExpirationDropdownLabel(expiration.date),
-        }));
+        })));
         setAvailableExps(sorted);
         setExpirationsCache(sorted);
       } catch { /* keep the date filter usable with its generic options */ }
@@ -403,8 +442,7 @@ export default function ScreenerPage() {
 
   // Nearest only shortcut
   const selectNearestOnly = () => {
-    const nearest = availableExps[0];
-    if (nearest) setExpFilter(`date_${nearest.date}`);
+    if (availableExps.length > 0) setExpFilter('nearest');
   };
 
   // Clear filters — reset to lte_30dte default
@@ -461,6 +499,7 @@ export default function ScreenerPage() {
     setDatasetObservedAt(snapshot.datasetObservedAt);
     setDatasetFreshness(snapshot.datasetFreshness);
     setScanFailureCount(snapshot.scanFailureCount);
+    setCoverage(snapshot.coverage ?? emptyScreenerCoverage());
     setLoadError(snapshot.loadError);
     setRetryState(null);
     setSortField(snapshot.sortField);
@@ -515,6 +554,7 @@ export default function ScreenerPage() {
       rawRowsRef.current = [];
       setLastLoadedCriteria(null);
       setRows([]);
+      setCoverage(emptyScreenerCoverage());
     } else {
       setLoaded(true);
     }
@@ -535,27 +575,37 @@ export default function ScreenerPage() {
         },
       });
       if (!scan.isCurrent()) return;
-      if (acquired.initialResults.size === 0) {
-        throw new Error(acquired.errors[0]?.message ?? 'No Screener market data was returned. Try again.');
-      }
 
       const built = buildScreenerRows(acquired, criteria.expFilter);
-      const sortedExps = built.expirations.map(expiration => ({
+      const sortedExps = normalizeAvailableExpirations(built.expirations.map(expiration => ({
         ...expiration,
         label: formatExpirationDropdownLabel(expiration.date),
-      }));
-      setAvailableExps(sortedExps);
-      setDatesLoaded(true);
-      setExpirationsCache(sortedExps);
-      rawRowsRef.current = built.rows;
-      setRows(applyScreenerFilters(built.rows, criteria));
+      })));
+      if (acquired.initialResults.size > 0) {
+        setAvailableExps(sortedExps);
+        setDatesLoaded(true);
+        setExpirationsCache(sortedExps);
+        rawRowsRef.current = built.rows;
+        setRows(applyScreenerFilters(built.rows, criteria));
+        setLastLoadedCriteria(criteria);
+      }
       setScanFailureCount(acquired.failedBatchIds.length);
+      setCoverage(acquired.coverage ?? emptyScreenerCoverage());
       const provenance = acquired.batchProvenance ?? [];
-      setDatasetFreshness(provenance.some(item => item.staleFallbackUsed) ? 'retained-stale' : provenance.some(item => item.source === 'network') ? 'current' : provenance.length > 0 ? 'cached-current' : 'unavailable');
-      setDatasetObservedAt(provenance.length > 0 ? Math.max(...provenance.map(item => item.fetchedAt)) : null);
+      if (provenance.length > 0) {
+        setDatasetFreshness(provenance.some(item => item.staleFallbackUsed) ? 'retained-stale' : provenance.some(item => item.source === 'network') ? 'current' : 'cached-current');
+        setDatasetObservedAt(Math.max(...provenance.map(item => item.fetchedAt)));
+      } else if (hadPriorDataset) {
+        setDatasetFreshness('retained-stale');
+      } else {
+        setDatasetFreshness('unavailable');
+        setDatasetObservedAt(null);
+      }
       setRetryState(acquired.failedBatchIds.length > 0 ? { criteria, acquired } : null);
-      setLoaded(true);
-      setLastLoadedCriteria(criteria);
+      setLoaded(acquired.initialResults.size > 0 || hadPriorDataset);
+      if (acquired.initialResults.size === 0) {
+        setLoadError(acquired.errors[0]?.message ?? 'No confirmed Screener data was returned. Retry the failed scope.');
+      }
 
     } catch (error) {
       if (scan.isCurrent() && (error as Error)?.name !== 'AbortError') {
@@ -590,14 +640,27 @@ export default function ScreenerPage() {
       });
       if (!scan.isCurrent()) return;
       const built = buildScreenerRows(acquired, criteria.expFilter);
-      rawRowsRef.current = built.rows;
-      setRows(applyScreenerFilters(built.rows, criteria));
+      if (acquired.initialResults.size > 0) {
+        rawRowsRef.current = built.rows;
+        setRows(applyScreenerFilters(built.rows, criteria));
+      }
       setScanFailureCount(acquired.failedBatchIds.length);
+      setCoverage(acquired.coverage ?? emptyScreenerCoverage());
       const provenance = acquired.batchProvenance ?? [];
-      setDatasetFreshness(provenance.some(item => item.staleFallbackUsed) ? 'retained-stale' : provenance.some(item => item.source === 'network') ? 'current' : provenance.length > 0 ? 'cached-current' : 'unavailable');
-      setDatasetObservedAt(provenance.length > 0 ? Math.max(...provenance.map(item => item.fetchedAt)) : null);
+      if (provenance.length > 0) {
+        setDatasetFreshness(provenance.some(item => item.staleFallbackUsed) ? 'retained-stale' : provenance.some(item => item.source === 'network') ? 'current' : 'cached-current');
+        setDatasetObservedAt(Math.max(...provenance.map(item => item.fetchedAt)));
+      } else if (rawRowsRef.current.length > 0) {
+        setDatasetFreshness('retained-stale');
+      } else {
+        setDatasetFreshness('unavailable');
+        setDatasetObservedAt(null);
+      }
       setRetryState(acquired.failedBatchIds.length > 0 ? { criteria, acquired } : null);
-      setLoaded(true);
+      setLoaded(acquired.initialResults.size > 0 || rawRowsRef.current.length > 0);
+      if (acquired.initialResults.size === 0) {
+        setLoadError('Retry failed; showing the previously loaded Screener data. Retry the failed scope again when ready.');
+      }
     } catch (error) {
       if (scan.isCurrent() && (error as { name?: unknown })?.name !== 'AbortError') {
         setLoadError('The failed Screener batches could not be retried.');
@@ -641,12 +704,13 @@ export default function ScreenerPage() {
       datasetObservedAt,
       datasetFreshness,
       scanFailureCount,
+      coverage,
       loadError,
       sortField,
       sortDir,
       scrollY: typeof window === 'undefined' ? 0 : window.scrollY,
     });
-  }, [availableExps, currentCriteria, datasetFreshness, datasetObservedAt, datesLoaded, lastLoadedCriteria, loaded, loadError, scanFailureCount, screenerViewSignature, sortDir, sortField]);
+  }, [availableExps, coverage, currentCriteria, datasetFreshness, datasetObservedAt, datesLoaded, lastLoadedCriteria, loaded, loadError, scanFailureCount, screenerViewSignature, sortDir, sortField]);
 
   // Sorted rows
   const sortedRows = useMemo(() => {
@@ -760,6 +824,12 @@ export default function ScreenerPage() {
   const scopeLabel = selectedETFs.length === 0 ? 'All ETFs' : selectedETFs.map(etf => etf.ticker).join(', ');
   const loadedScopeLabel = lastLoadedCriteria ? (lastLoadedCriteria.selectedETFs.length === 0 ? 'All ETFs' : lastLoadedCriteria.selectedETFs.map(etf => etf.ticker).join(', ')) : scopeLabel;
   const loadedExpirationLabel = lastLoadedCriteria ? optionLabel(expDropdownOptions, lastLoadedCriteria.expFilter) : optionLabel(expDropdownOptions, expFilter);
+  const hasIncompleteCoverage = loaded && (coverage.failedBatches > 0 || coverage.incompleteUnderlyings > 0);
+  const coverageSummary = `${coverage.successfulBatches}/${coverage.plannedBatches} batches successful · ${coverage.analyzedUnderlyings}/${coverage.plannedUnderlyings} underlyings analyzed · ${coverage.acquiredChains} chains · ${coverage.acquiredContracts.toLocaleString('en-US')} contracts`;
+  const noMatchTitle = hasIncompleteCoverage ? 'No confirmed matches in the completed scan' : 'No contracts match these criteria';
+  const noMatchDescription = hasIncompleteCoverage
+    ? 'Some acquisition work is incomplete, so this is not proof that no qualifying contracts exist.'
+    : `Loaded ${rawRowsRef.current.length.toLocaleString('en-US')} contracts before local filters.`;
 
   if (isPhone) {
     const activeCriteria = [
@@ -775,18 +845,20 @@ export default function ScreenerPage() {
       <div className="mobile-route-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
         <div className="screener-mobile-context border-b px-3.5 pb-3 pt-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
           <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0"><div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.07em]" style={{ color: 'var(--text-dim)' }}><span>Screening criteria</span>{loaded && <span className="status-badge" data-status={loadError ? 'failed' : 'fresh'}>{loadError ? 'Needs retry' : `${rawRowsRef.current.length} loaded`}</span>}</div><p className="truncate text-[13px]" style={{ color: 'var(--text)' }}>{activeCriteria}</p></div>
+            <div className="min-w-0"><div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.07em]" style={{ color: 'var(--text-dim)' }}><span>Screening criteria</span>{loaded && <span className="status-badge" data-status={loadError ? 'failed' : hasIncompleteCoverage ? 'updating' : 'fresh'}>{loadError ? 'Needs retry' : hasIncompleteCoverage ? 'Partial coverage' : `${rawRowsRef.current.length} loaded`}</span>}</div><p className="truncate text-[13px]" style={{ color: 'var(--text)' }}>{activeCriteria}</p></div>
             <button type="button" onClick={() => setMobileFiltersOpen(true)} className="pressable mobile-control-button" aria-haspopup="dialog"><SlidersHorizontal className="h-4 w-4" /> Filters {activeFilterCount}</button>
           </div>
           <button type="button" onClick={() => void handleLoad()} disabled={loading} className="mobile-sheet-action primary mt-3 w-full disabled:opacity-50">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}{loading ? progress.total > 0 ? `Scanning ${progress.current}/${progress.total} ETFs` : 'Scanning...' : 'Run Screener'}</button>
           {loaded && <div className="mt-2 text-[10px]" data-evidence-freshness={datasetFreshness} style={{ color: datasetFreshness === 'retained-stale' ? 'var(--yellow)' : 'var(--text-muted)' }}>{loading ? datasetObservedAt ? `Updating · showing retained data observed ${new Date(datasetObservedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Updating · showing prior dataset' : loadError ? datasetObservedAt ? `Refresh failed · showing retained data observed ${new Date(datasetObservedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Refresh failed · showing prior dataset' : datasetFreshness === 'cached-current' ? `Cached · observed ${datasetObservedAt ? new Date(datasetObservedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '—'}` : `Current · observed ${datasetObservedAt ? new Date(datasetObservedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '—'}`}</div>}
-          {loading && progress.total > 0 && <div className="screener-progress mt-2"><div className="flex items-center justify-between text-[10px]" style={{ color: 'var(--text-muted)' }}><span>Settled ETF acquisition</span><span className="font-mono">{progress.current}/{progress.total}</span></div><div className="mt-1 h-1 overflow-hidden rounded-full" style={{ backgroundColor: 'var(--border)' }}><div className="h-full rounded-full" style={{ width: `${progressPct}%`, backgroundColor: 'var(--accent)' }} /></div></div>}
+          {loading && progress.total > 0 && <div className="screener-progress mt-2"><div className="flex items-center justify-between text-[10px]" style={{ color: 'var(--text-muted)' }}><span>Settled ETF acquisition</span><span className="font-mono">{progress.current}/{progress.total}</span></div><div className="mt-1 h-1 overflow-hidden rounded-full" style={{ backgroundColor: 'var(--border)' }}><div role="progressbar" aria-label="Screener ETF acquisition progress" aria-valuemin={0} aria-valuemax={progress.total} aria-valuenow={progress.current} className="h-full rounded-full" style={{ width: `${progressPct}%`, backgroundColor: 'var(--accent)' }} /></div></div>}
           {slowWarning && <p className="mt-2 flex items-center gap-1 text-[11px]" style={{ color: 'var(--yellow)' }}><AlertTriangle className="h-3.5 w-3.5" /> Narrow filters for a faster scan.</p>}
-          {scanFailureCount > 0 && <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]" style={{ color: 'var(--yellow)' }}><span className="flex items-center gap-1"><AlertTriangle className="h-3.5 w-3.5" /> Some results could not be loaded.</span>{retryState && !hasStructuralCriteriaChanged && !loading && <button type="button" onClick={() => void handleRetryFailedResults()} className="mobile-sheet-action secondary min-h-9 px-3 py-1"><RefreshCw className="h-3.5 w-3.5" /> Retry failed results</button>}</div>}
+          {scanFailureCount > 0 && <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]" style={{ color: 'var(--yellow)' }}><span className="flex items-center gap-1"><AlertTriangle className="h-3.5 w-3.5" /> {coverage.failedBatches} batch{coverage.failedBatches === 1 ? '' : 'es'} incomplete; loaded rows remain visible.</span>{retryState && !hasStructuralCriteriaChanged && !loading && <button type="button" onClick={() => void handleRetryFailedResults()} className="mobile-sheet-action secondary min-h-9 px-3 py-1"><RefreshCw className="h-3.5 w-3.5" /> Retry failed results</button>}</div>}
           {loadError && !loading && <p role="alert" className="mt-2 flex items-start gap-1 text-[11px]" style={{ color: 'var(--red)' }}><AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-none" /> <span>{loadError} Run Screener to retry.</span></p>}
         </div>
 
         {loaded && <div className="screener-loaded-context flex flex-wrap items-center gap-x-3 gap-y-1 border-b px-3.5 py-2 text-[11px]" style={{ borderColor: 'var(--border)' }}><span className="font-semibold" style={{ color: 'var(--text)' }}>{rawRowsRef.current.length} contracts loaded</span><span style={{ color: 'var(--text-muted)' }}>Showing {sortedRows.length} after local filters</span><span className="screener-scope-context" style={{ color: 'var(--text-muted)' }}>Loaded scope: {loadedScopeLabel} · {loadedExpirationLabel}</span>{hasStructuralCriteriaChanged && <span className="status-badge" data-status="updating">Pending scope change</span>}{scanFailureCount > 0 && <span className="status-badge" data-status="failed">{scanFailureCount} batch{scanFailureCount === 1 ? '' : 'es'} incomplete</span>}</div>}
+
+        {loaded && <div className="screener-coverage-context border-b px-3.5 py-2 text-[10px]" role="status">{coverageSummary}</div>}
 
         <div className="screener-results-header flex min-h-[46px] items-center gap-2 border-b px-3.5" style={{ borderColor: 'var(--border)' }}>
           <h2 className="mr-auto text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Results <span className="font-mono font-normal" style={{ color: 'var(--text-muted)' }}>{loaded ? sortedRows.length : '—'}</span></h2>
@@ -796,15 +868,19 @@ export default function ScreenerPage() {
 
         {hasStructuralCriteriaChanged && <div role="status" className="border-b px-3.5 py-2 text-[11px]" style={{ borderColor: 'var(--border)', color: 'var(--yellow)', backgroundColor: 'rgba(250,204,21,0.08)' }}>ETF or expiration changed since the last Load. Run Screener to refresh the dataset.</div>}
 
-        {loadError && !loading ? <div className="screener-mobile-state screener-mobile-state--error px-6 text-center"><AlertTriangle className="mx-auto mb-3 h-6 w-6" style={{ color: 'var(--red)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Screener load failed</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>{loadError}</p><button type="button" onClick={() => void handleLoad()} className="mobile-sheet-action secondary mt-4"><RefreshCw className="h-4 w-4" /> Retry</button></div> : !loaded && !loading ? <div className="screener-mobile-state screener-mobile-state--ready px-6 text-center"><Search className="mx-auto mb-3 h-6 w-6" style={{ color: 'var(--text-dim)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Ready to screen</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Choose criteria, then run the screener.</p></div> : loaded && sortedRows.length === 0 ? <div className="screener-mobile-state screener-mobile-state--empty px-6 text-center"><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No screener matches</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Try widening delta, moneyness, or yield.</p><button type="button" onClick={() => setMobileFiltersOpen(true)} className="mobile-sheet-action secondary mt-4">Adjust filters</button></div> : (
-          <div className="mobile-financial-list">{sortedRows.map(row => <MobileOptionRow key={`${row.ticker}-${row.expDate}-${row.strike}`} ticker={row.ticker} tickerTo={buildOptionsPath(row.ticker, row.expDate)} tickerNavigationState={optionsNavigationState} onTickerNavigate={rememberScreenerNavigation} strike={row.strike} expirationLabel={row.expLabel} dte={row.dte} bid={row.bid} ask={row.ask} last={row.last} annualYield={row.annYieldBid} delta={row.delta} impliedVolatility={row.iv} openInterest={row.openInterest} moneynessLabel={row.moneynessLabel} moneynessColor={row.moneynessColor} moneynessState={row.moneynessState} integrityStatus={row.integrityStatus} statusText={`Vol ${formatNumber(row.volume)} · OI ${formatNumber(row.openInterest)}`} onSelect={() => setSelectedOption({ option: optionDetailFromScreenerRow(row), ticker: row.ticker, expirationLabel: row.expLabel, dte: row.dte, underlyingPrice: row.currentPrice != null && row.currentPrice > 0 ? row.currentPrice : null })} />)}</div>
+        {loadError && !loading && !loaded ? <div className="screener-mobile-state screener-mobile-state--error px-6 text-center"><AlertTriangle className="mx-auto mb-3 h-6 w-6" style={{ color: 'var(--red)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Screener load failed</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>{loadError}</p><button type="button" onClick={() => void handleLoad()} className="mobile-sheet-action secondary mt-4"><RefreshCw className="h-4 w-4" /> Retry</button></div> : !loaded && !loading ? <div className="screener-mobile-state screener-mobile-state--ready px-6 text-center"><Search className="mx-auto mb-3 h-6 w-6" style={{ color: 'var(--text-dim)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Ready to screen</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Choose criteria, then run the screener.</p></div> : loaded && sortedRows.length === 0 ? <div className="screener-mobile-state screener-mobile-state--empty px-6 text-center"><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>{noMatchTitle}</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>{noMatchDescription}</p><button type="button" onClick={() => setMobileFiltersOpen(true)} className="mobile-sheet-action secondary mt-4">Adjust filters</button></div> : (
+          <div className="mobile-financial-list">{sortedRows.map(row => <MobileOptionRow key={`${row.ticker}-${row.expDate}-${row.strike}`} ticker={row.ticker} tickerTo={buildOptionsPath(row.ticker, row.expDate)} tickerNavigationState={optionsNavigationState} onTickerNavigate={rememberScreenerNavigation} strike={row.strike} expirationLabel={row.expLabel} dte={row.dte} bid={row.bid} ask={row.ask} last={row.last} lastTradeDate={row.lastTradeDate} annualYield={row.annYieldBid} annYieldLast={row.annYieldLast} annYieldAsk={row.annYieldAsk} delta={row.delta} deltaSource={row.deltaSource} deltaModelVersion={row.deltaSource === 'calculated' ? CALCULATED_PUT_DELTA_MODEL.version : null} impliedVolatility={row.iv} openInterest={row.openInterest} moneynessLabel={row.moneynessLabel} moneynessColor={row.moneynessColor} moneynessState={row.moneynessState} integrityStatus={row.integrityStatus} denseQuoteView statusText={`Vol ${formatNumber(row.volume)} · OI ${formatNumber(row.openInterest)}`} onSelect={() => setSelectedOption({ option: optionDetailFromScreenerRow(row), ticker: row.ticker, expirationLabel: row.expLabel, dte: row.dte, underlyingPrice: row.currentPrice != null && row.currentPrice > 0 ? row.currentPrice : null })} />)}</div>
         )}
 
         {mobileFiltersOpen && <MobileBottomSheet title="Screener filters" description="Define the contracts you want to find" onClose={() => setMobileFiltersOpen(false)} footer={<div className="grid grid-cols-2 gap-2"><button type="button" onClick={resetFilters} className="mobile-sheet-action secondary">Reset</button><button type="button" onClick={() => setMobileFiltersOpen(false)} className="mobile-sheet-action primary">Done</button></div>}>
           <div className="space-y-4">
-            <div><span className="mobile-sheet-label">ETFs</span><div className="flex min-h-11 flex-wrap gap-1.5 rounded-lg border p-1.5" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--input-bg)' }}>{selectedETFs.map(etf => <span key={etf.ticker} className="inline-flex items-center gap-1 rounded-md px-2 text-xs" style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)' }}>{etf.ticker}<button type="button" onClick={() => removeETF(etf.ticker)} className="flex h-7 w-7 items-center justify-center" aria-label={`Remove ${etf.ticker}`}><X className="h-3 w-3" /></button></span>)}<input value={etfSearch} onChange={event => { setEtfSearch(event.target.value); setShowEtfDropdown(true); }} onFocus={() => setShowEtfDropdown(true)} placeholder={selectedETFs.length ? 'Add ETF' : 'All ETFs'} className="min-w-[100px] flex-1 bg-transparent px-2 text-base outline-none" style={{ color: 'var(--text)' }} /></div>{showEtfDropdown && etfOptions.length > 0 && <div className="mt-1 max-h-40 overflow-y-auto rounded-lg border" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>{etfOptions.slice(0, 20).map(etf => <button type="button" key={etf.ticker} onClick={() => addETF(etf)} className="flex min-h-11 w-full items-center gap-2 border-b px-3 text-left" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}><b className="font-mono">{etf.ticker}</b><span className="truncate text-xs" style={{ color: 'var(--text-muted)' }}>{etf.name}</span></button>)}</div>}</div>
+            <div><label htmlFor="screener-etf-search" className="mobile-sheet-label">ETFs</label><div className="flex min-h-11 flex-wrap gap-1.5 rounded-lg border p-1.5" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--input-bg)' }}>{selectedETFs.map(etf => <span key={etf.ticker} className="inline-flex items-center gap-1 rounded-md px-2 text-xs" style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)' }}>{etf.ticker}<button type="button" onClick={() => removeETF(etf.ticker)} className="flex h-7 w-7 items-center justify-center" aria-label={`Remove ${etf.ticker}`}><X className="h-3 w-3" /></button></span>)}<input id="screener-etf-search" value={etfSearch} onChange={event => { setEtfSearch(event.target.value); setShowEtfDropdown(true); }} onFocus={() => setShowEtfDropdown(true)} placeholder={selectedETFs.length ? 'Add ETF' : 'All ETFs'} className="min-w-[100px] flex-1 bg-transparent px-2 text-base outline-none" style={{ color: 'var(--text)' }} /></div>{showEtfDropdown && etfOptions.length > 0 && <div className="mt-1 max-h-40 overflow-y-auto rounded-lg border" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>{etfOptions.slice(0, 20).map(etf => <button type="button" key={etf.ticker} onClick={() => addETF(etf)} className="flex min-h-11 w-full items-center gap-2 border-b px-3 text-left" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}><b className="font-mono">{etf.ticker}</b><span className="truncate text-xs" style={{ color: 'var(--text-muted)' }}>{etf.name}</span></button>)}</div>}</div>
             <ExpirationFilter value={expFilter} onChange={setExpFilter} options={expDropdownOptions} loadingDates={loadingDates} datesLoaded={datesLoaded} />
             {([['Delta (abs)', deltaFilter, setDeltaFilter, DELTA_OPTIONS], ['Moneyness', moneynessFilter, setMoneynessFilter, MONEYNESS_OPTIONS], ['Annualized Yield Bid', yieldFilter, setYieldFilter, YIELD_OPTIONS], ['Minimum OI', oiFilter, setOiFilter, OI_OPTIONS], ['Minimum Volume', volFilter, setVolFilter, VOL_OPTIONS], ['IV vs 1Y Realized Range', ivVsRealizedRangeFilter, setIvVsRealizedRangeFilter, IV_VS_REALIZED_RANGE_OPTIONS]] as const).map(([label, value, setter, options]) => <label key={label} className="block"><span className="mobile-sheet-label">{label}</span><select value={value} onChange={event => setter(event.target.value)} className="mobile-control-field w-full">{options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>)}
+            <details className="screener-iv-help screener-iv-help--mobile">
+              <summary>What does IV vs 1Y realized range mean?</summary>
+              <p>Current ATM put IV positioned in the trailing 1-year range of 4-week realized volatility. This is not traditional historical IV Rank.</p>
+            </details>
             <label className="block"><span className="mobile-sheet-label">Recent Trades Only</span><select value={recentTradesOnly ? 'yes' : 'no'} onChange={event => setRecentTradesOnly(event.target.value === 'yes')} className="mobile-control-field w-full"><option value="yes">Yes</option><option value="no">No</option></select></label>
             <label className="flex min-h-11 items-center gap-2 text-sm" style={{ color: 'var(--text-secondary)' }}><input type="checkbox" checked={showNominalYields} onChange={event => handleNominalYieldToggle(event.target.checked)} className="rounded" />Show Nominal Yields</label>
           </div>
@@ -819,7 +895,7 @@ export default function ScreenerPage() {
   return (
     <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: 'var(--bg)' }}>
       <div className="page-frame">
-        <PageHeader title="Screener" description="Define a bounded universe, load it once, then refine the contracts locally." meta={<div className="screener-header-meta"><span className="status-badge" data-status={loaded ? (loadError ? 'failed' : 'fresh') : 'stale'}>{loaded ? `${rawRowsRef.current.length} contracts loaded` : 'Ready to load'}</span><span>{activeFilterCount} active criteria</span><span>{localFilterCount} local</span></div>} />
+        <PageHeader title="Screener" description="Define a bounded universe, load it once, then refine the contracts locally." meta={<div className="screener-header-meta"><span className="status-badge" data-status={loaded ? (loadError ? 'failed' : hasIncompleteCoverage ? 'updating' : 'fresh') : 'stale'}>{loaded ? loadError ? 'Needs retry' : hasIncompleteCoverage ? 'Partial coverage' : `${rawRowsRef.current.length} contracts loaded` : 'Ready to load'}</span><span>{activeFilterCount} active criteria</span><span>{localFilterCount} local</span></div>} />
         {/* Filter Bar */}
         <div className="screener-filter-surface surface-card p-3 mb-3 sm:mb-4" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
           <div className="screener-filter-heading"><div><div className="screener-eyebrow">Define the scan</div><h2>Universe and criteria</h2><p>Choose what to fetch, then refine the loaded rows without another request.</p></div><div className="screener-scope-badge"><span>Scope</span><strong>{scopeLabel}</strong><small>{optionLabel(expDropdownOptions, expFilter)}</small></div></div>
@@ -844,7 +920,7 @@ export default function ScreenerPage() {
             {/* ETF Selector */}
             <div className="screener-filter-field screener-filter-field--structural w-full sm:min-w-[180px] sm:w-auto min-w-0 min-[430px]:col-span-2 sm:col-span-1">
               <div className="screener-filter-group-tag"><strong>Fetch scope</strong><span>Changes require Load</span></div>
-              <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>ETFs</label>
+              <label htmlFor="screener-etf-search" className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>ETFs</label>
               <div className="relative">
                 <div className="flex flex-wrap gap-1 p-1.5 rounded-lg min-h-[44px] sm:min-h-[32px]" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)' }}>
                   {selectedETFs.map(e => (
@@ -854,6 +930,7 @@ export default function ScreenerPage() {
                     </span>
                   ))}
                   <input
+                    id="screener-etf-search"
                     type="text"
                     value={etfSearch}
                     onChange={e => { setEtfSearch(e.target.value); setShowEtfDropdown(true); }}
@@ -898,7 +975,7 @@ export default function ScreenerPage() {
                   className="mt-1 sm:ml-1 text-[10px] px-2 py-1 rounded transition-colors min-h-[32px]"
                   style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)' }}
                 >
-                  Nearest only
+                  Nearest per ETF
                 </button>
               )}
             </div>
@@ -956,13 +1033,26 @@ export default function ScreenerPage() {
 
             {/* Current ATM implied volatility versus trailing realized-volatility range. */}
             <div className="screener-filter-field screener-filter-field--local w-full sm:w-auto min-w-0">
-              <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }} title="Current ATM put IV positioned in the trailing 1-year range of 4-week realized volatility. Not traditional historical IV Rank.">IV vs 1Y Realized Range</label>
+              <div className="flex items-end gap-1 mb-1">
+                <label className="block text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>IV vs 1Y Realized Range</label>
+                <details className="screener-iv-help relative">
+                  <summary aria-label="Explain IV versus 1Y realized range">?</summary>
+                  <p role="tooltip">Current ATM put IV positioned in the trailing 1-year range of 4-week realized volatility. This is not traditional historical IV Rank.</p>
+                </details>
+              </div>
               <select value={ivVsRealizedRangeFilter} onChange={e => setIvVsRealizedRangeFilter(e.target.value)}
                 className="w-full sm:w-auto rounded-lg px-3 py-2 sm:py-1.5 text-base sm:text-xs outline-none cursor-pointer min-h-[44px] sm:min-h-0"
                 style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
                 {IV_VS_REALIZED_RANGE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
+
+            {/* Recent-trade evidence filter. */}
+            <label className="screener-filter-field screener-filter-field--local flex min-h-[44px] sm:min-h-0 items-center gap-1.5 text-xs cursor-pointer" style={{ color: 'var(--text-muted)' }}>
+              <input type="checkbox" checked={recentTradesOnly} onChange={event => setRecentTradesOnly(event.target.checked)} className="rounded" />
+              <span>Recent Trades Only</span>
+              <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>≤15 sessions</span>
+            </label>
 
             {/* Buttons */}
             <div className="flex gap-2 w-full sm:w-auto">
@@ -989,7 +1079,7 @@ export default function ScreenerPage() {
               <div className="rounded-lg p-2" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)' }}>
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-[10px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>VIX</span>
-                  <button onClick={loadVix} disabled={vixLoading} className="p-0.5 rounded transition-opacity hover:opacity-70 disabled:opacity-50">
+                  <button type="button" onClick={loadVix} disabled={vixLoading} className="p-0.5 rounded transition-opacity hover:opacity-70 disabled:opacity-50" aria-label="Refresh VIX market data">
                     <RefreshCw className={`w-3 h-3 ${vixLoading ? 'animate-spin' : ''}`} style={{ color: 'var(--text-muted)' }} />
                   </button>
                 </div>
@@ -1008,11 +1098,9 @@ export default function ScreenerPage() {
                         {vixStatus.text}
                       </span>
                     </div>
-                    {lastVixUpdate && (
-                      <div className="text-[9px] mt-0.5" style={{ color: 'var(--text-dim)' }}>
-                        {lastVixUpdate.toLocaleTimeString()}
-                      </div>
-                    )}
+                    <div className="text-[9px] mt-0.5" data-evidence-freshness={vixEvidenceLabel.toLowerCase().replace(/ /g, '-')} style={{ color: vixEvidenceLabel === 'Retained stale' ? 'var(--yellow)' : 'var(--text-dim)' }}>
+                      {vixEvidenceLabel} · {vixObservationLabel}
+                    </div>
                   </>
                 ) : (
                   <div className="flex items-center justify-center text-xs" style={{ width: 120, height: 36, color: 'var(--text-muted)' }}>N/A</div>
@@ -1026,6 +1114,11 @@ export default function ScreenerPage() {
             <div className="mt-3">
               <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--border)' }}>
                 <div
+                  role="progressbar"
+                  aria-label="Screener ETF acquisition progress"
+                  aria-valuemin={0}
+                  aria-valuemax={progress.total}
+                  aria-valuenow={progress.current}
                   className="h-full rounded-full"
                   style={{ width: `${progressPct}%`, backgroundColor: 'var(--accent)' }}
                 />
@@ -1060,9 +1153,9 @@ export default function ScreenerPage() {
 
         {/* Confirmation dialog */}
         {showConfirm && (
-          <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-3" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-            <div className="mobile-confirm-sheet max-h-[85dvh] w-full max-w-sm overflow-y-auto rounded-t-2xl p-4 sm:rounded-xl sm:p-6" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-              <h3 className="text-sm font-semibold mb-2" style={{ color: 'var(--text)' }}>Scan All ETFs?</h3>
+          <div ref={confirmOverlayRef} className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-3" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+            <div ref={confirmPanelRef} role="dialog" aria-modal="true" aria-labelledby="screener-confirm-title" tabIndex={-1} className="mobile-confirm-sheet max-h-[85dvh] w-full max-w-sm overflow-y-auto rounded-t-2xl p-4 outline-none sm:rounded-xl sm:p-6" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+              <h3 id="screener-confirm-title" className="text-sm font-semibold mb-2" style={{ color: 'var(--text)' }}>Scan All ETFs?</h3>
               <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
                 Scanning all ETFs uses {FULL_SCAN_BATCH_COUNT} shared market-data batch requests. Proceed?
               </p>
@@ -1141,11 +1234,11 @@ export default function ScreenerPage() {
               <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Choose filters above, then tap Load.</p>
             </div>
           )}
-          {loaded && sortedRows.length === 0 && (
-            <div className="rounded-xl px-5 py-10 text-center" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-              <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No matching options</p>
-              <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Try relaxing Delta, Moneyness, or Annualized Yield.</p>
-              <button type="button" onClick={() => setMobileFiltersOpen(true)} className="tap-target mt-4 rounded-lg px-4 text-xs font-semibold" style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)', border: '1px solid var(--accent-border)' }}>Adjust filters</button>
+           {loaded && sortedRows.length === 0 && (
+             <div className="rounded-xl px-5 py-10 text-center" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+               <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>{noMatchTitle}</p>
+               <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>{noMatchDescription}</p>
+               <button type="button" onClick={() => setMobileFiltersOpen(true)} className="tap-target mt-4 rounded-lg px-4 text-xs font-semibold" style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)', border: '1px solid var(--accent-border)' }}>Adjust filters</button>
             </div>
           )}
           {sortedRows.map(row => (
@@ -1200,8 +1293,8 @@ export default function ScreenerPage() {
                   {columns.map(col => (
                     <th
                       key={col.field}
-                      onClick={() => handleSort(col.field)}
-                      className={`px-2 py-1.5 text-[10px] uppercase tracking-wider font-medium cursor-pointer transition-colors select-none whitespace-nowrap ${col.align} ${
+                      aria-sort={sortField === col.field ? sortDir === 'asc' ? 'ascending' : 'descending' : 'none'}
+                      className={`px-2 py-1.5 text-[10px] uppercase tracking-wider font-medium select-none whitespace-nowrap ${col.align} ${
                         col.field === 'ticker' ? 'sticky left-0 z-[3] border-r' : ''
                       } ${col.hideOnMobile ? 'hidden md:table-cell' : ''} ${col.hideOnTablet ? 'hidden lg:table-cell' : ''}`}
                       style={{
@@ -1210,10 +1303,10 @@ export default function ScreenerPage() {
                         borderColor: 'var(--border)',
                       }}
                     >
-                      <span className="inline-flex items-center gap-0.5">
+                      <button type="button" onClick={() => handleSort(col.field)} className="inline-flex min-h-8 items-center gap-0.5 rounded px-1 text-inherit hover:text-[var(--text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)]">
                         {col.label}
                         <SortIcon field={col.field} />
-                      </span>
+                      </button>
                     </th>
                   ))}
                 </tr>
@@ -1229,9 +1322,9 @@ export default function ScreenerPage() {
                 {loaded && sortedRows.length === 0 && (
                   <tr>
                     <td colSpan={columns.length} className="py-12 px-4 text-center" style={{ color: 'var(--text-muted)' }}>
-                      <div className="text-sm font-medium mb-2" style={{ color: 'var(--text)' }}>No options match the current filters.</div>
+                      <div className="text-sm font-medium mb-2" style={{ color: 'var(--text)' }}>{noMatchTitle}</div>
                       <div className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
-                        Loaded {rawRowsRef.current.length.toLocaleString('en-US')} contracts before filters. Try relaxing Delta, Moneyness, or Ann. Yield Bid.
+                        {noMatchDescription} {hasIncompleteCoverage ? 'Retry the incomplete batches before treating this as a true no-match result.' : 'Try relaxing Delta, Moneyness, or Ann. Yield Bid.'}
                       </div>
                       <div className="mx-auto grid max-w-2xl grid-cols-1 sm:grid-cols-2 gap-1.5 text-left">
                         {criteriaSummary.map(([label, value]) => (
@@ -1292,14 +1385,15 @@ export default function ScreenerPage() {
                       <td className="px-2 py-1 text-right font-mono hidden md:table-cell" style={{ color: row.moneynessColor }}>
                         {row.moneynessLabel}
                       </td>
-                      <td className="px-2 py-1 text-right font-mono" style={{ color: deltaColor(row.delta) }}>
+                      <td className="px-2 py-1 text-right font-mono" style={{ color: deltaColor(row.delta) }} title={row.deltaSource === 'calculated' ? `Calculated Delta · ${CALCULATED_PUT_DELTA_MODEL.version}` : row.deltaSource === 'provider' ? 'Provider Delta' : 'Delta unavailable'}>
                         {row.delta != null ? row.delta.toFixed(2) : '—'}
+                        <span className="sr-only"> {row.deltaSource === 'calculated' ? `Calculated Delta, ${CALCULATED_PUT_DELTA_MODEL.version}` : row.deltaSource === 'provider' ? 'Provider Delta' : 'Delta unavailable'}</span>
                       </td>
                       {OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => <td key={field} className={`px-2 py-1 text-right font-mono ${field === 'bid' ? '' : 'hidden md:table-cell'}`} style={{ color: 'var(--text)' }}>{formatOptionQuoteValue(field, row[field], formatPrice)}</td>)}
                       <td className="px-2 py-1 text-right font-mono hidden md:table-cell" style={{ color: ivColor(row.iv) }}>
                         {row.iv != null ? row.iv.toFixed(1) + '%' : '—'}
                       </td>
-                      <td className="px-2 py-1 text-right font-mono hidden md:table-cell whitespace-nowrap" style={{ color: row.lastTradeDate != null ? 'var(--text-secondary)' : 'var(--text-dim)' }}>{formatOptionLastTradeDate(row.lastTradeDate)}</td>
+                      <td className="px-2 py-1 text-right font-mono hidden md:table-cell whitespace-nowrap" title={getOptionLastTradeFreshness(row.lastTradeDate).label ?? 'Last trade age unavailable'} style={{ color: getOptionLastTradeFreshness(row.lastTradeDate).color }}>{formatOptionLastTradeDate(row.lastTradeDate)}</td>
                       {visibleOptionYieldFields(showNominalYields).map(field => {
                         const value = row[field];
                         const column = yieldColumns[field];

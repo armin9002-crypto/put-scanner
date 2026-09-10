@@ -12,6 +12,7 @@ import { buildScreenerBatch, buildScreenerExpirationDataset, planRepresentativeE
 import { calculateIvVsRealizedVolFromCloses, currentAtmIvFromOptionData } from '../api/_lib/ivRank.js';
 import {
   createLatestScreenerScanGate,
+  classifyScreenerExpirationEvidence,
   fetchScreenerExpirationAvailability,
   fetchScreenerBatch,
   planScreenerBatches,
@@ -23,7 +24,7 @@ import { canonicalOptionChainKey } from '../src/lib/optionChainRequests.ts';
 import { calculateYieldPercent } from '../src/lib/optionMetrics.ts';
 import { calculatePutDelta } from '../src/lib/putDelta.ts';
 import { ETF_LIST } from '../src/lib/etfs.ts';
-import { applyScreenerFilters, buildScreenerRows } from '../src/lib/screenerRows.ts';
+import { applyScreenerFilters, buildScreenerRows, getExpsToFetchForFilter } from '../src/lib/screenerRows.ts';
 import { getScreenerScanDiagnostics, resetRequestDiagnosticsForTests, setRequestDiagnosticsEnabledForTests } from '../src/lib/requestDiagnostics.ts';
 
 const EXPIRATION_ONE = 1_800_576_000;
@@ -508,4 +509,99 @@ test('representative three-ticker payload remains below the endpoint guard and f
   const vercel = JSON.parse(await readFile(new URL('../vercel.json', import.meta.url), 'utf8'));
   assert.equal(vercel.functions['api/screener-batch.js'].maxDuration, 60);
   assert.equal(vercel.functions['api/screener-expirations.js'].maxDuration, 60);
+});
+
+test('Screener expiration criteria use canonical DTE and nearest is evaluated per ETF', () => {
+  const asOf = '2027-01-12T12:00:00Z';
+  const date = isoDate => Math.floor(Date.parse(`${isoDate}T00:00:00Z`) / 1_000);
+  const aNearest = date('2027-01-13');
+  const aThirty = date('2027-02-11');
+  const aThirtyOne = date('2027-02-12');
+  const bNearest = date('2027-01-14');
+  const bThirty = date('2027-02-10');
+  const bThirtyTwo = date('2027-02-13');
+  const candidate = values => values.map((expirationDate, index) => ({ date: expirationDate, dte: [1, 30, 31][index] ?? 999 }));
+  assert.deepEqual(getExpsToFetchForFilter(candidate([aNearest, aThirty, aThirtyOne]), 'lte_30dte').map(expiration => expiration.date), [aNearest, aThirty]);
+  assert.deepEqual(getExpsToFetchForFilter([{ date: aNearest, dte: -1 }, { date: aThirty, dte: 30 }], 'all').map(expiration => expiration.date), [aThirty]);
+
+  const chain = (ticker, dates) => ({
+    expirations: dates.map(expirationDate => ({ date: expirationDate, label: String(expirationDate), dte: 999 })),
+    currentPrice: 100,
+    puts: [{ strike: 90, last: 2, lastTradeDate: 1_799_000_000, bid: 2, ask: 2.5, delta: -0.2, impliedVolatility: 80, volume: 10, openInterest: 100, contractSymbol: `${ticker}-${dates[0]}` }],
+  });
+  const aDates = [aNearest, aThirty, aThirtyOne];
+  const bDates = [bNearest, bThirty, bThirtyTwo];
+  const initialResults = new Map([['AAA', chain('AAA', aDates)], ['BBB', chain('BBB', bDates)]]);
+  const chainsByKey = new Map([
+    ...aDates.map(expirationDate => [canonicalOptionChainKey('AAA', expirationDate), chain('AAA', [expirationDate])]),
+    ...bDates.map(expirationDate => [canonicalOptionChainKey('BBB', expirationDate), chain('BBB', [expirationDate])]),
+  ]);
+  const data = {
+    initialResults,
+    chainsByKey,
+    ivVsRealizedRangeByTicker: new Map(),
+    expirationPlansByTicker: new Map([
+      ['AAA', { availableExpirationDates: aDates, eligibleExpirationDates: aDates, selectedExpirationDates: [aNearest, aThirty, aThirtyOne], discoveryExpiration: aNearest }],
+      ['BBB', { availableExpirationDates: bDates, eligibleExpirationDates: bDates, selectedExpirationDates: [bNearest, bThirty, bThirtyTwo], discoveryExpiration: bNearest }],
+    ]),
+  };
+  const nearestRows = buildScreenerRows(data, 'nearest', { asOf }).rows;
+  assert.deepEqual(nearestRows.map(row => [row.ticker, row.expDate]), [['AAA', aNearest], ['BBB', bNearest]]);
+  const shortRows = buildScreenerRows(data, 'lte_30dte', { asOf }).rows;
+  assert.deepEqual(shortRows.map(row => [row.ticker, row.dte]), [['AAA', 1], ['AAA', 30], ['BBB', 2], ['BBB', 29]]);
+});
+
+test('Screener expiration absence is only trusted with complete ticker-specific discovery', () => {
+  const expiration = 1_800_576_000;
+  const complete = { complete: true, expirationsByTicker: { TST: [expiration] }, errors: [] };
+  assert.equal(classifyScreenerExpirationEvidence(complete, 'TST', expiration), 'present');
+  assert.equal(classifyScreenerExpirationEvidence(complete, 'TST', expiration + 86_400), 'absent');
+  assert.equal(classifyScreenerExpirationEvidence({ ...complete, complete: false }, 'TST', expiration), 'unknown');
+  assert.equal(classifyScreenerExpirationEvidence({ ...complete, errors: [{ ticker: 'TST', message: 'timeout' }] }, 'TST', expiration), 'unknown');
+  assert.equal(classifyScreenerExpirationEvidence(complete, 'MISSING', expiration), 'unknown');
+});
+
+test('partial coverage is explicit and an all-failed retry retains the prior dataset', async () => {
+  const selected = SCREENER_TICKERS.slice(0, 6);
+  const previous = await runScreenerBatchScan({
+    scanId: 'partial-coverage-retention',
+    selectedTickers: selected,
+    expFilter: 'all',
+    fetchBatch: async plan => {
+      if (plan.chunkId === 1) throw new Error('fixture retry unavailable');
+      return { payload: batchPayload(plan), meta: networkMeta };
+    },
+  });
+  assert.equal(previous.coverage.successfulBatches, 1);
+  assert.equal(previous.coverage.failedBatches, 1);
+  assert.equal(previous.coverage.incompleteUnderlyings, 3);
+
+  const retried = await retryFailedScreenerBatches({
+    scanId: 'partial-coverage-retention-retry',
+    selectedTickers: selected,
+    expFilter: 'all',
+    failedBatchIds: previous.failedBatchIds,
+    previous,
+    fetchBatch: async () => { throw new Error('fixture retry still unavailable'); },
+  });
+  assert.equal(retried.initialResults.size, 3, 'the successful prior batch remains available');
+  assert.deepEqual(retried.failedBatchIds, [1]);
+  assert.equal(retried.coverage.successfulBatches, 1);
+  assert.equal(retried.coverage.failedBatches, 1);
+  assert.equal(retried.coverage.incompleteUnderlyings, 3);
+  const rebuilt = buildScreenerRows(retried, 'all', { asOf: '2027-01-12T12:00:00Z' });
+  assert.equal(new Set(rebuilt.rows.map(row => `${row.ticker}|${row.expDate}|${row.strike}`)).size, rebuilt.rows.length);
+  assert.ok(rebuilt.rows.length > 0);
+});
+
+test('Screener UI exposes coverage, provenance, accessible sort state, and retry-safe wording', async () => {
+  const source = await readFile(new URL('../src/pages/ScreenerPage.tsx', import.meta.url), 'utf8');
+  assert.match(source, /Partial coverage/);
+  assert.match(source, /No confirmed matches in the completed scan/);
+  assert.match(source, /Nearest per ETF/);
+  assert.match(source, /Recent Trades Only/);
+  assert.match(source, /aria-sort=/);
+  assert.match(source, /vixEvidenceLabel/);
+  assert.match(source, /Calculated Delta/);
+  assert.match(source, /denseQuoteView statusText=/);
 });

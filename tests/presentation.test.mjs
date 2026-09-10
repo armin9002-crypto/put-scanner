@@ -8,10 +8,11 @@ import { persistShowNominalYield, readShowNominalYield, SHOW_NOMINAL_YIELD_KEY }
 import { OPTION_QUOTE_DISPLAY_ORDER, OPTION_QUOTE_TABLE_DISPLAY_ORDER, OPTION_YIELD_DISPLAY_ORDER, orderedOptionQuoteEntries } from '../src/lib/optionQuoteDisplay.ts';
 
 test('option last-trade dates use compact US dates with a safe fallback', () => {
-  assert.equal(formatOptionLastTradeDate(Date.parse('2026-10-16T15:45:00Z')), '10/16/26');
-  assert.equal(formatOptionLastTradeDate(Date.parse('2026-10-17T01:30:00Z')), '10/16/26', 'Last Trade date follows the New York transaction session');
+  assert.equal(formatOptionLastTradeDate(Date.parse('2026-08-14T15:45:00Z')), '08/14/26');
+  assert.equal(formatOptionLastTradeDate(Date.parse('2026-08-15T01:30:00Z')), '08/14/26', 'Last Trade date follows the New York transaction session');
   assert.equal(formatOptionLastTradeDate(null), '—');
   assert.equal(formatOptionLastTradeDate(Number.NaN), '—');
+  assert.equal(formatOptionLastTradeDate(Date.parse('2026-10-16T15:45:00Z')), '—', 'future Last Trade evidence fails closed');
 });
 
 test('desktop Scanner daily move presentation is percentage-only', () => {

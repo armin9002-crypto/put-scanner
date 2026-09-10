@@ -181,13 +181,15 @@ export function applyScreenerFilters(
 }
 
 export function getExpsToFetchForFilter(allExps: ScreenerExpirationCandidate[], expFilter: string): ScreenerExpirationCandidate[] {
-  if (expFilter === 'all') return allExps.slice(0, 2);
-  if (expFilter === 'lte_30dte') return allExps.filter(expiration => expiration.dte <= 30).slice(0, 2);
+  const nonExpired = allExps.filter(expiration => expiration.dte >= 0);
+  if (expFilter === 'nearest') return nonExpired.slice(0, 1);
+  if (expFilter === 'all') return nonExpired.slice(0, 2);
+  if (expFilter === 'lte_30dte') return nonExpired.filter(expiration => expiration.dte <= 30).slice(0, 2);
   if (expFilter.startsWith('date_')) {
     const targetDate = Number.parseInt(expFilter.replace('date_', ''), 10);
-    return allExps.filter(expiration => expiration.date === targetDate);
+    return nonExpired.filter(expiration => expiration.date === targetDate);
   }
-  return allExps.slice(0, 2);
+  return nonExpired.slice(0, 2);
 }
 
 export function collectScreenerExpirations(
@@ -197,7 +199,7 @@ export function collectScreenerExpirations(
   const byDate = new Map<number, ScreenerExpirationCandidate>();
   initialResults.forEach(data => data.expirations.forEach(expiration => {
     const dte = calculateDte(expiration.date, asOf);
-    if (dte != null && !byDate.has(expiration.date)) byDate.set(expiration.date, { date: expiration.date, dte });
+    if (dte != null && dte >= 0 && !byDate.has(expiration.date)) byDate.set(expiration.date, { date: expiration.date, dte });
   }));
   return [...byDate.values()].sort((a, b) => a.date - b.date);
 }
@@ -226,14 +228,25 @@ export function buildScreenerRows(
         const dte = calculateDte(expiration.date, asOf);
         return dte == null ? null : { date: expiration.date, dte };
       })
-      .filter((expiration): expiration is ScreenerExpirationCandidate => expiration != null);
+      .filter((expiration): expiration is ScreenerExpirationCandidate => expiration != null && expiration.dte >= 0);
     // "Nearest" is a per-ticker property. Selecting from the global union can
     // exclude a ticker whose own first two expirations differ from another
     // ticker's calendar, even though both chains were acquired successfully.
     const plannedDates = data.expirationPlansByTicker?.get(ticker)?.selectedExpirationDates;
-    const tickerExpirations = plannedDates
+    const plannedExpirations = plannedDates
       ? canonicalExpirations.filter(expiration => plannedDates.includes(expiration.date))
-      : getExpsToFetchForFilter(canonicalExpirations, expFilter);
+      : canonicalExpirations;
+    // The server's bounded plan is an acquisition ceiling, not permission to
+    // bypass the current local expiration criterion. Recompute DTE from the
+    // exact expiration and apply the criterion per ETF so <=30 and nearest
+    // never depend on a global expiration union or stale provider DTE.
+    // Recommendation acquisition intentionally supplies its own bounded
+    // representative set (three tenors); preserve that set for its `all`
+    // reconstruction. Normal Screener batches already cap selected dates at
+    // two, so applying the local criterion remains bounded there.
+    const tickerExpirations = expFilter === 'all' && plannedDates
+      ? plannedExpirations
+      : getExpsToFetchForFilter(plannedExpirations, expFilter);
     for (const expiration of tickerExpirations) {
       const chain = data.chainsByKey.get(canonicalOptionChainKey(ticker, expiration.date))
         ?? (expiration.date === initialData.expirations[0]?.date ? initialData : null);
@@ -293,9 +306,9 @@ export function buildScreenerRows(
         };
         Object.defineProperties(row, {
           moneynessState: { value: moneyness.state, enumerable: false },
-          evidenceFreshness: { value: initialData.chainMeta ? initialData.chainMeta.staleFallbackUsed || initialData.chainMeta.source === 'stale' ? 'retained-stale' : initialData.chainMeta.source === 'cache' ? 'cached-current' : 'current' : 'unavailable', enumerable: false },
-          observedAt: { value: initialData.chainMeta?.fetchedAt ?? null, enumerable: false },
-          evidenceSource: { value: initialData.chainMeta?.source ?? 'unknown', enumerable: false },
+          evidenceFreshness: { value: chain.chainMeta ? chain.chainMeta.staleFallbackUsed || chain.chainMeta.source === 'stale' ? 'retained-stale' : chain.chainMeta.source === 'cache' ? 'cached-current' : 'current' : 'unavailable', enumerable: false },
+          observedAt: { value: chain.chainMeta?.fetchedAt ?? initialData.chainMeta?.fetchedAt ?? null, enumerable: false },
+          evidenceSource: { value: chain.chainMeta?.source ?? initialData.chainMeta?.source ?? 'unknown', enumerable: false },
         });
         rows.push(row);
       }

@@ -74,6 +74,24 @@ export interface ScreenerExpirationAvailability {
   errors: Array<{ ticker?: string; message: string }>;
 }
 
+export type ScreenerExpirationEvidence = 'present' | 'absent' | 'unknown';
+
+/**
+ * An expiration is only allowed to be called absent when the provider gave a
+ * complete, ticker-specific discovery response with no matching error.
+ */
+export function classifyScreenerExpirationEvidence(
+  availability: ScreenerExpirationAvailability,
+  ticker: string,
+  expirationDate: number,
+): ScreenerExpirationEvidence {
+  const normalizedTicker = ticker.trim().toUpperCase();
+  if (!availability.complete || availability.errors.some(error => error.ticker == null || error.ticker.trim().toUpperCase() === normalizedTicker)) return 'unknown';
+  const dates = availability.expirationsByTicker[normalizedTicker];
+  if (!Array.isArray(dates)) return 'unknown';
+  return dates.includes(expirationDate) ? 'present' : 'absent';
+}
+
 export interface ScreenerBatchPlan {
   chunkId: number;
   chunkTickers: readonly string[];
@@ -92,6 +110,32 @@ export interface ScreenerBatchFetchResult {
   meta: MarketDataRequestMeta;
 }
 
+export interface ScreenerCoverage {
+  plannedBatches: number;
+  successfulBatches: number;
+  failedBatches: number;
+  retainedBatches: number;
+  plannedUnderlyings: number;
+  analyzedUnderlyings: number;
+  incompleteUnderlyings: number;
+  acquiredChains: number;
+  acquiredContracts: number;
+}
+
+export function emptyScreenerCoverage(): ScreenerCoverage {
+  return {
+    plannedBatches: 0,
+    successfulBatches: 0,
+    failedBatches: 0,
+    retainedBatches: 0,
+    plannedUnderlyings: 0,
+    analyzedUnderlyings: 0,
+    incompleteUnderlyings: 0,
+    acquiredChains: 0,
+    acquiredContracts: 0,
+  };
+}
+
 export interface ScreenerScanResult {
   initialResults: Map<string, OptionsChainData>;
   chainsByKey: Map<string, OptionsChainData>;
@@ -102,6 +146,8 @@ export interface ScreenerScanResult {
   failedBatchIds: number[];
   retainedBatchIds?: number[];
   batchProvenance?: Array<{ batchId: number; source: MarketDataRequestMeta['source']; fetchedAt: number; staleFallbackUsed: boolean }>;
+  incompleteTickers?: string[];
+  coverage?: ScreenerCoverage;
   expirationPlansByTicker: Map<string, {
     availableExpirationDates: number[];
     eligibleExpirationDates: number[];
@@ -256,6 +302,32 @@ function primeOptionsChainCache(ticker: string, date: number | undefined, data: 
   return primeOptionsMarketDataCache(ticker, date, data);
 }
 
+function acquiredContractCount(chainsByKey: Map<string, OptionsChainData>): number {
+  const contracts = new Set<string>();
+  chainsByKey.forEach((chain, chainKey) => {
+    chain.puts.forEach(put => {
+      const contractIdentity = put.contractSymbol ?? `strike:${put.strike}`;
+      contracts.add(`${chainKey}|${contractIdentity}`);
+    });
+  });
+  return contracts.size;
+}
+
+function fallbackCoverage(result: ScreenerScanResult): ScreenerCoverage {
+  const incomplete = result.incompleteTickers?.length ?? Math.max(0, result.plannedBatches - result.completedBatches);
+  return {
+    plannedBatches: result.plannedBatches,
+    successfulBatches: Math.max(0, result.completedBatches - result.failedBatchIds.length),
+    failedBatches: result.failedBatchIds.length,
+    retainedBatches: result.retainedBatchIds?.length ?? 0,
+    plannedUnderlyings: result.initialResults.size + incomplete,
+    analyzedUnderlyings: result.initialResults.size,
+    incompleteUnderlyings: incomplete,
+    acquiredChains: result.chainsByKey.size,
+    acquiredContracts: acquiredContractCount(result.chainsByKey),
+  };
+}
+
 export async function runScreenerBatchScan(options: {
   scanId: string;
   selectedTickers: readonly string[];
@@ -276,7 +348,9 @@ export async function runScreenerBatchScan(options: {
   let completedEtfs = 0;
   let rejectedBatchFailures = 0;
   const failedBatchIds = new Set<number>();
+  const successfulBatchIds = new Set<number>();
   const retainedBatchIds = new Set<number>();
+  const incompleteTickers = new Set<string>();
   const batchProvenance: ScreenerScanResult['batchProvenance'] = [];
   const expirationPlansByTicker = new Map<string, {
     availableExpirationDates: number[];
@@ -307,13 +381,30 @@ export async function runScreenerBatchScan(options: {
     if (batchResult.status === 'rejected') {
       if (batchResult.reason?.name !== 'AbortError') {
         failedBatchIds.add(plan.chunkId);
+        plan.selectedTickers.forEach(ticker => incompleteTickers.add(ticker));
         rejectedBatchFailures += 1;
         errors.push({ batchId: plan.chunkId, message: batchResult.reason instanceof Error ? batchResult.reason.message : 'Screener batch failed' });
       }
       return;
     }
     const { payload, meta } = batchResult.value.result;
-    if (!payload.complete || payload.errors.length > 0 || meta.staleFallbackUsed) failedBatchIds.add(plan.chunkId);
+    const normalizedPayloadTickers = new Set(Object.keys(payload.tickers).map(ticker => ticker.trim().toUpperCase()));
+    const relevantErrors = payload.errors.filter(error => error.ticker == null || selected.has(error.ticker.trim().toUpperCase()));
+    const missingSelectedTickers = plan.selectedTickers.filter(ticker => !normalizedPayloadTickers.has(ticker));
+    const batchIncomplete = !payload.complete || relevantErrors.length > 0 || meta.staleFallbackUsed;
+    if (batchIncomplete) {
+      failedBatchIds.add(plan.chunkId);
+      if (meta.staleFallbackUsed) plan.selectedTickers.forEach(ticker => incompleteTickers.add(ticker));
+      missingSelectedTickers.forEach(ticker => incompleteTickers.add(ticker));
+      relevantErrors.forEach(error => {
+        if (error.ticker) incompleteTickers.add(error.ticker.trim().toUpperCase());
+      });
+      if (missingSelectedTickers.length === 0 && relevantErrors.every(error => error.ticker == null)) {
+        plan.selectedTickers.forEach(ticker => incompleteTickers.add(ticker));
+      }
+    } else {
+      successfulBatchIds.add(plan.chunkId);
+    }
     if (meta.staleFallbackUsed) retainedBatchIds.add(plan.chunkId);
     batchProvenance?.push({ batchId: plan.chunkId, source: meta.source, fetchedAt: meta.fetchedAt, staleFallbackUsed: meta.staleFallbackUsed });
     recordScreenerScanBatch(options.scanId, {
@@ -370,6 +461,18 @@ export async function runScreenerBatchScan(options: {
     failedBatchIds: [...failedBatchIds].sort((a, b) => a - b),
     retainedBatchIds: [...retainedBatchIds].sort((a, b) => a - b),
     batchProvenance,
+    incompleteTickers: [...incompleteTickers].sort(),
+    coverage: {
+      plannedBatches: plans.length,
+      successfulBatches: successfulBatchIds.size,
+      failedBatches: failedBatchIds.size,
+      retainedBatches: retainedBatchIds.size,
+      plannedUnderlyings: selected.size,
+      analyzedUnderlyings: initialResults.size,
+      incompleteUnderlyings: incompleteTickers.size,
+      acquiredChains: chainsByKey.size,
+      acquiredContracts: acquiredContractCount(chainsByKey),
+    },
     expirationPlansByTicker,
   };
 }
@@ -399,9 +502,15 @@ export async function retryFailedScreenerBatches(options: {
     fetchBatch: options.fetchBatch,
     onProgress: options.onProgress,
   });
+  const previousCoverage = options.previous.coverage ?? fallbackCoverage(options.previous);
+  const mergedInitialResults = new Map([...options.previous.initialResults, ...retried.initialResults]);
+  const mergedChainsByKey = new Map([...options.previous.chainsByKey, ...retried.chainsByKey]);
+  const incompleteTickers = new Set(options.previous.incompleteTickers ?? []);
+  retryTickers.forEach(ticker => incompleteTickers.delete(ticker));
+  (retried.incompleteTickers ?? []).forEach(ticker => incompleteTickers.add(ticker));
   return {
-    initialResults: new Map([...options.previous.initialResults, ...retried.initialResults]),
-    chainsByKey: new Map([...options.previous.chainsByKey, ...retried.chainsByKey]),
+    initialResults: mergedInitialResults,
+    chainsByKey: mergedChainsByKey,
     ivVsRealizedRangeByTicker: new Map([...options.previous.ivVsRealizedRangeByTicker, ...retried.ivVsRealizedRangeByTicker]),
     errors: [...options.previous.errors.filter(error => !failed.has(error.batchId)), ...retried.errors],
     plannedBatches: options.previous.plannedBatches,
@@ -409,6 +518,18 @@ export async function retryFailedScreenerBatches(options: {
     failedBatchIds: retried.failedBatchIds,
     retainedBatchIds: retried.retainedBatchIds,
     batchProvenance: [...(options.previous.batchProvenance ?? []).filter(item => !failed.has(item.batchId)), ...(retried.batchProvenance ?? [])],
+    incompleteTickers: [...incompleteTickers].sort(),
+    coverage: {
+      plannedBatches: previousCoverage.plannedBatches,
+      successfulBatches: previousCoverage.successfulBatches + (retried.coverage?.successfulBatches ?? 0),
+      failedBatches: retried.failedBatchIds.length,
+      retainedBatches: retried.retainedBatchIds?.length ?? 0,
+      plannedUnderlyings: previousCoverage.plannedUnderlyings,
+      analyzedUnderlyings: mergedInitialResults.size,
+      incompleteUnderlyings: incompleteTickers.size,
+      acquiredChains: mergedChainsByKey.size,
+      acquiredContracts: acquiredContractCount(mergedChainsByKey),
+    },
     expirationPlansByTicker: new Map([...options.previous.expirationPlansByTicker, ...retried.expirationPlansByTicker]),
   };
 }
@@ -460,5 +581,5 @@ export async function fetchScreenerExpirations(options: { signal?: AbortSignal }
   return [...dates]
     .sort((a, b) => a - b)
     .map(date => ({ date, dte: calculateDte(date) }))
-    .filter((expiration): expiration is { date: number; dte: number } => expiration.dte != null);
+    .filter((expiration): expiration is { date: number; dte: number } => expiration.dte != null && expiration.dte >= 0);
 }

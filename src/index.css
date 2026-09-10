@@ -5408,6 +5408,58 @@ input[type="number"] {
   background: color-mix(in srgb, var(--bg-inset) 62%, transparent);
 }
 
+.screener-coverage-context {
+  color: var(--text-tertiary);
+  background: color-mix(in srgb, var(--bg-inset) 42%, transparent);
+  font-family: var(--font-data);
+}
+
+.screener-iv-help {
+  color: var(--text-tertiary);
+  font-size: calc(0.62rem * var(--ui-text-scale));
+}
+
+.screener-iv-help summary {
+  display: inline-flex;
+  min-height: 1.15rem;
+  min-width: 1.15rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  color: var(--accent-light);
+  cursor: pointer;
+  font-family: var(--font-data);
+  font-weight: 700;
+  list-style: none;
+}
+
+.screener-iv-help summary::-webkit-details-marker {
+  display: none;
+}
+
+.screener-iv-help p {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  width: min(18rem, 80vw);
+  margin: 0;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  background: var(--surface);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
+  line-height: 1.45;
+}
+
+.screener-iv-help--mobile p {
+  position: static;
+  width: auto;
+  margin-top: 0.5rem;
+}
+
 .screener-scope-context {
   overflow: hidden;
   text-overflow: ellipsis;
