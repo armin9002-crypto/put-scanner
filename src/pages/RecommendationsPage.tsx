@@ -21,6 +21,7 @@ import { shortPutMoneynessPresentation } from '../lib/moneynessPresentation.ts';
 import { addToWatchlist, getWatchlist, makeWatchlistId, removeFromWatchlist, type WatchlistItem } from '../lib/watchlist.ts';
 import { buildOptionsPath, createOptionsNavigationState, resolveOptionsReturnOrigin, type OptionsNavigationState, type RecommendationsOriginPresentation } from '../lib/optionsNavigation.ts';
 import { useBlockingOverlayBehavior } from '../lib/blockingOverlay.ts';
+import { regimePresentation } from '../lib/marketRead/presentation.ts';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer.tsx'));
 const DISTINCTION_LABEL: Record<RecommendationDistinction, string> = {
@@ -435,7 +436,7 @@ export default function RecommendationsPage() {
         <PageHeader
           title="Recommendations"
           description="A deterministic, skeptical market assessment that is comfortable returning no trade."
-          meta={run ? <div className="recommendations-header-meta"><span>Evaluated / started {formatDateTime(Date.parse(run.asOf))}</span><span>{run.coverage.trackedUnderlyings.length} tracked → {run.coverage.requestedForOptionScan.length} qualified → {run.coverage.contractsEvaluated.toLocaleString()} contracts → {surfaced.length} surfaced</span></div> : <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>No market scan runs on page load.</span>}
+          meta={run ? <div className="recommendations-header-meta"><span>Evaluated / started {formatDateTime(Date.parse(run.asOf))}</span><span>ETF Pulse context observed {formatDateTime(run.coverage.provenance.pulseFetchedAt)}</span><span>{run.coverage.trackedUnderlyings.length} tracked → {run.coverage.requestedForOptionScan.length} qualified → {run.coverage.contractsEvaluated.toLocaleString()} contracts → {surfaced.length} surfaced</span></div> : <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>No market scan runs on page load.</span>}
           actions={<div className="recommendations-header-actions"><button type="button" className="button-secondary recommendations-methodology-trigger" onClick={() => setShowMethodology(true)} disabled={!run}><Info className="h-4 w-4" />Methodology</button><label className="recommendations-dte-toggle"><input type="checkbox" checked={onlyEvaluateAtLeast60Dte} onChange={event => updateMinimumDtePreference(event.target.checked)} /><span>Only evaluate options ≥60 DTE</span></label><button type="button" className="button-primary" onClick={() => void handleRefresh()} disabled={loading}>{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}{loading ? statusLabel(progress) : 'Refresh Recommendations'}</button>{loading && <button type="button" className="button-secondary" onClick={handleCancel}>Cancel</button>}</div>}
         />
 
@@ -453,7 +454,7 @@ export default function RecommendationsPage() {
           <>
             <section className="recommendations-market-line surface-card">
               <span className="recommendations-market-line__label">Market context</span>
-              <strong>{run.market.regime.label}</strong><span>·</span><strong>{run.market.posture.label}</strong><span>·</span><span>{run.market.regime.putSellingImplication}</span>
+              <strong>{run.market.regime.label}</strong><span>·</span><strong>{run.market.posture.label}</strong><span>·</span><span>{regimePresentation(run.market.regime).confidenceLabel}</span><span>·</span><span>{regimePresentation(run.market.regime).coverageLabel}</span><span>·</span><span>{run.market.regime.putSellingImplication}</span>
               {marketClosedText && <span className="recommendations-market-line__closed" role="status">{marketClosedText}</span>}
             </section>
 

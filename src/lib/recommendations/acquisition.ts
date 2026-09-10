@@ -1,7 +1,7 @@
 import { SCREENER_TICKERS } from '../../../shared/screenerUniverse.js';
-import { buildEtfPulseRows, getEtfPulseUniverse, type EtfPulseLoadResult, type EtfPulseProgress } from '../etfPulseData.ts';
+import { buildEtfPulseRows, ETF_PULSE_CURRENTNESS_MAX_AGE_MS, getEtfPulseUniverse, type EtfPulseLoadResult, type EtfPulseProgress } from '../etfPulseData.ts';
 import { withEtfPulseTechnicalAssessment, type EtfPulseRow } from '../etfPulseMetrics.ts';
-import { analyzeRegime } from '../marketRead/regime.ts';
+import { deriveMarketRegime } from '../marketRead/regime.ts';
 import { postureFromRegime } from '../marketRead/posture.ts';
 import { runScreenerBatchScan, type ScreenerScanResult } from '../screenerAcquisition.ts';
 import { buildScreenerRows } from '../screenerRows.ts';
@@ -30,7 +30,7 @@ export interface RecommendationRefreshResult {
 }
 
 interface RecommendationAcquisitionDependencies {
-  loadPulse: (options: { signal?: AbortSignal; onProgress?: (progress: EtfPulseProgress) => void }) => Promise<EtfPulseLoadResult>;
+  loadPulse: (options: { signal?: AbortSignal; maxAgeMs: number; refreshIntent: 'recommendations'; onProgress?: (progress: EtfPulseProgress) => void }) => Promise<EtfPulseLoadResult>;
   scan: (options: {
     scanId: string;
     selectedTickers: readonly string[];
@@ -163,11 +163,19 @@ export async function refreshRecommendations(options: {
   const universe = recommendationUniverse(options.onlyEvaluateAtLeast60Dte ?? true);
   const pulseResult = await dependencies.loadPulse({
     signal: options.signal,
+    maxAgeMs: ETF_PULSE_CURRENTNESS_MAX_AGE_MS,
+    refreshIntent: 'recommendations',
     onProgress: progress => options.onProgress?.({ stage: 'UNDERLYINGS', completed: 0, total: 0, ticker: progress.ticker, indeterminate: true }),
   });
   if (options.signal?.aborted) throw options.signal.reason ?? new DOMException('Operation aborted', 'AbortError');
   const underlyings = canonicalUnderlyingRows(pulseResult);
-  const marketRegime = analyzeRegime(pulseResult.rows, pulseResult.fetchedAt);
+  const marketRegime = deriveMarketRegime({
+    rows: pulseResult.rows,
+    total: pulseResult.total,
+    fetchedAt: pulseResult.fetchedAt,
+    rowEvidence: pulseResult.rowEvidence,
+    marketDataThrough: pulseResult.marketDataThrough,
+  });
   const posture = postureFromRegime(marketRegime);
   const assessments = assessUnderlyingUniverse(underlyings, marketRegime);
   const hardFailed = assessments.filter(assessment => assessment.qualification === 'HARD_FAIL').map(assessment => assessment.ticker).sort();
@@ -246,6 +254,8 @@ export async function refreshRecommendations(options: {
       },
       provenance: {
         pulseFetchedAt: pulseResult.fetchedAt,
+        pulseMarketDataThrough: pulseResult.marketDataThrough ?? null,
+        pulseFreshness: pulseResult.stale || (pulseResult.retainedRows ?? 0) > 0 ? 'retained-stale' : pulseResult.rows.length > 0 ? (pulseResult.rowEvidence && Object.values(pulseResult.rowEvidence).some(item => item.source === 'persistent') ? 'cached-current' : 'current') : 'unavailable',
         chainSources: chains.map(chain => ({
           ticker: chain.ticker,
           expiration: chain.expiration,

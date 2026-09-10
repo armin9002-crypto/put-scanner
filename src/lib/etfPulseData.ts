@@ -28,6 +28,7 @@ export interface EtfPulseLoadResult {
   retainedRows?: number;
   unavailableRows?: number;
   rowEvidence?: Record<string, EtfPulseRowEvidence>;
+  marketDataThrough?: number | null;
 }
 
 export interface EtfPulseProgress {
@@ -37,9 +38,13 @@ export interface EtfPulseProgress {
   phase?: 'acquiring' | 'processing';
 }
 
-const ROW_CACHE_KEY = 'etf_pulse_rows:v5';
-const ROW_CACHE_TTL = 6 * 60 * 60 * 1000;
-const ROW_CACHE_HARD_TTL = 24 * 60 * 60 * 1000;
+export const ETF_PULSE_ROW_CACHE_KEY = 'etf_pulse_rows:v5';
+export const ETF_PULSE_ROW_CACHE_SOFT_TTL_MS = 6 * 60 * 60 * 1000;
+export const ETF_PULSE_ROW_CACHE_HARD_TTL_MS = 24 * 60 * 60 * 1000;
+/** Existing row-cache soft TTL is the established current/cached-current boundary. */
+export const ETF_PULSE_CURRENTNESS_MAX_AGE_MS = ETF_PULSE_ROW_CACHE_SOFT_TTL_MS;
+
+export type EtfPulseRefreshIntent = 'pulse' | 'recommendations';
 
 interface EtfPulseHistory {
   ticker: string;
@@ -104,7 +109,7 @@ function isValidLoadResult(value: unknown): value is EtfPulseLoadResult {
 }
 
 function normalizedCachedResult(result: EtfPulseLoadResult): EtfPulseLoadResult {
-  const rowEvidence = Object.fromEntries(result.rows.map(row => {
+  const rowEvidence: Record<string, EtfPulseRowEvidence> = Object.fromEntries(result.rows.map(row => {
     const prior = result.rowEvidence?.[row.ticker];
     return [row.ticker, prior?.freshness === 'retained-stale'
       ? { ...prior, source: 'snapshot' as const }
@@ -124,12 +129,12 @@ function normalizedCachedResult(result: EtfPulseLoadResult): EtfPulseLoadResult 
   };
 }
 
-export function readEtfPulseRowsCache(allowStale = false): EtfPulseLoadResult | null {
+export function readEtfPulseRowsCache(allowStale = false, maxAgeMs = ETF_PULSE_CURRENTNESS_MAX_AGE_MS): EtfPulseLoadResult | null {
   const storage = getStorage();
   if (!storage) return null;
   try {
-    const maxAge = allowStale ? ROW_CACHE_HARD_TTL : ROW_CACHE_TTL;
-    const raw = storage.getItem(ROW_CACHE_KEY);
+    const maxAge = allowStale ? ETF_PULSE_ROW_CACHE_HARD_TTL_MS : Math.min(maxAgeMs, ETF_PULSE_ROW_CACHE_HARD_TTL_MS);
+    const raw = storage.getItem(ETF_PULSE_ROW_CACHE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (isValidLoadResult(parsed) && Date.now() - parsed.fetchedAt < maxAge) return normalizedCachedResult(parsed);
@@ -144,7 +149,7 @@ function writeRowsCache(result: EtfPulseLoadResult): void {
   const storage = getStorage();
   if (!storage) return;
   try {
-    storage.setItem(ROW_CACHE_KEY, JSON.stringify(result));
+    storage.setItem(ETF_PULSE_ROW_CACHE_KEY, JSON.stringify(result));
   } catch {
     // Best effort only.
   }
@@ -201,12 +206,15 @@ export async function fetchEtfPulseDataset(options: { forceRefresh?: boolean; si
 
 export async function buildEtfPulseRows(options: {
   forceRefresh?: boolean;
+  maxAgeMs?: number;
+  refreshIntent?: EtfPulseRefreshIntent;
   signal?: AbortSignal;
   onProgress?: (progress: EtfPulseProgress) => void;
 } = {}): Promise<EtfPulseLoadResult> {
+  void options.refreshIntent;
   const previous = readEtfPulseRowsCache(true);
   if (!options.forceRefresh) {
-    const cached = readEtfPulseRowsCache(false);
+    const cached = readEtfPulseRowsCache(false, options.maxAgeMs ?? ETF_PULSE_CURRENTNESS_MAX_AGE_MS);
     if (cached) return cached;
   }
 
@@ -218,6 +226,12 @@ export async function buildEtfPulseRows(options: {
   } catch (error) {
     if (isAbortError(error)) throw error;
     if (previous) {
+      const rowEvidence: Record<string, EtfPulseRowEvidence> = Object.fromEntries(previous.rows.map(row => [row.ticker, {
+        freshness: 'retained-stale' as const,
+        observedAt: previous.rowEvidence?.[row.ticker]?.observedAt ?? previous.fetchedAt,
+        source: 'snapshot' as const,
+        retentionReason: 'ETF Pulse aggregate refresh failed; the prior row was retained.',
+      }]));
       return {
         ...previous,
         failed: 0,
@@ -225,12 +239,7 @@ export async function buildEtfPulseRows(options: {
         currentRows: 0,
         retainedRows: previous.rows.length,
         unavailableRows: 0,
-        rowEvidence: Object.fromEntries(previous.rows.map(row => [row.ticker, {
-          freshness: 'retained-stale' as const,
-          observedAt: previous.rowEvidence?.[row.ticker]?.observedAt ?? previous.fetchedAt,
-          source: 'snapshot' as const,
-          retentionReason: 'ETF Pulse aggregate refresh failed; the prior row was retained.',
-        }])),
+        rowEvidence,
         stale: true,
         errors: [{ ticker: 'DATASET', message: error instanceof Error ? error.message : 'ETF Pulse refresh failed' }],
         lastSuccessfulAt: previous.lastSuccessfulAt ?? previous.fetchedAt,
@@ -267,6 +276,10 @@ export async function buildEtfPulseRows(options: {
     }
   });
   const validRows = rows.filter((row): row is EtfPulseRow => row != null).sort((a, b) => a.ticker.localeCompare(b.ticker));
+  const providerMarketTimes = Object.values(dataset.histories)
+    .map(history => history.providerMarketTime)
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+    .map(value => value * 1000);
   const result: EtfPulseLoadResult = {
     rows: validRows,
     fetchedAt: dataset.fetchedAt,
@@ -280,6 +293,7 @@ export async function buildEtfPulseRows(options: {
     retainedRows: validRows.filter(row => rowEvidence[row.ticker]?.freshness === 'retained-stale').length,
     unavailableRows: universe.filter(etf => rowEvidence[etf.ticker]?.freshness === 'unavailable').length,
     rowEvidence,
+    marketDataThrough: providerMarketTimes.length > 0 ? Math.max(...providerMarketTimes) : null,
   };
   if (validRows.length > 0) writeRowsCache(result);
   return result;

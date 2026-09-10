@@ -8,8 +8,9 @@ import { getReturnForPeriod, heatmapTileStyle, matchesTrend, sortValue, trendSty
 import { formatCurrency, formatPercent } from '../lib/format';
 import { isFiniteNumber } from '../lib/optionMetrics';
 import { postureFromRegime } from '../lib/marketRead/posture';
-import { analyzeRegime } from '../lib/marketRead/regime';
+import { deriveMarketRegime } from '../lib/marketRead/regime';
 import type { RegimeAnalysis, TradePosture } from '../lib/marketRead/types';
+import { regimePresentation } from '../lib/marketRead/presentation';
 import DataFreshness from '../components/DataFreshness';
 import { useResponsiveMode } from '../lib/responsive';
 import { useBlockingOverlayBehavior } from '../lib/blockingOverlay';
@@ -18,8 +19,10 @@ import MobileSegmentedControl from '../components/mobile/MobileSegmentedControl'
 import { underlyingTechnicalEvidencePresentation, underlyingTechnicalStatePresentation } from '../lib/underlyingTechnicalPresentation';
 import type { UnderlyingTechnicalState } from '../lib/underlyingTechnical';
 import { buildOptionsPath, createOptionsNavigationState, resolveOptionsReturnOrigin, type OptionsNavigationState, type PulseOriginPresentation } from '../lib/optionsNavigation';
+import { ETF_PULSE_CONTEXT_BENCHMARK_COUNT, ETF_PULSE_LEVERAGED_UNIVERSE_SIZE } from '../../shared/etfPulseUniverse.js';
 
 const DASH = '\u2014';
+const PULSE_UNIVERSE_LABEL = `${ETF_PULSE_LEVERAGED_UNIVERSE_SIZE} leveraged ETFs + ${ETF_PULSE_CONTEXT_BENCHMARK_COUNT} context benchmarks`;
 
 type SortDirection = 'asc' | 'desc';
 
@@ -198,6 +201,7 @@ function MarketReadStrip({
   }
 
   const copy = buildMarketReadRibbonCopy(regime, posture);
+  const presentation = regimePresentation(regime);
 
   return (
     <div className="rounded-lg px-2 py-1 min-w-0" style={{ backgroundColor: 'rgba(15,23,42,0.18)', border: '1px solid var(--border)' }}>
@@ -205,7 +209,8 @@ function MarketReadStrip({
         <span className="text-[10px] font-semibold uppercase tracking-wider flex-shrink-0 whitespace-nowrap" style={{ color: 'var(--text-dim)' }}>Market Read</span>
         <div className="flex flex-wrap items-center gap-1 min-w-0">
           <MarketBadge label={regime.label} />
-          <MarketBadge label={`${regime.confidence} confidence`} tone="confidence" />
+          <MarketBadge label={presentation.confidenceLabel} tone="confidence" />
+          <MarketBadge label={presentation.coverageLabel} tone="confidence" />
           <MarketBadge label={posture.label} tone="posture" />
         </div>
         <span className="hidden 2xl:inline text-[11px] whitespace-nowrap" style={{ color: 'var(--text-dim)' }}>·</span>
@@ -229,6 +234,7 @@ function MarketReadModal({ regime, posture, onClose }: { regime: RegimeAnalysis;
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
   const setPanelRef = (element: HTMLElement | null) => { panelRef.current = element; };
+  const presentation = regimePresentation(regime);
 
   useBlockingOverlayBehavior({
     panelRef,
@@ -246,7 +252,7 @@ function MarketReadModal({ regime, posture, onClose }: { regime: RegimeAnalysis;
             <h2 id={titleId} className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--text-dim)' }}>Market Read</h2>
             <div className="flex flex-wrap items-center gap-1.5">
               <MarketBadge label={regime.label} />
-              <MarketBadge label={`${regime.confidence} confidence`} tone="confidence" />
+              <MarketBadge label={presentation.confidenceLabel} tone="confidence" />
               <MarketBadge label={posture.label} tone="posture" />
             </div>
           </div>
@@ -266,6 +272,8 @@ function MarketReadModal({ regime, posture, onClose }: { regime: RegimeAnalysis;
           <section className="rounded-lg p-3" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
             <h3 className="text-xs font-semibold mb-2" style={{ color: 'var(--text)' }}>Key drivers</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>
+              <div className="sm:col-span-2">Coverage: {presentation.coverageLabel}</div>
+              <div className="sm:col-span-2">Universe: {regime.intendedUniverse.leveragedUniverseSize} leveraged ETFs + {regime.intendedUniverse.contextBenchmarkCount} context benchmarks</div>
               <div>SPY: {regime.stats.spyTrend}</div>
               <div>QQQ: {regime.stats.qqqTrend}</div>
               <div>Above 200D: {pctText(regime.stats.breadthAbove200)}</div>
@@ -571,7 +579,13 @@ export default function EtfPulsePage() {
   }, [loadRows]);
 
   const rows = useMemo(() => result?.rows ?? [], [result]);
-  const regime = useMemo(() => rows.length > 0 ? analyzeRegime(rows, result?.fetchedAt ?? null) : null, [result?.fetchedAt, rows]);
+  const regime = useMemo(() => result && result.rows.length > 0 ? deriveMarketRegime({
+    rows: result.rows,
+    total: result.total,
+    fetchedAt: result.fetchedAt,
+    rowEvidence: result.rowEvidence,
+    marketDataThrough: result.marketDataThrough,
+  }) : null, [result]);
   const posture = useMemo(() => regime ? postureFromRegime(regime) : null, [regime]);
   const leverageOptions = useMemo(() => ['All', ...new Set(getEtfPulseUniverse().map(etf => etf.leverage))], []);
   const typeOptions = useMemo(() => ['All', ...new Set(getEtfPulseUniverse().map(etf => etf.type))], []);
@@ -820,7 +834,7 @@ export default function EtfPulsePage() {
       <div className="mobile-route-page pulse-mobile-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
         <section className="pulse-mobile-read border-b px-3.5 py-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
           <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: 'var(--text-dim)' }}>Market Read</div>
-          {regime && posture ? <><div className="flex flex-wrap items-center gap-1.5"><MarketBadge label={regime.label} /><MarketBadge label={posture.label} tone="posture" /><MarketBadge label={`${regime.confidence} confidence`} tone="confidence" /></div><p className="mt-2 line-clamp-2 text-[12px] leading-5" style={{ color: 'var(--text-secondary)' }}>{regime.marketRead}</p><button type="button" onClick={() => setShowMarketRead(true)} className="pressable mt-1 inline-flex min-h-11 items-center text-[12px] font-semibold" style={{ color: 'var(--accent-light)' }}>Details</button></> : <div className="flex min-h-[64px] items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>{loading ? <><Loader2 className="h-4 w-4 animate-spin" /> Acquiring aggregate market data…</> : 'Market Read unavailable'}</div>}
+          {regime && posture ? <><div className="flex flex-wrap items-center gap-1.5"><MarketBadge label={regime.label} /><MarketBadge label={posture.label} tone="posture" /><MarketBadge label={regimePresentation(regime).confidenceLabel} tone="confidence" /></div><p className="mt-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>{regimePresentation(regime).coverageLabel}</p><p className="mt-1 line-clamp-2 text-[12px] leading-5" style={{ color: 'var(--text-secondary)' }}>{regime.marketRead}</p><button type="button" onClick={() => setShowMarketRead(true)} className="pressable mt-1 inline-flex min-h-11 items-center text-[12px] font-semibold" style={{ color: 'var(--accent-light)' }}>Details</button></> : <div className="flex min-h-[64px] items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>{loading ? <><Loader2 className="h-4 w-4 animate-spin" /> Acquiring aggregate market data…</> : 'Market Read unavailable'}</div>}
         </section>
 
         <div className="pulse-mobile-controls border-b px-3.5 py-2.5" style={{ borderColor: 'var(--border)' }}>
@@ -850,7 +864,7 @@ export default function EtfPulsePage() {
               <h1 className="text-xl sm:text-2xl font-bold tracking-tight leading-none flex items-center gap-2" style={{ color: 'var(--text)' }}>
                 <Activity className="w-5 h-5" style={{ color: 'var(--accent-light)' }} /> ETF Pulse
               </h1>
-              <p className="pulse-title-context">Market regime overview across the leveraged-ETF universe.</p>
+              <p className="pulse-title-context">{PULSE_UNIVERSE_LABEL} · market regime overview.</p>
             </div>
             <div className="min-w-0 xl:flex-1">
               <MarketReadStrip regime={regime} posture={posture} unavailable={rows.length === 0} onOpen={() => setShowMarketRead(true)} />

@@ -96,6 +96,8 @@ export interface RecommendationCoverage {
   };
   provenance: {
     pulseFetchedAt: number | null;
+    pulseMarketDataThrough?: number | null;
+    pulseFreshness?: 'current' | 'cached-current' | 'retained-stale' | 'unavailable';
     chainSources: Array<{ ticker: string; expiration: number; source: string; fetchedAt: number | null }>;
   };
 }

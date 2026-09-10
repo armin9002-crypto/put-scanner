@@ -6,6 +6,7 @@ import { buildScreenerRows } from '../screenerRows.ts';
 import type { OptionContract, OptionsChainData } from '../types.ts';
 import { runRecommendationEngine } from './engine.ts';
 import { RECOMMENDATION_ENGINE_VERSION, RECOMMENDATION_POLICY_VERSION, recommendationUniverse, type RecommendationRun, type RecommendationSnapshot } from './types.ts';
+import { ETF_PULSE_CONTEXT_BENCHMARK_COUNT, ETF_PULSE_DISPLAYED_ROW_COUNT, ETF_PULSE_LEVERAGED_UNIVERSE_SIZE } from '../../../shared/etfPulseUniverse.js';
 
 export type RecommendationVisualFixture = 'actionable' | 'conditional' | 'no-trade' | 'incomplete';
 
@@ -88,6 +89,32 @@ function market(): RegimeAnalysis {
     marketRead: 'Trend remains intact while short-term weakness has reset some premium and entry levels.',
     putSellingImplication: 'Selective but constructive put environment.',
     favor: ['controlled pullbacks'], avoid: ['broken trends'], drivers: ['SPY Uptrend, QQQ Uptrend'], warnings: [],
+    intendedUniverse: { leveragedUniverseSize: ETF_PULSE_LEVERAGED_UNIVERSE_SIZE, contextBenchmarkCount: ETF_PULSE_CONTEXT_BENCHMARK_COUNT, displayedRowCount: ETF_PULSE_DISPLAYED_ROW_COUNT },
+    currentEvidence: { leveraged: ETF_PULSE_LEVERAGED_UNIVERSE_SIZE, contextBenchmarks: ETF_PULSE_CONTEXT_BENCHMARK_COUNT },
+    retainedEvidence: { leveraged: 0, contextBenchmarks: 0 },
+    unavailableEvidence: { leveraged: 0, contextBenchmarks: 0 },
+    coverage: {
+      intendedLeveraged: ETF_PULSE_LEVERAGED_UNIVERSE_SIZE,
+      currentLeveraged: ETF_PULSE_LEVERAGED_UNIVERSE_SIZE,
+      retainedLeveraged: 0,
+      unavailableLeveraged: 0,
+      currentContextBenchmarks: ETF_PULSE_CONTEXT_BENCHMARK_COUNT,
+      retainedContextBenchmarks: 0,
+      unavailableContextBenchmarks: 0,
+      currentRatio: 1,
+    },
+    metrics: {
+      rsi: { intended: ETF_PULSE_LEVERAGED_UNIVERSE_SIZE, currentValid: ETF_PULSE_LEVERAGED_UNIVERSE_SIZE, retained: 0, unavailable: 0, numerator: null, denominator: ETF_PULSE_LEVERAGED_UNIVERSE_SIZE, value: 55 },
+      movingAverage50: { intended: ETF_PULSE_LEVERAGED_UNIVERSE_SIZE, currentValid: ETF_PULSE_LEVERAGED_UNIVERSE_SIZE, retained: 0, unavailable: 0, numerator: 62, denominator: ETF_PULSE_LEVERAGED_UNIVERSE_SIZE, value: 0.62 },
+      movingAverage200: { intended: ETF_PULSE_LEVERAGED_UNIVERSE_SIZE, currentValid: ETF_PULSE_LEVERAGED_UNIVERSE_SIZE, retained: 0, unavailable: 0, numerator: 74, denominator: ETF_PULSE_LEVERAGED_UNIVERSE_SIZE, value: 0.74 },
+      return30: { intended: ETF_PULSE_LEVERAGED_UNIVERSE_SIZE, currentValid: ETF_PULSE_LEVERAGED_UNIVERSE_SIZE, retained: 0, unavailable: 0, numerator: null, denominator: ETF_PULSE_LEVERAGED_UNIVERSE_SIZE, value: 0.03 },
+      realizedVolatility20: { intended: ETF_PULSE_LEVERAGED_UNIVERSE_SIZE, currentValid: ETF_PULSE_LEVERAGED_UNIVERSE_SIZE, retained: 0, unavailable: 0, numerator: null, denominator: ETF_PULSE_LEVERAGED_UNIVERSE_SIZE, value: 0.55 },
+      trend: { intended: ETF_PULSE_LEVERAGED_UNIVERSE_SIZE, currentValid: ETF_PULSE_LEVERAGED_UNIVERSE_SIZE, retained: 0, unavailable: 0, numerator: 2, denominator: ETF_PULSE_LEVERAGED_UNIVERSE_SIZE, value: 2 / ETF_PULSE_LEVERAGED_UNIVERSE_SIZE },
+      oversold: { intended: ETF_PULSE_LEVERAGED_UNIVERSE_SIZE, currentValid: ETF_PULSE_LEVERAGED_UNIVERSE_SIZE, retained: 0, unavailable: 0, numerator: 1, denominator: ETF_PULSE_LEVERAGED_UNIVERSE_SIZE, value: 1 / ETF_PULSE_LEVERAGED_UNIVERSE_SIZE },
+      overbought: { intended: ETF_PULSE_LEVERAGED_UNIVERSE_SIZE, currentValid: ETF_PULSE_LEVERAGED_UNIVERSE_SIZE, retained: 0, unavailable: 0, numerator: 2, denominator: ETF_PULSE_LEVERAGED_UNIVERSE_SIZE, value: 2 / ETF_PULSE_LEVERAGED_UNIVERSE_SIZE },
+    },
+    evidenceObservedAt: FETCHED_AT,
+    marketDataThrough: null,
     stats: {
       spyTrend: 'Uptrend', qqqTrend: 'Uptrend', breadthAbove50: 0.62, breadthAbove200: 0.74, downtrendCount: 2,
       oversoldCount: 1, overboughtCount: 2, medianThirtyDayReturn: 0.03, medianRealizedVolatility20: 0.55,

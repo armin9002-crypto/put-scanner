@@ -1,6 +1,45 @@
+import type { EtfPulseRow } from '../etfPulseMetrics.ts';
+import type { EvidenceFreshness } from '../evidence.ts';
+
 export type RegimeLabel = 'Complacent Risk-On' | 'Healthy Risk-On' | 'Healthy Pullback' | 'Choppy / Elevated Vol' | 'Risk-Off' | 'Oversold Panic' | 'Mixed / No Edge';
 export type RegimeConfidence = 'Low' | 'Medium' | 'High';
 export type PostureLabel = 'Selective / Patient' | 'Balanced' | 'Defensive' | 'Very Defensive' | 'Opportunistic';
+
+export interface PulseRowEvidence {
+  freshness: EvidenceFreshness;
+  observedAt: number | null;
+  source: string;
+  retentionReason?: string | null;
+}
+
+export interface CanonicalPulseSnapshot {
+  rows: readonly EtfPulseRow[];
+  total?: number;
+  fetchedAt: number | null;
+  marketDataThrough?: number | null;
+  rowEvidence?: Record<string, PulseRowEvidence | undefined>;
+}
+
+export interface RegimeMetricPopulation {
+  intended: number;
+  currentValid: number;
+  retained: number;
+  unavailable: number;
+  numerator: number | null;
+  denominator: number;
+  value: number | null;
+}
+
+export interface RegimeCoverage {
+  intendedLeveraged: number;
+  currentLeveraged: number;
+  retainedLeveraged: number;
+  unavailableLeveraged: number;
+  currentContextBenchmarks: number;
+  retainedContextBenchmarks: number;
+  unavailableContextBenchmarks: number;
+  currentRatio: number | null;
+}
 
 export interface RegimeAnalysis {
   label: RegimeLabel;
@@ -12,6 +51,36 @@ export interface RegimeAnalysis {
   avoid: string[];
   drivers: string[];
   warnings: string[];
+  intendedUniverse: {
+    leveragedUniverseSize: number;
+    contextBenchmarkCount: number;
+    displayedRowCount: number;
+  };
+  currentEvidence: {
+    leveraged: number;
+    contextBenchmarks: number;
+  };
+  retainedEvidence: {
+    leveraged: number;
+    contextBenchmarks: number;
+  };
+  unavailableEvidence: {
+    leveraged: number;
+    contextBenchmarks: number;
+  };
+  coverage: RegimeCoverage;
+  metrics: {
+    rsi: RegimeMetricPopulation;
+    movingAverage50: RegimeMetricPopulation;
+    movingAverage200: RegimeMetricPopulation;
+    return30: RegimeMetricPopulation;
+    realizedVolatility20: RegimeMetricPopulation;
+    trend: RegimeMetricPopulation;
+    oversold: RegimeMetricPopulation;
+    overbought: RegimeMetricPopulation;
+  };
+  evidenceObservedAt: number | null;
+  marketDataThrough: number | null;
   stats: {
     spyTrend: string;
     qqqTrend: string;
