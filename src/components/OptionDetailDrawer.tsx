@@ -227,7 +227,9 @@ export default function OptionDetailDrawer({
   const spread = calculateBidAskSpread(executableBid, executableAsk);
   const spreadPct = calculateBidAskSpreadPercent(executableBid, executableAsk);
   const lastTradeInfo = getLastTradeDetail(displayLastTradeDate, quoteState?.lastTradeFreshness);
-  const compactLastTradeAge = lastTradeInfo.age.replace(/ - (?:Very )?Stale$/, '');
+  const compactLastTradeAge = quoteState?.lastTradeFreshness.ageSessions == null
+    ? 'Unavailable'
+    : lastTradeInfo.age.includes('Stale') ? lastTradeInfo.age : `Recent · ${lastTradeInfo.age}`;
   const usableLast = quoteState?.trustedLast ?? null;
 
   const parsedSoldPrice = soldPrice.trim() === '' ? null : Number(soldPrice);
@@ -238,7 +240,13 @@ export default function OptionDetailDrawer({
     : null;
 
   const parsedContracts = contracts.trim() === '' ? null : Number(contracts);
-  const validContracts = Number.isInteger(parsedContracts) && isFiniteNumber(parsedContracts) && parsedContracts >= 1 ? parsedContracts : null;
+  const validContracts = Number.isSafeInteger(parsedContracts) && isFiniteNumber(parsedContracts) && parsedContracts >= 1 ? parsedContracts : null;
+  const contractsError = validContracts == null ? 'Enter a positive whole number of contracts.' : null;
+  const manualSoldPriceError = soldPriceBasis === 'manual' && validSoldPrice == null
+    ? 'Enter a sold price greater than 0.'
+    : null;
+  const contractsErrorId = `${titleId}-contracts-error`;
+  const soldPriceErrorId = `${titleId}-sold-price-error`;
   const positionMetrics = calculatePositionMetrics({
     strike: option.strike,
     soldPrice: activeSoldPrice,
@@ -258,10 +266,10 @@ export default function OptionDetailDrawer({
     setSoldPriceBasis(basis);
   };
 
-  const selectedBasisWarning = soldPriceBasis === 'last' ? lastTradeInfo.warning ?? (usableLast != null ? 'Last trade age unavailable; use it only as an explicit reference.' : null)
+  const selectedBasisWarning = manualSoldPriceError ?? (soldPriceBasis === 'last' ? lastTradeInfo.warning ?? (usableLast != null ? 'Last trade age unavailable; use it only as an explicit reference.' : null)
     : soldPriceBasis === 'manual' ? 'Manual price · hypothetical calculator basis.'
-    : null;
-  const selectedBasisWarningColor = soldPriceBasis === 'last' ? lastTradeInfo.color ?? 'var(--yellow)' : 'var(--text-muted)';
+    : null);
+  const selectedBasisWarningColor = manualSoldPriceError ? 'var(--yellow)' : soldPriceBasis === 'last' ? lastTradeInfo.color ?? 'var(--yellow)' : 'var(--text-muted)';
 
   const integrityWarning = quoteIntegrityInvalid
     ? 'Quote inconsistent · raw provider prices remain visible for audit; executable metrics are unavailable.'
@@ -314,14 +322,17 @@ export default function OptionDetailDrawer({
             <section className="border-t pt-4" style={{ borderColor: 'var(--border)' }}>
               <h3 className="mb-3 text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Position Calculator</h3>
               <div className="grid grid-cols-2 gap-3">
-                <label><span className="mobile-sheet-label">Contracts</span><input type="text" inputMode="numeric" value={contracts} onChange={event => /^\d*$/.test(event.target.value) && setContracts(event.target.value)} onBlur={() => { const value = Number(contracts); setContracts(Number.isInteger(value) && value >= 1 ? String(value) : '1'); }} className="mobile-control-field w-full font-mono" /></label>
-                <label><span className="mobile-sheet-label">Sold Price</span><input type="number" inputMode="decimal" min={0.01} step="0.01" value={soldPrice} onChange={event => { const next = event.target.value; if (next === '' || Number(next) >= 0) { setSoldPrice(next); setSoldPriceBasis(next === '' ? null : 'manual'); } }} className="mobile-control-field w-full font-mono" /></label>
+                <label><span className="mobile-sheet-label">Contracts</span><input type="text" inputMode="numeric" value={contracts} onChange={event => /^\d*$/.test(event.target.value) && setContracts(event.target.value)} aria-invalid={contractsError != null} aria-describedby={contractsError ? contractsErrorId : undefined} className="mobile-control-field w-full font-mono" />{contractsError && <small id={contractsErrorId} className="mt-1 block text-[11px]" style={{ color: 'var(--yellow)' }}>{contractsError}</small>}</label>
+                <label><span className="mobile-sheet-label">Sold Price</span><input type="text" inputMode="decimal" value={soldPrice} onChange={event => { const next = event.target.value; if (/^-?\d*\.?\d*$/.test(next)) { setSoldPrice(next); setSoldPriceBasis('manual'); } }} aria-invalid={manualSoldPriceError != null} aria-describedby={manualSoldPriceError ? soldPriceErrorId : undefined} className="mobile-control-field w-full font-mono" />{manualSoldPriceError && <small id={soldPriceErrorId} className="mt-1 block text-[11px]" style={{ color: 'var(--yellow)' }}>{manualSoldPriceError}</small>}</label>
               </div>
               <div className="mt-3 divide-y" style={{ borderColor: 'var(--border)' }}>
                 <DetailRow label="Premium" value={formatCurrency(positionMetrics.totalPremium)} color="var(--green)" />
+                <DetailRow label="Breakeven" value={formatCurrency(positionMetrics.breakeven)} />
+                <DetailRow label="Downside Cushion" value={formatPercent(positionMetrics.downsideCushion)} />
+                <DetailRow label="Gross Risk" value={formatCurrency(positionMetrics.equityAtRisk)} />
                 <DetailRow label="Net Risk" value={formatCurrency(positionMetrics.netCapitalAtRisk)} />
-                <DetailRow label="Nominal Yield" value={formatPercent(securedCashYield)} color="var(--accent-light)" />
-                <DetailRow label="Annualized Yield" value={formatPercent(annualizedSecuredCashYield)} color="var(--green)" />
+                <DetailRow label="NY" value={formatPercent(securedCashYield)} color="var(--accent-light)" />
+                <DetailRow label="AY" value={formatPercent(annualizedSecuredCashYield)} color="var(--green)" />
               </div>
             </section>
 
@@ -407,6 +418,7 @@ export default function OptionDetailDrawer({
               <h3 id="option-market-liquidity-heading">Market / Liquidity</h3>
               <div className="option-detail-mobile-metric-grid option-detail-mobile-metric-grid--market">
                 <MobileMetric label="Last" value={formatOptionQuoteValue('last', displayLast, value => formatCurrency(value))} />
+                <MobileMetric label="Last Trade" value={lastTradeInfo.date} color={lastTradeInfo.color} />
                 <MobileMetric label="Age" value={compactLastTradeAge} color={lastTradeInfo.color} />
                 <MobileMetric label="Vol" value={formatInteger(option.volume)} />
                 <MobileMetric label="OI" value={formatInteger(option.openInterest)} />
@@ -416,14 +428,17 @@ export default function OptionDetailDrawer({
             <section className="border-t pt-4" style={{ borderColor: 'var(--border)' }}>
               <h3 className="mb-3 text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Position Calculator</h3>
               <div className="grid grid-cols-2 gap-3">
-                <label><span className="mobile-sheet-label">Contracts</span><input type="text" inputMode="numeric" value={contracts} onChange={event => /^\d*$/.test(event.target.value) && setContracts(event.target.value)} onBlur={() => { const value = Number(contracts); setContracts(Number.isInteger(value) && value >= 1 ? String(value) : '1'); }} className="mobile-control-field w-full font-mono" /></label>
-                <label><span className="mobile-sheet-label">Sold Price</span><input type="number" inputMode="decimal" min={0.01} step="0.01" value={soldPrice} onChange={event => { const next = event.target.value; if (next === '' || Number(next) >= 0) { setSoldPrice(next); setSoldPriceBasis(next === '' ? null : 'manual'); } }} className="mobile-control-field w-full font-mono" /></label>
+                <label><span className="mobile-sheet-label">Contracts</span><input type="text" inputMode="numeric" value={contracts} onChange={event => /^\d*$/.test(event.target.value) && setContracts(event.target.value)} aria-invalid={contractsError != null} aria-describedby={contractsError ? contractsErrorId : undefined} className="mobile-control-field w-full font-mono" />{contractsError && <small id={contractsErrorId} className="mt-1 block text-[11px]" style={{ color: 'var(--yellow)' }}>{contractsError}</small>}</label>
+                <label><span className="mobile-sheet-label">Sold Price</span><input type="text" inputMode="decimal" value={soldPrice} onChange={event => { const next = event.target.value; if (/^-?\d*\.?\d*$/.test(next)) { setSoldPrice(next); setSoldPriceBasis('manual'); } }} aria-invalid={manualSoldPriceError != null} aria-describedby={manualSoldPriceError ? soldPriceErrorId : undefined} className="mobile-control-field w-full font-mono" />{manualSoldPriceError && <small id={soldPriceErrorId} className="mt-1 block text-[11px]" style={{ color: 'var(--yellow)' }}>{manualSoldPriceError}</small>}</label>
               </div>
               <div className="mt-3 divide-y" style={{ borderColor: 'var(--border)' }}>
                 <DetailRow label="Premium" value={formatCurrency(positionMetrics.totalPremium)} color="var(--green)" />
+                <DetailRow label="Breakeven" value={formatCurrency(positionMetrics.breakeven)} />
+                <DetailRow label="Downside Cushion" value={formatPercent(positionMetrics.downsideCushion)} />
+                <DetailRow label="Gross Risk" value={formatCurrency(positionMetrics.equityAtRisk)} />
                 <DetailRow label="Net Risk" value={formatCurrency(positionMetrics.netCapitalAtRisk)} />
-                <DetailRow label="Nominal Yield" value={formatPercent(securedCashYield)} color="var(--accent-light)" />
-                <DetailRow label="Annualized Yield" value={formatPercent(annualizedSecuredCashYield)} color="var(--green)" />
+                <DetailRow label="NY" value={formatPercent(securedCashYield)} color="var(--accent-light)" />
+                <DetailRow label="AY" value={formatPercent(annualizedSecuredCashYield)} color="var(--green)" />
               </div>
               {onAddToPortfolio && <button type="button" onClick={addToPortfolio} disabled={activeSoldPrice == null || validContracts == null} className="mobile-sheet-action primary mt-4 w-full disabled:opacity-45">Add to Portfolio</button>}
             </section>
@@ -508,32 +523,32 @@ export default function OptionDetailDrawer({
                     const next = event.target.value;
                     if (/^\d*$/.test(next)) setContracts(next);
                   }}
-                  onBlur={() => {
-                    const value = Number(contracts);
-                    setContracts(Number.isInteger(value) && value >= 1 ? String(value) : '1');
-                  }}
+                  aria-invalid={contractsError != null}
+                  aria-describedby={contractsError ? contractsErrorId : undefined}
                   className="w-full rounded-lg px-3 py-2 text-base sm:text-sm font-mono outline-none min-h-[44px]"
                   style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
                 />
+                {contractsError && <small id={contractsErrorId} className="mt-1 block text-[11px]" style={{ color: 'var(--yellow)' }}>{contractsError}</small>}
               </label>
               <label className="block">
                 <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Sold Price</span>
                 <input
-                  type="number"
-                  min={0.01}
-                  step="0.01"
+                  type="text"
                   inputMode="decimal"
                   value={soldPrice}
                   onChange={event => {
                     const next = event.target.value;
-                    if (next === '' || Number(next) >= 0) {
+                    if (/^-?\d*\.?\d*$/.test(next)) {
                       setSoldPrice(next);
-                      setSoldPriceBasis(next === '' ? null : 'manual');
+                      setSoldPriceBasis('manual');
                     }
                   }}
+                  aria-invalid={manualSoldPriceError != null}
+                  aria-describedby={manualSoldPriceError ? soldPriceErrorId : undefined}
                   className="w-full rounded-lg px-3 py-2 text-base sm:text-sm font-mono outline-none min-h-[44px]"
                   style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
                 />
+                {manualSoldPriceError && <small id={soldPriceErrorId} className="mt-1 block text-[11px]" style={{ color: 'var(--yellow)' }}>{manualSoldPriceError}</small>}
               </label>
             </div>
             <div className="grid grid-cols-4 gap-1 mb-3 rounded-xl p-1 drawer-quote-selector" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }} role="group" aria-label="Use market quote as sold price">

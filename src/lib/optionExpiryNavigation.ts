@@ -35,6 +35,16 @@ function isoFromTimestamp(timestamp: number): string | null {
   }
 }
 
+export function canonicalOptionExpiryIso(timestamp: number): string | null {
+  return isoFromTimestamp(timestamp);
+}
+
+/** Returns the canonical URL value only when the supplied value resolved exactly. */
+export function canonicalizeResolvedOptionExpiry(value: string | null, resolvedTimestamp: number): string | null {
+  const canonical = isoFromTimestamp(resolvedTimestamp);
+  return canonical != null && parseRequestedOptionExpiry(value) === resolvedTimestamp ? canonical : null;
+}
+
 export function parseRequestedOptionExpiry(value: string | null): number | null {
   if (!value) return null;
   if (/^\d+$/.test(value)) {

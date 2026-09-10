@@ -2080,6 +2080,73 @@ table,
   cursor: default;
 }
 
+/* Options portrait rows keep the compact surface but expose the quote and evidence
+   values directly; the generic six-column row remains unchanged for Screener and Watchlist. */
+.mobile-option-chain-header--options {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  min-height: 2.5rem;
+  align-items: center;
+  line-height: 1.15;
+  white-space: normal;
+}
+
+.mobile-option-chain-header--options > span {
+  padding-inline: 0.2rem;
+  text-align: left;
+  white-space: normal;
+}
+
+.mobile-option-chain-row[data-variant="options"] {
+  display: block;
+  min-height: 48px;
+  padding: 0.45rem 0.5rem;
+  text-align: left;
+}
+
+.mobile-option-chain-row[data-variant="options"] > .mobile-option-chain-cell:not(.mobile-option-chain-cell--strike) {
+  display: none;
+}
+
+.mobile-option-chain-row__option-details {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+  margin-top: 0.35rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.mobile-option-chain-row__quote-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(5.2rem, 1.4fr);
+  min-width: 0;
+}
+
+.mobile-option-chain-row__metric-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.mobile-option-chain-row[data-variant="options"] .mobile-option-chain-cell {
+  padding: 0.12rem 0.25rem;
+  border-left: 1px solid var(--border-subtle);
+  text-align: left;
+}
+
+.mobile-option-chain-row[data-variant="options"] .mobile-option-chain-cell:first-child {
+  border-left: 0;
+}
+
+.mobile-option-chain-row[data-variant="options"] .mobile-option-chain-cell > .mobile-option-chain-cell__context,
+.mobile-option-chain-row[data-variant="options"] .mobile-option-chain-cell > .mobile-option-chain-cell__status {
+  line-height: 1.05;
+}
+
+.mobile-option-chain-row__status {
+  padding-inline: 0.25rem;
+}
+
 .mobile-option-chain-row--skeleton span {
   height: 0.7rem;
   margin-inline: 0.18rem;

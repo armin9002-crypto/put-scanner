@@ -12,12 +12,13 @@ import { resolvePutDeltaWithSource, type PutDeltaSource } from '../lib/putDelta'
 import { entrySnapshotFromExactChain, usMarketDateIso } from '../lib/portfolioEntryDelta';
 import { compareNullableValue } from '../lib/metricValue';
 import { normalizeAnalyzeTicker, resolveTickerDetailInstrument } from '../lib/tickerDetail';
-import { formatOptionLastTradeDate, normalizeTimestampMs } from '../lib/format';
+import { formatOptionLastTradeDate } from '../lib/format';
 import { getOptionLastTradeFreshness } from '../lib/optionLastTradeFreshness';
 import { persistShowNominalYield, readShowNominalYield } from '../lib/optionTablePreferences';
 import { getUnderlyingHoldingsProxy } from '../lib/underlyingHoldingsProxies';
 import { createOptionsReturnState, optionsReturnLabel, resolveOptionsOrigin } from '../lib/optionsNavigation';
-import { getReturnedOptionExpiration, optionChainMatchesRequestedExpiration, parseRequestedOptionExpiry, resolveOptionExpirySelection } from '../lib/optionExpiryNavigation';
+import { formatExpirationDropdownLabel } from '../components/ExpirationFilter';
+import { canonicalOptionExpiryIso, canonicalizeResolvedOptionExpiry, getReturnedOptionExpiration, optionChainMatchesRequestedExpiration, parseRequestedOptionExpiry, resolveOptionExpirySelection } from '../lib/optionExpiryNavigation';
 import { evidenceFreshnessFromChainMeta } from '../lib/evidence';
 import {
   OPTION_QUOTE_DISPLAY_LABELS,
@@ -149,6 +150,17 @@ function OptionsEmptyState({
   );
 }
 
+function OverlayPendingState({ label }: { label: string }) {
+  return (
+    <div className="pointer-events-none fixed inset-0 z-[110] flex items-center justify-center px-4" role="status" aria-live="polite">
+      <div className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs shadow-lg" style={{ color: 'var(--text)', backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
+        <RefreshCw className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+        {label}
+      </div>
+    </div>
+  );
+}
+
 function PerfCell({ label, value }: { label: string; value: number | null }) {
   if (value == null) {
     return (
@@ -230,14 +242,17 @@ function ivVsRealizedRangeColor(value: number): string {
   return 'var(--green)';
 }
 
-function formatLastTradeDate(value: number | null | undefined): string {
-  const timestamp = normalizeTimestampMs(value);
-  if (timestamp == null) return '—';
-  return new Date(timestamp).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
+function deltaSourceLabel(source: PutDeltaSource | null): string {
+  if (source === 'provider') return 'Provider';
+  if (source === 'calculated') return 'Calculated';
+  return 'Unavailable';
+}
+
+function lastTradeStatusLabel(value: number | null | undefined): string {
+  const freshness = getOptionLastTradeFreshness(value);
+  if (freshness.ageSessions == null) return 'Unavailable';
+  const age = freshness.ageSessions === 0 ? '0 sessions' : `${freshness.ageSessions} session${freshness.ageSessions === 1 ? '' : 's'} ago`;
+  return `${freshness.label ?? 'Recent'} · ${age}`;
 }
 
 function MobileStat({ label, value, color }: { label: string; value: string; color?: string }) {
@@ -358,6 +373,7 @@ export default function OptionsPage() {
   const [optionsData, setOptionsData] = useState<OptionsChainData | null>(null);
   const [extendedPrice, setExtendedPrice] = useState<ExtendedPriceData | null>(null);
   const [selectedExp, setSelectedExp] = useState<number | null>(null);
+  const [requestedExpiration, setRequestedExpiration] = useState<number | null>(requestedExpiry);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -385,6 +401,31 @@ export default function OptionsPage() {
   const requestGenerationRef = useRef(0);
   const requestAbortRef = useRef<AbortController | null>(null);
   const skipNextExpiryUrlLoadRef = useRef(false);
+
+  const replaceRequestedExpiryUrl = useCallback((expiryDate: number) => {
+    const canonicalExpiry = canonicalOptionExpiryIso(expiryDate);
+    if (!canonicalExpiry) return;
+    const nextSearch = new URLSearchParams(location.search);
+    if (nextSearch.get('expiry') === canonicalExpiry) return;
+    nextSearch.set('expiry', canonicalExpiry);
+    skipNextExpiryUrlLoadRef.current = true;
+    navigate({ pathname: location.pathname, search: `?${nextSearch.toString()}` }, { replace: true, state: location.state });
+  }, [location.pathname, location.search, location.state, navigate]);
+
+  const replaceResolvedExpiryUrl = useCallback((expiryDate: number) => {
+    const currentExpiry = new URLSearchParams(location.search).get('expiry');
+    if (currentExpiry == null) return;
+    const nextSearch = new URLSearchParams(location.search);
+    const canonicalExpiry = canonicalizeResolvedOptionExpiry(currentExpiry, expiryDate);
+    if (canonicalExpiry) {
+      nextSearch.set('expiry', canonicalExpiry);
+    } else {
+      nextSearch.delete('expiry');
+    }
+    if (nextSearch.toString() === new URLSearchParams(location.search).toString()) return;
+    skipNextExpiryUrlLoadRef.current = true;
+    navigate({ pathname: location.pathname, search: nextSearch.toString() ? `?${nextSearch.toString()}` : '' }, { replace: true, state: location.state });
+  }, [location.pathname, location.search, location.state, navigate]);
 
   const handleShowNominalYieldChange = useCallback((value: boolean) => {
     setShowNominalYield(value);
@@ -427,6 +468,8 @@ export default function OptionsPage() {
       setDetailErrorCode(null);
       if (preferredExp.date) {
         setSelectedExp(preferredExp.date);
+        setRequestedExpiration(preferredExp.date);
+        replaceResolvedExpiryUrl(preferredExp.date);
       }
       setShowScannerPreselectBadge(openedFromScanner && preferredExp.requestedMatch);
       setLastUpdated(new Date());
@@ -442,12 +485,14 @@ export default function OptionsPage() {
         setLoading(false);
       }
     }
-  }, [expiryParam, openedFromScanner, requestedExpiry, ticker]);
+  }, [expiryParam, openedFromScanner, replaceResolvedExpiryUrl, requestedExpiry, ticker]);
 
   const loadExpiration = useCallback(async (expDate: number, bypassCache = false, fresh = false) => {
     if (!ticker) return;
     const key = `${ticker}:${expDate}:${fresh ? 'fresh' : bypassCache ? 'bypass' : 'cached'}`;
     if (inFlightFetchKeyRef.current === key) return;
+    setRequestedExpiration(expDate);
+    replaceRequestedExpiryUrl(expDate);
     inFlightFetchKeyRef.current = key;
     requestAbortRef.current?.abort();
     const controller = new AbortController();
@@ -467,15 +512,7 @@ export default function OptionsPage() {
       if (requestGeneration !== requestGenerationRef.current) return;
       setOptionsData(opts);
       setSelectedExp(expDate);
-      if (!bypassCache && !fresh) {
-        const canonicalExpiry = new Date(expDate * 1_000).toISOString().slice(0, 10);
-        if (expiryParam !== canonicalExpiry) {
-          skipNextExpiryUrlLoadRef.current = true;
-          const nextSearch = new URLSearchParams(location.search);
-          nextSearch.set('expiry', canonicalExpiry);
-          navigate({ pathname: location.pathname, search: `?${nextSearch.toString()}` }, { replace: true, state: location.state });
-        }
-      }
+      setRequestedExpiration(expDate);
       setLastUpdated(new Date());
     } catch (err: unknown) {
       if (requestGeneration !== requestGenerationRef.current) return;
@@ -487,7 +524,7 @@ export default function OptionsPage() {
         setLoading(false);
       }
     }
-  }, [expiryParam, location.pathname, location.search, location.state, navigate, ticker]);
+  }, [replaceRequestedExpiryUrl, ticker]);
 
   useEffect(() => {
     if (skipNextExpiryUrlLoadRef.current) {
@@ -496,6 +533,7 @@ export default function OptionsPage() {
     }
     inFlightFetchKeyRef.current = '';
     setSelectedOption(null);
+    setRequestedExpiration(requestedExpiry);
     setOptionsData(null);
     setExtendedPrice(null);
     setSelectedExp(null);
@@ -504,11 +542,12 @@ export default function OptionsPage() {
     setDetailErrorCode(null);
     void loadData();
     return () => {
+      if (skipNextExpiryUrlLoadRef.current) return;
       requestGenerationRef.current += 1;
       requestAbortRef.current?.abort();
       inFlightFetchKeyRef.current = '';
     };
-  }, [ticker, expiryParam, loadData]);
+  }, [ticker, expiryParam, requestedExpiry, loadData]);
 
   useEffect(() => {
     if (!showNominalYield) {
@@ -734,11 +773,26 @@ export default function OptionsPage() {
   const visibleYieldFields = OPTION_YIELD_DISPLAY_ORDER.filter(field => showNominalYield || !isNominalYieldField(field));
   const columns = showVolOI ? [...visibleYieldColumns, ...volOIColumns] : visibleYieldColumns;
   const colCount = columns.length;
-  const hasEmptyOptions = !loading && !!optionsData && (detailAvailability === 'no_options' ||
-    optionsData.expirations.length === 0 || optionsData.puts.length === 0
-  );
   const selectedExpiration = optionsData?.expirations.find(exp => exp.date === selectedExp) ?? null;
   const chainMeta = optionsData?.chainMeta ?? null;
+  const putCount = chainMeta?.putCount ?? optionsData?.puts.length ?? 0;
+  const callCount = chainMeta?.callCount ?? 0;
+  const hasGenuineNoOptions = detailAvailability === 'no_options'
+    || (!!optionsData && optionsData.expirations.length === 0 && putCount === 0 && callCount === 0);
+  const hasEmptyOptions = !loading && !!optionsData && hasGenuineNoOptions;
+  const hasSuspiciousEmptyChain = !loading && !!optionsData && optionsData.puts.length === 0 && !hasGenuineNoOptions;
+  const requestedExpirationOption = requestedExpiration != null
+    ? optionsData?.expirations.find(expiration => expiration.date === requestedExpiration) ?? null
+    : null;
+  const requestedExpirationLabel = requestedExpiration != null
+    ? requestedExpirationOption?.label ?? formatExpirationDropdownLabel(requestedExpiration)
+    : null;
+  const displayedExpirationLabel = selectedExpiration?.label ?? null;
+  const expirationStateLabel = requestedExpiration != null && selectedExp != null && requestedExpiration !== selectedExp
+    ? error
+      ? `${requestedExpirationLabel} unavailable · still showing ${displayedExpirationLabel ?? 'the previous expiration'}`
+      : `Loading ${requestedExpirationLabel} · showing ${displayedExpirationLabel ?? 'the previous expiration'} until ready`
+    : null;
   const evidenceFreshness = evidenceFreshnessFromChainMeta(chainMeta);
   const hasUsablePriorChain = !!optionsData && (optionsData.puts.length > 0 || optionsData.expirations.length > 0 || optionsData.currentPrice > 0);
   const chainAgeMs = chainMeta ? Date.now() - chainMeta.fetchedAt : null;
@@ -790,6 +844,13 @@ export default function OptionsPage() {
     chainMeta.validationWarnings?.forEach(warning => warnings.push(warning));
     return warnings;
   }, [chainMeta, debugOptionsEnabled, staleCachedChain]);
+  const visibleChainWarning = hasSuspiciousEmptyChain
+    ? callCount > 0
+      ? 'Put-chain evidence is incomplete: the provider returned calls but no puts for this expiration.'
+      : 'Put-chain evidence is incomplete: no puts were received for this expiration. This is not proof that no puts exist.'
+    : chainMeta?.putCount != null && chainMeta.putCount > 0 && chainMeta.putCount < 3
+      ? 'Only a small number of put strikes were received. Verify the chain or retry before acting.'
+      : null;
   const chainDebug = useMemo(() => ({
     ticker: chainMeta?.ticker ?? ticker ?? null,
     selectedExpirationLabel: selectedExpiration?.label ?? null,
@@ -848,15 +909,47 @@ export default function OptionsPage() {
 
   const handleRefresh = useCallback(() => {
     inFlightFetchKeyRef.current = '';
-    if (selectedExp) loadExpiration(selectedExp, true, true);
+    if (requestedExpiration && requestedExpiration !== selectedExp) loadExpiration(requestedExpiration, true, true);
+    else if (selectedExp) loadExpiration(selectedExp, true, true);
     else loadData(true, true);
-  }, [loadData, loadExpiration, selectedExp]);
+  }, [loadData, loadExpiration, requestedExpiration, selectedExp]);
 
   const handleBackToOrigin = useCallback(() => {
     navigate(origin.path, { replace: true, state: createOptionsReturnState(origin) });
   }, [navigate, origin]);
 
   const returnLabel = optionsReturnLabel(origin.kind);
+
+  const addSelectedToPortfolio = useCallback((draft: AddToPortfolioDraft) => {
+    if (!ticker || !selectedExpiration) return;
+    const now = new Date();
+    const expiration = new Date(selectedExpiration.date * 1000).toISOString().split('T')[0];
+    const soldDate = usMarketDateIso(now);
+    const entrySnapshotCapture = optionsData
+      ? entrySnapshotFromExactChain({ ticker, strike: draft.option.strike, expiration, soldDate, status: 'open' }, optionsData, now).capture
+      : undefined;
+    addPortfolioTrade({
+      ticker,
+      optionType: 'put',
+      strike: draft.option.strike,
+      expiration,
+      contracts: draft.contracts,
+      soldPrice: draft.soldPrice,
+      soldDate,
+      status: 'open',
+      notes: '',
+      entrySnapshot: entrySnapshotCapture?.entrySnapshot ?? {
+        underlyingPrice: draft.underlyingPrice,
+        bid: draft.option.bid,
+        ask: draft.option.ask,
+        last: draft.option.last,
+        iv: draft.option.impliedVolatility,
+        delta: draft.option.delta,
+      },
+      ...entrySnapshotCapture,
+    });
+    setSelectedOption(null);
+  }, [optionsData, selectedExpiration, ticker]);
 
   const mobileSortOptions: Array<{ field: SortField; label: string }> = [
     { field: 'strike', label: 'Strike' },
@@ -901,34 +994,6 @@ export default function OptionsPage() {
   }
 
   if (isPhone && !isPhoneLandscape) {
-    const addSelectedToPortfolio = (draft: AddToPortfolioDraft) => {
-      if (!ticker || !selectedExpiration) return;
-      const now = new Date();
-      const expiration = new Date(selectedExpiration.date * 1000).toISOString().split('T')[0];
-      const soldDate = usMarketDateIso(now);
-      const entrySnapshotCapture = optionsData ? entrySnapshotFromExactChain({ ticker, strike: draft.option.strike, expiration, soldDate, status: 'open' }, optionsData, now).capture : undefined;
-      addPortfolioTrade({
-        ticker,
-        optionType: 'put',
-        strike: draft.option.strike,
-        expiration,
-        contracts: draft.contracts,
-        soldPrice: draft.soldPrice,
-        soldDate,
-        status: 'open',
-        notes: '',
-        entrySnapshot: entrySnapshotCapture?.entrySnapshot ?? {
-          underlyingPrice: draft.underlyingPrice,
-          bid: draft.option.bid,
-          ask: draft.option.ask,
-          last: draft.option.last,
-          iv: draft.option.impliedVolatility,
-          delta: draft.option.delta,
-        },
-        ...entrySnapshotCapture,
-      });
-      setSelectedOption(null);
-    };
     const mobileStaleText = (value: number | null | undefined) => {
       const freshness = getOptionLastTradeFreshness(value);
       return freshness.freshness === 'stale' || freshness.freshness === 'very_stale'
@@ -943,7 +1008,7 @@ export default function OptionsPage() {
             <button type="button" onClick={handleBackToOrigin} className="pressable flex min-h-11 items-center gap-0.5 rounded-lg px-1 text-[13px] font-semibold" style={{ color: 'var(--accent-light)' }} aria-label={returnLabel}><ArrowLeft className="h-5 w-5" /> {origin.kind === 'scanner' ? 'Scanner' : origin.kind === 'pulse' ? 'Pulse' : origin.kind === 'recommendations' ? 'Recs' : returnLabel.replace('Back to ', '')}</button>
             <button type="button" onClick={() => setShowPriceChart(true)} className="pressable min-w-0 text-center" aria-label={`Open ${ticker} price chart`}>
               <div className="truncate font-mono text-[17px] font-bold" style={{ color: 'var(--text)' }}>{ticker}</div>
-              <div className="flex items-baseline justify-center gap-1.5 font-mono text-[12px]"><span style={{ color: 'var(--text)' }}>{currentPrice > 0 ? `$${currentPrice.toFixed(2)}` : '—'}</span>{extendedPrice && <span style={{ color: changePositive ? 'var(--green)' : 'var(--red)' }}>{extendedPrice.changePercent >= 0 ? '+' : ''}{extendedPrice.changePercent.toFixed(2)}%</span>}</div>
+              <div className="flex items-baseline justify-center gap-1.5 font-mono text-[12px]"><span style={{ color: 'var(--text)' }}>{currentPrice > 0 ? `$${currentPrice.toFixed(2)}` : '—'}</span>{extendedPrice && <><span style={{ color: changePositive ? 'var(--green)' : 'var(--red)' }}>{extendedPrice.changePercent >= 0 ? '+' : ''}{extendedPrice.changePercent.toFixed(2)}%</span><span className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Session</span></>}</div>
             </button>
             <div className="flex justify-end">
               {instrument.showHoldings && <button type="button" onClick={() => setShowUnderlyingHoldings(true)} className="pressable flex h-11 w-11 items-center justify-center rounded-lg" aria-label={`Open underlying holdings for ${ticker}`} style={{ color: 'var(--text-muted)' }}><Layers className="h-5 w-5" /></button>}
@@ -953,36 +1018,39 @@ export default function OptionsPage() {
           </div>
           {optionsData && optionsData.expirations.length > 0 && (
             <div className="mobile-scroll-row flex gap-1.5 overflow-x-auto px-3 pb-2">
-              {optionsData.expirations.map(expiration => <button type="button" key={expiration.date} onClick={() => loadExpiration(expiration.date)} className="pressable min-h-11 flex-none rounded-lg px-3 text-[12px] font-semibold" aria-pressed={selectedExp === expiration.date} style={{ backgroundColor: selectedExp === expiration.date ? 'var(--accent)' : 'var(--surface)', color: selectedExp === expiration.date ? 'white' : 'var(--text-muted)', border: `1px solid ${selectedExp === expiration.date ? 'var(--accent)' : 'var(--border)'}` }}>{expiration.label} · {calculateDte(expiration.date) ?? '—'}D</button>)}
+              {optionsData.expirations.map(expiration => <button type="button" key={expiration.date} onClick={() => loadExpiration(expiration.date)} className="pressable min-h-11 flex-none rounded-lg px-3 text-[12px] font-semibold" aria-pressed={requestedExpiration === expiration.date} style={{ backgroundColor: requestedExpiration === expiration.date ? 'var(--accent)' : 'var(--surface)', color: requestedExpiration === expiration.date ? 'white' : 'var(--text-muted)', border: `1px solid ${requestedExpiration === expiration.date ? 'var(--accent)' : 'var(--border)'}` }}>{expiration.label} · {calculateDte(expiration.date) ?? '—'}D</button>)}
             </div>
           )}
         </header>
 
         <div className="flex min-h-[46px] items-center gap-2 border-b px-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
           <span className="mr-auto text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Puts <span className="font-mono font-normal" style={{ color: 'var(--text-muted)' }}>{sortedPuts.length}</span></span>
-          <select value={sortField} onChange={event => setSortField(event.target.value as SortField)} className="min-h-11 rounded-lg px-2 text-[12px] outline-none" aria-label="Sort option chain" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>{mobileSortOptions.map(option => <option key={option.field} value={option.field}>{option.label}</option>)}</select>
+          <span className="sr-only" aria-live="polite">Sorted by {mobileSortOptions.find(option => option.field === sortField)?.label ?? sortField} {sortDir === 'asc' ? 'ascending' : 'descending'}</span>
+          <select value={sortField} onChange={event => { const field = event.target.value as SortField; setSortField(field); setSortDir(defaultSortDirection(field)); }} className="min-h-11 rounded-lg px-2 text-[12px] outline-none" aria-label="Sort option chain" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>{mobileSortOptions.map(option => <option key={option.field} value={option.field}>{option.label}</option>)}</select>
           <button type="button" onClick={() => setSortDir(current => current === 'asc' ? 'desc' : 'asc')} className="pressable flex h-11 min-w-11 items-center justify-center rounded-lg text-[11px] font-semibold" aria-label={`Sort ${sortDir === 'asc' ? 'descending' : 'ascending'}`} style={{ color: 'var(--accent-light)' }}>{sortDir === 'asc' ? '↑' : '↓'}</button>
         </div>
 
+        {expirationStateLabel && <div role="status" className="border-b px-3 py-2 text-[11px] leading-4" style={{ borderColor: 'var(--border)', color: 'var(--yellow)', backgroundColor: 'var(--surface)' }}>{expirationStateLabel}</div>}
         {freshnessLabel && <div className="border-b px-3 py-1 text-[10px]" style={{ borderColor: 'var(--border)', color: staleCachedChain ? 'var(--yellow)' : 'var(--text-dim)' }}>{freshnessLabel}</div>}
+        {visibleChainWarning && <div role="status" className="border-b px-3 py-2 text-[11px] leading-4" style={{ borderColor: 'var(--border)', color: 'var(--yellow)', backgroundColor: 'var(--surface)' }}>{visibleChainWarning}</div>}
         {instrument.showLeveragedProductWarning && <div className="border-b px-3 py-2 text-[11px] leading-4" style={{ borderColor: 'var(--border)', color: 'var(--yellow)', backgroundColor: 'var(--surface)' }}>Leveraged ETF · daily reset and compounding make longer-period returns path dependent.</div>}
 
-        {error && !hasUsablePriorChain ? <OptionsEmptyState type="error" onRefresh={handleRefresh} onBack={handleBackToOrigin} backLabel={returnLabel} loading={loading} title={detailErrorCode === 'INVALID_SYMBOL' ? `We couldn't find ${ticker}.` : `We couldn't load options for ${ticker}.`} subtitle={detailErrorCode === 'INVALID_SYMBOL' ? 'Check the ticker and try again.' : 'Market data may be temporarily unavailable. Try again without changing or saving anything.'} /> : hasEmptyOptions ? <OptionsEmptyState type="empty" onRefresh={handleRefresh} onBack={handleBackToOrigin} backLabel={returnLabel} loading={loading} title={`No listed puts found for ${ticker}`} subtitle="This ticker may not have listed puts, or its option chain may currently be unavailable." /> : (
+        {error && !hasUsablePriorChain ? <OptionsEmptyState type="error" onRefresh={handleRefresh} onBack={handleBackToOrigin} backLabel={returnLabel} loading={loading} title={detailErrorCode === 'INVALID_SYMBOL' ? `We couldn't find ${ticker}.` : `We couldn't load options for ${ticker}.`} subtitle={detailErrorCode === 'INVALID_SYMBOL' ? 'Check the ticker and try again.' : 'Market data may be temporarily unavailable. Try again without changing or saving anything.'} /> : hasEmptyOptions ? <OptionsEmptyState type="empty" onRefresh={handleRefresh} onBack={handleBackToOrigin} backLabel={returnLabel} loading={loading} title={`No listed puts found for ${ticker}`} subtitle="This ticker may not have listed puts, or its option chain may currently be unavailable." /> : hasSuspiciousEmptyChain ? <OptionsEmptyState type="error" onRefresh={handleRefresh} onBack={handleBackToOrigin} backLabel={returnLabel} loading={loading} title={`Put chain unavailable for ${ticker}`} subtitle={visibleChainWarning ?? 'Put-chain evidence is incomplete. Try again before treating this as an absence of puts.'} /> : (
           <div className="mobile-financial-list mobile-option-chain-table" role="table" aria-label={`${ticker} put option chain`}>
-            <div role="row" className="mobile-option-chain-header">
-              {['Strike', 'Last Trade', 'OTM/ITM', 'AY Last', 'AY Bid', 'AY Ask'].map(label => <span key={label} role="columnheader">{label}</span>)}
+            <div role="row" className="mobile-option-chain-header mobile-option-chain-header--options">
+              {['Strike', 'Last / Bid / Ask', 'Delta / IV', 'Moneyness (OTM/ITM)', 'AY Last', 'AY Bid', 'AY Ask', 'Last Trade'].map(label => <span key={label} role="columnheader">{label}</span>)}
             </div>
             {loading && enrichedPuts.length === 0 ? Array.from({ length: 6 }).map((_, index) => <div role="row" key={index} className="mobile-option-chain-row mobile-option-chain-row--skeleton animate-pulse"><span /><span /><span /><span /><span /><span /></div>) : sortedPuts.map(put => {
               const expirationIso = selectedExp ? new Date(selectedExp * 1000).toISOString().split('T')[0] : '';
               const watchlistId = makeWatchlistId(ticker ?? '', expirationIso, put.strike);
-              return <MobileOptionRow key={put.strike} strike={put.strike} last={put.last} lastTradeDate={put.lastTradeDate} bid={put.bid} ask={put.ask} annYieldLast={put.annYieldLast} annYieldBid={put.annYieldBid} annYieldAsk={put.annYieldAsk} moneynessLabel={put.otmItmLabel} moneynessColor={put.otmItmColor} moneynessState={put.moneynessState} staleText={mobileStaleText(put.lastTradeDate)} integrityStatus={put.integrityStatus} watched={watchlistIds.has(watchlistId)} onToggleWatchlist={() => toggleWatchlist(put)} onSelect={() => setSelectedOption(put)} />;
+              return <MobileOptionRow key={put.strike} strike={put.strike} last={put.last} lastTradeDate={put.lastTradeDate} bid={put.bid} ask={put.ask} annYieldLast={put.annYieldLast} annYieldBid={put.annYieldBid} annYieldAsk={put.annYieldAsk} delta={put.delta} deltaSource={put.deltaSource} deltaModelVersion={put.deltaModelVersion} impliedVolatility={put.impliedVolatility} moneynessLabel={put.otmItmLabel} moneynessColor={put.otmItmColor} moneynessState={put.moneynessState} staleText={mobileStaleText(put.lastTradeDate)} integrityStatus={put.integrityStatus} denseQuoteView watched={watchlistIds.has(watchlistId)} onToggleWatchlist={() => toggleWatchlist(put)} onSelect={() => setSelectedOption(put)} />;
             })}
           </div>
         )}
 
-        {selectedOption && <ErrorBoundary title="Option sheet unavailable" message="Close it and try again."><Suspense fallback={null}><OptionDetailDrawer option={selectedOption} ticker={ticker ?? ''} expirationLabel={selectedExpiration?.label ?? ''} dte={selectedExpiration ? calculateDte(selectedExpiration.date) : null} underlyingPrice={currentPrice > 0 ? currentPrice : null} onAddToPortfolio={addSelectedToPortfolio} onClose={() => setSelectedOption(null)} /></Suspense></ErrorBoundary>}
-        {instrument.showHoldings && showUnderlyingHoldings && <ErrorBoundary title="Underlying holdings unavailable" message="Close it and try again."><Suspense fallback={null}><UnderlyingHoldingsModal proxy={holdingsProxy} onClose={() => setShowUnderlyingHoldings(false)} /></Suspense></ErrorBoundary>}
-        {showPriceChart && <ErrorBoundary title="Chart unavailable" message="Close it and try again."><Suspense fallback={null}><InteractivePriceChartModal isOpen ticker={ticker ?? ''} displayTicker={ticker ?? ''} showLeverageContext={instrument.showLeverage} onClose={() => setShowPriceChart(false)} /></Suspense></ErrorBoundary>}
+        {selectedOption && <ErrorBoundary title="Option sheet unavailable" message="Close it and try again."><Suspense fallback={<OverlayPendingState label="Opening contract..." />}><OptionDetailDrawer option={selectedOption} ticker={ticker ?? ''} expirationLabel={selectedExpiration?.label ?? ''} dte={selectedExpiration ? calculateDte(selectedExpiration.date) : null} underlyingPrice={currentPrice > 0 ? currentPrice : null} onAddToPortfolio={addSelectedToPortfolio} onClose={() => setSelectedOption(null)} /></Suspense></ErrorBoundary>}
+        {instrument.showHoldings && showUnderlyingHoldings && <ErrorBoundary title="Underlying holdings unavailable" message="Close it and try again."><Suspense fallback={<OverlayPendingState label="Loading holdings..." />}><UnderlyingHoldingsModal proxy={holdingsProxy} onClose={() => setShowUnderlyingHoldings(false)} /></Suspense></ErrorBoundary>}
+        {showPriceChart && <ErrorBoundary title="Chart unavailable" message="Close it and try again."><Suspense fallback={<OverlayPendingState label="Loading chart..." />}><InteractivePriceChartModal isOpen ticker={ticker ?? ''} displayTicker={ticker ?? ''} showLeverageContext={instrument.showLeverage} onClose={() => setShowPriceChart(false)} /></Suspense></ErrorBoundary>}
       </div>
     );
   }
@@ -1035,6 +1103,7 @@ export default function OptionsPage() {
                   {changePositive ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
                   <span>{changePositive ? '+$' : '-$'}{Math.abs(extendedPrice.change).toFixed(2)}</span>
                   <span>({changePositive ? '+' : '-'}{Math.abs(extendedPrice.changePercent).toFixed(2)}%)</span>
+                  <span className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Session</span>
                 </div>
               )}
             </div>
@@ -1207,13 +1276,13 @@ export default function OptionsPage() {
                 type="button"
                 key={exp.date}
                 onClick={() => loadExpiration(exp.date)}
-                aria-pressed={selectedExp === exp.date}
+                aria-pressed={requestedExpiration === exp.date}
                 className="px-3 py-2 sm:py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap flex-shrink-0 min-h-[44px] sm:min-h-0"
                 style={{
-                  backgroundColor: selectedExp === exp.date ? 'var(--accent)' : 'var(--surface)',
-                  color: selectedExp === exp.date ? 'white' : 'var(--text-muted)',
-                  border: selectedExp === exp.date ? 'none' : '1px solid var(--border)',
-                  boxShadow: selectedExp === exp.date ? '0 0 12px var(--accent-border)' : 'none',
+                  backgroundColor: requestedExpiration === exp.date ? 'var(--accent)' : 'var(--surface)',
+                  color: requestedExpiration === exp.date ? 'white' : 'var(--text-muted)',
+                  border: requestedExpiration === exp.date ? 'none' : '1px solid var(--border)',
+                  boxShadow: requestedExpiration === exp.date ? '0 0 12px var(--accent-border)' : 'none',
                 }}
               >
                 {exp.label} ({calculateDte(exp.date) ?? '—'} DTE)
@@ -1229,6 +1298,9 @@ export default function OptionsPage() {
             )}
           </div>
         )}
+
+        {expirationStateLabel && <div role="status" className="mb-3 rounded-lg border px-3 py-2 text-xs" style={{ borderColor: 'var(--accent-border)', color: 'var(--yellow)', backgroundColor: 'var(--surface)' }}>{expirationStateLabel}</div>}
+        {visibleChainWarning && <div role="status" className="mb-3 rounded-lg border px-3 py-2 text-xs" style={{ borderColor: 'var(--border)', color: 'var(--yellow)', backgroundColor: 'var(--surface)' }}>{visibleChainWarning}</div>}
 
         {debugOptionsEnabled && chainMeta && (
           <div
@@ -1289,6 +1361,16 @@ export default function OptionsPage() {
               ? 'Yahoo returned calls but no puts for this expiration. Compare the app only against Yahoo’s Puts tab.'
               : 'Yahoo returned no put contracts for this expiration. Try Refresh or verify the selected expiration on Yahoo’s Puts tab.'}
           />
+        ) : hasSuspiciousEmptyChain ? (
+          <OptionsEmptyState
+            type="error"
+            onRefresh={handleRefresh}
+            onBack={handleBackToOrigin}
+            backLabel={returnLabel}
+            loading={loading}
+            title={`Put chain unavailable for ${ticker}`}
+            subtitle={visibleChainWarning ?? 'Put-chain evidence is incomplete. Try again before treating this as an absence of puts.'}
+          />
         ) : (
           <>
           <div className="option-mobile-chain space-y-3">
@@ -1309,7 +1391,7 @@ export default function OptionsPage() {
                   <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-dim)' }}>Sort by</span>
                   <select
                     value={sortField}
-                    onChange={event => setSortField(event.target.value as SortField)}
+                    onChange={event => { const field = event.target.value as SortField; setSortField(field); setSortDir(defaultSortDirection(field)); }}
                     className="w-full rounded-lg px-3 py-2 text-base font-medium outline-none min-h-[44px]"
                     style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
                   >
@@ -1331,8 +1413,11 @@ export default function OptionsPage() {
                   </select>
                 </label>
               </div>
+              <div className="mt-2 text-[10px]" style={{ color: 'var(--text-dim)' }} aria-live="polite">
+                Sorted by {mobileSortOptions.find(option => option.field === sortField)?.label ?? sortField} · {sortDir === 'asc' ? 'ascending' : 'descending'}
+              </div>
             </div>
-            {loading ? (
+                 {loading && enrichedPuts.length === 0 ? (
               Array.from({ length: 5 }).map((_, index) => (
                 <div
                   key={index}
@@ -1427,9 +1512,8 @@ export default function OptionsPage() {
                     {columns.map(col => (
                       <th
                         key={col.field}
-                        onClick={() => handleSort(col.field)}
-                        title={col.fullLabel}
-                        className={`sticky-stack top-0 px-1.5 sm:px-2 py-1.5 text-[10px] sm:text-[11px] uppercase tracking-wider font-medium cursor-pointer transition-colors select-none whitespace-nowrap ${col.align} ${col.widthClass} ${
+                        aria-sort={sortField === col.field ? sortDir === 'asc' ? 'ascending' : 'descending' : 'none'}
+                        className={`sticky-stack top-0 px-1.5 sm:px-2 py-1.5 text-[10px] sm:text-[11px] uppercase tracking-wider font-medium whitespace-nowrap ${col.align} ${col.widthClass} ${
                           col.field === 'strike' ? 'left-0 z-40 border-r' : 'z-30'
                         } ${col.hideOnMobile ? 'hidden md:table-cell' : ''} ${col.hideOnTablet ? 'hidden lg:table-cell' : ''}`}
                         style={{
@@ -1440,16 +1524,22 @@ export default function OptionsPage() {
                           boxShadow: '0 1px 0 var(--border), 0 6px 12px rgba(0,0,0,0.18)',
                         }}
                       >
-                        <span className="inline-flex items-center gap-1">
-                          {col.label}
+                        <button
+                          type="button"
+                          onClick={() => handleSort(col.field)}
+                          title={col.fullLabel}
+                          aria-label={`${col.fullLabel}; sort ${sortField === col.field && sortDir === 'asc' ? 'descending' : 'ascending'}`}
+                          className="inline-flex min-h-7 items-center gap-1 rounded px-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
+                        >
+                          <span>{col.label}</span>
                           <SortIcon field={col.field} />
-                        </span>
+                        </button>
                       </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                {loading ? (
+                 {loading && enrichedPuts.length === 0 ? (
                   Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} colCount={colCount + 1} />)
                 ) : (
                   (() => {
@@ -1526,11 +1616,16 @@ export default function OptionsPage() {
                               {put.integrityStatus === 'invalid' && <span title={`Quote inconsistent: ${put.integrityReasonCodes.join(', ')}`} aria-label="Quote inconsistent"><AlertTriangle className="h-3.5 w-3.5" style={{ color: 'var(--yellow)' }} /></span>}
                               <span className="text-[9px] font-bold px-1 py-0.5 rounded" title={moneyness.accessibleLabel} style={{ backgroundColor: moneyness.backgroundColor ?? 'var(--surface-alt)', color: moneyness.color, border: `1px solid ${moneyness.borderColor}` }}>{moneyness.label}</span>
                             </div>
+                            {put.integrityStatus !== 'clean' && <div className="mt-0.5 text-[9px] font-semibold" style={{ color: 'var(--yellow)' }}>{put.integrityStatus === 'invalid' ? 'Invalid quote · economics unavailable' : 'Degraded quote · use with caution'}</div>}
                           </td>
-                          <td className="w-20 px-1.5 py-1.5 text-right font-mono text-xs tabular-nums hidden md:table-cell" title={`${formatLastTradeDate(put.lastTradeDate)}${getOptionLastTradeFreshness(put.lastTradeDate).label ? ` · ${getOptionLastTradeFreshness(put.lastTradeDate).label}` : ''}`} style={{ color: getOptionLastTradeFreshness(put.lastTradeDate).color }}>{formatOptionLastTradeDate(put.lastTradeDate)}</td>
+                          <td className="w-20 px-1.5 py-1.5 text-right font-mono text-xs tabular-nums hidden md:table-cell" title={lastTradeStatusLabel(put.lastTradeDate)} style={{ color: getOptionLastTradeFreshness(put.lastTradeDate).color }}>
+                            <span className="block">{formatOptionLastTradeDate(put.lastTradeDate)}</span>
+                            <span className="block text-[9px] font-semibold">{lastTradeStatusLabel(put.lastTradeDate)}</span>
+                          </td>
                           {OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => <td key={field} className={`px-2 py-1.5 text-right text-xs font-mono tabular-nums w-14 ${field === 'last' ? 'hidden md:table-cell' : ''}`} style={{ color: 'var(--text)' }}>{formatOptionQuoteValue(field, put[field], formatPrice)}</td>)}
                           <td className="px-1.5 py-1.5 text-right text-xs font-mono tabular-nums w-12" style={{ color: deltaColor(put.delta) }}>
-                            {put.delta != null ? put.delta.toFixed(2) : '—'}
+                            <span className="block">{put.delta != null ? put.delta.toFixed(2) : '—'}</span>
+                            <span className="block text-[9px] font-semibold" title={put.deltaSource === 'calculated' && put.deltaModelVersion ? `Calculated Delta · ${put.deltaModelVersion}` : undefined}>{deltaSourceLabel(put.deltaSource)}</span>
                           </td>
                           <td className="px-1.5 py-1.5 text-right text-xs font-mono tabular-nums hidden md:table-cell w-20" style={{ color: put.otmItmColor }}>
                             {put.otmItmLabel || '—'}
@@ -1581,41 +1676,14 @@ export default function OptionsPage() {
 
       {selectedOption && (
         <ErrorBoundary title="Option drawer unavailable" message="The option detail drawer could not render. Close it and try again.">
-          <Suspense fallback={null}>
+          <Suspense fallback={<OverlayPendingState label="Opening contract..." />}>
             <OptionDetailDrawer
               option={selectedOption}
               ticker={ticker ?? ''}
               expirationLabel={selectedExpiration?.label ?? ''}
               dte={selectedExpiration ? calculateDte(selectedExpiration.date) : null}
               underlyingPrice={currentPrice > 0 ? currentPrice : null}
-              onAddToPortfolio={draft => {
-                if (!ticker || !selectedExpiration) return;
-                const now = new Date();
-                const expiration = new Date(selectedExpiration.date * 1000).toISOString().split('T')[0];
-                const soldDate = usMarketDateIso(now);
-                const entrySnapshotCapture = optionsData ? entrySnapshotFromExactChain({ ticker, strike: draft.option.strike, expiration, soldDate, status: 'open' }, optionsData, now).capture : undefined;
-                addPortfolioTrade({
-                  ticker,
-                  optionType: 'put',
-                  strike: draft.option.strike,
-                  expiration,
-                  contracts: draft.contracts,
-                  soldPrice: draft.soldPrice,
-                  soldDate,
-                  status: 'open',
-                  notes: '',
-                  entrySnapshot: entrySnapshotCapture?.entrySnapshot ?? {
-                    underlyingPrice: draft.underlyingPrice,
-                    bid: draft.option.bid,
-                    ask: draft.option.ask,
-                    last: draft.option.last,
-                    iv: draft.option.impliedVolatility,
-                    delta: draft.option.delta,
-                  },
-                  ...entrySnapshotCapture,
-                });
-                setSelectedOption(null);
-              }}
+              onAddToPortfolio={addSelectedToPortfolio}
               onClose={() => setSelectedOption(null)}
             />
           </Suspense>
@@ -1624,7 +1692,7 @@ export default function OptionsPage() {
 
       {instrument.showHoldings && showUnderlyingHoldings && (
         <ErrorBoundary title="Underlying holdings unavailable" message="The holdings popup could not render. Close it and try again.">
-          <Suspense fallback={null}>
+          <Suspense fallback={<OverlayPendingState label="Loading holdings..." />}>
             <UnderlyingHoldingsModal
               proxy={holdingsProxy}
               onClose={() => setShowUnderlyingHoldings(false)}
@@ -1635,7 +1703,7 @@ export default function OptionsPage() {
 
       {showPriceChart && (
         <ErrorBoundary title="Chart unavailable" message="The price chart could not render. Close it and try again.">
-          <Suspense fallback={null}>
+          <Suspense fallback={<OverlayPendingState label="Loading chart..." />}>
             <InteractivePriceChartModal
               isOpen
               ticker={ticker ?? ''}

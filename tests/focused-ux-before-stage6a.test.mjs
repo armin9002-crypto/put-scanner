@@ -5,6 +5,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  canonicalOptionExpiryIso,
+  canonicalizeResolvedOptionExpiry,
   buildScannerOptionsPath,
   parseRequestedOptionExpiry,
   resolveOptionExpirySelection,
@@ -46,6 +48,14 @@ test('an available requested expiry is selected from the normal response without
   );
 });
 
+test('legacy expiry URLs canonicalize only after an exact resolution and malformed values clear safely', () => {
+  assert.equal(canonicalOptionExpiryIso(requestedExpiry), '2027-05-21');
+  assert.equal(canonicalizeResolvedOptionExpiry(String(requestedExpiry), requestedExpiry), '2027-05-21');
+  assert.equal(canonicalizeResolvedOptionExpiry('2027-05-21', requestedExpiry), '2027-05-21');
+  assert.equal(canonicalizeResolvedOptionExpiry('not-an-expiry', requestedExpiry), null);
+  assert.equal(canonicalizeResolvedOptionExpiry('2028-01-21', requestedExpiry), null);
+});
+
 test('an unavailable requested expiry falls back to the first available chain safely', () => {
   assert.deepEqual(
     resolveOptionExpirySelection(expirations, '2028-01-21', shortestExpiry),
@@ -78,6 +88,29 @@ test('Scanner links use one shared expiry-aware path and detail load requests th
   assert.match(options, /fetchTickerDetail\(ticker, requestedExpiry \?\? undefined/);
   assert.doesNotMatch(options, /OptionsPage:(?:load|refresh):selected/);
   assert.doesNotMatch(scanner, /onMouseEnter[\s\S]{0,120}fetchOptions/);
+  assert.match(options, /setRequestedExpiration\(expDate\)/);
+  assert.match(options, /Loading \$\{requestedExpirationLabel\}/);
+  assert.match(options, /replace: true/);
+});
+
+test('Options page and generic drawer keep the shared interaction contract visible', async () => {
+  const [options, row, drawer] = await Promise.all([
+    read('src/pages/OptionsPage.tsx'),
+    read('src/components/mobile/MobileOptionRow.tsx'),
+    read('src/components/OptionDetailDrawer.tsx'),
+  ]);
+  assert.equal((options.match(/onAddToPortfolio=\{addSelectedToPortfolio\}/g) ?? []).length, 2);
+  assert.match(options, /aria-sort=\{sortField === col\.field/);
+  assert.match(options, /focus-visible:ring-2/);
+  assert.match(options, /Invalid quote · economics unavailable/);
+  assert.match(row, /data-field="last-quote"/);
+  assert.match(row, /data-field="last-trade"/);
+  assert.match(row, /deltaSourceText\(props\.deltaSource\)/);
+  assert.match(drawer, /positive whole number of contracts/);
+  assert.match(drawer, /sold price greater than 0/);
+  for (const label of ['Premium', 'Breakeven', 'Downside Cushion', 'Gross Risk', 'Net Risk', 'NY', 'AY']) {
+    assert.match(drawer, new RegExp(`DetailRow label="${label}"`));
+  }
 });
 
 test('Portfolio Analytics is local-only, collapsed by default, and accessible in both layouts', async () => {
