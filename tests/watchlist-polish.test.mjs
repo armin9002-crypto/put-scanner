@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildWatchlistGroups } from '../src/lib/watchlistPresentation.ts';
+import { buildWatchlistGroups, getWatchlistStatusPresentation } from '../src/lib/watchlistPresentation.ts';
 import { pruneExpiredWatchlistItems, pruneExpiredWatchlist, mergeWatchlistRefreshItems, writeWatchlist, readWatchlist } from '../src/lib/watchlist.ts';
 import { getAccountStateStorage } from '../src/lib/cloudState/accountStateStorage.ts';
 const now = new Date('2026-09-07T16:00:00Z');
@@ -15,6 +15,22 @@ test('Watchlist None is one globally sorted flat population in either direction'
   }
   assert.equal(buildWatchlistGroups(rows, 'underlying').length, 2);
   assert.equal(buildWatchlistGroups(rows, 'expiry').length, 2);
+});
+
+test('Watchlist status presentation keeps saved identity distinct from evidence freshness', () => {
+  assert.deepEqual(getWatchlistStatusPresentation('saved', false, undefined), {
+    label: 'Saved', detail: 'Awaiting quote', tone: 'saved', color: 'var(--accent-light)',
+  });
+  const prior = { bid: 2, ask: 2.2, last: 2.1, evidenceFreshness: 'retained-stale' };
+  assert.deepEqual(getWatchlistStatusPresentation('refresh_failed', false, prior), {
+    label: 'Stale', detail: 'Refresh failed', tone: 'refresh-failed', color: 'var(--orange)',
+  });
+  assert.deepEqual(getWatchlistStatusPresentation('refresh_failed', false, undefined), {
+    label: 'Unavailable', detail: 'Refresh failed · no quote', tone: 'refresh-failed', color: 'var(--orange)',
+  });
+  assert.deepEqual(getWatchlistStatusPresentation('quote_inconsistent', false, prior), {
+    label: 'Stale', detail: 'Quote inconsistent', tone: 'quote-inconsistent', color: 'var(--yellow)',
+  });
 });
 
 test('Watchlist keeps all expiration trading day; day after prunes durable item and note, refresh cannot resurrect', () => {

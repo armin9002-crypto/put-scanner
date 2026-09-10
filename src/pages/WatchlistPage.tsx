@@ -1,5 +1,5 @@
-import { Fragment, lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Fragment, lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef, type MouseEvent } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   isPastWatchlistExpirationDte,
   markWatchlistItems,
@@ -15,6 +15,7 @@ import type { OptionsChainData } from '../lib/types';
 import { calculateDte, calculateMoneyness, calculateVolumeOpenInterestRatio, calculateYieldPercent, isFiniteNumber, sanitizePositive } from '../lib/optionMetrics';
 import type { ShortPutMoneynessState } from '../lib/moneynessPresentation';
 import { formatDate as formatDisplayDate, formatOptionLastTradeDate, formatOptionPrice, formatPercentPoints } from '../lib/format';
+import { getOptionLastTradeFreshness } from '../lib/optionLastTradeFreshness';
 import ErrorBoundary from '../components/ErrorBoundary';
 import type { OptionDetail } from '../components/OptionDetailDrawer';
 import { Star, RefreshCw, Loader2, ChevronUp, ChevronDown, AlertTriangle } from 'lucide-react';
@@ -22,7 +23,7 @@ import { useResponsiveMode } from '../lib/responsive';
 import MobileOptionRow from '../components/mobile/MobileOptionRow';
 import { annualizedYieldFieldForNominal, OPTION_QUOTE_DISPLAY_LABELS, OPTION_QUOTE_TABLE_DISPLAY_ORDER, OPTION_YIELD_DISPLAY_LABELS, executableOptionPrice, formatOptionQuoteValue, isNominalYieldField, visibleOptionYieldFields, type OptionQuoteTableDisplayField, type OptionYieldDisplayField } from '../lib/optionQuoteDisplay';
 import { acquireOptionChains, canonicalOptionChainKey } from '../lib/optionChainRequests';
-import { buildWatchlistGroups, type WatchlistGroupMode, type WatchlistSortOverride, type WatchlistGroupableRow } from '../lib/watchlistPresentation';
+import { buildWatchlistGroups, getWatchlistStatusPresentation, type WatchlistGroupMode, type WatchlistSortOverride, type WatchlistGroupableRow } from '../lib/watchlistPresentation';
 import { PageHeader } from '../components/ui/PageHeader';
 import { buildOptionsPath, createOptionsNavigationState, resolveOptionsReturnOrigin, type OptionsNavigationState, type WatchlistOriginPresentation } from '../lib/optionsNavigation';
 import { isWatchlistRefreshCurrent, mergeWatchlistRefreshItem } from '../lib/watchlistRefresh';
@@ -42,6 +43,8 @@ interface LiveRow extends WatchlistItem {
   last: number | null;
   lastTradeDate: number | null;
   delta: number | null;
+  deltaSource: WatchlistSnapshot['deltaSource'];
+  deltaModelVersion: string | null;
   iv: number | null;
   volume: number | null;
   openInterest: number | null;
@@ -54,6 +57,8 @@ interface LiveRow extends WatchlistItem {
   annYieldLast: number | null;
   status: WatchlistStatus;
   statusLabel: string;
+  statusDetail: string | null;
+  statusColor: string;
   evidenceFreshness?: 'current' | 'cached-current' | 'retained-stale' | 'unavailable';
   observedAt?: number | null;
 }
@@ -106,20 +111,17 @@ function ivColor(iv: number | null): string {
   return 'var(--red)';
 }
 
-function statusLabel(status: WatchlistStatus, expired: boolean): string {
-  if (expired) return 'Expired';
-  if (status === 'live') return 'Live';
-  if (status === 'refresh_failed') return 'Refresh failed';
-  if (status === 'quote_inconsistent') return 'Quote inconsistent';
-  if (status === 'unavailable') return 'Unavailable';
-  return 'Stale';
+function lastTradeStatusLabel(value: number | null | undefined): string {
+  const freshness = getOptionLastTradeFreshness(value);
+  if (freshness.ageSessions == null) return 'Unavailable';
+  const age = freshness.ageSessions === 0 ? '0 sessions' : `${freshness.ageSessions} session${freshness.ageSessions === 1 ? '' : 's'} ago`;
+  return `${freshness.label ?? 'Recent'} · ${age}`;
 }
 
-function statusColor(status: WatchlistStatus, expired: boolean): string {
-  if (expired || status === 'unavailable' || status === 'refresh_failed') return 'var(--red)';
-  if (status === 'quote_inconsistent') return 'var(--yellow)';
-  if (status === 'live') return 'var(--green)';
-  return 'var(--text-dim)';
+function deltaSourceLabel(source: WatchlistSnapshot['deltaSource']): string {
+  if (source === 'provider') return 'Provider';
+  if (source === 'calculated') return 'Calculated';
+  return 'Unavailable';
 }
 
 function buildRow(item: WatchlistItem): LiveRow {
@@ -135,7 +137,8 @@ function buildRow(item: WatchlistItem): LiveRow {
   const askYield = calculateYieldPercent(executableOptionPrice(ask), item.strike, dte);
   const lastYield = calculateYieldPercent(executableOptionPrice(last), item.strike, dte);
   const moneyness = calculateMoneyness(currentPrice, item.strike);
-  const status = expired ? 'expired' : item.status ?? 'stale';
+  const status = expired ? 'expired' : item.status ?? 'saved';
+  const statusPresentation = getWatchlistStatusPresentation(status, expired, snapshot);
 
   return {
     ...item,
@@ -151,6 +154,8 @@ function buildRow(item: WatchlistItem): LiveRow {
     last,
     lastTradeDate: snapshot.lastTradeDate ?? null,
     delta: snapshot.delta ?? null,
+    deltaSource: snapshot.deltaSource ?? null,
+    deltaModelVersion: snapshot.deltaModelVersion ?? null,
     iv: snapshot.iv ?? null,
     volume: snapshot.volume ?? null,
     openInterest: snapshot.openInterest ?? null,
@@ -162,7 +167,9 @@ function buildRow(item: WatchlistItem): LiveRow {
     nomYieldLast: lastYield.nominal,
     annYieldLast: lastYield.annualized,
     status,
-    statusLabel: statusLabel(status, expired),
+    statusLabel: statusPresentation.label,
+    statusDetail: statusPresentation.detail,
+    statusColor: statusPresentation.color,
     evidenceFreshness: snapshot.evidenceFreshness,
     observedAt: snapshot.observedAt ?? item.updatedAt ?? null,
   };
@@ -198,6 +205,7 @@ function optionDetailFromWatchlistRow(row: LiveRow): OptionDetail {
 export default function WatchlistPage() {
   const { isPhone } = useResponsiveMode();
   const location = useLocation();
+  const navigate = useNavigate();
   const [items, setItems] = useState<WatchlistItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
@@ -214,18 +222,29 @@ export default function WatchlistPage() {
   const refreshInFlightRef = useRef(false);
   const refreshGenerationRef = useRef(0);
   const refreshAbortRef = useRef<AbortController | null>(null);
+  const noteInputActionRef = useRef<string | null>(null);
 
-  const optionsNavigationState = useMemo<OptionsNavigationState>(() => createOptionsNavigationState('watchlist', {
-    presentation: {
-      sortField,
-      sortDir,
-      sortOverrideField: sortOverride?.field ?? null,
-      sortOverrideDirection: sortOverride?.direction ?? null,
-      groupMode,
-      showNominalYields,
-    } satisfies WatchlistOriginPresentation,
-    scrollY: typeof window === 'undefined' ? undefined : window.scrollY,
+  const watchlistOriginPresentation = useMemo<WatchlistOriginPresentation>(() => ({
+    sortField,
+    sortDir,
+    sortOverrideField: sortOverride?.field ?? null,
+    sortOverrideDirection: sortOverride?.direction ?? null,
+    groupMode,
+    showNominalYields,
   }), [groupMode, showNominalYields, sortDir, sortField, sortOverride]);
+  const optionsNavigationState = useMemo<OptionsNavigationState>(() => createOptionsNavigationState('watchlist', {
+    presentation: watchlistOriginPresentation,
+  }), [watchlistOriginPresentation]);
+  const handleOptionsNavigation = useCallback((event: MouseEvent<HTMLAnchorElement>, path: string) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    navigate(path, {
+      state: createOptionsNavigationState('watchlist', {
+        presentation: watchlistOriginPresentation,
+        scrollY: typeof window === 'undefined' ? undefined : window.scrollY,
+      }),
+    });
+  }, [navigate, watchlistOriginPresentation]);
 
   useEffect(() => {
     const origin = resolveOptionsReturnOrigin(location.state, 'watchlist');
@@ -351,6 +370,20 @@ export default function WatchlistPage() {
     setNoteText('');
   }, [noteText]);
 
+  const handleNoteCancel = useCallback((id: string) => {
+    noteInputActionRef.current = id;
+    setEditingNote(null);
+    setNoteText('');
+  }, []);
+
+  const handleNoteBlur = useCallback((id: string) => {
+    if (noteInputActionRef.current === id) {
+      noteInputActionRef.current = null;
+      return;
+    }
+    handleNoteSave(id);
+  }, [handleNoteSave]);
+
   const groupedRows = useMemo(() => buildWatchlistGroups(rows as unknown as WatchlistGroupableRow[], groupMode, sortOverride), [rows, groupMode, sortOverride]);
   const sortedRows = useMemo(() => groupedRows.flatMap(group => group.rows as unknown as LiveRow[]), [groupedRows]);
 
@@ -425,20 +458,51 @@ export default function WatchlistPage() {
       <div className="mobile-route-page watchlist-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
         <div className="flex min-h-[52px] items-center gap-2 border-b px-3.5" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
           <div className="mr-auto min-w-0"><div className="truncate text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{items.length} saved {items.length === 1 ? 'contract' : 'contracts'}</div><div className="truncate text-[10px]" style={{ color: 'var(--text-dim)' }}>{lastRefreshed ? `Refresh completed ${lastRefreshed.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Saved snapshots'}</div></div>
+          <span className="sr-only" aria-live="polite">Watchlist sorted by {sortField} {sortDir === 'asc' ? 'ascending' : 'descending'}</span>
           <select value={sortField} onChange={event => handleSortSelection(event.target.value as SortField)} className="min-h-11 min-w-0 max-w-[112px] flex-none rounded-lg px-2 text-[12px] outline-none" aria-label="Sort watchlist" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}><option value="dte">DTE</option><option value="ticker">Ticker</option><option value="annYieldBid">AY Bid</option><option value="lastTradeDate">Last Trade</option><option value="strike">Strike</option><option value="delta">Delta</option><option value="iv">IV</option><option value="added">Added</option></select>
           <button type="button" onClick={toggleSortDirection} className="pressable flex h-11 w-11 flex-none items-center justify-center rounded-lg text-sm font-semibold" aria-label={`Sort ${sortDir === 'asc' ? 'descending' : 'ascending'}`} style={{ color: 'var(--accent-light)' }}>{sortDir === 'asc' ? '↑' : '↓'}</button>
           <button type="button" onClick={() => void handleRefresh(true)} disabled={loading || items.length === 0} className="pressable flex h-11 w-11 items-center justify-center rounded-lg disabled:opacity-40" aria-label="Refresh watchlist" style={{ color: 'var(--accent-light)' }}>{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}</button>
         </div>
         <div className="flex items-center gap-2 border-b px-3.5 py-2" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
-          <label className="flex min-w-0 flex-1 items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>Group by <select value={groupMode} onChange={event => handleGroupModeChange(event.target.value as WatchlistGroupMode)} className="mobile-control-field min-h-9 min-w-0 flex-1 text-xs"><option value="none">None</option><option value="underlying">Underlying</option><option value="expiry">Expiry</option></select></label>
-          <label className="flex min-h-9 items-center gap-1.5 whitespace-nowrap text-[11px]" style={{ color: 'var(--text-muted)' }}><input type="checkbox" checked={showNominalYields} onChange={event => handleNominalYieldToggle(event.target.checked)} className="rounded" /> NY</label>
+          <label className="flex min-w-0 flex-1 items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>Group by <select value={groupMode} onChange={event => handleGroupModeChange(event.target.value as WatchlistGroupMode)} aria-label="Group watchlist by" className="mobile-control-field min-h-9 min-w-0 flex-1 text-xs"><option value="none">None</option><option value="underlying">Underlying</option><option value="expiry">Expiry</option></select></label>
+          <label className="flex min-h-9 items-center gap-1.5 whitespace-nowrap text-[11px]" style={{ color: 'var(--text-muted)' }}><input type="checkbox" checked={showNominalYields} onChange={event => handleNominalYieldToggle(event.target.checked)} aria-label="Show nominal yields" className="rounded" /> NY</label>
         </div>
         {refreshError && <div role="alert" className="flex items-start gap-2 border-b px-3.5 py-2 text-[11px]" style={{ borderColor: 'var(--border)', color: 'var(--red)', backgroundColor: 'rgba(239,68,68,0.08)' }}><AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-none" /><span>{refreshError} Tap refresh to retry.</span></div>}
         {items.length === 0 ? <div className="px-6 py-16 text-center"><Star className="mx-auto mb-3 h-7 w-7" style={{ color: 'var(--text-dim)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No saved puts</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Star a contract from an option chain to save it here.</p></div> : (
           <div className="mobile-financial-list">{groupedRows.map(group => <section key={group.key} aria-label={groupMode === 'none' ? 'Watchlist' : `${groupMode === 'underlying' ? 'Underlying' : 'Expiry'} ${group.label}`}>{groupMode !== 'none' && <div className="sticky top-0 z-10 border-b px-3.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface-alt)', color: 'var(--text-muted)' }}>{groupMode === 'underlying' ? group.label : `${group.label} · ${group.rows.length} saved`}</div>}{(group.rows as unknown as LiveRow[]).map(row => (
               <div key={row.id} className="mobile-watchlist-entry watchlist-mobile-row" style={{ opacity: row.expired || row.status === 'unavailable' ? 0.65 : 1 }}>
-          <MobileOptionRow ticker={row.ticker} tickerTo={buildOptionsPath(row.ticker, row.expiryTimestamp)} tickerNavigationState={optionsNavigationState} strike={row.strike} expirationLabel={row.expiryFormatted} dte={row.dte} bid={row.bid} ask={row.ask} last={row.last} lastTradeDate={row.lastTradeDate} annualYield={row.annYieldBid} annYieldLast={row.annYieldLast} annYieldBid={row.annYieldBid} annYieldAsk={row.annYieldAsk} delta={row.delta} impliedVolatility={row.iv} openInterest={row.openInterest} moneynessLabel={row.moneynessLabel} moneynessColor={row.moneynessColor} moneynessState={row.moneynessState} integrityStatus={row.snapshot?.integrityStatus} statusText={`${row.statusLabel} · Last trade ${formatOptionLastTradeDate(row.lastTradeDate)}${showNominalYields ? ` · NY L/B/A ${formatPercentValue(row.nomYieldLast)} / ${formatPercentValue(row.nomYieldBid)} / ${formatPercentValue(row.nomYieldAsk)}` : ''}`} watched onToggleWatchlist={() => handleRemove(row.id)} onSelect={() => setSelectedOption({ option: optionDetailFromWatchlistRow(row), ticker: row.ticker, expirationLabel: row.expiryFormatted, dte: row.dte, underlyingPrice: row.currentPrice })} />
-              <div className="watchlist-mobile-note border-b px-3 pb-1" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>{editingNote === row.id ? <input type="text" value={noteText} onChange={event => setNoteText(event.target.value.slice(0, 60))} onBlur={() => handleNoteSave(row.id)} onKeyDown={event => { if (event.key === 'Enter') handleNoteSave(row.id); if (event.key === 'Escape') { setEditingNote(null); setNoteText(''); } }} autoFocus className="mobile-control-field w-full" maxLength={60} aria-label={`Note for ${row.ticker}`} /> : <button type="button" onClick={() => { setEditingNote(row.id); setNoteText(row.note); }} className="flex min-h-11 w-full items-center text-left text-[11px]" style={{ color: row.note ? 'var(--text-secondary)' : 'var(--text-dim)' }}>{row.note || 'Add a note'}</button>}</div>
+          <MobileOptionRow
+            ticker={row.ticker}
+            tickerTo={buildOptionsPath(row.ticker, row.expiryTimestamp)}
+            tickerNavigationState={optionsNavigationState}
+            onTickerNavigate={event => handleOptionsNavigation(event, buildOptionsPath(row.ticker, row.expiryTimestamp))}
+            strike={row.strike}
+            expirationLabel={row.expiryFormatted}
+            dte={row.dte}
+            bid={row.bid}
+            ask={row.ask}
+            last={row.last}
+            lastTradeDate={row.lastTradeDate}
+            annYieldLast={row.annYieldLast}
+            annYieldBid={row.annYieldBid}
+            annYieldAsk={row.annYieldAsk}
+            delta={row.delta}
+            deltaSource={row.deltaSource}
+            deltaModelVersion={row.deltaModelVersion}
+            impliedVolatility={row.iv}
+            openInterest={row.openInterest}
+            moneynessLabel={row.moneynessLabel}
+            moneynessColor={row.moneynessColor}
+            moneynessState={row.moneynessState}
+            integrityStatus={row.snapshot?.integrityStatus}
+            denseQuoteView
+            statusText={`${row.statusLabel}${row.statusDetail ? ` · ${row.statusDetail}` : ''}`}
+            statusTextColor={row.statusColor}
+            watched
+            onToggleWatchlist={() => handleRemove(row.id)}
+            onSelect={() => setSelectedOption({ option: optionDetailFromWatchlistRow(row), ticker: row.ticker, expirationLabel: row.expiryFormatted, dte: row.dte, underlyingPrice: row.currentPrice })}
+          />
+              <div className="watchlist-mobile-note border-b px-3 pb-1" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>{editingNote === row.id ? <input type="text" value={noteText} onChange={event => setNoteText(event.target.value.slice(0, 60))} onBlur={() => handleNoteBlur(row.id)} onKeyDown={event => { if (event.key === 'Enter') { noteInputActionRef.current = row.id; handleNoteSave(row.id); } if (event.key === 'Escape') handleNoteCancel(row.id); }} autoFocus className="mobile-control-field w-full" maxLength={60} aria-label={`Note for ${row.ticker}`} /> : <button type="button" onClick={() => { noteInputActionRef.current = null; setEditingNote(row.id); setNoteText(row.note); }} aria-label={`${row.note ? 'Edit' : 'Add'} note for ${row.ticker}`} className="flex min-h-11 w-full items-center text-left text-[11px]" style={{ color: row.note ? 'var(--text-secondary)' : 'var(--text-dim)' }}>{row.note || 'Add a note'}</button>}</div>
             </div>
           ))}</section>)}</div>
         )}
@@ -469,8 +533,8 @@ export default function WatchlistPage() {
         {refreshError && <div role="alert" className="mb-3 flex items-center gap-2 rounded-lg px-3 py-2 text-xs" style={{ backgroundColor: 'rgba(239,68,68,0.08)', color: 'var(--red)', border: '1px solid rgba(239,68,68,0.24)' }}><AlertTriangle className="h-4 w-4 flex-none" /> <span>{refreshError} Click Refresh All to retry.</span></div>}
 
         {items.length > 0 && <div className="mb-3 flex flex-wrap items-center justify-end gap-2" data-testid="watchlist-presentation-controls">
-          <label className="flex min-h-9 items-center gap-2 rounded-lg px-2 text-xs" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Group by <select value={groupMode} onChange={event => handleGroupModeChange(event.target.value as WatchlistGroupMode)} className="rounded px-1.5 py-1 text-xs outline-none" style={{ backgroundColor: 'var(--input-bg)', color: 'var(--text)' }}><option value="none">None</option><option value="underlying">Underlying</option><option value="expiry">Expiry</option></select></label>
-          <label className="flex min-h-9 items-center gap-1.5 rounded-lg px-2 text-xs" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}><input type="checkbox" checked={showNominalYields} onChange={event => handleNominalYieldToggle(event.target.checked)} className="rounded" /> Show Nominal Yields</label>
+          <label className="flex min-h-9 items-center gap-2 rounded-lg px-2 text-xs" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Group by <select value={groupMode} onChange={event => handleGroupModeChange(event.target.value as WatchlistGroupMode)} aria-label="Group watchlist by" className="rounded px-1.5 py-1 text-xs outline-none" style={{ backgroundColor: 'var(--input-bg)', color: 'var(--text)' }}><option value="none">None</option><option value="underlying">Underlying</option><option value="expiry">Expiry</option></select></label>
+          <label className="flex min-h-9 items-center gap-1.5 rounded-lg px-2 text-xs" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}><input type="checkbox" checked={showNominalYields} onChange={event => handleNominalYieldToggle(event.target.checked)} aria-label="Show nominal yields" className="rounded" /> Show Nominal Yields</label>
         </div>}
         {items.length > 0 && (
           <div className="watchlist-sort-mobile mb-3 grid grid-cols-[1fr_auto] gap-2 md:hidden">
@@ -502,6 +566,7 @@ export default function WatchlistPage() {
                       <Link
                         to={buildOptionsPath(row.ticker, row.expiryTimestamp)}
                         state={optionsNavigationState}
+                        onClick={event => handleOptionsNavigation(event, buildOptionsPath(row.ticker, row.expiryTimestamp))}
                         className="min-w-0 text-left"
                       >
                         <div className="font-mono text-lg font-bold" style={{ color: 'var(--accent-light)' }}>{row.ticker}</div>
@@ -513,7 +578,7 @@ export default function WatchlistPage() {
                         <span
                           className="watchlist-status inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded"
                           data-status={row.status}
-                          style={{ color: statusColor(row.status, row.expired), backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}
+                          style={{ color: row.statusColor, backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}
                         >
                           {(row.status === 'refresh_failed' || row.status === 'unavailable') && <AlertTriangle className="w-3 h-3" />}
                           {row.statusLabel}
@@ -628,14 +693,19 @@ export default function WatchlistPage() {
                     {columns.map(col => (
                       <th
                         key={col.field}
-                        onClick={() => handleSort(col.field)}
-                        className={`px-1.5 py-1 text-[9px] uppercase tracking-wider font-medium cursor-pointer transition-colors select-none whitespace-nowrap ${col.align}`}
+                        aria-sort={sortField === col.field ? sortDir === 'asc' ? 'ascending' : 'descending' : 'none'}
+                        className={`px-1.5 py-1 text-[9px] uppercase tracking-wider font-medium select-none whitespace-nowrap ${col.align}`}
                         style={{ color: 'var(--text-muted)' }}
                       >
-                        <span className="inline-flex items-center gap-0.5">
+                        <button
+                          type="button"
+                          onClick={() => handleSort(col.field)}
+                          className="inline-flex min-h-8 items-center gap-0.5 rounded px-1 text-inherit hover:text-[var(--text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)]"
+                          aria-label={`${col.label}; sort ${sortField === col.field && sortDir === 'asc' ? 'descending' : 'ascending'}`}
+                        >
                           {col.label}
                           <SortIcon field={col.field} />
-                        </span>
+                        </button>
                       </th>
                     ))}
                     <th className="px-1.5 py-1 text-[9px] uppercase tracking-wider font-medium text-left whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>State</th>
@@ -655,12 +725,13 @@ export default function WatchlistPage() {
                       <tr className="transition-colors" style={{ borderBottom: '1px solid var(--border)', ...bgStyle }}>
                         <td className="px-1.5 py-0.5 text-center" style={mutedStyle}>
                           <button
+                            type="button"
                             onClick={event => {
                               event.stopPropagation();
                               handleRemove(row.id);
                             }}
                             aria-label={`Remove ${row.ticker} ${row.expiryFormatted} ${formatMoney(row.strike)} put from watchlist`}
-                            className="watchlist-remove transition-all hover:opacity-75 pressable min-h-[34px] min-w-[32px] flex items-center justify-center rounded"
+                            className="watchlist-remove transition-opacity hover:opacity-75 pressable min-h-[34px] min-w-[32px] flex items-center justify-center rounded"
                             title="Remove from watchlist"
                           >
                             <Star className="w-3.5 h-3.5 fill-current" style={{ color: 'var(--accent-light)' }} />
@@ -670,6 +741,7 @@ export default function WatchlistPage() {
                           <Link
                           to={buildOptionsPath(row.ticker, row.expiryTimestamp)}
                           state={optionsNavigationState}
+                          onClick={event => handleOptionsNavigation(event, buildOptionsPath(row.ticker, row.expiryTimestamp))}
                             className="inline-flex items-center font-mono font-bold hover:opacity-80 transition-opacity min-h-[34px]"
                             style={{ color: 'var(--accent-light)' }}
                           >
@@ -697,10 +769,16 @@ export default function WatchlistPage() {
                           {row.expiryFormatted} {isFiniteNumber(row.dte) ? `(${row.dte} DTE)` : ''}
                         </td>
                         {OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => <td key={field} className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={mutedStyle} title={OPTION_QUOTE_DISPLAY_LABELS[field]}>{formatOptionQuoteValue(field, row[field], formatMoney)}</td>)}
-                        <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={{ ...mutedStyle, color: deltaColor(row.delta) }}>{isFiniteNumber(row.delta) ? row.delta.toFixed(2) : '—'}</td>
+                        <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={{ ...mutedStyle, color: deltaColor(row.delta) }} title={row.deltaSource === 'calculated' && row.deltaModelVersion ? `Calculated Delta · ${row.deltaModelVersion}` : row.deltaSource === 'provider' ? 'Provider Delta' : 'Delta unavailable'}>
+                          <span className="block">{isFiniteNumber(row.delta) ? row.delta.toFixed(2) : '—'}</span>
+                          <span className="block text-[9px] font-semibold" style={{ color: 'var(--text-tertiary)' }}>{deltaSourceLabel(row.deltaSource)}</span>
+                        </td>
                         <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={{ ...mutedStyle, color: row.moneynessColor }}>{row.moneynessLabel}</td>
                         <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={{ ...mutedStyle, color: ivColor(row.iv) }}>{isFiniteNumber(row.iv) ? row.iv.toFixed(1) + '%' : '—'}</td>
-                        <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={{ ...mutedStyle, color: row.lastTradeDate != null ? 'var(--text-secondary)' : 'var(--text-dim)' }}>{formatOptionLastTradeDate(row.lastTradeDate)}</td>
+                        <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={{ ...mutedStyle, color: getOptionLastTradeFreshness(row.lastTradeDate).color }} title={lastTradeStatusLabel(row.lastTradeDate)}>
+                          <span className="block">{formatOptionLastTradeDate(row.lastTradeDate)}</span>
+                          <span className="block text-[9px] font-semibold">{lastTradeStatusLabel(row.lastTradeDate)}</span>
+                        </td>
                         {visibleOptionYieldFields(showNominalYields).map(field => {
                           const value = row[field];
                           const nominal = isNominalYieldField(field);
@@ -708,7 +786,10 @@ export default function WatchlistPage() {
                         })}
                         <td className="px-1.5 py-0.5 text-right text-[10px] whitespace-nowrap" style={{ ...mutedStyle, color: 'var(--text-dim)' }}>{formatDate(row.addedAt)}</td>
                         <td className="px-1.5 py-0.5 text-left whitespace-nowrap" style={mutedStyle}>
-                          <span className="watchlist-status inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-semibold" data-status={row.status}>{row.statusLabel}</span>
+                          <div className="watchlist-state" title={row.statusDetail ? `${row.statusLabel} · ${row.statusDetail}` : row.statusLabel}>
+                            <span className="watchlist-status inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-semibold" data-status={row.status} style={{ color: row.statusColor }}>{row.statusLabel}</span>
+                            {row.statusDetail && <span className="watchlist-status-detail block text-[9px]" style={{ color: 'var(--text-tertiary)' }}>{row.statusDetail}</span>}
+                          </div>
                         </td>
                         <td className="watchlist-note-cell px-1.5 py-0.5 text-left min-w-[180px] max-w-[260px]" style={mutedStyle}>
                           {editingNote === row.id ? (
@@ -716,30 +797,34 @@ export default function WatchlistPage() {
                               type="text"
                               value={noteText}
                               onChange={event => setNoteText(event.target.value.slice(0, 60))}
-                              onBlur={() => handleNoteSave(row.id)}
+                              onBlur={() => handleNoteBlur(row.id)}
                               onKeyDown={event => {
-                                if (event.key === 'Enter') handleNoteSave(row.id);
-                                if (event.key === 'Escape') {
-                                  setEditingNote(null);
-                                  setNoteText('');
+                                if (event.key === 'Enter') {
+                                  noteInputActionRef.current = row.id;
+                                  handleNoteSave(row.id);
                                 }
+                                if (event.key === 'Escape') handleNoteCancel(row.id);
                               }}
                               autoFocus
                               className="w-full bg-transparent text-xs outline-none border-b"
                               style={{ color: 'var(--text)', borderColor: 'var(--accent)' }}
                               maxLength={60}
+                              aria-label={`Note for ${row.ticker}`}
                             />
                           ) : (
-                            <span
+                            <button
+                              type="button"
                               onClick={() => {
+                                noteInputActionRef.current = null;
                                 setEditingNote(row.id);
                                 setNoteText(row.note);
                               }}
-                              className="watchlist-note cursor-pointer text-xs hover:opacity-80 transition-opacity"
+                              aria-label={`${row.note ? 'Edit' : 'Add'} note for ${row.ticker}`}
+                              className="watchlist-note rounded text-left text-xs hover:opacity-80 transition-opacity focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)]"
                               style={{ color: row.note ? 'var(--text-secondary)' : 'var(--text-dim)' }}
                             >
                               {row.note || 'Add note...'}
-                            </span>
+                            </button>
                           )}
                         </td>
                       </tr>

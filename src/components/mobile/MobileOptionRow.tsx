@@ -1,4 +1,5 @@
 import { Star } from 'lucide-react';
+import type { MouseEvent } from 'react';
 import { formatOptionLastTradeDate } from '../../lib/format';
 import { shortPutMoneynessPresentation, type ShortPutMoneynessState } from '../../lib/moneynessPresentation';
 import { Link } from 'react-router-dom';
@@ -12,7 +13,7 @@ export interface MobileOptionRowProps {
   ticker?: string;
   tickerTo?: string;
   tickerNavigationState?: unknown;
-  onTickerNavigate?: () => void;
+  onTickerNavigate?: (event: MouseEvent<HTMLAnchorElement>) => void;
   strike: number;
   expirationLabel?: string;
   dte?: number | null;
@@ -31,6 +32,7 @@ export interface MobileOptionRowProps {
   impliedVolatility?: number | null;
   openInterest?: number | null;
   statusText?: string;
+  statusTextColor?: string;
   moneynessLabel?: string;
   moneynessColor?: string;
   moneynessState?: ShortPutMoneynessState;
@@ -75,6 +77,7 @@ export default function MobileOptionRow(props: MobileOptionRowProps) {
   const title = `$${money(props.strike)} Put`;
   const annYieldBid = props.annYieldBid ?? props.annualYield;
   const moneyness = props.moneynessState ? shortPutMoneynessPresentation(props.moneynessState) : null;
+  const identityLabel = [props.ticker, title, props.expirationLabel, props.dte != null ? `${props.dte} DTE` : null].filter(Boolean).join(' ');
   return (
     <article
       role="row"
@@ -88,20 +91,20 @@ export default function MobileOptionRow(props: MobileOptionRowProps) {
         }
       }}
       tabIndex={0}
-      aria-label={`Open details for ${title}`}
+      aria-label={`Open details for ${identityLabel}`}
       data-variant={props.denseQuoteView ? 'options' : undefined}
     >
       <div role="cell" className="mobile-option-chain-cell mobile-option-chain-cell--strike">
         <div className="mobile-option-chain-cell__identity">
-          {props.ticker && (props.tickerTo ? <Link to={props.tickerTo} state={props.tickerNavigationState} onClick={event => { event.stopPropagation(); props.onTickerNavigate?.(); }} className="mobile-option-chain-cell__context mobile-option-chain-cell__ticker" style={{ color: 'var(--accent-light)' }}>{props.ticker}</Link> : <small className="mobile-option-chain-cell__context mobile-option-chain-cell__ticker">{props.ticker}</small>)}
+          {props.ticker && (props.tickerTo ? <Link to={props.tickerTo} state={props.tickerNavigationState} onClick={event => { event.stopPropagation(); props.onTickerNavigate?.(event); }} className="mobile-option-chain-cell__context mobile-option-chain-cell__ticker" style={{ color: 'var(--accent-light)' }}>{props.ticker}</Link> : <small className="mobile-option-chain-cell__context mobile-option-chain-cell__ticker">{props.ticker}</small>)}
           <span className="mobile-option-chain-cell__strike-value font-mono font-semibold tabular-nums">{money(props.strike)}</span>
-          {props.expirationLabel && <small className="mobile-option-chain-cell__context mobile-option-chain-cell__expiry">{props.expirationLabel}</small>}
+          {props.expirationLabel && <small className="mobile-option-chain-cell__context mobile-option-chain-cell__expiry">{props.expirationLabel}{props.dte != null ? ` · ${props.dte} DTE` : ''}</small>}
         </div>
         {props.onToggleWatchlist && (
           <button
             type="button"
             onClick={event => { event.stopPropagation(); props.onToggleWatchlist?.(); }}
-            className="pointer-events-auto flex h-8 w-8 flex-none items-center justify-center rounded-md"
+            className="pointer-events-auto flex h-11 w-11 flex-none items-center justify-center rounded-md"
             aria-label={props.watched ? 'Remove from watchlist' : 'Add to watchlist'}
             title={props.watched ? 'Remove from watchlist' : 'Add to watchlist'}
             style={{ color: props.watched ? 'var(--accent-light)' : 'var(--text-dim)' }}
@@ -111,6 +114,7 @@ export default function MobileOptionRow(props: MobileOptionRowProps) {
         )}
       </div>
       {props.denseQuoteView && (
+        <>
         <div className="mobile-option-chain-row__option-details" aria-label="Option quote and metric details">
           <div className="mobile-option-chain-row__quote-grid">
             <div role="cell" className="mobile-option-chain-cell" data-field="last-quote" title="Last quote">
@@ -158,8 +162,10 @@ export default function MobileOptionRow(props: MobileOptionRowProps) {
               <span className="font-mono tabular-nums">{percent(props.annYieldAsk)}</span>
             </div>
           </div>
-          {props.integrityStatus !== 'clean' && <small className="mobile-option-chain-cell__status mobile-option-chain-row__status">{props.integrityStatus === 'invalid' ? 'Invalid quote · trusted economics unavailable' : 'Degraded quote · use with caution'}</small>}
+          {props.integrityStatus && props.integrityStatus !== 'clean' && <small className="mobile-option-chain-cell__status mobile-option-chain-row__status">{props.integrityStatus === 'invalid' ? 'Invalid quote · trusted economics unavailable' : 'Degraded quote · use with caution'}</small>}
         </div>
+        {props.denseQuoteView && props.statusText && <small className="mobile-option-chain-cell__status mobile-option-chain-row__status" style={{ color: props.statusTextColor }}>{props.statusText}</small>}
+        </>
       )}
       <div role="cell" className="mobile-option-chain-cell" data-field="last" style={{ color: props.staleText ? 'var(--yellow)' : props.lastTradeDate ? 'var(--text)' : 'var(--text-dim)' }} title={`${formatOptionLastTradeDate(props.lastTradeDate ?? null)}${props.staleText ? ` · ${props.staleText}` : ''}`}>
         <span className="font-mono tabular-nums">{formatOptionLastTradeDate(props.lastTradeDate ?? null)}</span>

@@ -3802,6 +3802,22 @@ td {
   background: var(--bg-inset);
   color: var(--text-tertiary);
   line-height: 1.2;
+  transition: color var(--transition-ui), background-color var(--transition-ui), border-color var(--transition-ui), opacity var(--transition-ui);
+}
+
+.watchlist-state {
+  display: grid;
+  justify-items: start;
+  gap: 0.12rem;
+}
+
+.watchlist-status-detail {
+  line-height: 1.15;
+}
+
+.watchlist-status[data-status="saved"] {
+  border-color: color-mix(in srgb, var(--accent-light) 28%, var(--border-subtle));
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-inset));
 }
 
 .watchlist-status[data-status="live"] {
@@ -3816,11 +3832,28 @@ td {
   color: var(--warning);
 }
 
-.watchlist-status[data-status="unavailable"],
+.watchlist-status[data-status="expired"] {
+  border-color: color-mix(in srgb, var(--text-muted) 30%, var(--border-subtle));
+  background: color-mix(in srgb, var(--text-muted) 7%, var(--bg-inset));
+  color: var(--text-muted);
+}
+
 .watchlist-status[data-status="refresh_failed"] {
-  border-color: color-mix(in srgb, var(--negative) 28%, var(--border-subtle));
-  background: color-mix(in srgb, var(--negative) 8%, var(--bg-inset));
-  color: var(--negative);
+  border-color: color-mix(in srgb, var(--orange) 34%, var(--border-subtle));
+  background: color-mix(in srgb, var(--orange) 9%, var(--bg-inset));
+  color: var(--orange);
+}
+
+.watchlist-status[data-status="quote_inconsistent"] {
+  border-color: color-mix(in srgb, var(--yellow) 34%, var(--border-subtle));
+  background: color-mix(in srgb, var(--yellow) 9%, var(--bg-inset));
+  color: var(--yellow);
+}
+
+.watchlist-status[data-status="unavailable"] {
+  border-color: color-mix(in srgb, var(--text-muted) 30%, var(--border-subtle));
+  background: color-mix(in srgb, var(--text-muted) 7%, var(--bg-inset));
+  color: var(--text-muted);
 }
 
 .watchlist-remove {
