@@ -1,6 +1,6 @@
 import { uiTextCssPx } from '../lib/uiTextSizePreference';
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { Activity, AlertTriangle, Loader2, RefreshCw, X, SlidersHorizontal, ChevronDown } from 'lucide-react';
+import { Activity, AlertTriangle, Info, Loader2, RefreshCw, X, SlidersHorizontal, ChevronDown } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { buildEtfPulseRows, getEtfPulseUniverse, type EtfPulseLoadResult, type EtfPulseProgress } from '../lib/etfPulseData';
 import type { EtfPulseRow } from '../lib/etfPulseMetrics';
@@ -16,7 +16,7 @@ import { useResponsiveMode } from '../lib/responsive';
 import { useBlockingOverlayBehavior } from '../lib/blockingOverlay';
 import MobileBottomSheet from '../components/mobile/MobileBottomSheet';
 import MobileSegmentedControl from '../components/mobile/MobileSegmentedControl';
-import { underlyingTechnicalEvidencePresentation, underlyingTechnicalStatePresentation } from '../lib/underlyingTechnicalPresentation';
+import { presentUnderlyingTechnicalAssessment, underlyingTechnicalEvidencePresentation, underlyingTechnicalStatePresentation } from '../lib/underlyingTechnicalPresentation';
 import type { UnderlyingTechnicalState } from '../lib/underlyingTechnical';
 import { buildOptionsPath, createOptionsNavigationState, resolveOptionsReturnOrigin, type OptionsNavigationState, type PulseOriginPresentation } from '../lib/optionsNavigation';
 import { ETF_PULSE_CONTEXT_BENCHMARK_COUNT, ETF_PULSE_LEVERAGED_UNIVERSE_SIZE } from '../../shared/etfPulseUniverse.js';
@@ -306,7 +306,7 @@ function MarketReadList({ title, items }: { title: string; items: string[] }) {
 
 function VisualPeriodSelector({ value, onChange }: { value: VisualPeriod; onChange: (period: VisualPeriod) => void }) {
   return (
-    <div className="mobile-scroll-row flex max-w-full overflow-x-auto rounded-lg" style={{ border: '1px solid var(--border)' }}>
+    <div className="mobile-scroll-row flex max-w-full overflow-x-auto rounded-lg" role="group" aria-label="Performance window" style={{ border: '1px solid var(--border)' }}>
       {VISUAL_PERIODS.map(period => (
         <button
           key={period}
@@ -324,6 +324,81 @@ function VisualPeriodSelector({ value, onChange }: { value: VisualPeriod; onChan
         </button>
       ))}
     </div>
+  );
+}
+
+function TechnicalStateExplanation({ row, compact = false }: { row: EtfPulseRow; compact?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const triggerId = useId();
+  const panelId = `${triggerId}-panel`;
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const presented = presentUnderlyingTechnicalAssessment(row.technicalAssessment);
+  const signalRows = [
+    ['Structure', presented.signals.structure],
+    ['Momentum', presented.signals.momentum],
+    ['Reset / extension', presented.signals.resetExtension],
+    ['Volatility stress', presented.signals.volatilityStress],
+  ] as const;
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [open]);
+
+  return (
+    <span className={`pulse-technical-explanation ${compact ? 'pulse-technical-explanation--compact' : ''}`}>
+      <button
+        ref={triggerRef}
+        id={triggerId}
+        type="button"
+        className="pulse-technical-explanation__trigger"
+        aria-expanded={open}
+        aria-controls={panelId}
+        aria-label={`Explain ${row.ticker} technical state: ${presented.state.label}`}
+        onClick={() => setOpen(current => !current)}
+        style={{ color: presented.state.color, backgroundColor: presented.state.backgroundColor, borderColor: presented.state.borderColor }}
+      >
+        <span className={compact ? 'sr-only' : ''}>{presented.state.label}</span>
+        <Info aria-hidden="true" className="pulse-technical-explanation__icon" />
+      </button>
+      {open && (
+        <div id={panelId} role="region" aria-labelledby={triggerId} className="pulse-technical-explanation__panel">
+          <div className="pulse-technical-explanation__heading">
+            <div className="min-w-0">
+              <strong>{row.ticker} · {presented.state.label}</strong>
+              <span>{presented.state.accessibleLabel}</span>
+            </div>
+            <button type="button" className="pulse-technical-explanation__close" aria-label={`Close ${row.ticker} technical explanation`} onClick={() => { setOpen(false); triggerRef.current?.focus(); }}>
+              <X aria-hidden="true" className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <div className="pulse-technical-explanation__section">
+            <div className="pulse-technical-explanation__label">Why this state</div>
+            <ul>
+              {row.technicalAssessment.reasonCodes.map((code, index) => <li key={code}>{presented.reasonExplanations[index]}</li>)}
+            </ul>
+          </div>
+          <div className="pulse-technical-explanation__section">
+            <div className="pulse-technical-explanation__label">Canonical signals</div>
+            <div className="pulse-technical-explanation__signals">
+              {signalRows.map(([label, value]) => <span key={label}><b>{label}</b> {value}</span>)}
+            </div>
+          </div>
+          <div className="pulse-technical-explanation__evidence">
+            <span>Evidence quality</span>
+            <strong style={{ color: presented.evidenceQuality.color }}>{presented.evidenceQuality.label}</strong>
+          </div>
+        </div>
+      )}
+    </span>
   );
 }
 
@@ -359,13 +434,15 @@ function UniverseHeatmap({ rows, period, navigationState }: { rows: EtfPulseRow[
         const value = getReturnForPeriod(row, period);
         const trend = trendStyle(row);
         const evidence = underlyingTechnicalEvidencePresentation(row.technicalAssessment.evidenceQuality);
+        const technicalState = underlyingTechnicalStatePresentation(row.technicalAssessment.state);
         const style = heatmapTileStyle(value);
         return (
           <Link
             key={row.ticker}
             to={buildOptionsPath(row.ticker)}
             state={navigationState}
-            aria-label={`Open ${row.ticker} ETF detail`}
+            aria-label={`${row.ticker} · ${period} return ${formatPct(value)} · ${technicalState.label}. Open Options for ${row.ticker}.`}
+            data-pulse-ticker={row.ticker}
             className="rounded-md p-2 min-h-[64px] overflow-hidden text-left cursor-pointer pulse-heatmap-tile focus:outline-none focus:ring-2 focus:ring-blue-400/40 flex flex-col justify-between"
             title={`${row.ticker} - ${row.name}\n${period}: ${formatPct(value)}\nRSI: ${isFiniteNumber(row.rsi14) ? row.rsi14.toFixed(1) : DASH}\nTrend: ${trend.label}\nTechnical evidence: ${evidence.label}\n20D RV: ${formatPct(row.realizedVolatility20)}\nRecent DD: ${formatPct(row.recentDrawdown30)}\nvs 50D: ${formatPct(row.distance50)}\nvs 200D: ${formatPct(row.distance200)}\n52W Pos: ${formatPct(row.position52Week)}\n52W DD: ${formatPct(row.drawdown52Week)}`}
             style={{ backgroundColor: style.backgroundColor, border: `1px solid ${style.borderColor}` }}
@@ -387,6 +464,7 @@ function UniverseHeatmap({ rows, period, navigationState }: { rows: EtfPulseRow[
 
 function MomentumQuadrant({ rows, period, navigationState }: { rows: EtfPulseRow[]; period: VisualPeriod; navigationState: OptionsNavigationState }) {
   const [hoveredTicker, setHoveredTicker] = useState<string | null>(null);
+  const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
   const points = useMemo(() => rows
     .map(row => ({ row, x: getReturnForPeriod(row, period), y: row.rsi14 }))
     .filter((point): point is { row: EtfPulseRow; x: number; y: number } => isFiniteNumber(point.x) && isFiniteNumber(point.y)), [period, rows]);
@@ -407,7 +485,9 @@ function MomentumQuadrant({ rows, period, navigationState }: { rows: EtfPulseRow
   const rsi50Y = scaleY(50);
   const rsi35Y = scaleY(35);
   const rsi70Y = scaleY(70);
-  const hoveredPoint = points.find(point => point.row.ticker === hoveredTicker) ?? null;
+  const activeTicker = hoveredTicker ?? selectedTicker;
+  const hoveredPoint = points.find(point => point.row.ticker === activeTicker) ?? null;
+  const selectedPoint = points.find(point => point.row.ticker === selectedTicker) ?? null;
   const tooltipWidth = 218;
   const tooltipHeight = 178;
   const tooltipX = hoveredPoint
@@ -442,22 +522,24 @@ function MomentumQuadrant({ rows, period, navigationState }: { rows: EtfPulseRow
         <text x={scaleX(0) + 4} y={height - 14} style={{ fontSize: uiTextCssPx(10) }} fill="var(--text-dim)">0%</text>
         {points.map(({ row, x, y }) => {
           const trend = trendStyle(row);
+          const technicalState = underlyingTechnicalStatePresentation(row.technicalAssessment.state);
           const radius = Math.max(4, Math.min(9, 4 + ((row.realizedVolatility20 ?? 0) * 7)));
-          const active = hoveredTicker === row.ticker;
+          const active = activeTicker === row.ticker;
           return (
             <Link
               key={row.ticker}
               to={buildOptionsPath(row.ticker)}
               state={navigationState}
               tabIndex={0}
-              aria-label={`Open ${row.ticker} ETF detail`}
+              aria-label={`Select ${row.ticker}; ${period} return ${formatPct(x)}; RSI ${y.toFixed(1)}; technical state ${technicalState.label}. Open Options for ${row.ticker}.`}
               onClick={event => {
                 if (hoveredTicker !== row.ticker) {
                   event.preventDefault();
                   setHoveredTicker(row.ticker);
+                  setSelectedTicker(row.ticker);
                 }
               }}
-              onFocus={() => setHoveredTicker(row.ticker)}
+              onFocus={() => { setHoveredTicker(row.ticker); setSelectedTicker(row.ticker); }}
               onBlur={() => setHoveredTicker(current => current === row.ticker ? null : current)}
             >
               <circle
@@ -495,9 +577,41 @@ function MomentumQuadrant({ rows, period, navigationState }: { rows: EtfPulseRow
             </div>
           </foreignObject>
         )}
-      </svg>
-    </div>
-  );
+          </svg>
+          {selectedPoint && (
+            <div className="pulse-quadrant-selected" role="status" aria-label={`${selectedPoint.row.ticker} selected quadrant detail`}>
+              <div className="min-w-0">
+                <strong>{selectedPoint.row.ticker}</strong>
+                <span>{period} return {formatPct(selectedPoint.x)} · RSI {selectedPoint.y.toFixed(1)} · {underlyingTechnicalStatePresentation(selectedPoint.row.technicalAssessment.state).label}</span>
+              </div>
+              <Link to={buildOptionsPath(selectedPoint.row.ticker)} state={navigationState} className="pulse-quadrant-selected__options">Options</Link>
+            </div>
+          )}
+          <details className="pulse-quadrant-companion">
+            <summary>Browse plotted ETFs <span>({points.length})</span></summary>
+            <ul>
+              {points.map(({ row, x, y }) => {
+                const technicalState = underlyingTechnicalStatePresentation(row.technicalAssessment.state);
+                const selected = selectedTicker === row.ticker;
+                return (
+                  <li key={row.ticker}>
+                    <button
+                      type="button"
+                      aria-pressed={selected}
+                      aria-label={`Select ${row.ticker}; ${period} return ${formatPct(x)}; RSI ${y.toFixed(1)}; technical state ${technicalState.label}`}
+                      onClick={() => { setSelectedTicker(row.ticker); setHoveredTicker(null); }}
+                    >
+                      <span>{row.ticker}</span>
+                      <span>{period} {formatPct(x)} · RSI {y.toFixed(1)}</span>
+                      <span>{technicalState.label}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </details>
+        </div>
+      );
 }
 
 function TooltipMetric({ label, value, color }: { label: string; value: string; color: string }) {
@@ -767,9 +881,12 @@ export default function EtfPulsePage() {
         const trend = trendStyle(row);
         const evidence = underlyingTechnicalEvidencePresentation(row.technicalAssessment.evidenceQuality);
         return (
+          <div className="pulse-technical-cell">
+            <TechnicalStateExplanation row={row} compact />
           <span className="inline-flex rounded px-1.5 py-0.5 text-[10px] font-semibold" data-technical-tone={underlyingTechnicalStatePresentation(row.technicalAssessment.state).tone} title={`RSI ${isFiniteNumber(row.rsi14) ? row.rsi14.toFixed(1) : DASH} · Evidence ${evidence.label}`} style={{ color: trend.color, backgroundColor: trend.bg, border: `1px solid ${trend.border}` }}>
             {trend.label}
           </span>
+          </div>
         );
       },
     },
@@ -816,7 +933,7 @@ export default function EtfPulsePage() {
     return (
       <td
         key={column.key}
-        className={`px-2 py-1 whitespace-nowrap tabular-nums overflow-hidden ${alignClass} ${performanceClass} ${column.key === 'ticker' ? 'font-mono font-bold' : ''} ${column.sticky ? 'sticky left-0 z-20' : ''}`}
+        className={`px-2 py-1 whitespace-nowrap tabular-nums ${column.key === 'trend' ? 'relative overflow-visible' : 'overflow-hidden'} ${alignClass} ${performanceClass} ${column.key === 'ticker' ? 'font-mono font-bold' : ''} ${column.sticky ? 'sticky left-0 z-20' : ''}`}
         style={{
           width: column.width,
           minWidth: column.width,
@@ -846,8 +963,21 @@ export default function EtfPulsePage() {
 
          {mobileVisual === 'list' ? <div className="mobile-financial-list">{loading && rows.length === 0 ? <div role="status" aria-label="ETF Pulse loading" className="pulse-mobile-loading">{Array.from({ length: 6 }).map((_, index) => <div key={index} className="mobile-pulse-row pulse-mobile-skeleton animate-pulse"><div className="h-4 w-24 rounded" style={{ backgroundColor: 'var(--border)' }} /><div className="mt-5 h-3 w-full rounded" style={{ backgroundColor: 'var(--border)' }} /></div>)}</div> : filteredRows.length === 0 ? <div className="pulse-mobile-empty-state px-6 py-14 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No ETFs match these filters.</div> : filteredRows.map(row => {
           const trend = trendStyle(row);
-           return <Link key={row.ticker} to={buildOptionsPath(row.ticker)} state={optionsNavigationState} className="pressable mobile-pulse-row mobile-pulse-list-item"><div className="mobile-pulse-list-item__main"><div className="min-w-0"><div className="mobile-pulse-list-item__identity font-mono text-[16px] font-bold" style={{ color: 'var(--accent-light)' }}>{row.ticker}</div><div className="mobile-pulse-list-item__name text-[11px]" style={{ color: 'var(--text-muted)' }} title={row.name}>{row.name}</div></div><div className="mobile-pulse-list-item__quote text-right"><div className="font-mono text-[15px] font-semibold" style={{ color: 'var(--text)' }}>{formatPrice(row.price)}</div><div className="text-[10px] font-semibold" style={{ color: trend.color }} title={`Evidence ${underlyingTechnicalEvidencePresentation(row.technicalAssessment.evidenceQuality).label}`}>{trend.label}</div></div></div><div className="pulse-mobile-performance mobile-pulse-list-item__performance mt-2 grid grid-cols-3 gap-2 border-y py-1.5" style={{ borderColor: 'var(--border)' }}>{([['1M', row.returns.thirtyDay], ['3M', row.returns.threeMonth], ['YTD', row.returns.yearToDate]] as const).map(([label, value]) => <span key={label} className="text-[11px]"><span style={{ color: 'var(--text-dim)' }}>{label} </span><b className="font-mono" style={{ color: valueColor(value) }}>{formatPct(value)}</b></span>)}</div><div className="pulse-mobile-support mobile-pulse-list-item__footer mt-1.5 grid grid-cols-3 gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}><span>RSI <b className="font-mono" style={{ color: rsiColor(row.rsi14) }}>{isFiniteNumber(row.rsi14) ? row.rsi14.toFixed(0) : DASH}</b></span><span>vs 50D <b className="font-mono" style={{ color: valueColor(row.distance50) }}>{formatPct(row.distance50)}</b></span><span className="text-right">DD <b className="font-mono" style={{ color: drawdownColor(row.drawdown52Week) }}>{formatPct(row.drawdown52Week)}</b></span></div></Link>;
-        })}</div> : <section className="px-3.5 py-3">{mobileVisual === 'heatmap' ? <UniverseHeatmap rows={filteredRows} period={selectedVisualPeriod} navigationState={optionsNavigationState} /> : <MomentumQuadrant rows={filteredRows} period={selectedVisualPeriod} navigationState={optionsNavigationState} />}</section>}
+            return (
+              <div key={row.ticker} className="pulse-mobile-item-with-explanation mobile-pulse-row mobile-pulse-list-item">
+                <div className="mobile-pulse-list-item__main mobile-pulse-list-item__main--interactive">
+                  <Link to={buildOptionsPath(row.ticker)} state={optionsNavigationState} className="mobile-pulse-list-item__identity-link">
+                    <div className="min-w-0"><div className="mobile-pulse-list-item__identity font-mono text-[16px] font-bold" style={{ color: 'var(--accent-light)' }}>{row.ticker}</div><div className="mobile-pulse-list-item__name text-[11px]" style={{ color: 'var(--text-muted)' }} title={row.name}>{row.name}</div></div>
+                  </Link>
+                  <div className="mobile-pulse-list-item__quote text-right"><div className="font-mono text-[15px] font-semibold" style={{ color: 'var(--text)' }}>{formatPrice(row.price)}</div><div className="flex items-center justify-end gap-1 text-[10px] font-semibold" style={{ color: trend.color }} title={`Evidence ${underlyingTechnicalEvidencePresentation(row.technicalAssessment.evidenceQuality).label}`}><span>{trend.label}</span><TechnicalStateExplanation row={row} compact /></div></div>
+                </div>
+                <Link to={buildOptionsPath(row.ticker)} state={optionsNavigationState} className="mobile-pulse-list-item__metrics-link">
+                  <div className="pulse-mobile-performance mobile-pulse-list-item__performance mt-2 grid grid-cols-3 gap-2 border-y py-1.5" style={{ borderColor: 'var(--border)' }}>{([['1M', row.returns.thirtyDay], ['3M', row.returns.threeMonth], ['YTD', row.returns.yearToDate]] as const).map(([label, value]) => <span key={label} className="text-[11px]"><span style={{ color: 'var(--text-dim)' }}>{label} </span><b className="font-mono" style={{ color: valueColor(value) }}>{formatPct(value)}</b></span>)}</div>
+                  <div className="pulse-mobile-support mobile-pulse-list-item__footer mt-1.5 grid grid-cols-3 gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}><span>RSI <b className="font-mono" style={{ color: rsiColor(row.rsi14) }}>{isFiniteNumber(row.rsi14) ? row.rsi14.toFixed(0) : DASH}</b></span><span>vs 50D <b className="font-mono" style={{ color: valueColor(row.distance50) }}>{formatPct(row.distance50)}</b></span><span className="text-right">DD <b className="font-mono" style={{ color: drawdownColor(row.drawdown52Week) }}>{formatPct(row.drawdown52Week)}</b></span></div>
+                </Link>
+              </div>
+            );
+         })}</div> : <section className="px-3.5 py-3"><div className="pulse-mobile-visual-period"><span className="pulse-control-label">Performance window</span><VisualPeriodSelector value={selectedVisualPeriod} onChange={setSelectedVisualPeriod} /></div>{mobileVisual === 'heatmap' ? <UniverseHeatmap rows={filteredRows} period={selectedVisualPeriod} navigationState={optionsNavigationState} /> : <MomentumQuadrant rows={filteredRows} period={selectedVisualPeriod} navigationState={optionsNavigationState} />}</section>}
 
         {mobileFiltersOpen && <MobileBottomSheet title="ETF Pulse filters" description="Filter and sort loaded market intelligence" onClose={() => setMobileFiltersOpen(false)} footer={<div className="grid grid-cols-2 gap-2"><button type="button" onClick={() => { setSearch(''); setLeverageFilter('All'); setTypeFilter('All'); setTrendFilter('All'); }} className="mobile-sheet-action secondary">Reset</button><button type="button" onClick={() => setMobileFiltersOpen(false)} className="mobile-sheet-action primary">Done</button></div>}><div className="space-y-4"><label><span className="mobile-sheet-label">Search</span><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Ticker, name, or theme" className="mobile-control-field w-full" /></label><Select label="Leverage" value={leverageFilter} options={leverageOptions} onChange={setLeverageFilter} /><Select label="Type" value={typeFilter} options={typeOptions} onChange={setTypeFilter} /><Select label="Trend" value={trendFilter} options={trendOptions} formatOption={trendOptionLabel} onChange={value => setTrendFilter(value as TrendFilter)} /><label className="block"><span className="mobile-sheet-label">Sort list</span><select value={sort.field} onChange={event => setSort(current => ({ ...current, field: event.target.value as PulseSortField }))} className="mobile-control-field w-full"><option value="ticker">Ticker</option><option value="oneDay">1D return</option><option value="thirtyDay">30D return</option><option value="threeMonth">3M return</option><option value="rsi14">RSI</option><option value="realizedVolatility20">20D volatility</option><option value="drawdown52Week">52W drawdown</option><option value="trend">Trend</option></select></label><button type="button" onClick={() => void loadRows(true)} disabled={loading} className="mobile-sheet-action secondary w-full"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh data</button></div></MobileBottomSheet>}
         {showMarketRead && regime && posture && <MarketReadModal regime={regime} posture={posture} onClose={() => setShowMarketRead(false)} />}
