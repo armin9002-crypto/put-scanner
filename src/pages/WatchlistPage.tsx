@@ -5,7 +5,6 @@ import {
   markWatchlistItems,
   removeFromWatchlist,
   pruneExpiredWatchlist,
-  retainWatchlistSnapshotAfterInvalidRefresh,
   updateWatchlistNote,
   type WatchlistItem,
   type WatchlistSnapshot,
@@ -23,12 +22,10 @@ import { useResponsiveMode } from '../lib/responsive';
 import MobileOptionRow from '../components/mobile/MobileOptionRow';
 import { annualizedYieldFieldForNominal, OPTION_QUOTE_DISPLAY_LABELS, OPTION_QUOTE_TABLE_DISPLAY_ORDER, OPTION_YIELD_DISPLAY_LABELS, executableOptionPrice, formatOptionQuoteValue, isNominalYieldField, visibleOptionYieldFields, type OptionQuoteTableDisplayField, type OptionYieldDisplayField } from '../lib/optionQuoteDisplay';
 import { acquireOptionChains, canonicalOptionChainKey } from '../lib/optionChainRequests';
-import { resolvePutDelta } from '../lib/putDelta';
 import { buildWatchlistGroups, type WatchlistGroupMode, type WatchlistSortOverride, type WatchlistGroupableRow } from '../lib/watchlistPresentation';
 import { PageHeader } from '../components/ui/PageHeader';
-import { isOptionContractIntegrityInvalid } from '../lib/optionMarketIntegrity';
-import { evidenceFreshnessFromChainMeta } from '../lib/evidence';
 import { buildOptionsPath, createOptionsNavigationState, resolveOptionsReturnOrigin, type OptionsNavigationState, type WatchlistOriginPresentation } from '../lib/optionsNavigation';
+import { isWatchlistRefreshCurrent, mergeWatchlistRefreshItem } from '../lib/watchlistRefresh';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 
@@ -198,88 +195,6 @@ function optionDetailFromWatchlistRow(row: LiveRow): OptionDetail {
   };
 }
 
-function mergeLiveItem(item: WatchlistItem, optData: OptionsChainData | null, currentPrice: number | null, failed: boolean): WatchlistItem {
-  const rawDte = calculateDte(item.expiry);
-  const dte = isFiniteNumber(rawDte) ? Math.max(0, rawDte) : null;
-  if (isPastWatchlistExpirationDte(rawDte)) {
-    return { ...item, status: 'expired', updatedAt: Date.now() };
-  }
-
-  if (failed || !optData) {
-    return { ...item, status: 'refresh_failed', updatedAt: item.updatedAt, snapshot: { ...item.snapshot, evidenceFreshness: 'retained-stale', evidenceSource: 'snapshot', observedAt: item.snapshot?.observedAt ?? item.updatedAt ?? null, retentionReason: 'Refresh failed; the prior trusted quote was retained.' } };
-  }
-
-  const put = optData.puts.find(candidate => Math.abs(candidate.strike - item.strike) < 0.01);
-  const underlyingPrice = sanitizePositive(currentPrice) ?? sanitizePositive(optData.currentPrice);
-
-  if (!put) {
-    return {
-      ...item,
-      status: 'unavailable',
-      updatedAt: item.updatedAt,
-      snapshot: {
-        ...item.snapshot,
-        underlyingPrice,
-        dte,
-        evidenceFreshness: 'retained-stale',
-        evidenceSource: 'snapshot',
-        observedAt: item.snapshot?.observedAt ?? item.updatedAt ?? null,
-        retentionReason: 'The exact contract was absent from the new chain; the prior quote was retained.',
-      },
-    };
-  }
-
-  if (isOptionContractIntegrityInvalid(put)) {
-    return retainWatchlistSnapshotAfterInvalidRefresh(item, { underlyingPrice, dte, reasonCodes: put.integrity?.reasonCodes ?? [] });
-  }
-
-  const iv = put.impliedVolatility ?? null;
-  const delta = resolvePutDelta({
-    providerDelta: put.delta,
-    underlyingPrice,
-    strike: item.strike,
-    dte,
-    impliedVolatilityPercent: iv,
-  });
-
-  const bidYield = calculateYieldPercent(executableOptionPrice(put.bid), item.strike, dte);
-  const askYield = calculateYieldPercent(executableOptionPrice(put.ask), item.strike, dte);
-  const moneyness = calculateMoneyness(underlyingPrice, item.strike);
-  const evidenceFreshness = evidenceFreshnessFromChainMeta(optData.chainMeta);
-  const retained = evidenceFreshness === 'retained-stale';
-  const observedAt = optData.chainMeta?.fetchedAt ?? item.snapshot?.observedAt ?? item.updatedAt ?? null;
-
-  return {
-    ...item,
-    status: retained ? 'stale' : 'live',
-    updatedAt: observedAt ?? item.updatedAt,
-    snapshot: {
-      underlyingPrice,
-      bid: put.bid,
-      ask: put.ask,
-      last: put.last,
-      lastTradeDate: put.lastTradeDate,
-      delta,
-      iv,
-      dte,
-      volume: put.volume,
-      openInterest: put.openInterest,
-      nominalYieldBid: bidYield.nominal,
-      annualizedYieldBid: bidYield.annualized,
-      annualizedYieldAsk: askYield.annualized,
-      moneynessPct: moneyness.pct,
-      moneynessLabel: moneyness.label,
-      integrityStatus: put.integrity?.status ?? 'clean',
-      integrityReasonCodes: put.integrity?.reasonCodes ?? [],
-      observedAt,
-      providerMarketTime: optData.chainMeta?.providerMarketTime ?? null,
-      evidenceFreshness,
-      evidenceSource: optData.chainMeta?.source ?? 'unknown',
-      retentionReason: retained ? 'Refresh returned stale fallback; the prior trusted quote remains visible.' : null,
-    },
-  };
-}
-
 export default function WatchlistPage() {
   const { isPhone } = useResponsiveMode();
   const location = useLocation();
@@ -387,18 +302,18 @@ export default function WatchlistPage() {
         const optData = optionsByKey.get(key) ?? null;
         if (hasRequest && (optData == null || optData.chainMeta?.staleFallbackUsed === true)) partialFailure = true;
         const price = batchResult?.data[item.ticker]?.price ?? optData?.currentPrice ?? null;
-        const merged = mergeLiveItem(item, optData, price, hasRequest && (optData == null || optData.chainMeta?.staleFallbackUsed === true));
+        const merged = mergeWatchlistRefreshItem(item, optData, price, hasRequest && (optData == null || optData.chainMeta?.staleFallbackUsed === true));
         if (merged.status === 'quote_inconsistent') partialFailure = true;
         return merged;
       });
 
-      if (refreshGeneration !== refreshGenerationRef.current) return;
+      if (!isWatchlistRefreshCurrent(refreshGeneration, refreshGenerationRef.current, controller.signal)) return;
       const stored = markWatchlistItems(refreshed);
       setItems(stored);
       setLastRefreshed(new Date());
       if (partialFailure) setRefreshError('Watchlist refresh could not be completed. Saved contracts were preserved.');
     } catch {
-      if (refreshGeneration === refreshGenerationRef.current && !controller.signal.aborted) {
+      if (isWatchlistRefreshCurrent(refreshGeneration, refreshGenerationRef.current, controller.signal)) {
         setRefreshError('Watchlist refresh could not be completed. Saved contracts were preserved.');
       }
     } finally {

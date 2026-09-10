@@ -103,6 +103,7 @@ function withRequestProvenance(data: OptionsChainData, cacheKey: string, meta: {
       requestedExpiration: data.chainMeta?.requestedExpiration ?? null,
       returnedExpiration: data.chainMeta?.returnedExpiration ?? data.chainMeta?.expirationDate ?? null,
       expirationDate: data.chainMeta?.expirationDate ?? null,
+      expirationEvidence: data.chainMeta?.expirationEvidence,
       fetchedAt,
       providerMarketTime: data.chainMeta?.providerMarketTime ?? null,
       // Cache reads preserve the original storage/observation time; read time must not refresh the quote.

@@ -1,5 +1,6 @@
 export type WatchlistOptionType = 'put';
 export type WatchlistStatus = 'saved' | 'live' | 'stale' | 'expired' | 'unavailable' | 'refresh_failed' | 'quote_inconsistent';
+export type WatchlistRefreshReason = 'expiration_mismatch' | 'expiration_unverified';
 
 export interface WatchlistSnapshot {
   underlyingPrice?: number | null;
@@ -8,6 +9,8 @@ export interface WatchlistSnapshot {
   last?: number | null;
   lastTradeDate?: number | null;
   delta?: number | null;
+  deltaSource?: PutDeltaSource | null;
+  deltaModelVersion?: string | null;
   iv?: number | null;
   dte?: number | null;
   volume?: number | null;
@@ -24,6 +27,7 @@ export interface WatchlistSnapshot {
   evidenceFreshness?: 'current' | 'cached-current' | 'retained-stale' | 'unavailable';
   evidenceSource?: string;
   retentionReason?: string | null;
+  refreshReason?: WatchlistRefreshReason | null;
 }
 
 export interface WatchlistItem {
@@ -63,6 +67,52 @@ export function retainWatchlistSnapshotAfterInvalidRefresh(
       retentionReason: 'New option evidence was invalid; the prior trusted quote was retained.',
       integrityStatus: hasTrustedPrice ? 'degraded' : 'invalid',
       integrityReasonCodes: update.reasonCodes.slice(0, 8),
+    },
+  };
+}
+
+function hasTrustedWatchlistSnapshot(item: WatchlistItem): boolean {
+  const snapshot = item.snapshot;
+  return snapshot?.integrityStatus !== 'invalid'
+    && [snapshot?.bid, snapshot?.ask, snapshot?.last]
+      .some(value => typeof value === 'number' && Number.isFinite(value) && value > 0);
+}
+
+export function retainWatchlistSnapshotAfterUnverifiedRefresh(
+  item: WatchlistItem,
+  update: {
+    underlyingPrice: number | null;
+    dte: number | null;
+    reason: WatchlistRefreshReason;
+  },
+): WatchlistItem {
+  const trusted = hasTrustedWatchlistSnapshot(item);
+  const reasonText = update.reason === 'expiration_mismatch'
+    ? 'Returned option expiration did not match the saved contract; the rejected quote was not published.'
+    : 'Returned option expiration could not be verified; the rejected quote was not published.';
+  return {
+    ...item,
+    status: 'refresh_failed',
+    updatedAt: item.updatedAt,
+    snapshot: {
+      ...(item.snapshot ?? {}),
+      ...(trusted
+        ? {
+            underlyingPrice: item.snapshot?.underlyingPrice ?? update.underlyingPrice,
+            dte: update.dte,
+            evidenceFreshness: 'retained-stale' as const,
+            evidenceSource: 'snapshot',
+            observedAt: item.snapshot?.observedAt ?? item.updatedAt ?? null,
+          }
+        : {
+            underlyingPrice: update.underlyingPrice,
+            dte: update.dte,
+            evidenceFreshness: 'unavailable' as const,
+            evidenceSource: 'unknown',
+            observedAt: item.snapshot?.observedAt ?? null,
+          }),
+      retentionReason: reasonText,
+      refreshReason: update.reason,
     },
   };
 }
@@ -217,6 +267,9 @@ function normalizeSnapshot(value: unknown): WatchlistSnapshot | undefined {
   if (value.evidenceFreshness === 'current' || value.evidenceFreshness === 'cached-current' || value.evidenceFreshness === 'retained-stale' || value.evidenceFreshness === 'unavailable') snapshot.evidenceFreshness = value.evidenceFreshness;
   if (typeof value.evidenceSource === 'string') snapshot.evidenceSource = value.evidenceSource;
   if (typeof value.retentionReason === 'string') snapshot.retentionReason = value.retentionReason;
+  if (value.deltaSource === 'provider' || value.deltaSource === 'calculated') snapshot.deltaSource = value.deltaSource;
+  if (value.deltaModelVersion === null || typeof value.deltaModelVersion === 'string') snapshot.deltaModelVersion = value.deltaModelVersion;
+  if (value.refreshReason === 'expiration_mismatch' || value.refreshReason === 'expiration_unverified') snapshot.refreshReason = value.refreshReason;
 
   return Object.keys(snapshot).length > 0 ? snapshot : undefined;
 }
@@ -641,6 +694,7 @@ import {
 import { emitDurableMutation } from './cloudState/syncEvents.ts';
 import { getAccountStateStorage } from './cloudState/accountStateStorage.ts';
 import { buildExactOptionContractKey, serializeExactOptionContractStrike } from './portfolioContractIdentity.ts';
+import type { PutDeltaSource } from './putDelta.ts';
 
 /** Expiration day is inclusive in the U.S. market timezone; no quote is needed. */
 export function pruneExpiredWatchlistItems(items: WatchlistItem[], now = new Date()): WatchlistItem[] {

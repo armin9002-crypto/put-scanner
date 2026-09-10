@@ -3,7 +3,7 @@ import type { OptionsChainData } from './types.ts';
 
 export const OPTIONS_SOFT_TTL_MS = 15 * 60 * 1_000;
 export const OPTIONS_HARD_TTL_MS = 2 * 60 * 60 * 1_000;
-export const OPTIONS_CACHE_SCHEMA_VERSION = 5;
+export const OPTIONS_CACHE_SCHEMA_VERSION = 6;
 
 export function getOptionsCacheKey(ticker: string, date?: number): string {
   return `options_v2_${ticker.trim().toUpperCase()}_${date ?? 'initial'}`;

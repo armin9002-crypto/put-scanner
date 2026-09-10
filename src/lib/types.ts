@@ -1,4 +1,5 @@
 import type { MarketTimestampSource } from './marketTimestamp';
+import type { OptionChainExpirationEvidence } from './optionExpiryNavigation';
 
 export type ETFType = 'Broad Index' | 'Sector' | 'Commodity' | 'Country' | 'Crypto';
 
@@ -76,6 +77,7 @@ export interface OptionChainMeta {
   requestedExpiration: number | null;
   returnedExpiration: number | null;
   expirationDate: number | null;
+  expirationEvidence?: OptionChainExpirationEvidence;
   fetchedAt: number;
   /** Provider market event time for the underlying, never a per-contract bid/ask timestamp. */
   providerMarketTime?: number | null;
