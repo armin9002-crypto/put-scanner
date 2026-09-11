@@ -22,6 +22,8 @@ test('Recommendation execution context fits required viewports at Small and Larg
     await expect(page.locator('.recommendation-conditional-strip')).toContainText('Market gap');
     await expect(page.getByText('CONDITIONAL', { exact: true }).first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'Open Contract', exact: true }).first()).toBeVisible();
+    await expect(page.locator('.recommendation-card__copy-preview').first()).toBeVisible();
+    if (testInfo.project.name === 'portrait-390x844') await expect(page.locator('.recommendation-card__copy-more').first()).toBeVisible();
 
     const pageOverflows = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
     expect(pageOverflows).toBe(false);

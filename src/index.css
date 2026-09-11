@@ -792,6 +792,35 @@ table,
   font-size: var(--font-table);
 }
 
+.recommendations-market-through {
+  margin: -0.35rem 0 0.65rem;
+  color: var(--text-dim);
+  font-size: calc(0.62rem * var(--ui-text-scale));
+}
+
+.recommendations-attempt-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  margin-bottom: 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.55rem 0.7rem;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: calc(0.7rem * var(--ui-text-scale));
+  line-height: 1.4;
+}
+
+.recommendations-attempt-notice--error {
+  border-color: color-mix(in srgb, var(--yellow) 35%, var(--border));
+  color: var(--yellow);
+}
+
+.recommendations-attempt-notice--cancelled {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+
 .recommendations-header-actions {
   display: flex;
   align-items: center;
@@ -1150,6 +1179,10 @@ table,
   gap: 0.55rem;
 }
 
+.recommendation-card__copy-block {
+  min-width: 0;
+}
+
 .recommendation-card__copy strong {
   color: var(--text);
   font-size: calc(0.65rem * var(--ui-text-scale));
@@ -1160,6 +1193,10 @@ table,
   color: var(--text-muted);
   font-size: calc(0.67rem * var(--ui-text-scale));
   line-height: 1.45;
+}
+
+.recommendation-card__copy-more {
+  display: none;
 }
 
 .recommendation-conditional-strip {
@@ -1785,7 +1822,34 @@ table,
   }
 
   .recommendation-card__copy {
-    display: none;
+    display: grid;
+  }
+
+  .recommendation-card__copy-preview {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .recommendation-card__copy-more {
+    display: block;
+    margin-top: 0.28rem;
+    border-top: 1px solid var(--border);
+    padding-top: 0.2rem;
+  }
+
+  .recommendation-card__copy-more summary {
+    min-height: 32px;
+    padding: 0.25rem 0;
+    color: var(--accent-light);
+    font-size: calc(0.62rem * var(--ui-text-scale));
+    font-weight: 650;
+    cursor: pointer;
+  }
+
+  .recommendation-card__copy-more p {
+    margin-top: 0.2rem;
   }
 
   .recommendation-conditional-strip {

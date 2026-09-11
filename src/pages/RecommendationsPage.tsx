@@ -12,8 +12,9 @@ import { createLatestScreenerScanGate } from '../lib/screenerAcquisition.ts';
 import { getInMemoryRecommendationRun, publishInMemoryRecommendationRun, refreshRecommendations, type RecommendationRefreshProgress } from '../lib/recommendations/acquisition.ts';
 import { buildRecommendationBoardRows, type RecommendationBoardRow, type RecommendationBoardSort } from '../lib/recommendations/board.ts';
 import { RECOMMENDATION_POLICY } from '../lib/recommendations/policy.ts';
-import { recommendationLastTradeText, recommendationMarketClosedText, transactionRecencyTone } from '../lib/recommendations/presentation.ts';
+import { recommendationLastTradeText, recommendationMarketClosedText, recommendationRunDescription, transactionRecencyTone } from '../lib/recommendations/presentation.ts';
 import { priceDiscoveryLabel } from '../lib/recommendations/ranking.ts';
+import { classifyRecommendationRefreshError, recommendationRefreshErrorDetail, recommendationRefreshErrorTitle, type RecommendationRefreshAttempt } from '../lib/recommendations/refreshLifecycle.ts';
 import type { CandidateVerdict, RecommendationBand, RecommendationCandidate, RecommendationDistinction, RecommendationRun, RecommendationSelection } from '../lib/recommendations/types.ts';
 import { buildRecommendationVisualFixture, type RecommendationVisualFixture } from '../lib/recommendations/visualFixtures.ts';
 import { underlyingTechnicalEvidencePresentation, underlyingTechnicalStatePresentation } from '../lib/underlyingTechnicalPresentation.ts';
@@ -29,6 +30,8 @@ const DISTINCTION_LABEL: Record<RecommendationDistinction, string> = {
   MORE_DEFENSIVE: 'MORE DEFENSIVE',
   HIGHER_COMPENSATION: 'HIGHER QUOTED COMPENSATION',
 };
+
+const INITIAL_RECOMMENDATION_PROGRESS: RecommendationRefreshProgress = { stage: 'UNDERLYINGS', completed: 0, total: 0, indeterminate: true };
 
 function optionDetail(candidate: RecommendationCandidate): OptionDetail {
   const row = candidate.canonicalRow;
@@ -198,8 +201,8 @@ function RecommendationCard({
           <LensRow label="Execution" value={candidate.lenses.actionability} />
         </div>
         <div className="recommendation-card__copy">
-          <div><strong>WHY THIS</strong><p>{candidate.why}</p></div>
-          <div><strong>MAIN TRADE-OFF</strong><p>{candidate.tradeoff}</p></div>
+          <div className="recommendation-card__copy-block"><strong>WHY THIS</strong><p className="recommendation-card__copy-preview">{candidate.why}</p><details className="recommendation-card__copy-more"><summary>Read full WHY THIS</summary><p>{candidate.why}</p></details></div>
+          <div className="recommendation-card__copy-block"><strong>MAIN TRADE-OFF</strong><p className="recommendation-card__copy-preview">{candidate.tradeoff}</p><details className="recommendation-card__copy-more"><summary>Read full MAIN TRADE-OFF</summary><p>{candidate.tradeoff}</p></details></div>
         </div>
         {candidate.verdict === 'CONDITIONAL' && (
           <div className="recommendation-conditional-strip">
@@ -308,9 +311,8 @@ export default function RecommendationsPage() {
     : null;
   const [run, setRun] = useState<RecommendationRun | null>(() => visualFixture ? buildRecommendationVisualFixture(visualFixture) : getInMemoryRecommendationRun());
   const [onlyEvaluateAtLeast60Dte, setOnlyEvaluateAtLeast60Dte] = useState(readOnlyEvaluateAtLeast60Dte);
-  const [loading, setLoading] = useState(false);
-  const [progress, setProgress] = useState<RecommendationRefreshProgress>({ stage: 'UNDERLYINGS', completed: 0, total: 0 });
-  const [error, setError] = useState('');
+  const [attempt, setAttempt] = useState<RecommendationRefreshAttempt>({ status: 'idle', progress: null });
+  const [exportError, setExportError] = useState('');
   const [boardSort, setBoardSort] = useState<RecommendationBoardSort>('actionability');
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [evidenceCandidateId, setEvidenceCandidateId] = useState<string | null>(null);
@@ -319,6 +321,8 @@ export default function RecommendationsPage() {
   const [showAllBoardRows, setShowAllBoardRows] = useState(false);
   const [showMethodology, setShowMethodology] = useState(false);
   const refreshGateRef = useRef(createLatestScreenerScanGate());
+  const loading = attempt.status === 'loading';
+  const progress = attempt.status === 'loading' ? attempt.progress : INITIAL_RECOMMENDATION_PROGRESS;
 
   const optionsNavigationState = useMemo<OptionsNavigationState>(() => createOptionsNavigationState('recommendations', {
     presentation: {
@@ -342,35 +346,39 @@ export default function RecommendationsPage() {
 
   const handleRefresh = useCallback(async () => {
     const refresh = refreshGateRef.current.begin();
-    setLoading(true);
-    setError('');
-    setProgress({ stage: 'UNDERLYINGS', completed: 0, total: 0 });
+    const hadPriorRun = run != null;
+    setAttempt({ status: 'loading', progress: INITIAL_RECOMMENDATION_PROGRESS });
     try {
       const result = await refreshRecommendations({
         scanId: `recommendations-${refresh.id}`,
         onlyEvaluateAtLeast60Dte,
         signal: refresh.signal,
-        onProgress: next => { if (refresh.isCurrent()) setProgress(next); },
+        onProgress: next => {
+          if (refresh.isCurrent()) setAttempt(current => current.status === 'loading' ? { ...current, progress: next } : current);
+        },
       });
       if (!refresh.isCurrent()) return;
       publishInMemoryRecommendationRun(result.run);
       setRun(result.run);
       setWatchIds(watchedIds());
     } catch (refreshError) {
-      if (refresh.isCurrent() && (refreshError as { name?: unknown })?.name !== 'AbortError') {
-        setError(refreshError instanceof Error ? refreshError.message : 'Recommendations could not be refreshed.');
+      if (refresh.isCurrent()) {
+        if ((refreshError as { name?: unknown })?.name === 'AbortError') {
+          setAttempt({ status: 'cancelled', progress: null, hadPriorRun });
+        } else {
+          setAttempt({ status: 'error', progress: null, kind: classifyRecommendationRefreshError(refreshError), hadPriorRun });
+        }
       }
     } finally {
-      if (refresh.isCurrent()) setLoading(false);
+      if (refresh.isCurrent()) setAttempt(current => current.status === 'loading' ? { status: 'idle', progress: null } : current);
     }
-  }, [onlyEvaluateAtLeast60Dte]);
+  }, [onlyEvaluateAtLeast60Dte, run]);
 
   const handleCancel = useCallback(() => {
+    const hadPriorRun = run != null;
     refreshGateRef.current.cancel();
-    setLoading(false);
-    setError('');
-    setProgress({ stage: 'UNDERLYINGS', completed: 0, total: 0 });
-  }, []);
+    setAttempt({ status: 'cancelled', progress: null, hadPriorRun });
+  }, [run]);
 
   const candidateById = useMemo(() => new Map(run?.candidates.map(candidate => [candidate.id, candidate]) ?? []), [run]);
   const surfaced = useMemo(() => {
@@ -403,8 +411,9 @@ export default function RecommendationsPage() {
       anchor.download = `put-scanner-recommendations-v${run.engineVersion}-${run.asOf.slice(0, 10)}.json`;
       anchor.click();
       URL.revokeObjectURL(url);
-    } catch (exportError) {
-      setError(exportError instanceof Error ? exportError.message : 'Recommendation export failed.');
+      setExportError('');
+    } catch {
+      setExportError('Recommendation export failed.');
     }
   }, [run]);
 
@@ -440,14 +449,21 @@ export default function RecommendationsPage() {
           actions={<div className="recommendations-header-actions"><button type="button" className="button-secondary recommendations-methodology-trigger" onClick={() => setShowMethodology(true)} disabled={!run}><Info className="h-4 w-4" />Methodology</button><label className="recommendations-dte-toggle"><input type="checkbox" checked={onlyEvaluateAtLeast60Dte} onChange={event => updateMinimumDtePreference(event.target.checked)} /><span>Only evaluate options ≥60 DTE</span></label><button type="button" className="button-primary" onClick={() => void handleRefresh()} disabled={loading}>{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}{loading ? statusLabel(progress) : 'Refresh Recommendations'}</button>{loading && <button type="button" className="button-secondary" onClick={handleCancel}>Cancel</button>}</div>}
         />
 
-        {error && <div role="alert" className="mb-3 flex items-start gap-2 rounded-lg border p-3 text-sm" style={{ color: 'var(--yellow)', borderColor: 'color-mix(in srgb, var(--yellow) 35%, var(--border))', backgroundColor: 'var(--surface)' }}><AlertTriangle className="mt-0.5 h-4 w-4 flex-none" /><div><strong>Refresh failed.</strong> {error} Successful prior in-memory results remain unchanged.</div></div>}
+        {run?.coverage.provenance.pulseMarketDataThrough != null && <div className="recommendations-market-through">Pulse market data through {formatDateTime(run.coverage.provenance.pulseMarketDataThrough)}</div>}
+        {exportError && <div role="alert" className="recommendations-attempt-notice recommendations-attempt-notice--error"><AlertTriangle className="mt-0.5 h-4 w-4 flex-none" /><div><strong>Export failed.</strong> {exportError}</div></div>}
+        {attempt.status === 'error' && <div role="alert" className="recommendations-attempt-notice recommendations-attempt-notice--error" data-error-kind={attempt.kind}><AlertTriangle className="mt-0.5 h-4 w-4 flex-none" /><div><strong>{recommendationRefreshErrorTitle(attempt.kind)}</strong> {recommendationRefreshErrorDetail(attempt.kind)} {attempt.hadPriorRun && 'The previous successful run remains unchanged.'}</div></div>}
+        {attempt.status === 'cancelled' && attempt.hadPriorRun && <div role="status" className="recommendations-attempt-notice recommendations-attempt-notice--cancelled"><Info className="mt-0.5 h-4 w-4 flex-none" /><div><strong>Refresh cancelled · showing previous run.</strong> The displayed RecommendationRun and its original timestamps remain unchanged.</div></div>}
         {runPreferenceMismatch && <div role="status" className="recommendations-refresh-required"><Info className="h-4 w-4" /><span>The 60-DTE preference changed. This displayed run keeps its original {run?.universe.onlyEvaluateAtLeast60Dte ? '60+ DTE' : 'bounded all-DTE'} universe; refresh to apply the new setting.</span></div>}
 
         {!run ? (
-          <section className="recommendations-ready-state surface-card">
+          <section className="recommendations-ready-state surface-card" data-attempt-state={attempt.status} role={attempt.status === 'idle' ? undefined : 'status'}>
             <div className="recommendations-ready-state__mark">MARKET MODE · V2</div>
-            <h2>Nothing has been analyzed yet.</h2>
-            <p>Refresh explicitly to reuse ETF Pulse context, qualify underlyings, acquire the bounded Screener universe, and run the local decision engine.</p>
+            <h2>{attempt.status === 'cancelled' ? 'Refresh cancelled.' : attempt.status === 'error' ? recommendationRefreshErrorTitle(attempt.kind) : 'Nothing has been analyzed yet.'}</h2>
+            <p>{attempt.status === 'cancelled'
+              ? 'No RecommendationRun was published. Refresh again when ready.'
+              : attempt.status === 'error'
+                ? `${recommendationRefreshErrorDetail(attempt.kind)} Retry remains available; no partial recommendations were published.`
+                : 'Refresh explicitly to reuse ETF Pulse context, qualify underlyings, acquire the bounded Screener universe, and run the local decision engine.'}</p>
             <div className="recommendations-ready-state__facts"><span>0 automatic scans</span><span>Tracked ETF universe</span><span>Up to 3 representative expirations</span><span>No AI or model calls</span></div>
           </section>
         ) : (
@@ -461,11 +477,7 @@ export default function RecommendationsPage() {
             <section className="recommendations-verdict-strip" data-status={run.operationalStatus === 'INCOMPLETE' ? 'incomplete' : run.runVerdict === 'NO_TRADE' ? 'no-trade' : 'opportunities'}>
               <div>
                 <div className="recommendations-verdict-strip__label">{run.operationalStatus === 'INCOMPLETE' ? 'ANALYSIS INCOMPLETE' : run.runVerdict === 'NO_TRADE' ? 'NO TRADE' : `${actionableCount} ACTIONABLE · ${conditionalCount} CONDITIONAL`}</div>
-                <p>{run.operationalStatus === 'INCOMPLETE'
-                  ? `Whole-universe judgment withheld. ${run.coverage.failedBatches.length} failed batch(es); ${run.coverage.failedUnderlyings.length} underlyings have missing acquisition evidence.`
-                  : run.runVerdict === 'NO_TRADE'
-                    ? 'Nothing in the complete analyzed opportunity set provides sufficient compensation relative to downside cushion, underlying quality, pricing evidence, and available alternatives.'
-                    : 'Only contracts that clear absolute economics, risk, evidence, skeptic, and robustness policy are surfaced.'}</p>
+                <p>{recommendationRunDescription(run)}</p>
               </div>
               <div className="recommendations-verdict-strip__coverage"><span>{run.coverage.contractsEvaluated.toLocaleString()} contracts</span><span>{run.coverage.expirationsCovered.reduce((sum, item) => sum + item.expirationDates.length, 0)} chains</span><span>{run.coverage.hardFailedBeforeChainAcquisition.length} underlying hard-fails</span></div>
             </section>

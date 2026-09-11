@@ -4,9 +4,11 @@ import { withEtfPulseTechnicalAssessment, type EtfPulseRow } from '../etfPulseMe
 import { deriveMarketRegime } from '../marketRead/regime.ts';
 import { postureFromRegime } from '../marketRead/posture.ts';
 import { runScreenerBatchScan, type ScreenerScanResult } from '../screenerAcquisition.ts';
+import { isAbortError } from '../marketDataRequest.ts';
 import { buildScreenerRows } from '../screenerRows.ts';
 import { runRecommendationEngine } from './engine.ts';
 import { assessUnderlyingUniverse } from './underlying.ts';
+import { RecommendationAcquisitionError, RecommendationEngineError } from './refreshLifecycle.ts';
 import {
   RECOMMENDATION_ENGINE_VERSION,
   RECOMMENDATION_POLICY_VERSION,
@@ -39,12 +41,14 @@ interface RecommendationAcquisitionDependencies {
     onProgress?: (completedEtfs: number, totalEtfs: number) => void;
     recommendationUniverse?: { minimumDte: number; maximumDte: number; maximumExpirations: number };
   }) => Promise<ScreenerScanResult>;
+  runEngine: (snapshot: RecommendationSnapshot, signal?: AbortSignal) => Promise<RecommendationRun>;
   now: () => number;
 }
 
 const defaultDependencies: RecommendationAcquisitionDependencies = {
   loadPulse: options => buildEtfPulseRows({ ...options, forceRefresh: false }),
   scan: runScreenerBatchScan,
+  runEngine: runDecisionEngine,
   now: Date.now,
 };
 
@@ -55,7 +59,14 @@ async function yieldForDecisionPaint(signal?: AbortSignal): Promise<void> {
 }
 
 function runDecisionEngine(snapshot: RecommendationSnapshot, signal?: AbortSignal): Promise<RecommendationRun> {
-  if (typeof Worker === 'undefined') return Promise.resolve(runRecommendationEngine(snapshot));
+  if (typeof Worker === 'undefined') {
+    return Promise.resolve()
+      .then(() => runRecommendationEngine(snapshot))
+      .catch(error => {
+        if (isAbortError(error)) throw error;
+        throw new RecommendationEngineError(error);
+      });
+  }
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL('./engine.worker.ts', import.meta.url), { type: 'module' });
     const cleanup = () => {
@@ -69,11 +80,11 @@ function runDecisionEngine(snapshot: RecommendationSnapshot, signal?: AbortSigna
     worker.onmessage = (event: MessageEvent<{ run?: RecommendationRun; error?: string }>) => {
       cleanup();
       if (event.data.run) resolve(event.data.run);
-      else reject(new Error(event.data.error ?? 'Recommendation analysis failed.'));
+      else reject(new RecommendationEngineError(event.data.error ?? 'Recommendation analysis failed.'));
     };
     worker.onerror = event => {
       cleanup();
-      reject(new Error(event.message || 'Recommendation analysis failed.'));
+      reject(new RecommendationEngineError(event.message || 'Recommendation analysis failed.'));
     };
     signal?.addEventListener('abort', handleAbort, { once: true });
     if (signal?.aborted) handleAbort();
@@ -161,12 +172,18 @@ export async function refreshRecommendations(options: {
   const dependencies = { ...defaultDependencies, ...options.dependencies };
   const asOf = new Date(dependencies.now()).toISOString();
   const universe = recommendationUniverse(options.onlyEvaluateAtLeast60Dte ?? true);
-  const pulseResult = await dependencies.loadPulse({
-    signal: options.signal,
-    maxAgeMs: ETF_PULSE_CURRENTNESS_MAX_AGE_MS,
-    refreshIntent: 'recommendations',
-    onProgress: progress => options.onProgress?.({ stage: 'UNDERLYINGS', completed: 0, total: 0, ticker: progress.ticker, indeterminate: true }),
-  });
+  let pulseResult: EtfPulseLoadResult;
+  try {
+    pulseResult = await dependencies.loadPulse({
+      signal: options.signal,
+      maxAgeMs: ETF_PULSE_CURRENTNESS_MAX_AGE_MS,
+      refreshIntent: 'recommendations',
+      onProgress: progress => options.onProgress?.({ stage: 'UNDERLYINGS', completed: 0, total: 0, ticker: progress.ticker, indeterminate: true }),
+    });
+  } catch (error) {
+    if (isAbortError(error)) throw error;
+    throw new RecommendationAcquisitionError(error);
+  }
   if (options.signal?.aborted) throw options.signal.reason ?? new DOMException('Operation aborted', 'AbortError');
   const underlyings = canonicalUnderlyingRows(pulseResult);
   const marketRegime = deriveMarketRegime({
@@ -180,18 +197,24 @@ export async function refreshRecommendations(options: {
   const assessments = assessUnderlyingUniverse(underlyings, marketRegime);
   const hardFailed = assessments.filter(assessment => assessment.qualification === 'HARD_FAIL').map(assessment => assessment.ticker).sort();
   const requestedForOptionScan = assessments.filter(assessment => assessment.qualification !== 'HARD_FAIL').map(assessment => assessment.ticker).sort();
-  const scan = await dependencies.scan({
-    scanId: options.scanId,
-    selectedTickers: requestedForOptionScan,
-    expFilter: 'all',
-    recommendationUniverse: {
-      minimumDte: universe.minimumDte,
-      maximumDte: universe.maximumDte,
-      maximumExpirations: universe.maxExpirationsPerUnderlying,
-    },
-    signal: options.signal,
-    onProgress: (completed, total) => options.onProgress?.({ stage: 'CONTRACTS', completed, total }),
-  });
+  let scan: ScreenerScanResult;
+  try {
+    scan = await dependencies.scan({
+      scanId: options.scanId,
+      selectedTickers: requestedForOptionScan,
+      expFilter: 'all',
+      recommendationUniverse: {
+        minimumDte: universe.minimumDte,
+        maximumDte: universe.maximumDte,
+        maximumExpirations: universe.maxExpirationsPerUnderlying,
+      },
+      signal: options.signal,
+      onProgress: (completed, total) => options.onProgress?.({ stage: 'CONTRACTS', completed, total }),
+    });
+  } catch (error) {
+    if (isAbortError(error)) throw error;
+    throw new RecommendationAcquisitionError(error);
+  }
   if (options.signal?.aborted) throw options.signal.reason ?? new DOMException('Operation aborted', 'AbortError');
   options.onProgress?.({ stage: 'DECISION', completed: 0, total: 1 });
   await yieldForDecisionPaint(options.signal);
@@ -265,7 +288,14 @@ export async function refreshRecommendations(options: {
       },
     },
   };
-  const run = await runDecisionEngine(snapshot, options.signal);
+  let run: RecommendationRun;
+  try {
+    run = await dependencies.runEngine(snapshot, options.signal);
+  } catch (error) {
+    if (isAbortError(error)) throw error;
+    if (error instanceof RecommendationEngineError) throw error;
+    throw new RecommendationEngineError(error);
+  }
   options.onProgress?.({ stage: 'DECISION', completed: 1, total: 1 });
   return { snapshot, run };
 }

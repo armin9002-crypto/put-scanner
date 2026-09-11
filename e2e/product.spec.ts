@@ -234,6 +234,7 @@ test('production-scale Recommendations keeps painting through Decision, refreshe
   await page.getByRole('button', { name: 'Cancel' }).click();
   await expect(page.getByRole('button', { name: 'Refresh Recommendations' })).toBeVisible();
   await expect(page.locator('.recommendations-header-meta')).toContainText(firstUpdated?.split(' · ')[0] ?? 'Updated');
+  await expect(page.locator('.recommendations-attempt-notice--cancelled')).toContainText('showing previous run');
   await expect(page.locator('.recommendations-verdict-strip')).toBeVisible();
   expect(consoleErrors, consoleErrors.join('\n')).toEqual([]);
 });
