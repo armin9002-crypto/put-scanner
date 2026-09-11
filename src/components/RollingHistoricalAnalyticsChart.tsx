@@ -22,7 +22,7 @@ const CHART_WIDTH = 960;
 const CHART_HEIGHT = 292;
 const PLOT = { left: 64, right: 18, top: 16, bottom: 36 } as const;
 
-type HistoricalMetric = RollingHistoricalMetric | PortfolioHistoricalStateMetric;
+export type HistoricalMetric = RollingHistoricalMetric | PortfolioHistoricalStateMetric;
 type HistoricalPoint = RollingHistoricalAnalyticsPoint | PortfolioHistoricalStatePoint;
 type HistoricalFormatterCategory = RollingHistoricalFormatterCategory;
 
@@ -243,9 +243,23 @@ function historicalSeries(trades: readonly PortfolioTrade[], metric: HistoricalM
   };
 }
 
-export default function RollingHistoricalAnalyticsChart({ trades }: { trades: readonly PortfolioTrade[] }) {
-  const [metric, setMetric] = useState<HistoricalMetric>('entryAy');
-  const [windowMonths, setWindowMonths] = useState<RollingWindowMonths>(6);
+export default function RollingHistoricalAnalyticsChart({
+  trades,
+  metric: controlledMetric,
+  onMetricChange,
+  windowMonths: controlledWindowMonths,
+  onWindowMonthsChange,
+}: {
+  trades: readonly PortfolioTrade[];
+  metric?: HistoricalMetric;
+  onMetricChange?: (metric: HistoricalMetric) => void;
+  windowMonths?: RollingWindowMonths;
+  onWindowMonthsChange?: (windowMonths: RollingWindowMonths) => void;
+}) {
+  const [uncontrolledMetric, setUncontrolledMetric] = useState<HistoricalMetric>('entryAy');
+  const [uncontrolledWindowMonths, setUncontrolledWindowMonths] = useState<RollingWindowMonths>(6);
+  const metric = controlledMetric ?? uncontrolledMetric;
+  const windowMonths = controlledWindowMonths ?? uncontrolledWindowMonths;
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [isInteracting, setIsInteracting] = useState(false);
   const [plotSize, setPlotSize] = useState({ width: CHART_WIDTH, height: CHART_HEIGHT });
@@ -330,12 +344,12 @@ export default function RollingHistoricalAnalyticsChart({ trades }: { trades: re
         <div className="rolling-historical-analytics__controls">
           <label className="rolling-historical-analytics__metric-control">
             <span>Analytics</span>
-            <select value={metric} onChange={event => { setMetric(event.target.value as HistoricalMetric); setSelectedIndex(null); setIsInteracting(false); }} aria-label="Analytics">
+            <select value={metric} onChange={event => { const next = event.target.value as HistoricalMetric; onMetricChange?.(next); if (!onMetricChange) setUncontrolledMetric(next); setSelectedIndex(null); setIsInteracting(false); }} aria-label="Analytics">
               {['Rolling', 'Portfolio State'].map(family => <optgroup key={family} label={family}>{allMetricConfigs.filter(option => option.family === family).map(option => <option key={option.key} value={option.key}>{option.label}</option>)}</optgroup>)}
             </select>
           </label>
           {series.family === 'ROLLING' ? <div className="rolling-historical-analytics__period" role="group" aria-label="Rolling period">
-            {ROLLING_WINDOW_MONTHS.map(period => <button key={period} type="button" aria-pressed={windowMonths === period} className={windowMonths === period ? 'is-active' : ''} onClick={() => { setWindowMonths(period); setSelectedIndex(null); setIsInteracting(false); }}>{period}M</button>)}
+            {ROLLING_WINDOW_MONTHS.map(period => <button key={period} type="button" aria-pressed={windowMonths === period} className={windowMonths === period ? 'is-active' : ''} onClick={() => { onWindowMonthsChange?.(period); if (!onWindowMonthsChange) setUncontrolledWindowMonths(period); setSelectedIndex(null); setIsInteracting(false); }}>{period}M</button>)}
           </div> : <span className="rolling-historical-analytics__point-in-time">Point in time</span>}
         </div>
       </div>

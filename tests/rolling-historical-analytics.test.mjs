@@ -330,7 +330,7 @@ test('Portfolio renders the configured rolling chart below History with local co
 
   assert.match(portfolio, /RollingHistoricalAnalyticsChart/);
   assert.match(portfolio, /rollingTrades=\{scopedHistoryTrades\}/);
-  assert.match(portfolio, /<RollingHistoricalAnalyticsChart trades=\{rollingTrades\} \/>/);
+  assert.match(portfolio, /<RollingHistoricalAnalyticsChart trades=\{rollingTrades\}(?:[^>]*)\/>/);
   assert.match(chart, /buildRollingHistoricalAnalyticsSeries\(trades, metric, windowMonths\)/);
   assert.match(chart, /useState<HistoricalMetric>\('entryAy'\)/);
   assert.match(chart, /useState<RollingWindowMonths>\(6\)/);

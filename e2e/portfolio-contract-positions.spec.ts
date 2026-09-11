@@ -102,6 +102,19 @@ test('contract positions render once and expose only lot-scoped mutations', asyn
   await assertNoPageOverflow(page);
   await capture(page, testInfo, 'contract-position-list');
 
+  if (!portrait) {
+    const singleLotPosition = page.locator('[data-trade-ticker="SOXL"]:visible').first();
+    await singleLotPosition.locator('button[title="Delete"]').click();
+    const confirmation = page.getByRole('alertdialog', { name: /Delete Portfolio lot/i });
+    await expect(confirmation).toBeVisible();
+    await expect(confirmation.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
+    await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(confirmation).toHaveCount(0);
+    await singleLotPosition.locator('button[title="Delete"]').click();
+    await page.getByRole('alertdialog', { name: /Delete Portfolio lot/i }).getByRole('button', { name: 'Delete', exact: true }).click();
+    await expect(page.locator('[data-trade-ticker="SOXL"]:visible')).toHaveCount(0);
+  }
+
   let editor = await openMultiLotEditor(page, portrait);
   await assertNoPageOverflow(page);
   await capture(page, testInfo, 'contract-position-editor');

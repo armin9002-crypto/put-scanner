@@ -272,6 +272,7 @@ function MobileOptionCard({
   showNominalYield,
   onToggleWatchlist,
   onSelect,
+  focused = false,
 }: {
   put: EnrichedPut;
   moneyness: ShortPutMoneynessState;
@@ -280,6 +281,7 @@ function MobileOptionCard({
   showNominalYield: boolean;
   onToggleWatchlist: () => void;
   onSelect: () => void;
+  focused?: boolean;
 }) {
   const presentation = shortPutMoneynessPresentation(moneyness);
   const statusLabel = presentation.label;
@@ -288,6 +290,7 @@ function MobileOptionCard({
     <div
       role="button"
       tabIndex={0}
+      data-option-strike={put.strike}
       onClick={onSelect}
       onKeyDown={event => {
         if (event.key === 'Enter' || event.key === ' ') {
@@ -296,7 +299,7 @@ function MobileOptionCard({
         }
       }}
       className="mobile-option-card w-full rounded-xl p-3 text-left"
-      style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
+      style={{ backgroundColor: focused ? 'var(--accent-bg)' : 'var(--surface)', border: `1px solid ${focused ? 'var(--accent)' : 'var(--border)'}`, boxShadow: focused ? '0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent)' : undefined }}
     >
       <div className="flex items-start justify-between gap-2 min-w-0">
         <div className="min-w-0">
@@ -387,6 +390,7 @@ export default function OptionsPage() {
   const [watchlistIds, setWatchlistIds] = useState<Set<string>>(new Set());
   const [showScannerPreselectBadge, setShowScannerPreselectBadge] = useState(false);
   const [selectedOption, setSelectedOption] = useState<EnrichedPut | null>(null);
+  const [focusedStrike, setFocusedStrike] = useState<number | null>(null);
   const [showPriceChart, setShowPriceChart] = useState(false);
   const [showUnderlyingHoldings, setShowUnderlyingHoldings] = useState(false);
   const [debugOptionsEnabled] = useState(() => {
@@ -401,6 +405,7 @@ export default function OptionsPage() {
   const requestGenerationRef = useRef(0);
   const requestAbortRef = useRef<AbortController | null>(null);
   const skipNextExpiryUrlLoadRef = useRef(false);
+  const focusAppliedRef = useRef<string | null>(null);
 
   const replaceRequestedExpiryUrl = useCallback((expiryDate: number) => {
     const canonicalExpiry = canonicalOptionExpiryIso(expiryDate);
@@ -715,6 +720,25 @@ export default function OptionsPage() {
       return compareNullableValue(getValue(a), getValue(b), sortDir);
     });
   }, [enrichedPuts, sortField, sortDir]);
+
+  useEffect(() => {
+    const requestedStrike = origin.kind === 'portfolio' ? origin.focusStrike : undefined;
+    if (requestedStrike == null || loading || selectedExp == null || !optionsData) return undefined;
+    const exactPut = sortedPuts.find(put => put.strike === requestedStrike);
+    if (!exactPut) return undefined;
+    const focusKey = `${selectedExp}:${requestedStrike}`;
+    if (focusAppliedRef.current === focusKey) return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      const target = [...document.querySelectorAll<HTMLElement>(`[data-option-strike="${requestedStrike}"]`)].find(element => element.offsetParent !== null) ?? null;
+      if (!target) return;
+      focusAppliedRef.current = focusKey;
+      target.scrollIntoView({ block: 'center', behavior: 'auto' });
+      target.focus({ preventScroll: true });
+      setFocusedStrike(requestedStrike);
+      window.setTimeout(() => setFocusedStrike(current => current === requestedStrike ? null : current), 2200);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [loading, optionsData, origin, selectedExp, sortedPuts]);
 
   function defaultSortDirection(field: SortField): SortDirection {
     return field.includes('Yield') ? 'desc' : 'asc';
@@ -1463,6 +1487,7 @@ export default function OptionsPage() {
                       showNominalYield={showNominalYield}
                       onToggleWatchlist={() => toggleWatchlist(put)}
                       onSelect={() => setSelectedOption(put)}
+                      focused={focusedStrike === put.strike}
                     />
                   );
                 });
@@ -1571,11 +1596,13 @@ export default function OptionsPage() {
                       const wlId = makeWatchlistId(ticker ?? '', expiryIso, put.strike);
                       const isWatched = watchlistIds.has(wlId);
                       const isSelected = selectedOption?.strike === put.strike;
+                      const isFocused = focusedStrike === put.strike;
                       const rowBackground = isSelected ? 'var(--accent-bg)' : moneyness.backgroundColor ?? altBg;
 
                       rows.push(
                         <tr
                           key={put.strike}
+                          data-option-strike={put.strike}
                           onClick={() => setSelectedOption(put)}
                           onKeyDown={event => {
                             if (event.target !== event.currentTarget) return;
@@ -1590,7 +1617,7 @@ export default function OptionsPage() {
                           style={{
                             borderBottom: '1px solid var(--border)',
                             backgroundColor: rowBackground,
-                            boxShadow: isSelected ? 'inset 3px 0 0 var(--accent)' : 'none',
+                            boxShadow: isSelected ? 'inset 3px 0 0 var(--accent)' : isFocused ? 'inset 3px 0 0 var(--accent), 0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent)' : 'none',
                           }}
                         >
                           <td className="px-1.5 sm:px-2 py-1.5 text-center text-xs w-6">

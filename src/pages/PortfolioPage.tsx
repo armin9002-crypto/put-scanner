@@ -1,8 +1,8 @@
 import { resolvePortfolioMark } from '../lib/portfolioValuation';
 import { uiTextCssPx } from '../lib/uiTextSizePreference';
-import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type MouseEvent as ReactMouseEvent, type ReactNode, type SetStateAction } from 'react';
 import { AlertTriangle, Briefcase, ChevronDown, ChevronRight, Download, Edit2, FileImage, FileSpreadsheet, Loader2, MoreHorizontal, Plus, RefreshCw, SlidersHorizontal, Trash2, Wrench } from 'lucide-react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { fetchBatchPricesResult, fetchOptions } from '../lib/api';
 import { resolvePutDelta } from '../lib/putDelta';
 import type { OptionsChainData } from '../lib/types';
@@ -111,8 +111,8 @@ import {
   type HistorySortDirection,
   type HistorySortField,
 } from '../lib/portfolioHistorySorting';
-import { OPTION_QUOTE_TABLE_DISPLAY_ORDER, executableOptionPrice, formatOptionQuoteValue, orderedOptionQuoteEntries } from '../lib/optionQuoteDisplay';
-import { persistPortfolioMarkBasis, readPortfolioMarkBasis } from '../lib/portfolioMarkPreference';
+import { executableOptionPrice, formatOptionQuoteValue, orderedOptionQuoteEntries } from '../lib/optionQuoteDisplay';
+import { persistPortfolioMarkBasis, readPortfolioMarkBasis, PORTFOLIO_MARK_BASIS_OPTIONS } from '../lib/portfolioMarkPreference';
 import { persistShowNominalYield, readShowNominalYield } from '../lib/optionTablePreferences';
 import { assessPortfolioAttention, buildCloseCandidates, buildNeedsAttention, getRedeployBadges, type CloseCandidate } from '../lib/portfolioPolicies';
 import { buildOptionsPath, createOptionsNavigationState, resolveOptionsReturnOrigin, type OptionsNavigationState, type PortfolioOriginPresentation } from '../lib/optionsNavigation';
@@ -132,6 +132,8 @@ import { getPortfolioQuoteFreshness, isPortfolioQuoteDecisionEligible, summarize
 import { resolvePortfolioEntryVix } from '../lib/portfolioEntryVix';
 import { confirmPortfolioTradeExpiredWorthless, isManualWorthlessConfirmationEligible } from '../lib/portfolioRealizedEconomics';
 import RollingHistoricalAnalyticsChart from '../components/RollingHistoricalAnalyticsChart';
+import type { HistoricalMetric } from '../components/RollingHistoricalAnalyticsChart';
+import type { RollingWindowMonths } from '../lib/rollingHistoricalAnalytics';
 import {
   inferHistoricalTradeOutcome,
   inferManualTradeMode,
@@ -151,6 +153,7 @@ import {
   type PortfolioContractPosition,
 } from '../lib/portfolioContractPositions';
 import { useAccountState } from '../lib/cloudState/accountStateContext';
+import { useBlockingOverlayBehavior } from '../lib/blockingOverlay';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 const PortfolioScreenshotImportModal = lazy(() => import('../components/PortfolioScreenshotImportModal'));
@@ -160,7 +163,9 @@ const PortfolioMaintenanceModal = lazy(() => import('../components/PortfolioMain
 const DASH = '\u2014';
 const PORTFOLIO_DEFAULT_OPTIONS_STATE = createOptionsNavigationState('portfolio');
 // History navigation keeps the established safe ticker route shape: <Link to={`/options/${trade.ticker.trim().toUpperCase()}`} />.
-const MARK_BASIS_OPTIONS: MarkBasis[] = [...OPTION_QUOTE_TABLE_DISPLAY_ORDER];
+const MARK_BASIS_OPTIONS = PORTFOLIO_MARK_BASIS_OPTIONS;
+
+type PortfolioOptionsLinkClick = (event: ReactMouseEvent<HTMLAnchorElement>, trade: PortfolioTrade) => void;
 
 interface TradeModalProps {
   trade: PortfolioTrade | null;
@@ -698,8 +703,10 @@ function MarkBasisToggle({ markBasis, onChange }: { markBasis: MarkBasis; onChan
         {MARK_BASIS_OPTIONS.map((option, index) => (
           <button
             key={option}
+            type="button"
+            aria-pressed={markBasis === option}
             onClick={() => onChange(option)}
-            className="px-2.5 py-2 text-xs font-semibold min-w-[48px] sm:min-w-[52px]"
+            className="px-2.5 py-2 text-xs font-semibold min-w-[48px] sm:min-w-[52px] transition-colors duration-150 motion-reduce:transition-none"
             style={{
               backgroundColor: markBasis === option ? 'var(--accent)' : 'var(--surface-alt)',
               color: markBasis === option ? 'white' : 'var(--text-muted)',
@@ -806,11 +813,13 @@ function NeedsAttentionList({
   onDetailsClick,
   onNavigate,
   optionsNavigationState,
+  onOptionsNavigate,
 }: {
   items: PortfolioTrade[];
   onDetailsClick: (trade: PortfolioTrade) => void;
   onNavigate: (trade: PortfolioTrade) => void;
   optionsNavigationState?: unknown;
+  onOptionsNavigate?: PortfolioOptionsLinkClick;
 }) {
   return (
     <section className="rounded-lg p-3 min-w-0 h-full flex flex-col" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
@@ -832,7 +841,7 @@ function NeedsAttentionList({
               <div key={trade.id} className="grid grid-cols-[minmax(88px,1fr)_auto] gap-2 rounded px-2 py-1.5" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <Link to={buildOptionsPath(trade.ticker, trade.expiration)} state={optionsNavigationState ?? PORTFOLIO_DEFAULT_OPTIONS_STATE} className="font-mono text-[13px] leading-none font-bold truncate underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</Link>
+                    <Link to={buildOptionsPath(trade.ticker, trade.expiration)} state={optionsNavigationState ?? PORTFOLIO_DEFAULT_OPTIONS_STATE} onClick={event => onOptionsNavigate?.(event, trade)} className="font-mono text-[13px] leading-none font-bold truncate underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</Link>
                     <button onClick={() => onNavigate(trade)} className="font-mono text-[13px] leading-none truncate underline-offset-2 hover:underline" style={{ color: 'var(--text)' }}>{formatCurrency(trade.strike, 0)} Put</button>
                     <button onClick={() => onDetailsClick(trade)} className="rounded px-1 py-0.5 text-[9px]" title="Open option details" style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Details</button>
                   </div>
@@ -853,7 +862,7 @@ function NeedsAttentionList({
   );
 }
 
-function CloseCandidatesCard({ candidates, onNavigate, optionsNavigationState }: { candidates: CloseCandidate[]; onNavigate: (trade: PortfolioTrade) => void; optionsNavigationState?: unknown }) {
+function CloseCandidatesCard({ candidates, onNavigate, optionsNavigationState, onOptionsNavigate }: { candidates: CloseCandidate[]; onNavigate: (trade: PortfolioTrade) => void; optionsNavigationState?: unknown; onOptionsNavigate?: PortfolioOptionsLinkClick }) {
   return (
     <section className="rounded-lg p-3 min-w-0 h-full flex flex-col" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
       <div className="flex items-start justify-between gap-2 mb-2 shrink-0">
@@ -870,7 +879,7 @@ function CloseCandidatesCard({ candidates, onNavigate, optionsNavigationState }:
           {candidates.map(candidate => (
             <div key={candidate.trade.id} className="block w-full rounded px-2 py-1.5 text-left" title={candidate.reasons.join(', ')} style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
               <div className="grid grid-cols-[minmax(88px,1fr)_auto_auto] gap-2 items-baseline">
-                <Link to={buildOptionsPath(candidate.trade.ticker, candidate.trade.expiration)} state={optionsNavigationState ?? PORTFOLIO_DEFAULT_OPTIONS_STATE} className="text-left font-mono text-[13px] leading-none font-bold truncate underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{candidate.trade.ticker}</Link>
+                <Link to={buildOptionsPath(candidate.trade.ticker, candidate.trade.expiration)} state={optionsNavigationState ?? PORTFOLIO_DEFAULT_OPTIONS_STATE} onClick={event => onOptionsNavigate?.(event, candidate.trade)} className="text-left font-mono text-[13px] leading-none font-bold truncate underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{candidate.trade.ticker}</Link>
                 <span className="font-mono text-[12px] leading-none tabular-nums" style={{ color: pnlColor(candidate.percentCaptured) }}>{formatPctValue(candidate.percentCaptured)}</span>
                 <span className="font-mono text-[12px] leading-none tabular-nums" style={{ color: 'var(--text-secondary)' }}>{formatCurrency(candidate.remainingPremium, 0)}</span>
               </div>
@@ -1038,37 +1047,14 @@ function TradeModal({ trade, seed = null, onClose, onSave, onDelete }: TradeModa
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
-  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
   const dialogRef = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-      if (event.key !== 'Tab') return;
-      const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('button, input, textarea, select, [tabindex]:not([tabindex="-1"])') ?? [])
-        .filter(element => !element.hasAttribute('disabled') && element.getAttribute('aria-hidden') !== 'true');
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    window.requestAnimationFrame(() => dialogRef.current?.focus());
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener('keydown', handleKeyDown);
-      previousFocusRef.current?.focus();
-    };
-  }, [onClose]);
+  useBlockingOverlayBehavior({
+    panelRef: dialogRef,
+    overlayRef,
+    initialFocusRef: dialogRef,
+    onEscape: onClose,
+  });
 
   const parsed = {
     strike: parseNumber(strike),
@@ -1231,7 +1217,7 @@ function TradeModal({ trade, seed = null, onClose, onSave, onDelete }: TradeModa
   });
 
   return (
-    <div className="fixed inset-0 z-[130]">
+    <div ref={overlayRef} className="fixed inset-0 z-[130]">
       <button type="button" aria-label="Close add trade modal" onClick={onClose} className="motion-backdrop absolute inset-0 bg-black/55" />
       <section ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="trade-modal-title" className="portfolio-trade-sheet absolute inset-x-0 bottom-0 max-h-[96dvh] overflow-y-auto rounded-t-2xl p-3 shadow-2xl sm:inset-x-1/2 sm:top-1/2 sm:bottom-auto sm:max-h-[calc(100dvh-1rem)] sm:w-[760px] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl sm:p-4" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
         <div className="mx-auto mb-2 h-1 w-10 rounded-full sm:hidden" aria-hidden="true" style={{ backgroundColor: 'var(--border-strong)' }} />
@@ -1408,21 +1394,17 @@ function ContractPositionEditor({
   onEditLot: (lot: PortfolioTrade) => void;
   onAddToPosition: (position: PortfolioContractPosition) => void;
 }) {
+  const overlayRef = useRef<HTMLDivElement | null>(null);
   const dialogRef = useRef<HTMLElement | null>(null);
-  useEffect(() => {
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKeyDown);
-    window.requestAnimationFrame(() => dialogRef.current?.focus());
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener('keydown', onKeyDown);
-    };
-  }, [onClose]);
+  useBlockingOverlayBehavior({
+    panelRef: dialogRef,
+    overlayRef,
+    initialFocusRef: dialogRef,
+    onEscape: onClose,
+  });
 
   return (
-    <div className="fixed inset-0 z-[125]">
+    <div ref={overlayRef} className="fixed inset-0 z-[125]">
       <button type="button" aria-label="Close contract position editor" onClick={onClose} className="motion-backdrop absolute inset-0 bg-black/55" />
       <section ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="contract-position-editor-title" className="motion-modal absolute inset-x-0 bottom-0 max-h-[96dvh] overflow-y-auto rounded-t-2xl p-3 shadow-2xl sm:inset-x-1/2 sm:top-1/2 sm:bottom-auto sm:max-h-[calc(100dvh-2rem)] sm:w-[680px] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl sm:p-4" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
         <div className="mb-3 flex items-start justify-between gap-3">
@@ -1460,9 +1442,46 @@ function ContractPositionEditor({
   );
 }
 
+function DeleteTradeConfirmation({
+  trade,
+  onCancel,
+  onConfirm,
+}: {
+  trade: PortfolioTrade;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const dialogRef = useRef<HTMLElement | null>(null);
+  const cancelRef = useRef<HTMLButtonElement | null>(null);
+  useBlockingOverlayBehavior({
+    panelRef: dialogRef,
+    overlayRef,
+    initialFocusRef: cancelRef,
+    onEscape: onCancel,
+  });
+
+  return (
+    <div ref={overlayRef} className="fixed inset-0 z-[145] flex items-center justify-center p-4">
+      <button type="button" aria-label="Cancel delete confirmation" onClick={onCancel} className="motion-backdrop absolute inset-0 bg-black/65" />
+      <section ref={dialogRef} tabIndex={-1} role="alertdialog" aria-modal="true" aria-labelledby="delete-trade-confirm-title" aria-describedby="delete-trade-confirm-description" className="motion-modal relative z-10 w-full max-w-md rounded-xl p-4 shadow-2xl outline-none" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
+        <h2 id="delete-trade-confirm-title" className="text-base font-semibold" style={{ color: 'var(--text)' }}>Delete Portfolio lot?</h2>
+        <p id="delete-trade-confirm-description" className="mt-2 text-sm leading-5" style={{ color: 'var(--text-muted)' }}>
+          This permanently deletes one durable entry lot: <strong style={{ color: 'var(--text)' }}>{trade.ticker} {formatCurrency(trade.strike)} Put</strong>, expiring {formatFullDate(trade.expiration)}, entered {formatHistoryDate(trade.soldDate)}.
+        </p>
+        <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button ref={cancelRef} type="button" onClick={onCancel} className="min-h-11 rounded-lg px-4 py-2 text-xs font-medium" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>Cancel</button>
+          <button type="button" onClick={onConfirm} className="min-h-11 rounded-lg px-4 py-2 text-xs font-medium text-white" style={{ backgroundColor: 'var(--red)' }}>Delete</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export default function PortfolioPage() {
   const { isPhone, isPhoneLandscape } = useResponsiveMode();
   const location = useLocation();
+  const navigate = useNavigate();
   const account = useAccountState();
   const [trades, setTrades] = useState<PortfolioTrade[]>([]);
   const [editingTrade, setEditingTrade] = useState<PortfolioTrade | null>(null);
@@ -1501,6 +1520,15 @@ export default function PortfolioPage() {
   const [mobilePositionControlsOpen, setMobilePositionControlsOpen] = useState(false);
   const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false);
   const [onlyShowEtfs, setOnlyShowEtfs] = useState(true);
+  const [historyOutcomeFilter, setHistoryOutcomeFilter] = useState<HistoryOutcome>('all');
+  const [historyGroupMode, setHistoryGroupMode] = useState<HistoryGroupMode>('year');
+  const [collapsedHistoryGroups, setCollapsedHistoryGroups] = useState<Record<string, boolean>>({});
+  const [historySortField, setHistorySortField] = useState<HistorySortField | null>(null);
+  const [historySortDir, setHistorySortDir] = useState<HistorySortDirection>('asc');
+  const [historicalMetric, setHistoricalMetric] = useState<HistoricalMetric>('entryAy');
+  const [historicalWindowMonths, setHistoricalWindowMonths] = useState<RollingWindowMonths>(6);
+  const [deleteConfirmationTrade, setDeleteConfirmationTrade] = useState<PortfolioTrade | null>(null);
+  const compactCollapsedHistoryGroups = useMemo(() => Object.fromEntries(Object.entries(collapsedHistoryGroups).slice(-32)), [collapsedHistoryGroups]);
   const optionsNavigationState = useMemo<OptionsNavigationState>(() => createOptionsNavigationState('portfolio', {
     presentation: {
       sortField,
@@ -1509,9 +1537,16 @@ export default function PortfolioPage() {
       mobileAnalytics,
       analyticsExpanded,
       mobileHistoryOpen,
+      onlyShowEtfs,
+      historyOutcomeFilter,
+      historyGroupMode,
+      historySortField,
+      historySortDir,
+      collapsedHistoryGroups: compactCollapsedHistoryGroups,
+      historicalMetric,
+      historicalWindowMonths,
     } satisfies PortfolioOriginPresentation,
-    scrollY: typeof window === 'undefined' ? undefined : window.scrollY,
-  }), [analyticsExpanded, groupMode, mobileAnalytics, mobileHistoryOpen, sortDir, sortField]);
+  }), [analyticsExpanded, compactCollapsedHistoryGroups, groupMode, historicalMetric, historicalWindowMonths, historyGroupMode, historyOutcomeFilter, historySortDir, historySortField, mobileAnalytics, mobileHistoryOpen, onlyShowEtfs, sortDir, sortField]);
   const scheduleRef = useRef<HTMLDivElement | null>(null);
   const highlightTimerRef = useRef<number | null>(null);
   const quoteRefreshInFlightRef = useRef(false);
@@ -1529,8 +1564,28 @@ export default function PortfolioPage() {
     setMobileAnalytics(presentation.mobileAnalytics);
     setAnalyticsExpanded(presentation.analyticsExpanded);
     setMobileHistoryOpen(presentation.mobileHistoryOpen);
+    if (presentation.onlyShowEtfs != null) setOnlyShowEtfs(presentation.onlyShowEtfs);
+    if (presentation.historyOutcomeFilter != null) setHistoryOutcomeFilter(presentation.historyOutcomeFilter);
+    if (presentation.historyGroupMode != null) setHistoryGroupMode(presentation.historyGroupMode);
+    if (presentation.historySortField !== undefined) setHistorySortField(presentation.historySortField as HistorySortField | null);
+    if (presentation.historySortDir != null) setHistorySortDir(presentation.historySortDir);
+    if (presentation.collapsedHistoryGroups != null) setCollapsedHistoryGroups(presentation.collapsedHistoryGroups);
+    if (presentation.historicalMetric != null) setHistoricalMetric(presentation.historicalMetric as HistoricalMetric);
+    if (presentation.historicalWindowMonths != null) setHistoricalWindowMonths(presentation.historicalWindowMonths);
     if (origin.scrollY != null) window.requestAnimationFrame(() => window.scrollTo({ top: origin.scrollY, behavior: 'auto' }));
   }, [location.state]);
+
+  const navigateToPortfolioOptions = useCallback((event: ReactMouseEvent<HTMLAnchorElement>, trade: PortfolioTrade) => {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    navigate(buildOptionsPath(trade.ticker, trade.expiration), {
+      state: createOptionsNavigationState('portfolio', {
+        presentation: optionsNavigationState.optionsOrigin.presentation as PortfolioOriginPresentation,
+        scrollY: window.scrollY,
+        focusStrike: trade.strike,
+      }),
+    });
+  }, [navigate, optionsNavigationState]);
 
   useEffect(() => {
     const stored = loadPortfolioTrades();
@@ -1883,7 +1938,7 @@ export default function PortfolioPage() {
     if (newlyImported.length > 0) void Promise.allSettled(newlyImported.map(captureEntrySnapshotForImportedTrade));
   }, [captureEntrySnapshotForImportedTrade, persistTrades]);
 
-  const handleDeleteTrade = useCallback((id: string) => {
+  const executeDeleteTrade = useCallback((id: string) => {
     const before = loadPortfolioTrades();
     const next = deletePortfolioTrade(id);
     if (next.some(trade => trade.id === id)) {
@@ -1891,9 +1946,23 @@ export default function PortfolioPage() {
       return;
     }
     setTrades(next);
+    setShowAddModal(false);
     setEditingTrade(null);
     setEditingPosition(null);
+    setAddPositionSeed(null);
   }, []);
+
+  const requestDeleteTrade = useCallback((id: string) => {
+    const current = loadPortfolioTrades().find(trade => trade.id === id);
+    if (current) setDeleteConfirmationTrade(current);
+  }, []);
+
+  const confirmDeleteTrade = useCallback(() => {
+    const pending = deleteConfirmationTrade;
+    if (!pending) return;
+    setDeleteConfirmationTrade(null);
+    executeDeleteTrade(pending.id);
+  }, [deleteConfirmationTrade, executeDeleteTrade]);
 
   const handleHistoricalExcelImported = useCallback(() => {
     setTrades(loadPortfolioTrades());
@@ -2241,21 +2310,22 @@ export default function PortfolioPage() {
               return <MobileExpirationGroup key={key} label={scheduleGroupLabel(group)} dte={groupMode === 'underlying' && 'expirationCount' in group ? `${group.expirationCount} ${group.expirationCount === 1 ? 'expiry' : 'expiries'}` : scheduleGroupDte(group)} positions={group.tradeCount} contracts={group.contractCount} risk={formatCurrency(group.grossRisk, 0)} pnl={formatCurrency(group.totalGainLoss, 0)} captured={formatPctValue(captured)} expanded={expanded} onToggle={() => toggleScheduleGroup(key)}>{group.trades.map(renderMobileScheduleTrade)}</MobileExpirationGroup>;
             })}</div>}
 
-            {openPositions.length > 0 && <section className="portfolio-analytics-section border-t px-3.5 py-2" style={{ borderColor: 'var(--border)' }}><button type="button" onClick={() => setAnalyticsExpanded(expanded => !expanded)} aria-expanded={analyticsExpanded} aria-controls="portfolio-analytics-content" className="portfolio-analytics-disclosure pressable flex min-h-11 w-full items-center justify-between text-left"><span><h2 className="text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Portfolio Analytics</h2><span className="portfolio-analytics-disclosure__hint">Concentration, timing, and policy signals</span></span><ChevronDown className={`h-4 w-4 transition-transform ${analyticsExpanded ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} aria-hidden="true" /></button><div id="portfolio-analytics-content">{analyticsExpanded && <div className="portfolio-analytics-content pb-2"><MobileSegmentedControl value={mobileAnalytics} onChange={setMobileAnalytics} label="Portfolio analytics" options={[{ value: 'maturity', label: 'Maturity' }, { value: 'ticker', label: 'Exposure' }, { value: 'attention', label: 'Attention' }, { value: 'close', label: 'Close' }]} /><div className="mt-2">{mobileAnalytics === 'maturity' && <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openPositions, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." onGroupClick={drillToExpiration} />}{mobileAnalytics === 'ticker' && <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openPositions, markBasis)} totalGrossRisk={sumValues(openPositions.map(calculateEquityAtRisk))} maxItems={8} onGroupClick={drillToTicker} />}{mobileAnalytics === 'attention' && <NeedsAttentionList items={buildNeedsAttention(openPositions).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} optionsNavigationState={optionsNavigationState} />}{mobileAnalytics === 'close' && <CloseCandidatesCard candidates={buildCloseCandidates(openPositions, markBasis).slice(0, 5)} onNavigate={drillToTrade} optionsNavigationState={optionsNavigationState} />}</div></div>}</div></section>}
+            {openPositions.length > 0 && <section className="portfolio-analytics-section border-t px-3.5 py-2" style={{ borderColor: 'var(--border)' }}><button type="button" onClick={() => setAnalyticsExpanded(expanded => !expanded)} aria-expanded={analyticsExpanded} aria-controls="portfolio-analytics-content" className="portfolio-analytics-disclosure pressable flex min-h-11 w-full items-center justify-between text-left"><span><h2 className="text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Portfolio Analytics</h2><span className="portfolio-analytics-disclosure__hint">Concentration, timing, and policy signals</span></span><ChevronDown className={`h-4 w-4 transition-transform ${analyticsExpanded ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} aria-hidden="true" /></button><div id="portfolio-analytics-content">{analyticsExpanded && <div className="portfolio-analytics-content pb-2"><MobileSegmentedControl value={mobileAnalytics} onChange={setMobileAnalytics} label="Portfolio analytics" options={[{ value: 'maturity', label: 'Maturity' }, { value: 'ticker', label: 'Exposure' }, { value: 'attention', label: 'Attention' }, { value: 'close', label: 'Close' }]} /><div className="mt-2">{mobileAnalytics === 'maturity' && <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openPositions, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." onGroupClick={drillToExpiration} />}{mobileAnalytics === 'ticker' && <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openPositions, markBasis)} totalGrossRisk={sumValues(openPositions.map(calculateEquityAtRisk))} maxItems={8} onGroupClick={drillToTicker} />}{mobileAnalytics === 'attention' && <NeedsAttentionList items={buildNeedsAttention(openPositions).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} optionsNavigationState={optionsNavigationState} onOptionsNavigate={navigateToPortfolioOptions} />}{mobileAnalytics === 'close' && <CloseCandidatesCard candidates={buildCloseCandidates(openPositions, markBasis).slice(0, 5)} onNavigate={drillToTrade} optionsNavigationState={optionsNavigationState} onOptionsNavigate={navigateToPortfolioOptions} />}</div></div>}</div></section>}
 
-            {allArchivedTrades.length > 0 && <section className="border-t px-3.5 py-3" style={{ borderColor: 'var(--border)' }}><button type="button" onClick={() => setMobileHistoryOpen(current => !current)} className="pressable flex min-h-11 w-full items-center justify-between text-left" aria-expanded={mobileHistoryOpen}><span><b className="block text-[15px]" style={{ color: 'var(--text)' }}>History</b><span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{buildHistoricalContractPositions(scopedArchivedTrades).length} positions · {scopedArchivedTrades.length} entries · {formatCurrency(archiveSummary.realizedPnl, 0)} realized</span></span><ChevronDown className={`h-4 w-4 transition-transform ${mobileHistoryOpen ? 'rotate-180' : ''}`} /></button>{mobileHistoryOpen && <ArchiveHistorySection mobileLayout rollingTrades={scopedHistoryTrades} trades={scopedArchivedTrades} onlyShowEtfs={onlyShowEtfs} onOnlyShowEtfsChange={setOnlyShowEtfs} excludedUnknownTickers={historyInstrumentScope.excludedUnknownTickers} resolvingIds={resolvingArchiveIds} onRetryResolve={handleRetryResolve} onManualExpirationClose={handleManualExpirationClose} onRequestWorthlessConfirmation={setWorthlessConfirmationTrade} onEdit={editContractPosition} onDelete={handleDeleteTrade} optionsNavigationState={optionsNavigationState} />}</section>}
+            {allArchivedTrades.length > 0 && <section className="border-t px-3.5 py-3" style={{ borderColor: 'var(--border)' }}><button type="button" onClick={() => setMobileHistoryOpen(current => !current)} className="pressable flex min-h-11 w-full items-center justify-between text-left" aria-expanded={mobileHistoryOpen}><span><b className="block text-[15px]" style={{ color: 'var(--text)' }}>History</b><span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{buildHistoricalContractPositions(scopedArchivedTrades).length} positions · {scopedArchivedTrades.length} entries · {formatCurrency(archiveSummary.realizedPnl, 0)} realized</span></span><ChevronDown className={`h-4 w-4 transition-transform ${mobileHistoryOpen ? 'rotate-180' : ''}`} /></button>{mobileHistoryOpen && <ArchiveHistorySection mobileLayout rollingTrades={scopedHistoryTrades} trades={scopedArchivedTrades} onlyShowEtfs={onlyShowEtfs} onOnlyShowEtfsChange={setOnlyShowEtfs} excludedUnknownTickers={historyInstrumentScope.excludedUnknownTickers} resolvingIds={resolvingArchiveIds} onRetryResolve={handleRetryResolve} onManualExpirationClose={handleManualExpirationClose} onRequestWorthlessConfirmation={setWorthlessConfirmationTrade} onEdit={editContractPosition} onDelete={requestDeleteTrade} optionsNavigationState={optionsNavigationState} onOptionsNavigate={navigateToPortfolioOptions} outcomeFilter={historyOutcomeFilter} onOutcomeFilterChange={setHistoryOutcomeFilter} historyGroupMode={historyGroupMode} onHistoryGroupModeChange={setHistoryGroupMode} collapsedHistoryGroups={collapsedHistoryGroups} onCollapsedHistoryGroupsChange={setCollapsedHistoryGroups} historySortField={historySortField} onHistorySortFieldChange={setHistorySortField} historySortDir={historySortDir} onHistorySortDirChange={setHistorySortDir} historicalMetric={historicalMetric} onHistoricalMetricChange={setHistoricalMetric} historicalWindowMonths={historicalWindowMonths} onHistoricalWindowMonthsChange={setHistoricalWindowMonths} />}</section>}
           </>
         )}
 
         {mobilePositionControlsOpen && <MobileBottomSheet title="Position display & sort" description="Refine the open-position scan without reloading data" onClose={() => setMobilePositionControlsOpen(false)} footer={<button type="button" onClick={() => setMobilePositionControlsOpen(false)} className="mobile-sheet-action primary w-full">Done</button>}><div className="space-y-4"><label htmlFor="mobile-portfolio-sort" className="block"><span className="mobile-sheet-label">Sort positions</span><select id="mobile-portfolio-sort" value={sortField} onChange={event => setSortField(event.target.value as PortfolioScheduleSortField)} className="mobile-control-field w-full">{PORTFOLIO_SCHEDULE_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><div><span className="mobile-sheet-label">Direction</span><MobileSegmentedControl value={sortDir} onChange={setSortDir} label="Position sort direction" options={[{ value: 'asc', label: 'Ascending' }, { value: 'desc', label: 'Descending' }]} /></div><div><span className="mobile-sheet-label">Optional detail</span><DisplayToggle checked={showEntryDeltas} onChange={setShowEntryDeltas} label="Show Entry Deltas / IV" className="min-h-11 w-full" /></div></div></MobileBottomSheet>}
         {mobileActionsOpen && <MobileBottomSheet title="Portfolio actions" onClose={() => setMobileActionsOpen(false)}><div className="space-y-2"><button type="button" onClick={() => { setMobileActionsOpen(false); setShowAddModal(true); }} className="mobile-sheet-action primary w-full"><Plus className="h-4 w-4" /> Add Trade</button><button type="button" onClick={() => { setMobileActionsOpen(false); setShowImportModal(true); }} className="mobile-sheet-action secondary w-full"><FileImage className="h-4 w-4" /> Import Screenshot</button><button type="button" disabled={!historicalExcelImportAvailable} onClick={() => { setMobileActionsOpen(false); setShowHistoricalExcelImport(true); }} className="mobile-sheet-action secondary w-full disabled:opacity-40"><FileSpreadsheet className="h-4 w-4" /> Import / Export Historical Excel</button><button type="button" onClick={() => { setMobileActionsOpen(false); setShowMaintenance(true); setMaintenanceMessage(''); }} className="mobile-sheet-action secondary w-full"><Wrench className="h-4 w-4" /> Portfolio Maintenance</button><button type="button" onClick={() => { setMobileActionsOpen(false); setShowDataBackup(true); }} className="mobile-sheet-action secondary w-full"><Download className="h-4 w-4" /> Data Backup</button></div></MobileBottomSheet>}
-        {(showAddModal || editingTrade) && <TradeModal trade={editingTrade} seed={addPositionSeed} onClose={() => { setShowAddModal(false); setEditingTrade(null); setAddPositionSeed(null); }} onSave={handleSaveTrade} onDelete={handleDeleteTrade} />}
+        {(showAddModal || editingTrade) && <TradeModal trade={editingTrade} seed={addPositionSeed} onClose={() => { setShowAddModal(false); setEditingTrade(null); setAddPositionSeed(null); }} onSave={handleSaveTrade} onDelete={requestDeleteTrade} />}
         {editingPosition && <ContractPositionEditor position={editingPosition} onClose={() => setEditingPosition(null)} onEditLot={lot => { setEditingPosition(null); setEditingTrade(lot); }} onAddToPosition={addToContractPosition} />}
         {drawerSelection && <ErrorBoundary title="Option sheet unavailable" message="Close it and try again."><Suspense fallback={null}><OptionDetailDrawer option={drawerSelection.option} ticker={drawerSelection.ticker} expirationLabel={drawerSelection.expirationLabel} dte={drawerSelection.dte} underlyingPrice={drawerSelection.underlyingPrice} onClose={() => setDrawerSelection(null)} /></Suspense></ErrorBoundary>}
         {showImportModal && <Suspense fallback={null}><PortfolioScreenshotImportModal trades={trades} onClose={() => setShowImportModal(false)} onApply={handleScreenshotImported} /></Suspense>}
         {showHistoricalExcelImport && <Suspense fallback={null}><PortfolioHistoricalExcelImportModal trades={trades} markBasis={markBasis} onClose={() => setShowHistoricalExcelImport(false)} onImported={handleHistoricalExcelImported} /></Suspense>}
         {showDataBackup && <Suspense fallback={null}><DataBackupModal onClose={() => setShowDataBackup(false)} onImported={handleBackupImported} /></Suspense>}
         {showMaintenance && <Suspense fallback={null}><PortfolioMaintenanceModal assessment={maintenanceAssessment} busy={maintenanceBusy} message={maintenanceMessage} onResolveLifecycle={() => { void handleResolveLifecycleMaintenance(); }} onResolveEntryVix={() => { void handleResolveEntryVixMaintenance(); }} onRecoverEntrySnapshots={handleRecoverStoredEntrySnapshots} onClose={() => setShowMaintenance(false)} /></Suspense>}
+        {deleteConfirmationTrade && <DeleteTradeConfirmation trade={deleteConfirmationTrade} onCancel={() => setDeleteConfirmationTrade(null)} onConfirm={confirmDeleteTrade} />}
       </div>
     );
   }
@@ -2271,6 +2341,10 @@ export default function PortfolioPage() {
             <button onClick={() => setShowAddModal(true)} className="button-primary inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs whitespace-nowrap" style={{ backgroundColor: 'var(--accent)' }}>
               <Plus className="w-3.5 h-3.5" /> Add Trade
             </button>
+            <button onClick={handleRefreshOpenTrades} disabled={refreshing || openTrades.length === 0} data-action-tier="primary" className="button-secondary portfolio-refresh-action inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-50 whitespace-nowrap" style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)', border: '1px solid var(--accent-border)' }}>
+              {refreshing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+              Refresh Open Trades
+            </button>
             <button onClick={() => setShowImportModal(true)} className="button-secondary inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs whitespace-nowrap" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
               <FileImage className="w-3.5 h-3.5" /> Import Screenshot
             </button>
@@ -2282,10 +2356,6 @@ export default function PortfolioPage() {
             </button>
             <button onClick={() => { setShowMaintenance(true); setMaintenanceMessage(''); }} className="button-secondary inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs whitespace-nowrap" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
               <Wrench className="w-3.5 h-3.5" /> Maintenance
-            </button>
-            <button onClick={handleRefreshOpenTrades} disabled={refreshing || openTrades.length === 0} className="button-secondary portfolio-refresh-action inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-50 whitespace-nowrap" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
-              {refreshing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-              Refresh Open Trades
             </button>
           </div>}
         />
@@ -2380,8 +2450,8 @@ export default function PortfolioPage() {
                   <div className="mt-2">
                     {mobileAnalytics === 'maturity' && <CompactExposureBars title="Maturity Wall" groups={groupByExpiration(openPositions, markBasis)} labelFormatter={formatShortDate} emptyLabel="No maturities." onGroupClick={drillToExpiration} />}
                     {mobileAnalytics === 'ticker' && <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openPositions, markBasis)} totalGrossRisk={sumValues(openPositions.map(calculateEquityAtRisk))} maxItems={8} onGroupClick={drillToTicker} />}
-                    {mobileAnalytics === 'attention' && <NeedsAttentionList items={buildNeedsAttention(openPositions).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} optionsNavigationState={optionsNavigationState} />}
-                    {mobileAnalytics === 'close' && <CloseCandidatesCard candidates={buildCloseCandidates(openPositions, markBasis).slice(0, 5)} onNavigate={drillToTrade} optionsNavigationState={optionsNavigationState} />}
+                    {mobileAnalytics === 'attention' && <NeedsAttentionList items={buildNeedsAttention(openPositions).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} optionsNavigationState={optionsNavigationState} onOptionsNavigate={navigateToPortfolioOptions} />}
+                    {mobileAnalytics === 'close' && <CloseCandidatesCard candidates={buildCloseCandidates(openPositions, markBasis).slice(0, 5)} onNavigate={drillToTrade} optionsNavigationState={optionsNavigationState} onOptionsNavigate={navigateToPortfolioOptions} />}
                   </div>
                 </div>
                 <div className="portfolio-analytics-grid hidden grid-cols-1 md:grid md:grid-cols-2 xl:grid-cols-12 auto-rows-auto items-stretch gap-2">
@@ -2392,10 +2462,10 @@ export default function PortfolioPage() {
                     <ConcentrationBars title="Exposure by Ticker" groups={groupByTicker(openPositions, markBasis)} totalGrossRisk={sumValues(openPositions.map(calculateEquityAtRisk))} maxItems={8} onGroupClick={drillToTicker} />
                   </div>
                   <div className="md:col-span-1 xl:col-span-6">
-                    <NeedsAttentionList items={buildNeedsAttention(openPositions).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} optionsNavigationState={optionsNavigationState} />
+                    <NeedsAttentionList items={buildNeedsAttention(openPositions).slice(0, 5)} onDetailsClick={openDrawer} onNavigate={drillToTrade} optionsNavigationState={optionsNavigationState} onOptionsNavigate={navigateToPortfolioOptions} />
                   </div>
                   <div className="md:col-span-1 xl:col-span-6">
-                    <CloseCandidatesCard candidates={buildCloseCandidates(openPositions, markBasis).slice(0, 5)} onNavigate={drillToTrade} optionsNavigationState={optionsNavigationState} />
+                    <CloseCandidatesCard candidates={buildCloseCandidates(openPositions, markBasis).slice(0, 5)} onNavigate={drillToTrade} optionsNavigationState={optionsNavigationState} onOptionsNavigate={navigateToPortfolioOptions} />
                   </div>
                 </div>
                 </>
@@ -2588,7 +2658,7 @@ export default function PortfolioPage() {
                       return (
                         <tr key={trade.id} data-trade-id={trade.id} data-trade-ticker={trade.ticker.trim().toUpperCase()} className="scroll-mt-20 transition-opacity duration-300 motion-reduce:transition-none" style={{ borderBottom: '1px solid var(--border)', backgroundColor: highlightedTradeId === trade.id || activeScheduleTicker === trade.ticker.trim().toUpperCase() ? 'var(--accent-bg)' : index % 2 ? 'var(--row-alt)' : 'transparent', boxShadow: highlightedTradeId === trade.id ? 'inset 3px 0 var(--accent)' : undefined, opacity: activeScheduleTicker && activeScheduleTicker !== trade.ticker.trim().toUpperCase() ? 0.72 : 1 }}>
                           <td className="px-2 py-1 text-left font-mono font-bold whitespace-nowrap">
-                            <Link to={buildOptionsPath(trade.ticker, trade.expiration)} state={optionsNavigationState} className="underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</Link>
+                            <Link to={buildOptionsPath(trade.ticker, trade.expiration)} state={optionsNavigationState} onClick={event => navigateToPortfolioOptions(event, isPortfolioContractPosition(trade) ? trade.lots[0] : trade)} className="underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</Link>
                           </td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{expiryLabel(trade.expiration)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{isPortfolioContractPosition(trade) ? formatPositionEntryDate(trade) : formatHistoryDate(trade.soldDate)}</td>
@@ -2652,7 +2722,7 @@ export default function PortfolioPage() {
                           <td className="px-2 py-1 whitespace-nowrap">
                             <div className="flex items-center gap-1">
                               <button onClick={() => editContractPosition(trade)} className="p-1.5 rounded" title={isPortfolioContractPosition(trade) && trade.lotCount > 1 ? 'Edit entries' : 'Edit'} style={{ color: 'var(--text-muted)' }}><Edit2 className="w-3.5 h-3.5" /></button>
-                              {(!isPortfolioContractPosition(trade) || trade.lotCount === 1) && <button onClick={() => handleDeleteTrade(isPortfolioContractPosition(trade) ? trade.lots[0].id : trade.id)} className="p-1.5 rounded" title="Delete" style={{ color: 'var(--red)' }}><Trash2 className="w-3.5 h-3.5" /></button>}
+                              {(!isPortfolioContractPosition(trade) || trade.lotCount === 1) && <button onClick={() => requestDeleteTrade(isPortfolioContractPosition(trade) ? trade.lots[0].id : trade.id)} className="p-1.5 rounded" title="Delete" style={{ color: 'var(--red)' }}><Trash2 className="w-3.5 h-3.5" /></button>}
                             </div>
                           </td>
                         </tr>
@@ -2709,8 +2779,23 @@ export default function PortfolioPage() {
               onManualExpirationClose={handleManualExpirationClose}
               onRequestWorthlessConfirmation={setWorthlessConfirmationTrade}
               onEdit={editContractPosition}
-              onDelete={handleDeleteTrade}
+              onDelete={requestDeleteTrade}
               optionsNavigationState={optionsNavigationState}
+              onOptionsNavigate={navigateToPortfolioOptions}
+              outcomeFilter={historyOutcomeFilter}
+              onOutcomeFilterChange={setHistoryOutcomeFilter}
+              historyGroupMode={historyGroupMode}
+              onHistoryGroupModeChange={setHistoryGroupMode}
+              collapsedHistoryGroups={collapsedHistoryGroups}
+              onCollapsedHistoryGroupsChange={setCollapsedHistoryGroups}
+              historySortField={historySortField}
+              onHistorySortFieldChange={setHistorySortField}
+              historySortDir={historySortDir}
+              onHistorySortDirChange={setHistorySortDir}
+              historicalMetric={historicalMetric}
+              onHistoricalMetricChange={setHistoricalMetric}
+              historicalWindowMonths={historicalWindowMonths}
+              onHistoricalWindowMonthsChange={setHistoricalWindowMonths}
             />}
 
           </>
@@ -2731,7 +2816,7 @@ export default function PortfolioPage() {
             setAddPositionSeed(null);
           }}
           onSave={handleSaveTrade}
-          onDelete={handleDeleteTrade}
+          onDelete={requestDeleteTrade}
         />
       )}
       {editingPosition && <ContractPositionEditor position={editingPosition} onClose={() => setEditingPosition(null)} onEditLot={lot => { setEditingPosition(null); setEditingTrade(lot); }} onAddToPosition={addToContractPosition} />}
@@ -2785,6 +2870,7 @@ export default function PortfolioPage() {
           <p className="text-sm leading-6" style={{ color: 'var(--text-muted)' }}>Confirm this put expired worthless? Put Scanner will record final option value as $0 and keep Price @ Exp. unavailable.</p>
         </MobileBottomSheet>
       )}
+      {deleteConfirmationTrade && <DeleteTradeConfirmation trade={deleteConfirmationTrade} onCancel={() => setDeleteConfirmationTrade(null)} onConfirm={confirmDeleteTrade} />}
     </div>
   );
 }
@@ -2880,6 +2966,8 @@ function MobileHistoryTradeRow({
   onRequestWorthlessConfirmation,
   onEdit,
   onDelete,
+  optionsNavigationState,
+  onOptionsNavigate,
 }: {
   trade: PortfolioTrade;
   resolving: boolean;
@@ -2888,6 +2976,8 @@ function MobileHistoryTradeRow({
   onRequestWorthlessConfirmation: (trade: PortfolioTrade) => void;
   onEdit: (trade: PortfolioTrade) => void;
   onDelete: (id: string) => void;
+  optionsNavigationState?: unknown;
+  onOptionsNavigate?: PortfolioOptionsLinkClick;
 }) {
   const [expanded, setExpanded] = useState(false);
   const position = isPortfolioContractPosition(trade) ? trade : null;
@@ -2908,6 +2998,7 @@ function MobileHistoryTradeRow({
       </button>
       {expanded && <div className="portfolio-history-mobile-row__details">
         <div className="portfolio-history-mobile-row__meta">Entry {position ? formatPositionEntryDate(position) : formatHistoryDate(trade.soldDate)} · {formatDays(historyDaysHeld(trade))} held · {getArchiveOutcomeLabel(trade)}</div>
+        <Link to={buildOptionsPath(trade.ticker, trade.expiration)} state={optionsNavigationState ?? PORTFOLIO_DEFAULT_OPTIONS_STATE} onClick={event => onOptionsNavigate?.(event, lifecycleTrade)} className="mt-1 inline-block text-[11px] font-semibold underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>Open Options</Link>
         <div className="portfolio-history-mobile-row__metrics">
           <Metric label="Sold Price" value={formatHistoricalOptionPrice(trade.soldPrice)} />
           <Metric label="Gross Risk" value={formatCurrency(historyGrossRisk(trade), 0)} />
@@ -2947,6 +3038,21 @@ function ArchiveHistorySection({
   onEdit,
   onDelete,
   optionsNavigationState,
+  onOptionsNavigate,
+  outcomeFilter,
+  onOutcomeFilterChange,
+  historyGroupMode: groupMode,
+  onHistoryGroupModeChange,
+  collapsedHistoryGroups,
+  onCollapsedHistoryGroupsChange,
+  historySortField,
+  onHistorySortFieldChange,
+  historySortDir,
+  onHistorySortDirChange,
+  historicalMetric,
+  onHistoricalMetricChange,
+  historicalWindowMonths,
+  onHistoricalWindowMonthsChange,
 }: {
   mobileLayout?: boolean;
   rollingTrades: PortfolioTrade[];
@@ -2961,12 +3067,22 @@ function ArchiveHistorySection({
   onEdit: (trade: PortfolioTrade) => void;
   onDelete: (id: string) => void;
   optionsNavigationState?: unknown;
+  onOptionsNavigate?: PortfolioOptionsLinkClick;
+  outcomeFilter: HistoryOutcome;
+  onOutcomeFilterChange: (filter: HistoryOutcome) => void;
+  historyGroupMode: HistoryGroupMode;
+  onHistoryGroupModeChange: (mode: HistoryGroupMode) => void;
+  collapsedHistoryGroups: Record<string, boolean>;
+  onCollapsedHistoryGroupsChange: Dispatch<SetStateAction<Record<string, boolean>>>;
+  historySortField: HistorySortField | null;
+  onHistorySortFieldChange: Dispatch<SetStateAction<HistorySortField | null>>;
+  historySortDir: HistorySortDirection;
+  onHistorySortDirChange: Dispatch<SetStateAction<HistorySortDirection>>;
+  historicalMetric: HistoricalMetric;
+  onHistoricalMetricChange: (metric: HistoricalMetric) => void;
+  historicalWindowMonths: RollingWindowMonths;
+  onHistoricalWindowMonthsChange: (windowMonths: RollingWindowMonths) => void;
 }) {
-  const [outcomeFilter, setOutcomeFilter] = useState<HistoryOutcome>('all');
-  const [groupMode, setGroupMode] = useState<HistoryGroupMode>('year');
-  const [collapsedHistoryGroups, setCollapsedHistoryGroups] = useState<Record<string, boolean>>({});
-  const [historySortField, setHistorySortField] = useState<HistorySortField | null>(null);
-  const [historySortDir, setHistorySortDir] = useState<HistorySortDirection>('asc');
   const visibleTrades = useMemo(() => filterHistoryTrades(trades, outcomeFilter), [outcomeFilter, trades]);
   const visiblePositions = useMemo(() => buildHistoricalContractPositions(visibleTrades), [visibleTrades]);
   const visibleSummary = useMemo(() => buildArchiveSummary(visibleTrades), [visibleTrades]);
@@ -2982,27 +3098,27 @@ function ArchiveHistorySection({
     && visibleGroups.every(isHistoryGroupCollapsed);
   const toggleHistoryGroup = (group: ReturnType<typeof buildHistoryGroups>[number]) => {
     const key = historyGroupKey(group);
-    setCollapsedHistoryGroups(current => ({ ...current, [key]: !isHistoryGroupCollapsed(group) }));
+    onCollapsedHistoryGroupsChange(current => ({ ...current, [key]: !isHistoryGroupCollapsed(group) }));
   };
   const toggleAllHistoryGroups = () => {
     if (groupMode === 'none' || visibleGroups.length === 0) return;
     const nextCollapsed = !allHistoryGroupsCollapsed;
-    setCollapsedHistoryGroups(current => ({
+    onCollapsedHistoryGroupsChange(current => ({
       ...current,
       ...Object.fromEntries(visibleGroups.map(group => [historyGroupKey(group), nextCollapsed])),
     }));
   };
   const selectHistorySortField = (field: HistorySortField) => {
     if (historySortField !== field) {
-      setHistorySortField(field);
-      setHistorySortDir('asc');
+      onHistorySortFieldChange(field);
+      onHistorySortDirChange('asc');
     }
   };
   const activateHistorySort = (field: HistorySortField) => {
-    if (historySortField === field) setHistorySortDir(current => current === 'asc' ? 'desc' : 'asc');
+    if (historySortField === field) onHistorySortDirChange(current => current === 'asc' ? 'desc' : 'asc');
     else {
-      setHistorySortField(field);
-      setHistorySortDir('asc');
+      onHistorySortFieldChange(field);
+      onHistorySortDirChange('asc');
     }
   };
   const historySortButton = (field: HistorySortField, label: string, align = 'text-right', title?: string) => {
@@ -3035,19 +3151,19 @@ function ArchiveHistorySection({
           </label>
           <div className="portfolio-history-control-group inline-flex max-w-full items-center gap-1 overflow-x-auto rounded-lg p-0.5" role="group" aria-label="Filter history by" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
             <span className="shrink-0 px-1.5 text-[9px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>View</span>
-            {HISTORY_FILTERS.map(filter => <button type="button" key={filter.value} onClick={() => setOutcomeFilter(filter.value)} aria-pressed={outcomeFilter === filter.value} className="min-h-11 shrink-0 rounded-md px-2 py-1 text-[10px] font-semibold whitespace-nowrap sm:min-h-8" style={{ backgroundColor: outcomeFilter === filter.value ? 'var(--accent-bg)' : 'transparent', color: outcomeFilter === filter.value ? 'var(--accent-light)' : 'var(--text-muted)', border: `1px solid ${outcomeFilter === filter.value ? 'var(--accent-border)' : 'transparent'}` }}>{filter.label}</button>)}
+            {HISTORY_FILTERS.map(filter => <button type="button" key={filter.value} onClick={() => onOutcomeFilterChange(filter.value)} aria-pressed={outcomeFilter === filter.value} className="min-h-11 shrink-0 rounded-md px-2 py-1 text-[10px] font-semibold whitespace-nowrap sm:min-h-8" style={{ backgroundColor: outcomeFilter === filter.value ? 'var(--accent-bg)' : 'transparent', color: outcomeFilter === filter.value ? 'var(--accent-light)' : 'var(--text-muted)', border: `1px solid ${outcomeFilter === filter.value ? 'var(--accent-border)' : 'transparent'}` }}>{filter.label}</button>)}
           </div>
           <div className="portfolio-history-control-group inline-flex max-w-full items-center gap-1 overflow-x-auto rounded-lg p-0.5" role="group" aria-label="Group history by" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
             <span className="shrink-0 px-1.5 text-[9px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Group by</span>
-            {HISTORY_GROUP_OPTIONS.map(option => <button type="button" key={option.value} onClick={() => setGroupMode(option.value)} aria-pressed={groupMode === option.value} className="min-h-11 shrink-0 rounded-md px-2 py-1 text-[10px] font-semibold whitespace-nowrap sm:min-h-8" style={{ backgroundColor: groupMode === option.value ? 'var(--accent-bg)' : 'transparent', color: groupMode === option.value ? 'var(--accent-light)' : 'var(--text-muted)', border: `1px solid ${groupMode === option.value ? 'var(--accent-border)' : 'transparent'}` }}>{option.label}</button>)}
+            {HISTORY_GROUP_OPTIONS.map(option => <button type="button" key={option.value} onClick={() => onHistoryGroupModeChange(option.value)} aria-pressed={groupMode === option.value} className="min-h-11 shrink-0 rounded-md px-2 py-1 text-[10px] font-semibold whitespace-nowrap sm:min-h-8" style={{ backgroundColor: groupMode === option.value ? 'var(--accent-bg)' : 'transparent', color: groupMode === option.value ? 'var(--accent-light)' : 'var(--text-muted)', border: `1px solid ${groupMode === option.value ? 'var(--accent-border)' : 'transparent'}` }}>{option.label}</button>)}
           </div>
           {mobileLayout && <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-lg p-1.5" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
             <label htmlFor="mobile-history-sort" className="px-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Sort</label>
-            <select id="mobile-history-sort" value={historySortField ?? ''} onChange={event => { const value = event.target.value as HistorySortField | ''; if (value) selectHistorySortField(value); else { setHistorySortField(null); setHistorySortDir('asc'); } }} className="mobile-control-field min-w-0 text-base">
+            <select id="mobile-history-sort" value={historySortField ?? ''} onChange={event => { const value = event.target.value as HistorySortField | ''; if (value) selectHistorySortField(value); else { onHistorySortFieldChange(null); onHistorySortDirChange('asc'); } }} className="mobile-control-field min-w-0 text-base">
               <option value="">Default order</option>
               {HISTORY_MOBILE_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
-            <button type="button" onClick={() => setHistorySortDir(current => current === 'asc' ? 'desc' : 'asc')} disabled={!historySortField} className="pressable mobile-control-button min-w-11 px-3 disabled:opacity-40" aria-label={historySortField ? `Sort ${historySortDir === 'asc' ? 'ascending; activate for descending' : 'descending; activate for ascending'}` : 'Choose a History sort field first'} title={historySortField ? (historySortDir === 'asc' ? 'Ascending' : 'Descending') : 'Choose a sort field first'}>{historySortDir === 'asc' ? '↑' : '↓'}</button>
+            <button type="button" onClick={() => onHistorySortDirChange(current => current === 'asc' ? 'desc' : 'asc')} disabled={!historySortField} className="pressable mobile-control-button min-w-11 px-3 disabled:opacity-40" aria-label={historySortField ? `Sort ${historySortDir === 'asc' ? 'ascending; activate for descending' : 'descending; activate for ascending'}` : 'Choose a History sort field first'} title={historySortField ? (historySortDir === 'asc' ? 'Ascending' : 'Descending') : 'Choose a sort field first'}>{historySortDir === 'asc' ? '↑' : '↓'}</button>
           </div>}
           {groupMode !== 'none' && visibleGroups.length > 0 && <button type="button" onClick={toggleAllHistoryGroups} className="min-h-11 shrink-0 rounded-lg px-2 py-1.5 text-[11px] whitespace-nowrap sm:min-h-8" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>{allHistoryGroupsCollapsed ? 'Expand All' : 'Collapse All'}</button>}
         </div>
@@ -3083,7 +3199,7 @@ function ArchiveHistorySection({
           {(groupMode === 'none' || !collapsed) && group.trades.map(trade => {
           return (
             <>
-            <MobileHistoryTradeRow key={`history-${trade.id}`} trade={trade} resolving={resolvingIds.has(isPortfolioContractPosition(trade) ? trade.lots[0].id : trade.id)} onRetryResolve={onRetryResolve} onManualExpirationClose={onManualExpirationClose} onRequestWorthlessConfirmation={onRequestWorthlessConfirmation} onEdit={onEdit} onDelete={onDelete} />
+            <MobileHistoryTradeRow key={`history-${trade.id}`} trade={trade} resolving={resolvingIds.has(isPortfolioContractPosition(trade) ? trade.lots[0].id : trade.id)} onRetryResolve={onRetryResolve} onManualExpirationClose={onManualExpirationClose} onRequestWorthlessConfirmation={onRequestWorthlessConfirmation} onEdit={onEdit} onDelete={onDelete} optionsNavigationState={optionsNavigationState} onOptionsNavigate={onOptionsNavigate} />
             {/*
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -3183,7 +3299,7 @@ function ArchiveHistorySection({
                 const realizedIrr = historyRealizedIrr(trade);
                 return (
                   <tr key={trade.id} title={`${trade.ticker} ${formatCurrency(trade.strike)} Put\nEntry: ${position ? formatPositionEntryDate(position) : formatHistoryDate(trade.soldDate)}\nResolved: ${position ? formatPositionResolvedDate(position) : formatHistoryDate(trade.closeDate ?? trade.resolvedDate ?? trade.expiration)}\nDays held: ${formatDays(historyDaysHeld(trade))}\nSold: ${formatHistoricalOptionPrice(trade.soldPrice)}\nUnderlying @ Resolution: ${formatCurrency(historyPriceAtExpiration(trade))}\nPremium: ${formatCurrency(getArchivedPremium(trade))}\nRealized P&L: ${formatCurrency(realizedPnl)}\nRealized AY: ${formatPctValue(realizedIrr)}\nCaptured: ${formatPctValue(percentCaptured)}\nNY: ${formatPctValue(historyEntryNominalYield(trade))}\nVIX @ Entry: ${isFiniteNumber(historyEntryVix(trade)) ? historyEntryVix(trade)!.toFixed(2) : DASH}\nEntry IV: ${formatPercentPoints(historyEntryIv(trade), 1)}\nOutcome: ${getArchiveOutcomeLabel(trade)}`} style={{ borderBottom: '1px solid var(--border)', backgroundColor: index % 2 ? 'var(--row-alt)' : 'transparent' }}>
-                    <td className="px-2 py-1 text-left font-mono font-bold whitespace-nowrap"><Link to={buildOptionsPath(trade.ticker, trade.expiration)} state={optionsNavigationState ?? PORTFOLIO_DEFAULT_OPTIONS_STATE} className="underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</Link></td>
+                    <td className="px-2 py-1 text-left font-mono font-bold whitespace-nowrap"><Link to={buildOptionsPath(trade.ticker, trade.expiration)} state={optionsNavigationState ?? PORTFOLIO_DEFAULT_OPTIONS_STATE} onClick={event => onOptionsNavigate?.(event, isPortfolioContractPosition(trade) ? trade.lots[0] : trade)} className="underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</Link></td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatHistoryDate(trade.expiration)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatCurrency(trade.strike)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums">{trade.contracts}</td>
@@ -3254,7 +3370,7 @@ function ArchiveHistorySection({
           </table>
         </div>
       </div>
-      <RollingHistoricalAnalyticsChart trades={rollingTrades} />
+      <RollingHistoricalAnalyticsChart trades={rollingTrades} metric={historicalMetric} onMetricChange={onHistoricalMetricChange} windowMonths={historicalWindowMonths} onWindowMonthsChange={onHistoricalWindowMonthsChange} />
     </section>
   );
 }

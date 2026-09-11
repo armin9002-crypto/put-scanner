@@ -44,6 +44,14 @@ export interface PortfolioOriginPresentation {
   mobileAnalytics: 'maturity' | 'ticker' | 'attention' | 'close';
   analyticsExpanded: boolean;
   mobileHistoryOpen: boolean;
+  onlyShowEtfs?: boolean;
+  historyOutcomeFilter?: 'all' | 'expired_worthless' | 'closed' | 'expired_itm' | 'assigned';
+  historyGroupMode?: 'year' | 'expiration' | 'underlying' | 'none';
+  historySortField?: string | null;
+  historySortDir?: 'asc' | 'desc';
+  collapsedHistoryGroups?: Record<string, boolean>;
+  historicalMetric?: string;
+  historicalWindowMonths?: 3 | 6 | 12;
 }
 
 export interface RecommendationsOriginPresentation {
@@ -65,6 +73,7 @@ export interface OptionsOriginDescriptor {
   presentation?: OptionsOriginPresentation;
   stateKey?: string;
   scrollY?: number;
+  focusStrike?: number;
 }
 
 export interface OptionsNavigationState {
@@ -120,6 +129,17 @@ function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[])
   return Object.keys(value).every(key => allowed.includes(key));
 }
 
+const PORTFOLIO_HISTORY_OUTCOMES = ['all', 'expired_worthless', 'closed', 'expired_itm', 'assigned'] as const;
+const PORTFOLIO_HISTORY_GROUPS = ['year', 'expiration', 'underlying', 'none'] as const;
+const PORTFOLIO_HISTORY_SORT_FIELDS = ['ticker', 'expiration', 'strike', 'contracts', 'grossRisk', 'entry', 'daysHeld', 'soldPrice', 'ny', 'entryVix', 'entryIv', 'priceAtExpiration', 'premium', 'realizedPnl', 'realizedIrr', 'percentCaptured', 'entryDelta', 'outcome'] as const;
+const PORTFOLIO_HISTORICAL_METRICS = ['realizedIrr', 'entryAy', 'premiumRunRate', 'entryDelta', 'entryIv', 'originalDte', 'grossRiskExposure', 'averageRemainingDte'] as const;
+
+function boundedBooleanMap(value: unknown): value is Record<string, boolean> {
+  if (!isRecord(value)) return false;
+  const entries = Object.entries(value);
+  return entries.length <= 32 && entries.every(([key, item]) => boundedString(key, 120) && typeof item === 'boolean');
+}
+
 function validPresentation(kind: OptionsOriginKind, value: unknown): value is OptionsOriginPresentation {
   if (value == null) return true;
   if (!isRecord(value)) return false;
@@ -150,13 +170,21 @@ function validPresentation(kind: OptionsOriginKind, value: unknown): value is Op
       && typeof value.showNominalYields === 'boolean';
   }
   if (kind === 'portfolio') {
-    return hasOnlyKeys(value, ['sortField', 'sortDir', 'groupMode', 'mobileAnalytics', 'analyticsExpanded', 'mobileHistoryOpen'])
+    return hasOnlyKeys(value, ['sortField', 'sortDir', 'groupMode', 'mobileAnalytics', 'analyticsExpanded', 'mobileHistoryOpen', 'onlyShowEtfs', 'historyOutcomeFilter', 'historyGroupMode', 'historySortField', 'historySortDir', 'collapsedHistoryGroups', 'historicalMetric', 'historicalWindowMonths'])
       && boundedString(value.sortField)
       && (value.sortDir === 'asc' || value.sortDir === 'desc')
       && boundedString(value.groupMode)
       && (value.mobileAnalytics === 'maturity' || value.mobileAnalytics === 'ticker' || value.mobileAnalytics === 'attention' || value.mobileAnalytics === 'close')
       && typeof value.analyticsExpanded === 'boolean'
-      && typeof value.mobileHistoryOpen === 'boolean';
+      && typeof value.mobileHistoryOpen === 'boolean'
+      && (value.onlyShowEtfs == null || typeof value.onlyShowEtfs === 'boolean')
+      && (value.historyOutcomeFilter == null || PORTFOLIO_HISTORY_OUTCOMES.includes(value.historyOutcomeFilter as typeof PORTFOLIO_HISTORY_OUTCOMES[number]))
+      && (value.historyGroupMode == null || PORTFOLIO_HISTORY_GROUPS.includes(value.historyGroupMode as typeof PORTFOLIO_HISTORY_GROUPS[number]))
+      && (value.historySortField == null || value.historySortField === null || PORTFOLIO_HISTORY_SORT_FIELDS.includes(value.historySortField as typeof PORTFOLIO_HISTORY_SORT_FIELDS[number]))
+      && (value.historySortDir == null || value.historySortDir === 'asc' || value.historySortDir === 'desc')
+      && (value.collapsedHistoryGroups == null || boundedBooleanMap(value.collapsedHistoryGroups))
+      && (value.historicalMetric == null || PORTFOLIO_HISTORICAL_METRICS.includes(value.historicalMetric as typeof PORTFOLIO_HISTORICAL_METRICS[number]))
+      && (value.historicalWindowMonths == null || value.historicalWindowMonths === 3 || value.historicalWindowMonths === 6 || value.historicalWindowMonths === 12);
   }
   if (kind === 'recommendations') {
     return hasOnlyKeys(value, ['boardSort', 'showAllBoardRows'])
@@ -168,11 +196,12 @@ function validPresentation(kind: OptionsOriginKind, value: unknown): value is Op
 
 export function parseOptionsOrigin(value: unknown): OptionsOriginDescriptor | null {
   if (!isRecord(value) || value.version !== OPTIONS_ORIGIN_VERSION || !isAllowedKind(value.kind)) return null;
-  if (!hasOnlyKeys(value, ['version', 'kind', 'path', 'presentation', 'stateKey', 'scrollY'])) return null;
+  if (!hasOnlyKeys(value, ['version', 'kind', 'path', 'presentation', 'stateKey', 'scrollY', 'focusStrike'])) return null;
   const path = safeOriginPath(value.path, value.kind);
   if (!path || !validPresentation(value.kind, value.presentation)) return null;
   if (value.stateKey != null && !boundedString(value.stateKey, 80)) return null;
   if (value.scrollY != null && (typeof value.scrollY !== 'number' || !Number.isFinite(value.scrollY) || value.scrollY < 0 || value.scrollY > 10_000_000)) return null;
+  if (value.focusStrike != null && (typeof value.focusStrike !== 'number' || !Number.isFinite(value.focusStrike) || value.focusStrike <= 0 || value.focusStrike > 1_000_000)) return null;
   return {
     version: OPTIONS_ORIGIN_VERSION,
     kind: value.kind,
@@ -180,6 +209,7 @@ export function parseOptionsOrigin(value: unknown): OptionsOriginDescriptor | nu
     presentation: value.presentation as OptionsOriginPresentation | undefined,
     stateKey: value.stateKey as string | undefined,
     scrollY: value.scrollY as number | undefined,
+    focusStrike: value.focusStrike as number | undefined,
   };
 }
 
@@ -189,7 +219,7 @@ export function optionsOriginPath(kind: OptionsOriginKind, path?: string): strin
 
 export function createOptionsOrigin(
   kind: OptionsOriginKind,
-  options: { path?: string; presentation?: OptionsOriginPresentation; stateKey?: string; scrollY?: number } = {},
+  options: { path?: string; presentation?: OptionsOriginPresentation; stateKey?: string; scrollY?: number; focusStrike?: number } = {},
 ): OptionsOriginDescriptor {
   const candidate = {
     version: OPTIONS_ORIGIN_VERSION,
@@ -198,6 +228,7 @@ export function createOptionsOrigin(
     presentation: options.presentation,
     stateKey: options.stateKey,
     scrollY: options.scrollY,
+    focusStrike: options.focusStrike,
   };
   return parseOptionsOrigin(candidate) ?? {
     version: OPTIONS_ORIGIN_VERSION,
@@ -208,7 +239,7 @@ export function createOptionsOrigin(
 
 export function createOptionsNavigationState(
   kind: OptionsOriginKind,
-  options: { path?: string; presentation?: OptionsOriginPresentation; stateKey?: string; scrollY?: number } = {},
+  options: { path?: string; presentation?: OptionsOriginPresentation; stateKey?: string; scrollY?: number; focusStrike?: number } = {},
 ): OptionsNavigationState {
   return { optionsOrigin: createOptionsOrigin(kind, options) };
 }
