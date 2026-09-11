@@ -4,7 +4,7 @@ Portfolio History ends with one Historical Analytics surface derived from canoni
 
 ## Controls and information hierarchy
 
-The Analytics selector is grouped into Rolling and Portfolio State families. Rolling offers Entry AY, Entry IV, Entry Delta, Realized IRR, Original DTE, and Annualized Premium Run Rate. Portfolio State offers Gross Risk Exposure and Avg Remaining DTE. Entry AY is the default.
+The Analytics selector is grouped into Rolling and Portfolio State families. Rolling offers Entry AY, Entry IV, Entry Delta, Realized AY, Original DTE, and Annualized Premium Run Rate. Portfolio State offers Gross Risk Exposure and Avg Remaining DTE. Entry AY is the default.
 
 Rolling metrics show a 3M / 6M / 12M control, defaulting to 6M. State metrics replace that control with **POINT IN TIME**, making the semantic change explicit. All choices retain the full strategy-history x-domain. The surface intentionally has no compare, overlay, or dual-axis mode.
 

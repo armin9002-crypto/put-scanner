@@ -17,7 +17,7 @@ The supplied `src/assets/put-scanner-wordmark.png` is used as an alpha mask. Its
 ## Portfolio History
 
 - Year remains the default grouping. Year, Expiry, and Underlying groups each use a session-local disclosure button with the same chevron/focus language as Schedule of Positions. None remains a flat, ungrouped list.
-- Grouped desktop tables render a true header row and an aligned subtotal row. Only additive values are shown: group identity/trade count, Contracts, Premium, and Realized P&amp;L. P&amp;L receives the strongest semantic color and emphasis; NY, VIX @ Entry, Price @ Exp., Realized IRR, % Captured, and Entry Delta remain blank rather than receiving misleading averages or sums.
+- Grouped desktop tables render a true header row and an aligned subtotal row. Only additive values are shown: group identity/trade count, Contracts, Premium, and Realized P&amp;L. P&amp;L receives the strongest semantic color and emphasis; NY, VIX @ Entry, Price @ Exp., Realized AY, % Captured, and Entry Delta remain blank rather than receiving misleading averages or sums.
 - Mobile grouped headers expose identity, trade count, Premium, Realized P&amp;L, and the disclosure affordance in a compact structured row. Trade cards are hidden while a group is collapsed.
 - History continues to read durable `entryVixClose`. Missing values render as `—`; no row-render fetch, automatic repair, or History-side backfill UI was added. Existing Portfolio Maintenance remains the explicit recovery path.
 

@@ -136,8 +136,8 @@ export default function DataBackupModal({ onClose, onImported }: DataBackupModal
           <section className="mt-4 rounded-xl p-4" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--accent-border)' }}>
             <div className="flex items-center gap-2"><FileCheck2 className="h-4 w-4" style={{ color: 'var(--green)' }} /><h3 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Backup found</h3></div>
             <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
-              <div><dt style={{ color: 'var(--text-dim)' }}>Open positions</dt><dd className="mt-0.5 font-mono font-semibold" style={{ color: 'var(--text)' }}>{summary.openPositions}</dd></div>
-              <div><dt style={{ color: 'var(--text-dim)' }}>Historical positions</dt><dd className="mt-0.5 font-mono font-semibold" style={{ color: 'var(--text)' }}>{summary.historicalPositions}</dd></div>
+              <div><dt style={{ color: 'var(--text-dim)' }}>Open lots</dt><dd className="mt-0.5 font-mono font-semibold" style={{ color: 'var(--text)' }}>{summary.openPositions}</dd></div>
+              <div><dt style={{ color: 'var(--text-dim)' }}>Historical lots</dt><dd className="mt-0.5 font-mono font-semibold" style={{ color: 'var(--text)' }}>{summary.historicalPositions}</dd></div>
               <div><dt style={{ color: 'var(--text-dim)' }}>Watchlist items</dt><dd className="mt-0.5 font-mono font-semibold" style={{ color: 'var(--text)' }}>{summary.watchlistItems}</dd></div>
               <div><dt style={{ color: 'var(--text-dim)' }}>Preferences</dt><dd className="mt-0.5 font-semibold" style={{ color: 'var(--text)' }}>{summary.preferencesIncluded ? 'Included' : 'Not included'}</dd></div>
             </dl>

@@ -28,7 +28,7 @@ Historical Entry IV is optional and uses percentage units. The label **Entry IV 
 
 ## Reconciliation preview
 
-The compact derived preview uses existing canonical helpers and is not independently editable. It shows Premium, Gross Risk, Net Risk, Breakeven, Original DTE, Entry NY, and Entry AY. Historical mode also shows Price @ Exp., Final Option Value, Realized P&L, and Realized IRR when calculable. Premium and realized dollar values retain cent precision so a spreadsheet typo is easy to spot.
+The compact derived preview uses existing canonical helpers and is not independently editable. It shows Premium, Gross Risk, Net Risk, Breakeven, Original DTE, Entry NY, and Entry AY. Historical mode also shows Price @ Exp., Final Option Value, Realized P&L, and Realized AY when calculable. Premium and realized dollar values retain cent precision so a spreadsheet typo is easy to spot.
 
 ## Repeated entry and edit behavior
 

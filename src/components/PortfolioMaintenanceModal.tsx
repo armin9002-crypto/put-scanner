@@ -62,7 +62,7 @@ export default function PortfolioMaintenanceModal({
         </div>
 
         <div className="mt-4 space-y-2">
-          <CountRow label="Lifecycle review" count={lifecycleCount} actionable detail="Open positions definitively past expiration." />
+          <CountRow label="Lifecycle review" count={lifecycleCount} actionable detail="Open lots definitively past expiration." />
           <CountRow label="Missing Entry VIX" count={entryVixCount} actionable detail="Historical closes can be fetched explicitly by entry-date range." />
           <CountRow label="Recoverable Entry Delta" count={recoverableDeltaCount} actionable detail="A real Delta already exists in the durable entry snapshot; no market request is needed." />
           <CountRow label="Entry Delta unavailable" count={unavailableDeltaCount} detail="No trustworthy historical source exists. These blanks are retained without warning churn." />

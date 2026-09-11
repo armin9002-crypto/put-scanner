@@ -310,7 +310,7 @@ export default function PortfolioHistoricalExcelImportModal({ trades, markBasis,
                 <div className="rounded-lg px-3 py-2.5" style={{ backgroundColor: 'var(--surface)' }}><dt style={{ color: 'var(--text-dim)' }}>Current-market coverage</dt><dd className="mt-1 font-mono text-base font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{exportOutput.summary.currentMarketCoveredLots}/{exportOutput.summary.openLots}</dd></div>
               </dl>
               <p className="mt-4 rounded-lg border px-3 py-2 text-xs leading-5" style={{ color: 'var(--text-muted)', borderColor: 'var(--border)' }}>Current-market columns use currently loaded Portfolio data. Refresh Open Trades first if you want fresher marks.</p>
-              <p className="mt-2 text-[11px] leading-4" style={{ color: 'var(--text-dim)' }}>Yields, volatility, capture, IRR, and distance percentages are exported as percentage-point numbers. Missing values are blank.</p>
+              <p className="mt-2 text-[11px] leading-4" style={{ color: 'var(--text-dim)' }}>Yields, volatility, capture, realized AY, and distance percentages are exported as percentage-point numbers. Missing values are blank.</p>
               <button type="button" onClick={exportCsv} disabled={exportOutput.summary.totalLots === 0} className="button-primary pressable mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg px-5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto" style={{ backgroundColor: 'var(--accent)' }}><Download className="h-4 w-4" /> Export CSV</button>
             </section>
           )}

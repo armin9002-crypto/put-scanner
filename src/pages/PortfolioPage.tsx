@@ -46,12 +46,14 @@ import {
   calculateCurrentPositionValue,
   calculateDistanceToStrike,
   calculateEquityAtRisk,
+  calculateGrossRiskWeightedRemainingDte,
   calculateNetCapitalAtRisk,
   calculateOriginalNominalYield,
   calculateOriginalAnnualizedYield,
   calculateOriginalDte,
   calculatePercentCaptured,
   calculatePortfolioMarkSummary,
+  calculatePortfolioCurrentAyCoverage,
   calculatePortfolioSummary,
   calculatePremiumCollected,
   calculateRemainingDte,
@@ -112,7 +114,7 @@ import {
 import { OPTION_QUOTE_TABLE_DISPLAY_ORDER, executableOptionPrice, formatOptionQuoteValue, orderedOptionQuoteEntries } from '../lib/optionQuoteDisplay';
 import { persistPortfolioMarkBasis, readPortfolioMarkBasis } from '../lib/portfolioMarkPreference';
 import { persistShowNominalYield, readShowNominalYield } from '../lib/optionTablePreferences';
-import { buildCloseCandidates, buildNeedsAttention, getRedeployBadges, type CloseCandidate } from '../lib/portfolioPolicies';
+import { assessPortfolioAttention, buildCloseCandidates, buildNeedsAttention, getRedeployBadges, type CloseCandidate } from '../lib/portfolioPolicies';
 import { buildOptionsPath, createOptionsNavigationState, resolveOptionsReturnOrigin, type OptionsNavigationState, type PortfolioOriginPresentation } from '../lib/optionsNavigation';
 import {
   backfillStoredEntrySnapshots,
@@ -535,7 +537,7 @@ function getPositionHealth(trade: PortfolioTrade, basis: MarkBasis = 'last'): Po
       title: resolvePortfolioMark(trade, basis).source === 'last_fallback' ? `Exact Last valuation fallback; last traded ${formatFullDate(trade.latestMarketData?.lastTradeDate)}. Not a current executable quote.` : `${freshness.label}: ${freshness.reason}`,
     };
   }
-  const underlying = trade.latestMarketData?.underlyingPrice ?? trade.entrySnapshot?.underlyingPrice ?? null;
+  const underlying = trade.latestMarketData?.underlyingPrice ?? null;
   const breakeven = calculateBreakeven(trade);
   const distanceToStrike = calculateDistanceToStrike(trade);
   const delta = trade.latestMarketData?.delta ?? null;
@@ -612,14 +614,6 @@ function expiryLabel(iso: string): string {
   return formatDate(`${iso}T00:00:00`);
 }
 
-function weightedAverageValue(items: Array<{ value: number | null | undefined; weight: number | null | undefined }>): number | null {
-  const totals = items.reduce((acc, item) => {
-    if (!isFiniteNumber(item.value) || !isFiniteNumber(item.weight) || item.weight <= 0) return acc;
-    return { weighted: acc.weighted + item.value * item.weight, weight: acc.weight + item.weight };
-  }, { weighted: 0, weight: 0 });
-  return totals.weight > 0 ? totals.weighted / totals.weight : null;
-}
-
 function sumValues(values: Array<number | null | undefined>): number {
   return values.reduce<number>((total, value) => total + (isFiniteNumber(value) ? value : 0), 0);
 }
@@ -670,9 +664,10 @@ function PortfolioPriorityStrip({
         <div className="portfolio-priority-list">
           {attention.map(trade => {
             const health = getPositionHealth(trade, markBasis);
+            const attentionAssessment = assessPortfolioAttention(trade);
             return <button type="button" key={trade.id} className="portfolio-priority-item" onClick={() => onOpenTrade(trade)}>
-              <span className="portfolio-priority-item__identity"><b>{trade.ticker} {formatCurrency(trade.strike)} Put</b><small>{expiryLabel(trade.expiration)} · {formatDteValue(calculateRemainingDte(trade))}</small></span>
-              <span className="portfolio-priority-item__value" style={{ color: health.color }}>{health.label}</span>
+              <span className="portfolio-priority-item__identity"><b>{trade.ticker} {formatCurrency(trade.strike)} Put</b><small>{expiryLabel(trade.expiration)} · {formatDteValue(calculateRemainingDte(trade))} · Health: {health.label}</small></span>
+              <span className="portfolio-priority-item__value text-right" title={attentionAssessment.reasons.join(' · ') || 'Review position'} style={{ color: health.color }}>{attentionAssessment.reasons.join(' · ') || 'Review position'}</span>
             </button>;
           })}
         </div>
@@ -832,6 +827,7 @@ function NeedsAttentionList({
             const strikeDistance = getTradeDistanceToStrike(trade);
             const freshness = getPortfolioQuoteFreshness(trade);
             const quoteEligible = isPortfolioQuoteDecisionEligible(trade);
+            const attentionAssessment = assessPortfolioAttention(trade);
             return (
               <div key={trade.id} className="grid grid-cols-[minmax(88px,1fr)_auto] gap-2 rounded px-2 py-1.5" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
                 <div className="min-w-0">
@@ -846,7 +842,8 @@ function NeedsAttentionList({
                   <div style={{ color: percentColor(beDistance) }}>BE {formatPctValue(beDistance)}</div>
                   <div style={{ color: percentColor(strikeDistance) }}>Strike {formatPctValue(strikeDistance)}</div>
                   <div style={{ color: 'var(--text-muted)' }}>{formatCompactCurrency(getTradeGrossRisk(trade))}</div>
-                </div> : <div className="text-right text-[11px] leading-tight" title={freshness.reason} style={{ color: 'var(--yellow)' }}>Needs fresh<br />quote</div>}
+                  <div className="mt-1 max-w-[150px] whitespace-normal text-[10px] leading-tight" style={{ color: 'var(--yellow)' }}>{attentionAssessment.reasons.join(' · ') || 'Review position'}</div>
+                </div> : <div className="text-right text-[11px] leading-tight" title={freshness.reason} style={{ color: 'var(--yellow)' }}>{attentionAssessment.reasons.join(' · ') || 'Needs fresh quote'}</div>}
               </div>
             );
           })}
@@ -1376,7 +1373,7 @@ function TradeModal({ trade, seed = null, onClose, onSave, onDelete }: TradeModa
               <SummaryCard label="Price @ Exp." value={previewTrade ? formatCurrency(historyPriceAtExpiration(previewTrade), 2) : DASH} />
               <SummaryCard label="Final Option Value" value={previewTrade ? formatCurrency(historyFinalValue(previewTrade), 2) : DASH} />
               <SummaryCard label="Realized P&L" value={previewTrade ? formatCurrency(historyRealizedPnl(previewTrade), 2) : DASH} color={previewTrade ? pnlColor(historyRealizedPnl(previewTrade)) : undefined} />
-              <SummaryCard label="Realized IRR" value={previewTrade ? formatPctValue(historyRealizedIrr(previewTrade)) : DASH} color={previewTrade ? pnlColor(historyRealizedIrr(previewTrade)) : undefined} />
+          <SummaryCard label="Realized AY" value={previewTrade ? formatPctValue(historyRealizedIrr(previewTrade)) : DASH} color={previewTrade ? pnlColor(historyRealizedIrr(previewTrade)) : undefined} />
             </div>
           )}
         </section>
@@ -1546,11 +1543,12 @@ export default function PortfolioPage() {
   const openTrades = useMemo(() => trades.filter(trade => trade.status === 'open'), [trades]);
   const openPositions = useMemo(() => buildOpenContractPositions(openTrades, markBasis), [markBasis, openTrades]);
   const allArchivedTrades = useMemo(() => trades.filter(isArchivedTrade).sort((a, b) => b.expiration.localeCompare(a.expiration)), [trades]);
-  const historyInstrumentScope = useMemo(() => buildHistoryInstrumentScope(trades, onlyShowEtfs), [onlyShowEtfs, trades]);
-  const scopedHistoryTrades = historyInstrumentScope.trades;
-  const scopedArchivedTrades = useMemo(() => scopedHistoryTrades.filter(isArchivedTrade).sort((a, b) => b.expiration.localeCompare(a.expiration)), [scopedHistoryTrades]);
+  const historyInstrumentScope = useMemo(() => buildHistoryInstrumentScope(allArchivedTrades, onlyShowEtfs), [allArchivedTrades, onlyShowEtfs]);
+  const scopedArchivedTrades = historyInstrumentScope.trades;
+  const scopedHistoryTrades = useMemo(() => buildHistoryInstrumentScope(trades, onlyShowEtfs).trades, [onlyShowEtfs, trades]);
   const archiveSummary = useMemo(() => buildArchiveSummary(scopedArchivedTrades), [scopedArchivedTrades]);
   const markSummary = useMemo(() => calculatePortfolioMarkSummary(openTrades, markBasis), [openTrades, markBasis]);
+  const currentAyCoverage = useMemo(() => calculatePortfolioCurrentAyCoverage(openTrades, markBasis), [openTrades, markBasis]);
   const maintenanceAssessment = useMemo(() => assessPortfolioMaintenance(trades), [trades]);
   const quoteFreshnessSummary = useMemo(() => summarizePortfolioQuoteFreshness(openPositions), [openPositions]);
   const lastFallbackCount = openPositions.filter(trade => resolvePortfolioMark(trade, markBasis).source === 'last_fallback').length;
@@ -2150,8 +2148,8 @@ export default function PortfolioPage() {
         lastTradeDate,
         bid,
         ask,
-        delta: market?.delta ?? trade.entrySnapshot?.delta ?? null,
-        impliedVolatility: market?.iv ?? trade.entrySnapshot?.iv ?? null,
+        delta: market?.delta ?? null,
+        impliedVolatility: market?.iv ?? null,
         volume: market?.volume ?? null,
         openInterest: market?.openInterest ?? null,
         volOI: calculateVolumeOpenInterestRatio(market?.volume, market?.openInterest),
@@ -2332,31 +2330,27 @@ export default function PortfolioPage() {
                   <div className="mt-1 font-mono text-2xl font-bold tabular-nums" style={{ color: pnlColor(markSummary.totalGainLoss) }}>{formatCurrency(markSummary.totalGainLoss, 0)}</div>
                   <div className="mt-1 text-xs font-mono" style={{ color: pnlColor(markSummary.percentCaptured) }}>{formatPctValue(markSummary.percentCaptured)} captured</div>
                 </div>
-                <SummaryCard label="Open Positions" value={String(openPositions.length)} />
                 <SummaryCard label="Premium" value={formatCurrency(summary.totalPremiumCollected, 0)} color="var(--green)" />
                 <SummaryCard label="Gross Risk" value={formatCurrency(summary.totalEquityAtRisk, 0)} />
-                <SummaryCard label="Net Risk" value={formatCurrency(summary.totalNetCapitalAtRisk, 0)} />
               </div>
               <details className="mt-1.5 rounded-lg" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
                 <summary className="flex min-h-[44px] cursor-pointer list-none items-center justify-between px-3 text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>More portfolio metrics <ChevronDown className="h-4 w-4" /></summary>
                 <div className="grid grid-cols-2 gap-1.5 border-t p-2" style={{ borderColor: 'var(--border)' }}>
                   <SummaryCard label="Entry Wtd. Avg. AY" value={formatPctValue(markSummary.portfolioOriginalAnnualizedYield)} color="var(--accent-light)" />
-                  <SummaryCard label="Current Wtd. Avg. AY" value={formatPctValue(markSummary.portfolioCurrentAnnualizedYield)} color="var(--accent-light)" />
+                  <SummaryCard label="Current Wtd. Avg. AY" value={formatPctValue(markSummary.portfolioCurrentAnnualizedYield)} color="var(--accent-light)" detail={`Current AY coverage: ${currentAyCoverage.eligibleCount}/${currentAyCoverage.totalCount} open entries by Gross Risk.`} />
                   <SummaryCard label="Weighted Avg Delta" value={formatDelta(markSummary.weightedAverageDelta)} color={pnlColor(markSummary.weightedAverageDelta)} />
                   <SummaryCard label="Weighted Avg DTE" value={isFiniteNumber(summary.weightedAverageRemainingDte) ? `${Math.round(summary.weightedAverageRemainingDte)} DTE` : DASH} />
                 </div>
               </details>
             </div>
 
-            <div className="portfolio-summary-grid hidden grid-cols-2 md:grid md:grid-cols-5 2xl:grid-cols-10 gap-1.5 mb-3">
-              <SummaryCard label="Open Positions" value={String(openPositions.length)} />
+            <div className="portfolio-summary-grid hidden grid-cols-2 md:grid md:grid-cols-4 2xl:grid-cols-8 gap-1.5 mb-3">
               <SummaryCard label="Premium" value={formatCurrency(summary.totalPremiumCollected, 0)} color="var(--green)" />
               <SummaryCard label="Gross Risk" value={formatCurrency(summary.totalEquityAtRisk, 0)} />
-              <SummaryCard label="Net Risk" value={formatCurrency(summary.totalNetCapitalAtRisk, 0)} />
               <SummaryCard label="Gain/Loss" value={formatCurrency(markSummary.totalGainLoss, 0)} color={pnlColor(markSummary.totalGainLoss)} />
               <SummaryCard label="% Captured" value={formatPctValue(markSummary.percentCaptured)} color={pnlColor(markSummary.percentCaptured)} />
               <SummaryCard label="Entry Wtd. Avg. AY" value={formatPctValue(markSummary.portfolioOriginalAnnualizedYield)} color="var(--accent-light)" />
-              <SummaryCard label="Current Wtd. Avg. AY" value={formatPctValue(markSummary.portfolioCurrentAnnualizedYield)} color="var(--accent-light)" />
+              <SummaryCard label="Current Wtd. Avg. AY" value={formatPctValue(markSummary.portfolioCurrentAnnualizedYield)} color="var(--accent-light)" detail={`Current AY coverage: ${currentAyCoverage.eligibleCount}/${currentAyCoverage.totalCount} open entries by Gross Risk.`} />
               <SummaryCard label="Weighted Avg Delta" value={formatDelta(markSummary.weightedAverageDelta)} color={pnlColor(markSummary.weightedAverageDelta)} />
               <SummaryCard label="Weighted Avg DTE" value={isFiniteNumber(summary.weightedAverageRemainingDte) ? `${Math.round(summary.weightedAverageRemainingDte)} DTE` : DASH} />
             </div>
@@ -2626,7 +2620,7 @@ export default function PortfolioPage() {
                             <span className="portfolio-paired-metric__line">{showEntryDeltas && <span className="portfolio-paired-metric__label">Current</span>} <span className="font-semibold" style={{ color: pnlColor(delta) }}>{formatDelta(delta)}</span>{visibleFreshness && <span className="portfolio-paired-metric__status" data-freshness={quoteFreshness.state}> · {visibleFreshness}</span>}</span>
                           </td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(calculateBreakeven(trade))}</td>
-                          <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(trade.latestMarketData?.underlyingPrice ?? trade.entrySnapshot?.underlyingPrice)}</td>
+                          <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(trade.latestMarketData?.underlyingPrice)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: percentColor(calculateDistanceToStrike(trade)) }}>{formatPctValue(calculateDistanceToStrike(trade))}</td>
                           <td className="portfolio-paired-metric-cell px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">
                             {showEntryDeltas && <span className="portfolio-paired-metric__line"><span className="portfolio-paired-metric__label">Entry</span> {isValidEntryIv(trade.entryIv) ? <HoverTooltip content={<EntryIvTooltipContent trade={trade} />} ariaLabel={`${trade.ticker} Entry IV details`}>{formatPercentPoints(trade.entryIv, 1)}</HoverTooltip> : DASH}</span>}
@@ -2910,7 +2904,7 @@ function MobileHistoryTradeRow({
     <article className="portfolio-history-mobile-row" data-expanded={expanded ? 'true' : 'false'}>
       <button type="button" className="portfolio-history-mobile-row__summary" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>
         <span className="portfolio-history-mobile-row__identity"><span className="portfolio-history-group-chevron" aria-hidden="true">{expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</span><strong className="font-mono">{trade.ticker}</strong><span>Exp. {formatHistoryDate(trade.expiration)}</span><span className="font-mono">{formatCurrency(trade.strike)}</span></span>
-        <span className="portfolio-history-mobile-row__primary"><span><small>Realized P&amp;L</small><b className="font-mono" style={{ color: pnlColor(realizedPnl) }}>{formatCurrency(realizedPnl)}</b></span><span><small>Realized IRR</small><b className="font-mono" style={{ color: pnlColor(realizedIrr) }}>{formatPctValue(realizedIrr)}</b></span></span>
+        <span className="portfolio-history-mobile-row__primary"><span><small>Realized P&amp;L</small><b className="font-mono" style={{ color: pnlColor(realizedPnl) }}>{formatCurrency(realizedPnl)}</b></span><span><small>Realized AY</small><b className="font-mono" style={{ color: pnlColor(realizedIrr) }}>{formatPctValue(realizedIrr)}</b></span></span>
       </button>
       {expanded && <div className="portfolio-history-mobile-row__details">
         <div className="portfolio-history-mobile-row__meta">Entry {position ? formatPositionEntryDate(position) : formatHistoryDate(trade.soldDate)} · {formatDays(historyDaysHeld(trade))} held · {getArchiveOutcomeLabel(trade)}</div>
@@ -3060,7 +3054,7 @@ function ArchiveHistorySection({
       </div>
       <div className="portfolio-history-summary-grid grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-1.5 mb-2">
         <SummaryCard label="Realized P&L" value={formatCurrency(visibleSummary.realizedPnl)} color={pnlColor(visibleSummary.realizedPnl)} />
-        <SummaryCard label="Total Realized IRR" value={formatPctValue(visibleSummary.totalRealizedIrr)} color={pnlColor(visibleSummary.totalRealizedIrr)} detail="Gross-Risk-weighted average of valid position Realized IRRs. Each position uses simple annualization of realized P&L over actual days held." />
+        <SummaryCard label="Total Realized AY" value={formatPctValue(visibleSummary.totalRealizedIrr)} color={pnlColor(visibleSummary.totalRealizedIrr)} detail="Gross-Risk-weighted average of valid position Realized AY values. Each position uses simple annualization of realized P&L over actual days held." />
         <SummaryCard label="Blended Capture" value={formatPctValue(visibleSummary.blendedCapture)} color={pnlColor(visibleSummary.blendedCapture)} />
         <SummaryCard label="Total Historical Notional" value={formatCurrency(visibleSummary.totalHistoricalNotional, 0)} detail="Cumulative canonical Gross Risk across the currently visible closed and historical positions." />
         <SummaryCard label="Resolved Trades" value={String(visibleSummary.resolvedTrades)} />
@@ -3082,7 +3076,7 @@ function ArchiveHistorySection({
                 <span className="portfolio-history-mobile-group-header__identity"><span className="portfolio-history-group-chevron" aria-hidden="true">{collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</span><span className="min-w-0"><strong>{label}</strong><small>{group.tradeCount} positions</small></span></span>
                 <span className="portfolio-history-mobile-group-header__totals">
                   <span className="portfolio-history-mobile-group-header__primary"><span><small>Premium</small><strong>{formatCurrency(group.premium, 0)}</strong></span><span className="portfolio-history-mobile-group-header__pnl"><small>Realized P&amp;L</small><strong style={{ color: pnlColor(group.realizedPnl) }}>{formatCurrency(group.realizedPnl)}</strong></span></span>
-                  <span className="portfolio-history-mobile-group-header__secondary" title="Days, NY, VIX, IV, IRR, capture, and Entry Delta use the canonical group weighted values."><span>Risk {formatCurrency(group.grossRisk, 0)}</span><span>Days {formatAverageDays(group.weightedAverageDaysHeld)} · NY {formatPctValue(group.weightedAverageNy)}</span><span>VIX {isFiniteNumber(group.weightedAverageEntryVix) ? group.weightedAverageEntryVix.toFixed(1) : DASH} · IV {formatPercentPoints(group.weightedAverageEntryIv, 1)} · IRR {formatPctValue(group.weightedAverageRealizedIrr)} · {formatPctValue(group.weightedAveragePercentCaptured)} cap · Δ {formatDelta(group.weightedAverageEntryDelta)}</span></span>
+                  <span className="portfolio-history-mobile-group-header__secondary" title="Days, Entry NY, Entry AY, VIX, IV, Realized AY, capture, and Entry Delta use the canonical group weighted values."><span>Risk {formatCurrency(group.grossRisk, 0)}</span><span>Days {formatAverageDays(group.weightedAverageDaysHeld)} · NY {formatPctValue(group.weightedAverageNy)} · AY {formatPctValue(group.weightedAverageAy)}</span><span>VIX {isFiniteNumber(group.weightedAverageEntryVix) ? group.weightedAverageEntryVix.toFixed(1) : DASH} · IV {formatPercentPoints(group.weightedAverageEntryIv, 1)} · Realized AY {formatPctValue(group.weightedAverageRealizedIrr)} · {formatPctValue(group.weightedAveragePercentCaptured)} cap · Δ {formatDelta(group.weightedAverageEntryDelta)}</span></span>
                 </span>
               </button>
             )}
@@ -3104,7 +3098,7 @@ function ArchiveHistorySection({
                 <Metric label="Premium" value={formatCurrency(getArchivedPremium(trade))} color="var(--green)" />
                 <Metric label="Realized P&L" value={formatCurrency(realizedPnl)} color={pnlColor(realizedPnl)} />
                 <Metric label="Captured" value={formatPctValue(percentCaptured)} color={pnlColor(percentCaptured)} />
-                <Metric label="Realized IRR" value={formatPctValue(realizedIrr)} color={pnlColor(realizedIrr)} />
+                <Metric label="Realized AY" value={formatPctValue(realizedIrr)} color={pnlColor(realizedIrr)} />
                 <Metric label="NY" value={formatPctValue(historyEntryNominalYield(trade))} detail="Entry Nominal Yield: net sold price ÷ strike, equivalent to Premium ÷ Gross Risk." />
                 <Metric label="VIX @ Entry" value={isFiniteNumber(historyEntryVix(trade)) ? historyEntryVix(trade)!.toFixed(2) : DASH} detail="Stored VIX close captured at the trade entry date." />
                 <Metric label="Entry IV" value={formatPercentPoints(historyEntryIv(trade), 1)} detail="Stored contract implied volatility observed at entry." />
@@ -3136,7 +3130,7 @@ function ArchiveHistorySection({
           <div><small>Gross Risk</small><strong>{formatCurrency(visibleGrandTotals.grossRisk, 0)}</strong></div>
           <div><small>Premium</small><strong>{formatCurrency(visibleGrandTotals.premium, 0)}</strong></div>
           <div><small>Realized P&amp;L</small><strong style={{ color: pnlColor(visibleGrandTotals.realizedPnl) }}>{formatCurrency(visibleGrandTotals.realizedPnl)}</strong></div>
-          <div className="portfolio-history-mobile-grand-total__secondary" title="Canonical weighted averages across the currently visible trades."><span>AY {formatPctValue(visibleGrandTotals.weightedAverageNy)}</span><span>IRR {formatPctValue(visibleGrandTotals.weightedAverageRealizedIrr)}</span><span>Δ {formatDelta(visibleGrandTotals.weightedAverageEntryDelta)}</span><span>IV {formatPercentPoints(visibleGrandTotals.weightedAverageEntryIv, 1)}</span></div>
+          <div className="portfolio-history-mobile-grand-total__secondary" title="Canonical weighted averages across the currently visible trades."><span>AY {formatPctValue(visibleGrandTotals.weightedAverageAy)}</span><span>NY {formatPctValue(visibleGrandTotals.weightedAverageNy)}</span><span>Realized AY {formatPctValue(visibleGrandTotals.weightedAverageRealizedIrr)}</span><span>Δ {formatDelta(visibleGrandTotals.weightedAverageEntryDelta)}</span><span>IV {formatPercentPoints(visibleGrandTotals.weightedAverageEntryIv, 1)}</span></div>
         </div>
       </div>
       <div className={`${desktopHistoryClass} rounded-lg overflow-hidden`} style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
@@ -3144,7 +3138,7 @@ function ArchiveHistorySection({
           <table className="portfolio-history-table financial-table min-w-max w-full text-[12px] leading-none">
             <thead>
               <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
-                {HISTORY_SORT_OPTIONS.map(option => historySortButton(option.value, option.label, option.value === 'ticker' || option.value === 'outcome' ? 'text-left' : 'text-right', option.label === 'NY' ? 'Entry Nominal Yield: net sold price ÷ strike, equivalent to Premium ÷ Gross Risk.' : option.label === 'VIX @ Entry' ? 'Stored VIX close captured at the trade entry date.' : option.label === 'Realized IRR' ? 'Realized P&L ÷ Gross Risk × 365 ÷ actual days held. Simple annualization.' : undefined))}
+                {HISTORY_SORT_OPTIONS.map(option => historySortButton(option.value, option.label, option.value === 'ticker' || option.value === 'outcome' ? 'text-left' : 'text-right', option.label === 'NY' ? 'Entry Nominal Yield: net sold price ÷ strike, equivalent to Premium ÷ Gross Risk.' : option.label === 'VIX @ Entry' ? 'Stored VIX close captured at the trade entry date.' : option.label === 'Realized AY' ? 'Realized P&L ÷ Gross Risk × 365 ÷ actual days held. Simple annualization.' : undefined))}
                 <th scope="col" className="px-2 py-2 text-[11px] font-medium text-left whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>Actions</th>
               </tr>
             </thead>
@@ -3169,7 +3163,7 @@ function ArchiveHistorySection({
                       <td className="px-2 py-2 text-right font-mono tabular-nums" title={`Wtd. Avg. Entry IV: Gross-Risk-weighted average of known stored contract Entry IV values. Coverage: ${formatHistoryCoverage(group.entryIvCoverage)}.`}><HistoryAggregateValue value={formatPercentPoints(group.weightedAverageEntryIv, 1)} /></td>
                       <td /><td className="px-2 py-2 text-right font-mono tabular-nums"><HistoryAggregateValue value={formatCurrency(group.premium, 0)} /></td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums portfolio-history-group-subtotal__pnl" style={{ color: pnlColor(group.realizedPnl) }}><HistoryAggregateValue value={formatCurrency(group.realizedPnl)} /></td>
-                      <td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. Realized IRR: Gross-Risk-weighted average of individual position Realized IRRs."><HistoryAggregateValue value={formatPctValue(group.weightedAverageRealizedIrr)} /></td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. Realized AY: Gross-Risk-weighted average of individual position Realized AY values."><HistoryAggregateValue value={formatPctValue(group.weightedAverageRealizedIrr)} /></td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. % Captured: Premium-weighted average of individual position capture values."><HistoryAggregateValue value={formatPctValue(group.weightedAveragePercentCaptured)} /></td>
                       <td className="px-2 py-2 text-right font-mono tabular-nums" title="Wtd. Avg. Entry Delta: Gross-Risk-weighted average of known historical Entry Delta values."><HistoryAggregateValue value={formatDelta(group.weightedAverageEntryDelta)} /></td>
                       <td /><td />
@@ -3188,7 +3182,7 @@ function ArchiveHistorySection({
                 const percentCaptured = getArchivedPercentCaptured(trade);
                 const realizedIrr = historyRealizedIrr(trade);
                 return (
-                  <tr key={trade.id} title={`${trade.ticker} ${formatCurrency(trade.strike)} Put\nEntry: ${position ? formatPositionEntryDate(position) : formatHistoryDate(trade.soldDate)}\nResolved: ${position ? formatPositionResolvedDate(position) : formatHistoryDate(trade.closeDate ?? trade.resolvedDate ?? trade.expiration)}\nDays held: ${formatDays(historyDaysHeld(trade))}\nSold: ${formatHistoricalOptionPrice(trade.soldPrice)}\nUnderlying @ Resolution: ${formatCurrency(historyPriceAtExpiration(trade))}\nPremium: ${formatCurrency(getArchivedPremium(trade))}\nRealized P&L: ${formatCurrency(realizedPnl)}\nRealized IRR: ${formatPctValue(realizedIrr)}\nCaptured: ${formatPctValue(percentCaptured)}\nNY: ${formatPctValue(historyEntryNominalYield(trade))}\nVIX @ Entry: ${isFiniteNumber(historyEntryVix(trade)) ? historyEntryVix(trade)!.toFixed(2) : DASH}\nEntry IV: ${formatPercentPoints(historyEntryIv(trade), 1)}\nOutcome: ${getArchiveOutcomeLabel(trade)}`} style={{ borderBottom: '1px solid var(--border)', backgroundColor: index % 2 ? 'var(--row-alt)' : 'transparent' }}>
+                  <tr key={trade.id} title={`${trade.ticker} ${formatCurrency(trade.strike)} Put\nEntry: ${position ? formatPositionEntryDate(position) : formatHistoryDate(trade.soldDate)}\nResolved: ${position ? formatPositionResolvedDate(position) : formatHistoryDate(trade.closeDate ?? trade.resolvedDate ?? trade.expiration)}\nDays held: ${formatDays(historyDaysHeld(trade))}\nSold: ${formatHistoricalOptionPrice(trade.soldPrice)}\nUnderlying @ Resolution: ${formatCurrency(historyPriceAtExpiration(trade))}\nPremium: ${formatCurrency(getArchivedPremium(trade))}\nRealized P&L: ${formatCurrency(realizedPnl)}\nRealized AY: ${formatPctValue(realizedIrr)}\nCaptured: ${formatPctValue(percentCaptured)}\nNY: ${formatPctValue(historyEntryNominalYield(trade))}\nVIX @ Entry: ${isFiniteNumber(historyEntryVix(trade)) ? historyEntryVix(trade)!.toFixed(2) : DASH}\nEntry IV: ${formatPercentPoints(historyEntryIv(trade), 1)}\nOutcome: ${getArchiveOutcomeLabel(trade)}`} style={{ borderBottom: '1px solid var(--border)', backgroundColor: index % 2 ? 'var(--row-alt)' : 'transparent' }}>
                     <td className="px-2 py-1 text-left font-mono font-bold whitespace-nowrap"><Link to={buildOptionsPath(trade.ticker, trade.expiration)} state={optionsNavigationState ?? PORTFOLIO_DEFAULT_OPTIONS_STATE} className="underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</Link></td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatHistoryDate(trade.expiration)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">{formatCurrency(trade.strike)}</td>
@@ -3251,7 +3245,7 @@ function ArchiveHistorySection({
                 <td />
                 <td className="px-2 py-1.5 text-right font-mono tabular-nums"><HistoryAggregateValue value={formatCurrency(visibleGrandTotals.premium, 0)} /></td>
                 <td className="px-2 py-1.5 text-right font-mono tabular-nums portfolio-history-grand-total__pnl" style={{ color: pnlColor(visibleGrandTotals.realizedPnl) }}><HistoryAggregateValue value={formatCurrency(visibleGrandTotals.realizedPnl)} /></td>
-                <td className="px-2 py-1.5 text-right font-mono tabular-nums" title="Gross-Risk-weighted average of individual position Realized IRRs."><HistoryAggregateValue value={formatPctValue(visibleGrandTotals.weightedAverageRealizedIrr)} /></td>
+                <td className="px-2 py-1.5 text-right font-mono tabular-nums" title="Gross-Risk-weighted average of individual position Realized AY values."><HistoryAggregateValue value={formatPctValue(visibleGrandTotals.weightedAverageRealizedIrr)} /></td>
                 <td className="px-2 py-1.5 text-right font-mono tabular-nums" title="Premium-weighted average of individual position capture values."><HistoryAggregateValue value={formatPctValue(visibleGrandTotals.weightedAveragePercentCaptured)} /></td>
                 <td className="px-2 py-1.5 text-right font-mono tabular-nums" title={`Gross-Risk-weighted average of known Entry Delta values. Coverage: ${formatHistoryCoverage(visibleGrandTotals.entryDeltaCoverage)}.`}><HistoryAggregateValue value={formatDelta(visibleGrandTotals.weightedAverageEntryDelta)} /></td>
                 <td /><td />
@@ -3280,11 +3274,11 @@ function buildScheduleTotals(openTrades: PortfolioTrade[], basis: MarkBasis) {
     currentValue,
     totalGainLoss,
     percentCaptured: premium > 0 && totalGainLoss != null ? totalGainLoss / premium : null,
-    weightedAverageDelta: weightedAverageValue(openTrades.map(trade => ({ value: trade.latestMarketData?.delta, weight: calculateEquityAtRisk(trade) }))),
+    weightedAverageDelta: yields.weightedAverageDelta,
     originalNominalYield: yields.portfolioOriginalNominalYield,
     originalAnnualizedYield: yields.portfolioOriginalAnnualizedYield,
     currentNominalYield: yields.portfolioCurrentNominalYield,
     currentAnnualizedYield: yields.portfolioCurrentAnnualizedYield,
-    dte: weightedAverageValue(openTrades.map(trade => ({ value: calculateRemainingDte(trade), weight: calculateNetCapitalAtRisk(trade) }))),
+    dte: calculateGrossRiskWeightedRemainingDte(openTrades),
   };
 }

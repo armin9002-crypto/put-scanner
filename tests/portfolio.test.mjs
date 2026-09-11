@@ -21,7 +21,7 @@ import {
 const trade = (overrides = {}) => ({
   id: 't1', ticker: 'TST', optionType: 'put', strike: 50, expiration: '2027-01-15', contracts: 2,
   soldPrice: 2, soldDate: '2026-01-15', status: 'open', createdAt: '2026-01-15T00:00:00Z', updatedAt: '2026-01-15T00:00:00Z',
-  latestMarketData: { underlyingPrice: 60, optionBid: 1, optionAsk: 1.4, optionLast: 1.1, optionMid: 1.2, delta: -0.2 }, ...overrides,
+  latestMarketData: { underlyingPrice: 60, optionBid: 1, optionAsk: 1.4, optionLast: 1.1, optionMid: 1.2, delta: -0.2, refreshedAt: '2026-09-10T15:00:00Z', availabilityStatus: 'live' }, ...overrides,
 });
 
 test('portfolio totals and bid/ask/last reconciliation use production formulas', () => {
@@ -51,7 +51,7 @@ test('underlying groups sort A-Z, reconcile the same totals, and expose useful t
   const trades = [
     trade({ id: 'boil-late', ticker: 'BOIL', expiration: '2027-02-19', contracts: 3, latestMarketData: { underlyingPrice: 61, optionAsk: 1.4, delta: -0.2, refreshedAt: '2026-08-13T12:00:00Z' } }),
     trade({ id: 'tqqq', ticker: 'TQQQ', contracts: 1 }),
-    trade({ id: 'boil-early', ticker: 'BOIL', contracts: 2 }),
+    trade({ id: 'boil-early', ticker: 'BOIL', contracts: 2, latestMarketData: { refreshedAt: '2026-08-12T12:00:00Z' } }),
   ];
   const expiryGroups = buildExpirationScheduleGroups(trades, 'ask');
   const tickerGroups = buildUnderlyingScheduleGroups(trades, 'ask');

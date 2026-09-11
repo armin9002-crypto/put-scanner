@@ -19,7 +19,7 @@ This UI pass keeps the existing Portfolio formulas, durable trade schema, market
 - Group subtotals and headline cards reuse the canonical Gross-Risk-weighted Entry IV helper and its coverage. No aggregate arithmetic is performed in JSX.
 - Desktop grouped History uses one disclosure/subtotal row per group. The row retains the existing group totals, collapse behavior, Collapse/Expand All controls, and child-row sorting; the former duplicate disclosure row is gone.
 - Year is the default grouping and newly encountered groups start collapsed. Switching grouping modes does not create durable disclosure state; `None` remains flat.
-- Headline metrics are ordered: Realized P&L, Total Realized IRR, Blended Capture, Total Historical Notional, Resolved Trades, Avg. Days Held, Wtd. Avg. Entry Delta, and Wtd. Avg. Entry IV. The responsive grid remains equal-width on wide screens and uses 4×2 / 2×4 layouts at smaller widths rather than a carousel.
+- Headline metrics are ordered: Realized P&L, Total Realized AY, Blended Capture, Total Historical Notional, Resolved Trades, Avg. Days Held, Wtd. Avg. Entry Delta, and Wtd. Avg. Entry IV. The responsive grid remains equal-width on wide screens and uses 4×2 / 2×4 layouts at smaller widths rather than a carousel.
 - Mobile History keeps disclosure and action controls touch-safe while retaining the dense metric treatment used by active Schedule rows.
 
 ## Expiration-month chart and outcome bar

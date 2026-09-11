@@ -71,7 +71,7 @@ function expirationTimestamp(value: string): number | null {
 }
 
 export function getPortfolioPositionHealthLevel(trade: PortfolioTrade): PortfolioPositionHealthLevel {
-  const underlying = finite(trade.latestMarketData?.underlyingPrice ?? trade.entrySnapshot?.underlyingPrice);
+  const underlying = finite(trade.latestMarketData?.underlyingPrice);
   const strike = finite(trade.strike);
   const breakeven = calculateBreakeven(trade);
   const distanceToStrike = calculateDistanceToStrike(trade);
@@ -117,7 +117,7 @@ export function getPortfolioScheduleSortValue(
     case 'percentCaptured': return finite(calculatePercentCaptured(trade, markBasis));
     case 'delta': return finite(trade.latestMarketData?.delta);
     case 'breakeven': return finite(calculateBreakeven(trade));
-    case 'underlying': return finite(trade.latestMarketData?.underlyingPrice ?? trade.entrySnapshot?.underlyingPrice);
+    case 'underlying': return finite(trade.latestMarketData?.underlyingPrice);
     case 'distanceToStrike': return finite(calculateDistanceToStrike(trade));
     case 'iv': return finite(trade.latestMarketData?.iv);
     case 'entryVix': return finite(trade.entryVixClose);

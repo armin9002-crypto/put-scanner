@@ -112,7 +112,7 @@ async function assertRenderedPortfolioDensity(page: Page, desktop: boolean) {
 async function assertRenderedHistoryDensity(page: Page) {
   const cards = page.locator('.portfolio-history-summary-grid > *:visible');
   await expect(cards).toHaveCount(8);
-  await expect(cards.locator('.portfolio-summary-card__label')).toHaveText(['Realized P&L', 'Total Realized IRR', 'Blended Capture', 'Total Historical Notional', 'Resolved Trades', 'Avg. Days Held', 'Wtd. Avg. Entry Delta', 'Wtd. Avg. Entry IV']);
+  await expect(cards.locator('.portfolio-summary-card__label')).toHaveText(['Realized P&L', 'Total Realized AY', 'Blended Capture', 'Total Historical Notional', 'Resolved Trades', 'Avg. Days Held', 'Wtd. Avg. Entry Delta', 'Wtd. Avg. Entry IV']);
   const heights = await cards.evaluateAll(elements => elements.map(element => element.getBoundingClientRect().height));
   expect(Math.max(...heights) - Math.min(...heights)).toBeLessThan(1);
   await expect(page.getByText('Realized P&L by Expiration Month', { exact: true })).toBeVisible();
@@ -332,7 +332,7 @@ test.describe('UI-3 portfolio and watchlist visual matrix', () => {
         await entryDeltaToggle.uncheck();
       }
       const history = page.getByRole('button', { name: /History/ }).first();
-      if (await history.count()) { await history.click(); await page.getByText('History', { exact: true }).last().scrollIntoViewIfNeeded(); await capture(page, testInfo, 'portfolio-mobile-history-collapsed'); const expandAll = page.getByRole('button', { name: 'Expand All' }).last(); if (await expandAll.count()) await expandAll.click(); await expect(page.locator('.portfolio-history-mobile-row:visible')).toHaveCount(4); await expect(page.locator('.portfolio-history-mobile-row__summary').first()).toContainText('Realized P&L'); await expect(page.locator('.portfolio-history-mobile-row__summary').first()).toContainText('Realized IRR'); await page.locator('.portfolio-history-mobile-row__summary').first().click(); await expect(page.locator('.portfolio-history-mobile-row__details:visible').first()).toBeVisible(); }
+      if (await history.count()) { await history.click(); await page.getByText('History', { exact: true }).last().scrollIntoViewIfNeeded(); await capture(page, testInfo, 'portfolio-mobile-history-collapsed'); const expandAll = page.getByRole('button', { name: 'Expand All' }).last(); if (await expandAll.count()) await expandAll.click(); await expect(page.locator('.portfolio-history-mobile-row:visible')).toHaveCount(4); await expect(page.locator('.portfolio-history-mobile-row__summary').first()).toContainText('Realized P&L'); await expect(page.locator('.portfolio-history-mobile-row__summary').first()).toContainText('Realized AY'); await page.locator('.portfolio-history-mobile-row__summary').first().click(); await expect(page.locator('.portfolio-history-mobile-row__details:visible').first()).toBeVisible(); }
       if (await history.count()) { await measurePortfolio(page, testInfo, 'portfolio-history'); await assertRenderedHistoryDensity(page); await captureRollingAnalyticsStates(page, testInfo); }
     } else if (project === 'landscape-844x390' || project === 'landscape-667x375') {
       await openWatchlist(page); await capture(page, testInfo, 'watchlist-landscape');

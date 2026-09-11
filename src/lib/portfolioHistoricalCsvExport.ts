@@ -69,7 +69,7 @@ export const PORTFOLIO_HISTORICAL_CSV_COLUMNS = [
   'Realized P&L',
   'Percent Captured',
   'Days Held',
-  'Realized IRR',
+  'Realized AY',
   'Current Underlying Price',
   'Current DTE',
   'Current Option Bid',

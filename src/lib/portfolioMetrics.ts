@@ -1,6 +1,7 @@
 import { resolvePortfolioMark } from './portfolioValuation.ts';
 import { calculateAnnualizedYield, calculateDte, calculateNominalYield, isFiniteNumber } from './optionMetrics.ts';
 import type { PortfolioTrade } from './portfolioStorage';
+import { isPortfolioQuoteDecisionEligible } from './portfolioQuoteFreshness.ts';
 
 export type MarkBasis = 'ask' | 'mid' | 'bid' | 'last';
 
@@ -34,6 +35,13 @@ export interface PortfolioMarkSummaryMetrics {
   portfolioCurrentAnnualizedYield: number | null;
   weightedAverageDelta: number | null;
   totalDeltaExposure: number | null;
+}
+
+export interface PortfolioCurrentAyCoverage {
+  eligibleCount: number;
+  totalCount: number;
+  eligibleGrossRisk: number;
+  totalGrossRisk: number;
 }
 
 function derivedPositionMetric(trade: PortfolioTrade, field: 'originalDte' | 'originalAnnualizedYield'): number | null | undefined {
@@ -96,6 +104,13 @@ export function calculateOriginalDte(trade: PortfolioTrade): number | null {
 export function calculateRemainingDte(trade: PortfolioTrade): number | null {
   const value = calculateDte(trade.expiration);
   return value == null ? null : Math.max(0, value);
+}
+
+export function calculateGrossRiskWeightedRemainingDte(trades: PortfolioTrade[]): number | null {
+  return weightedAverage(trades.filter(isOpenTrade).map(trade => ({
+    value: calculateRemainingDte(trade),
+    weight: calculateEquityAtRisk(trade),
+  })));
 }
 
 export function calculateOriginalAnnualizedYield(trade: PortfolioTrade): number | null {
@@ -197,17 +212,32 @@ export function calculateRemainingAnnualizedYieldToExpiry(trade: PortfolioTrade,
   return ratio == null ? null : ratio * (365 / remainingDte);
 }
 
-export function calculateWeightedAverageDelta(trades: PortfolioTrade[]): number | null {
+export function isCurrentPortfolioDeltaEligible(trade: PortfolioTrade, now = new Date()): boolean {
+  return isFiniteNumber(trade.latestMarketData?.delta) && isPortfolioQuoteDecisionEligible(trade, now);
+}
+
+export function calculatePortfolioCurrentAyCoverage(trades: PortfolioTrade[], basis: MarkBasis): PortfolioCurrentAyCoverage {
+  const openTrades = trades.filter(isOpenTrade);
+  const eligibleTrades = openTrades.filter(trade => calculateCurrentAnnualizedYield(trade, basis) != null && (calculateEquityAtRisk(trade) ?? 0) > 0);
+  return {
+    eligibleCount: eligibleTrades.length,
+    totalCount: openTrades.length,
+    eligibleGrossRisk: sum(eligibleTrades.map(calculateEquityAtRisk)),
+    totalGrossRisk: sum(openTrades.map(calculateEquityAtRisk)),
+  };
+}
+
+export function calculateWeightedAverageDelta(trades: PortfolioTrade[], now = new Date()): number | null {
   return weightedAverage(
-    trades.filter(isOpenTrade).map(trade => ({
-      value: isFiniteNumber(trade.latestMarketData?.delta) ? trade.latestMarketData.delta : null,
+    trades.filter(trade => isOpenTrade(trade) && isCurrentPortfolioDeltaEligible(trade, now)).map(trade => ({
+      value: trade.latestMarketData?.delta ?? null,
       weight: calculateEquityAtRisk(trade),
     }))
   );
 }
 
-export function calculateTotalDeltaExposure(trades: PortfolioTrade[]): number | null {
-  const values = trades.filter(isOpenTrade).map(trade => {
+export function calculateTotalDeltaExposure(trades: PortfolioTrade[], now = new Date()): number | null {
+  const values = trades.filter(trade => isOpenTrade(trade) && isCurrentPortfolioDeltaEligible(trade, now)).map(trade => {
     const delta = trade.latestMarketData?.delta;
     const contracts = validContracts(trade);
     return isFiniteNumber(delta) && contracts != null ? delta * 100 * contracts : null;
@@ -216,13 +246,13 @@ export function calculateTotalDeltaExposure(trades: PortfolioTrade[]): number | 
 }
 
 export function calculateDistanceToStrike(trade: PortfolioTrade): number | null {
-  const underlying = positive(trade.latestMarketData?.underlyingPrice ?? trade.entrySnapshot?.underlyingPrice);
+  const underlying = positive(trade.latestMarketData?.underlyingPrice);
   const strike = positive(trade.strike);
   return underlying != null && strike != null ? (underlying - strike) / underlying : null;
 }
 
 export function calculateDistanceToBreakeven(trade: PortfolioTrade): number | null {
-  const underlying = positive(trade.latestMarketData?.underlyingPrice ?? trade.entrySnapshot?.underlyingPrice);
+  const underlying = positive(trade.latestMarketData?.underlyingPrice);
   const breakeven = calculateBreakeven(trade);
   return underlying != null && breakeven != null ? (underlying - breakeven) / underlying : null;
 }
@@ -279,12 +309,7 @@ export function calculatePortfolioSummary(trades: PortfolioTrade[]): PortfolioSu
         weight: calculateNetCapitalAtRisk(trade),
       }))
     ),
-    weightedAverageRemainingDte: weightedAverage(
-      openTrades.map(trade => ({
-        value: calculateRemainingDte(trade),
-        weight: calculateNetCapitalAtRisk(trade),
-      }))
-    ),
+    weightedAverageRemainingDte: calculateGrossRiskWeightedRemainingDte(openTrades),
     totalOpenTrades: openTrades.length,
     totalClosedTrades: closedTrades.length,
     realizedPnl,
@@ -310,7 +335,7 @@ export function calculatePortfolioMarkSummary(trades: PortfolioTrade[], basis: M
       weight: calculateEquityAtRisk(trade),
     }))),
     portfolioCurrentNominalYield: safeRatio(totalCurrentPremium, totalGrossRisk),
-    portfolioCurrentAnnualizedYield: totalCurrentPremium == null ? null : weightedAverage(openTrades.map(trade => ({
+    portfolioCurrentAnnualizedYield: weightedAverage(openTrades.map(trade => ({
       value: calculateCurrentAnnualizedYield(trade, basis),
       weight: calculateEquityAtRisk(trade),
     }))),

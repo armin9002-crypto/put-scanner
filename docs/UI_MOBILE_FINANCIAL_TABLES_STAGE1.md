@@ -7,7 +7,7 @@ This pass keeps the financial workstation model intact while giving phone portra
 - Option Chain is a six-column table: Strike, Last Trade, OTM/ITM, AY Last, AY Bid, and AY Ask. Values remain canonical; the existing Option Detail Drawer contains Greeks, IV, OI, volume, nominal yield, and other secondary fields.
 - Watchlist stars are independent controls and do not trigger row selection. A deliberate row tap opens the existing drawer.
 - Active Portfolio positions are compact disclosure rows with Ticker, Expiry/DTE, Strike, Gain/Loss, % Captured, and a chevron. Mark, paired Delta/IV, distance, entry context, Open details, and Edit remain in the expanded row.
-- History uses the same compact disclosure pattern with Ticker, Exp., Strike, Realized P&L, and Realized IRR as the primary row. History groups start collapsed and expand through their existing group controls.
+- History uses the same compact disclosure pattern with Ticker, Exp., Strike, Realized P&L, and Realized AY as the primary row. History groups start collapsed and expand through their existing group controls.
 - Fresh and Aging quote states are silent in normal rows. Stale and Unavailable states remain visibly called out; thresholds and decision gating are unchanged.
 
 The portrait Option Chain keeps its real six-column header (`Strike`, `Last Trade`, `OTM/ITM`, `AY Last`, `AY Bid`, `AY Ask`) sticky while the route-owned chain scrolls. The sticky offset is measured from the live mobile ticker header, so expiration controls, safe-area padding, and rerenders do not require duplicated widths or a floating fake header. The header uses an opaque inset surface and a quiet divider; the shared grid definition keeps it aligned with body rows.

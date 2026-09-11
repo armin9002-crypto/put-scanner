@@ -48,7 +48,7 @@ References: [Yahoo adjusted-close definition](https://help.yahoo.com/kb/SLN28256
 
 ### Manual worthless confirmation
 
-Automatic resolution and user attestation use intentionally different trust models. The automatic resolver still requires a trustworthy, corporate-action-safe underlying close. For an already-pending held-to-expiration put whose expiration has passed, **Confirm Expired Worthless** lets the user attest to the known outcome after a confirmation prompt. The durable record uses the canonical `expired_worthless` lifecycle, stores `manual_worthless_confirmation` provenance, sets final option value to zero, resolves on the expiration date, and derives realized P&L, percent captured, days held, and realized IRR through the existing canonical helpers.
+Automatic resolution and user attestation use intentionally different trust models. The automatic resolver still requires a trustworthy, corporate-action-safe underlying close. For an already-pending held-to-expiration put whose expiration has passed, **Confirm Expired Worthless** lets the user attest to the known outcome after a confirmation prompt. The durable record uses the canonical `expired_worthless` lifecycle, stores `manual_worthless_confirmation` provenance, sets final option value to zero, resolves on the expiration date, and derives realized P&L, percent captured, days held, and Realized AY through the existing canonical helpers.
 
 The attestation proves zero option intrinsic value, not the exact underlying close. `expirationClosePrice` and Price @ Exp. therefore remain unavailable; no strike-derived, current, or other synthetic price is stored. The action makes no provider request and does not retry Yahoo. Retry Resolve remains the separate provider path.
 
@@ -79,7 +79,7 @@ Contract-identity edits clear automatically captured contract Delta and entry/ma
 
 A broker's exact aggregate Premium can differ by a cent from a rounded per-share Sold Price. Entering the more precise net Sold Price is the supported reconciliation path; there is no second Premium override.
 
-The form previews Premium, Gross Risk, Net Risk, Breakeven, Original DTE, Entry NY, and Entry AY. Historical records also preview Price @ Exp., final option value, realized P&L, and realized IRR when those values are already resolved or directly known.
+The form previews Premium, Gross Risk, Net Risk, Breakeven, Original DTE, Entry NY, and Entry AY. Historical records also preview Price @ Exp., final option value, realized P&L, and Realized AY when those values are already resolved or directly known.
 
 ## Pending resolution and requests
 

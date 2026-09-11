@@ -38,7 +38,7 @@ const expectedColumns = [
   'Resolution Warning', 'Notes', 'Original DTE', 'Entry Delta Source', 'Entry Delta Captured At', 'Entry IV Source',
   'Entry IV Captured At', 'Entry VIX', 'Entry VIX Date', 'Entry VIX Source', 'Notional', 'Premium Collected',
   'Entry Nominal Yield', 'Entry Annualized Yield', 'Breakeven at Entry', 'Net Capital at Risk', 'Final Option Value',
-  'Realized P&L', 'Percent Captured', 'Days Held', 'Realized IRR', 'Current Underlying Price', 'Current DTE',
+  'Realized P&L', 'Percent Captured', 'Days Held', 'Realized AY', 'Current Underlying Price', 'Current DTE',
   'Current Option Bid', 'Current Option Mid', 'Current Option Ask', 'Current Option Last', 'Last Trade Date',
   'Current Delta', 'Current IV', 'Volume', 'Open Interest', 'Current Mark Basis', 'Current Option Mark',
   'Current Position Value', 'Current Gain / Loss', 'Current Percent Captured', 'Current Nominal Yield',
@@ -191,8 +191,8 @@ test('historical CSV reuses canonical entry, realized, and selected-mark calcula
   assert.equal(expired[column('Realized P&L')], historyRealizedPnl(lots[2]));
   assert.equal(expired[column('Percent Captured')], historyPercentCaptured(lots[2]) * 100);
   assert.equal(expired[column('Days Held')], historyDaysHeld(lots[2]));
-  assert.equal(expired[column('Realized IRR')], historyRealizedIrr(lots[2]) * 100);
-  assert.equal(closed[column('Realized IRR')], historyRealizedIrr(lots[3]) * 100);
+  assert.equal(expired[column('Realized AY')], historyRealizedIrr(lots[2]) * 100);
+  assert.equal(closed[column('Realized AY')], historyRealizedIrr(lots[3]) * 100);
   assert.equal(output.rows[1][column('Current Option Bid')], null, 'missing quotes remain blank, not zero');
   assert.equal(output.rows[1][column('Distance to Strike')], null, 'entry-snapshot fallback does not leak into current-only export fields');
   assert.equal(output.rows[1][column('Distance to Breakeven')], null, 'entry-snapshot fallback does not leak into current-only export fields');

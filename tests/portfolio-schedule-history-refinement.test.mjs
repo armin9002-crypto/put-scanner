@@ -64,7 +64,7 @@ test('History renders canonical Gross Risk and aligned aggregate fields with bul
   assert.match(source, /toggleAllHistoryGroups/);
   assert.match(source, /allHistoryGroupsCollapsed \? 'Expand All' : 'Collapse All'/);
   assert.match(source, /groupMode !== 'none' && visibleGroups.length > 0/);
-  assert.match(source, /Gross-Risk-weighted average of individual position Realized IRRs\./);
+  assert.match(source, /Gross-Risk-weighted average of individual position Realized AY values\./);
   assert.match(source, /formatAverageDays\(group\.weightedAverageDaysHeld\)/);
   assert.match(source, /formatCurrency\(historyGrossRisk\(trade\), 0\)/);
   assert.match(source, /group\.entryIvCoverage/);
@@ -95,7 +95,7 @@ test('History defaults grouped views collapsed and keeps the requested headline 
   assert.match(source, /collapsedHistoryGroups\[historyGroupKey\(group\)\] \?\? true/);
   assert.match(source, /const isHistoryGroupCollapsed/);
   const cards = source.slice(source.indexOf('portfolio-history-summary-grid'), source.indexOf('portfolio-history-summary-grid') + 3000);
-  const labels = ['Realized P&L', 'Total Realized IRR', 'Blended Capture', 'Total Historical Notional', 'Resolved Trades', 'Avg. Days Held', 'Wtd. Avg. Entry Delta', 'Wtd. Avg. Entry IV'];
+  const labels = ['Realized P&L', 'Total Realized AY', 'Blended Capture', 'Total Historical Notional', 'Resolved Trades', 'Avg. Days Held', 'Wtd. Avg. Entry Delta', 'Wtd. Avg. Entry IV'];
   let previous = -1;
   for (const label of labels) {
     const next = cards.indexOf(`label="${label}"`);

@@ -91,8 +91,10 @@ test('contract positions render once and expose only lot-scoped mutations', asyn
     await expect(page.getByText('2 positions', { exact: true }).first()).toBeVisible();
     await expect(page.locator('.mobile-position-row:visible').filter({ hasText: 'TQQQ' })).toHaveCount(1);
   } else {
-    const openPositionsCard = page.locator('.portfolio-summary-card:visible').filter({ hasText: 'Open Positions' });
-    await expect(openPositionsCard).toContainText('2');
+    const headlineCards = page.locator('.portfolio-summary-grid:visible .portfolio-summary-card');
+    await expect(headlineCards).toHaveCount(8);
+    await expect(headlineCards.filter({ hasText: 'Open Positions' })).toHaveCount(0);
+    await expect(headlineCards.filter({ hasText: 'Net Risk' })).toHaveCount(0);
     await expect(page.locator('[data-trade-ticker="TQQQ"]:visible')).toHaveCount(1);
     const singleLotPosition = page.locator('[data-trade-ticker="SOXL"]:visible').first();
     await expect(singleLotPosition.locator('button[title="Delete"]')).toHaveCount(1);

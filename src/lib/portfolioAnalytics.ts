@@ -10,6 +10,7 @@ import {
   calculateDistanceToBreakeven,
   calculateDistanceToStrike,
   calculateEquityAtRisk,
+  calculateGrossRiskWeightedRemainingDte,
   calculateNetCapitalAtRisk,
   calculateOriginalAnnualizedYield,
   calculateOriginalNominalYield,
@@ -17,6 +18,8 @@ import {
   calculatePremiumCollected,
   calculateRemainingDte,
   calculateTotalGainLoss,
+  calculateWeightedAverageDelta,
+  isCurrentPortfolioDeltaEligible,
   isOpenTrade,
   type MarkBasis,
 } from './portfolioMetrics.ts';
@@ -181,14 +184,14 @@ export function getTradeCurrentAY(trade: PortfolioTrade, markBasis: MarkBasis): 
 
 export function getTradeDeltaExposure(trade: PortfolioTrade): number | null {
   const delta = trade.latestMarketData?.delta;
-  return isFiniteNumber(delta) && validContracts(trade) != null ? delta * 100 * trade.contracts : null;
+  return isCurrentPortfolioDeltaEligible(trade) && validContracts(trade) != null ? delta! * 100 * trade.contracts : null;
 }
 
 export function getTradeUnderlyingEquivalentExposure(trade: PortfolioTrade): number | null {
   const delta = trade.latestMarketData?.delta;
   const underlying = getUnderlyingPrice(trade);
-  return isFiniteNumber(delta) && underlying != null && validContracts(trade) != null
-    ? Math.abs(delta) * underlying * 100 * trade.contracts
+  return isCurrentPortfolioDeltaEligible(trade) && underlying != null && validContracts(trade) != null
+    ? Math.abs(delta!) * underlying * 100 * trade.contracts
     : null;
 }
 
@@ -216,8 +219,6 @@ export function getPortfolioCurrentNY(trades: PortfolioTrade[], markBasis: MarkB
 
 export function getPortfolioCurrentAY(trades: PortfolioTrade[], markBasis: MarkBasis): number | null {
   const open = openTrades(trades);
-  const currentPremium = completeSum(open.map(trade => calculateCurrentMarkValueAbsolute(trade, markBasis)));
-  if (currentPremium == null) return null;
   return weightedAverage(open.map(trade => ({
     value: getTradeCurrentAY(trade, markBasis),
     weight: getTradeGrossRisk(trade),
@@ -225,10 +226,7 @@ export function getPortfolioCurrentAY(trades: PortfolioTrade[], markBasis: MarkB
 }
 
 export function getWeightedAverageDelta(trades: PortfolioTrade[]): number | null {
-  return weightedAverage(openTrades(trades).map(trade => ({
-    value: trade.latestMarketData?.delta,
-    weight: getTradeGrossRisk(trade),
-  })));
+  return calculateWeightedAverageDelta(openTrades(trades));
 }
 
 export function getTotalDeltaExposure(trades: PortfolioTrade[]): number | null {
@@ -387,12 +385,12 @@ function buildTotals(trades: PortfolioTrade[], markBasis: MarkBasis): PortfolioT
     currentMarkValue,
     deltaExposure: nullableSum(trades.map(getTradeDeltaExposure)),
     underlyingEquivalentExposure: nullableSum(trades.map(getTradeUnderlyingEquivalentExposure)),
-    weightedAverageDelta: weightedAverage(trades.map(trade => ({ value: trade.latestMarketData?.delta, weight: getTradeGrossRisk(trade) }))),
+    weightedAverageDelta: calculateWeightedAverageDelta(trades),
     originalNY: getPortfolioOriginalNY(trades),
     originalAY: getPortfolioOriginalAY(trades),
     currentNY: getPortfolioCurrentNY(trades, markBasis),
     currentAY: getPortfolioCurrentAY(trades, markBasis),
-    averageDte: weightedAverage(trades.map(trade => ({ value: getRemainingDte(trade), weight: getTradeNetCapitalAtRisk(trade) }))),
+    averageDte: calculateGrossRiskWeightedRemainingDte(trades),
   };
 }
 
@@ -450,7 +448,7 @@ function openTrades(trades: PortfolioTrade[]): PortfolioTrade[] {
 }
 
 function getUnderlyingPrice(trade: PortfolioTrade): number | null {
-  return positive(trade.latestMarketData?.underlyingPrice ?? trade.entrySnapshot?.underlyingPrice);
+  return positive(trade.latestMarketData?.underlyingPrice);
 }
 
 function getRemainingDte(trade: PortfolioTrade): number | null {

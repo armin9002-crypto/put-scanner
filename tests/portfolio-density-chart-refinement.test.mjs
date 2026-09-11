@@ -12,10 +12,12 @@ test('Portfolio density uses compact card tokens without changing headline compo
     read('src/pages/PortfolioPage.tsx'),
     read('src/index.css'),
   ]);
-  assert.match(source, /className="portfolio-summary-grid hidden grid-cols-2 md:grid md:grid-cols-5 2xl:grid-cols-10 gap-1\.5 mb-3"/);
-  for (const label of ['Open Positions', 'Premium', 'Gross Risk', 'Net Risk', 'Gain/Loss', '% Captured', 'Entry Wtd. Avg. AY', 'Current Wtd. Avg. AY', 'Weighted Avg Delta', 'Weighted Avg DTE']) {
+  assert.match(source, /className="portfolio-summary-grid hidden grid-cols-2 md:grid md:grid-cols-4 2xl:grid-cols-8 gap-1\.5 mb-3"/);
+  for (const label of ['Premium', 'Gross Risk', 'Gain/Loss', '% Captured', 'Entry Wtd. Avg. AY', 'Current Wtd. Avg. AY', 'Weighted Avg Delta', 'Weighted Avg DTE']) {
     assert.match(source, new RegExp(`label="${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`));
   }
+  const headline = source.slice(source.indexOf('portfolio-summary-grid'), source.indexOf('portfolio-summary-grid') + 3000);
+  assert.doesNotMatch(headline, /label="Open Positions"|label="Net Risk"/);
   assert.match(styles, /\.portfolio-summary-grid > \* \{[\s\S]*min-height: 54px/);
   assert.match(styles, /\.portfolio-summary-card \{[\s\S]*padding-block: 0\.25rem !important/);
   assert.match(styles, /\.portfolio-history-summary-grid > \* \{[\s\S]*min-height: 52px/);

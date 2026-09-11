@@ -53,7 +53,7 @@ export const HISTORY_SORT_OPTIONS: Array<{ value: HistorySortField; label: strin
   { value: 'priceAtExpiration', label: 'Underlying @ Resolution' },
   { value: 'premium', label: 'Premium' },
   { value: 'realizedPnl', label: 'Realized P&L' },
-  { value: 'realizedIrr', label: 'Realized IRR' },
+  { value: 'realizedIrr', label: 'Realized AY' },
   { value: 'percentCaptured', label: '% Captured' },
   { value: 'entryDelta', label: 'Entry Delta' },
   { value: 'outcome', label: 'Outcome' },

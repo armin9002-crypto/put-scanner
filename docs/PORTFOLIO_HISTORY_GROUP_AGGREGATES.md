@@ -23,7 +23,7 @@ Implementation date: 2026-08-30
 | Wtd. Avg. VIX @ Entry | Gross Risk | `sum(stored entry VIX × Gross Risk) / sum(known-VIX Gross Risk)`. Only durable `entryVixClose` participates. |
 | Wtd. Avg. Entry Delta | Gross Risk | Reuses the established historical Entry Delta helper: `sum(signed Entry Delta × Gross Risk) / sum(known-Delta Gross Risk)`. A valid zero participates. |
 | Wtd. Avg. Entry IV | Gross Risk | `sum(Entry IV × Gross Risk) / sum(known-IV Gross Risk)`. IV is stored in percentage points; only finite values greater than zero participate. |
-| Wtd. Avg. Realized IRR | Gross Risk | `sum(position Realized IRR × Gross Risk) / sum(known-IRR Gross Risk)`. This is an exposure-weighted average of individual position IRRs. It is not Total Realized IRR, group XIRR, or a combined money-weighted return. |
+| Wtd. Avg. Realized AY | Gross Risk | `sum(position Realized AY × Gross Risk) / sum(known-Realized AY Gross Risk)`. This is an exposure-weighted average of individual position Realized AY values. |
 | Wtd. Avg. % Captured | Premium | `sum(position % Captured × Premium) / sum(known-capture Premium)`. Because canonical `% Captured = realized P&L / Premium`, complete applicable rows reconcile to `aggregate realized P&L / aggregate Premium`. Negative results and values above 100% remain valid and are not clamped. |
 
 ## Missing values and coverage
@@ -48,4 +48,4 @@ The model does not total or average Strike, Sold Price, Entry Date, Expiration D
 
 ## Request and persistence boundaries
 
-All inputs are durable History fields and existing local financial helpers. Building, switching, expanding, or collapsing groups causes zero browser requests, zero Vercel invocations, zero provider acquisitions, and zero Supabase writes. The helper does not mutate Portfolio records or change the durable schema, cloud authority, lifecycle states, position-level formulas, or Total Realized IRR.
+All inputs are durable History fields and existing local financial helpers. Building, switching, expanding, or collapsing groups causes zero browser requests, zero Vercel invocations, zero provider acquisitions, and zero Supabase writes. The helper does not mutate Portfolio records or change the durable schema, cloud authority, lifecycle states, position-level formulas, or Total Realized AY.

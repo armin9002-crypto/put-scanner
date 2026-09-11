@@ -115,6 +115,7 @@ function estimateOptionRequests(tickerCount, minDte, maxExpirationsPerTicker) {
 }
 
 const SNAPSHOT_NOW = new Date('2026-06-08T15:00:00Z');
+const CURRENT_SCHEDULE_QUOTE = new Date().toISOString();
 
 function unixDate(isoDate) {
   return Math.floor(Date.parse(`${isoDate}T00:00:00Z`) / 1000);
@@ -239,17 +240,17 @@ const scheduleTrades = [
   {
     id: 'schedule-a', ticker: 'AAA', optionType: 'put', strike: 50, expiration: '2099-01-15', contracts: 2,
     soldPrice: 2, soldDate: '2098-11-15', status: 'open', notes: '', createdAt: SNAPSHOT_NOW.toISOString(), updatedAt: SNAPSHOT_NOW.toISOString(),
-    latestMarketData: { optionBid: 0.8, optionAsk: 1, optionLast: 0.9, delta: -0.2 },
+    latestMarketData: { optionBid: 0.8, optionAsk: 1, optionLast: 0.9, delta: -0.2, refreshedAt: CURRENT_SCHEDULE_QUOTE, availabilityStatus: 'live' },
   },
   {
     id: 'schedule-b', ticker: 'BBB', optionType: 'put', strike: 40, expiration: '2099-01-15', contracts: 1,
     soldPrice: 1, soldDate: '2098-12-01', status: 'open', notes: '', createdAt: SNAPSHOT_NOW.toISOString(), updatedAt: SNAPSHOT_NOW.toISOString(),
-    latestMarketData: { optionBid: 0.4, optionAsk: 0.5, optionLast: 0.45, delta: -0.4 },
+    latestMarketData: { optionBid: 0.4, optionAsk: 0.5, optionLast: 0.45, delta: -0.4, refreshedAt: CURRENT_SCHEDULE_QUOTE, availabilityStatus: 'live' },
   },
   {
     id: 'schedule-c', ticker: 'CCC', optionType: 'put', strike: 30, expiration: '2099-02-19', contracts: 3,
     soldPrice: 1.5, soldDate: '2098-12-15', status: 'open', notes: '', createdAt: SNAPSHOT_NOW.toISOString(), updatedAt: SNAPSHOT_NOW.toISOString(),
-    latestMarketData: { optionBid: 0.6, optionAsk: 0.75, optionLast: 0.7, delta: -0.1 },
+    latestMarketData: { optionBid: 0.6, optionAsk: 0.75, optionLast: 0.7, delta: -0.1, refreshedAt: CURRENT_SCHEDULE_QUOTE, availabilityStatus: 'live' },
   },
   {
     id: 'schedule-archived', ticker: 'OLD', optionType: 'put', strike: 20, expiration: '2099-01-15', contracts: 9,

@@ -30,22 +30,17 @@ The states are genuinely different and remain separate, including their History 
 
 An Expired ITM trade can have expiration payoff and realized option P&L. An Assigned record participates in realized-return analytics only when its durable record contains complete realized P&L economics; assignment share lots and later stock disposition are not modeled.
 
-## Total Realized IRR
+## Total Realized AY
 
-Total Realized IRR is a combined, date-aware, money-weighted XIRR. It is not an average of position IRRs.
-
-For every History trade with known realized P&L, the established cash-secured convention produces two cash flows:
+Total Realized AY is the Gross-Risk-weighted average of valid per-position Realized AY values. Each position keeps the established simple annualization formula:
 
 ```text
-entry date:      -original Net Risk
-resolution date: +original Net Risk + realized P&L
+(realized P&L / Gross Risk) × 365 / actual Days Held
 ```
 
-This is economically equivalent to posting Gross Risk while receiving Premium at entry, then receiving the released collateral net of close cost or expiration payoff at resolution. Cash flows on the same date are aggregated across all positions. XIRR solves the combined NPV using actual dates and a 365.25-day year.
+Pending records and records without known realized economics are excluded. Invalid/non-positive capital or non-positive Days Held produce unavailable for that position; the total is unavailable when no valid Gross Risk denominator remains. This is not a cash-flow IRR or XIRR.
 
-Pending records and Assigned records without known realized economics are excluded. Invalid/non-positive capital, malformed or reversed dates, same-day-only flows, no History, no positive/negative flow pair, no real root in the supported domain, or multiple real roots produce unavailable. The solver never substitutes a weighted average of individual IRRs.
-
-Per-position Realized IRR remains available with its existing formula. Average Days Held retains its current arithmetic and is displayed to one decimal place.
+Average Days Held retains its current arithmetic and is displayed to one decimal place.
 
 ## Entry Delta and notional summaries
 

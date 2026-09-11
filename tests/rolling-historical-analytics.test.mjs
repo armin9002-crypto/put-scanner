@@ -294,7 +294,8 @@ test('the calculation engine remains local, derived, raw-number-only, and free o
 
 test('Portfolio History uses one instrument-scoped population for rolling and state analytics', async () => {
   const portfolio = await readFile(path.join(root, 'src/pages/PortfolioPage.tsx'), 'utf8');
-  assert.match(portfolio, /const historyInstrumentScope = useMemo\(\(\) => buildHistoryInstrumentScope\(trades, onlyShowEtfs\)/);
+  assert.match(portfolio, /const historyInstrumentScope = useMemo\(\(\) => buildHistoryInstrumentScope\(allArchivedTrades, onlyShowEtfs\)/);
+  assert.match(portfolio, /const scopedHistoryTrades = useMemo\(\(\) => buildHistoryInstrumentScope\(trades, onlyShowEtfs\)\.trades/);
   assert.match(portfolio, /rollingTrades=\{scopedHistoryTrades\}/);
   assert.doesNotMatch(portfolio, /rollingTrades=\{trades\}/);
 

@@ -44,13 +44,13 @@ export interface RollingHistoricalMetricConfig {
 export const ROLLING_HISTORICAL_METRIC_CONFIGS: readonly RollingHistoricalMetricConfig[] = Object.freeze([
   {
     key: 'realizedIrr',
-    label: 'Realized IRR',
+    label: 'Realized AY',
     eventDateBasis: 'realized',
     aggregation: 'gross_risk_weighted_average',
     formatterCategory: 'ratio_percent',
     tooltipMetadata: ['tradesIncluded', 'grossRiskRepresented'],
-    title: windowMonths => `${windowMonths}M Rolling Realized IRR`,
-    subtitle: windowMonths => `Gross-Risk-weighted IRR for trades realized during the trailing ${windowMonths} calendar months.`,
+    title: windowMonths => `${windowMonths}M Rolling Realized AY`,
+    subtitle: windowMonths => `Gross-Risk-weighted realized AY for trades realized during the trailing ${windowMonths} calendar months.`,
   },
   {
     key: 'entryAy',

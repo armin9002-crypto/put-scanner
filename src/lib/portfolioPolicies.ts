@@ -54,11 +54,39 @@ export interface PortfolioAttentionAssessment {
   score: number;
   freshness: PortfolioQuoteFreshnessState;
   needsFreshQuote: boolean;
+  reasonCodes: PortfolioAttentionReasonCode[];
+  reasons: string[];
 }
 
+export type PortfolioAttentionReasonCode =
+  | 'NEEDS_FRESH_QUOTE'
+  | 'CURRENT_BREAKEVEN_UNAVAILABLE'
+  | 'BELOW_BREAKEVEN'
+  | 'LOW_BREAKEVEN_CUSHION'
+  | 'NEAR_STRIKE'
+  | 'CURRENT_DELTA_EVIDENCE'
+  | 'ELEVATED_CURRENT_DELTA'
+  | 'EXPIRED_OR_ZERO_DTE'
+  | 'NEAR_MATURITY';
+
+export const PORTFOLIO_ATTENTION_REASON_LABELS: Readonly<Record<PortfolioAttentionReasonCode, string>> = Object.freeze({
+  NEEDS_FRESH_QUOTE: 'Needs fresh quote',
+  CURRENT_BREAKEVEN_UNAVAILABLE: 'Current breakeven unavailable',
+  BELOW_BREAKEVEN: 'Below breakeven',
+  LOW_BREAKEVEN_CUSHION: 'Low breakeven cushion',
+  NEAR_STRIKE: 'Near strike',
+  CURRENT_DELTA_EVIDENCE: 'Current Delta evidence',
+  ELEVATED_CURRENT_DELTA: 'Elevated current Delta',
+  EXPIRED_OR_ZERO_DTE: 'Expired or 0 DTE',
+  NEAR_MATURITY: 'Near maturity',
+});
+
 /** Ranking only: every supplied open trade remains eligible for the Top-N list. */
-export function buildNeedsAttention(trades: PortfolioTrade[]): PortfolioTrade[] {
-  return [...trades].sort((a, b) => getPortfolioAttentionScore(b) - getPortfolioAttentionScore(a));
+export function buildNeedsAttention(trades: PortfolioTrade[], now = new Date()): PortfolioTrade[] {
+  return trades
+    .map(trade => assessPortfolioAttention(trade, now))
+    .sort((a, b) => b.score - a.score || compareAttentionTrades(a.trade, b.trade))
+    .map(assessment => assessment.trade);
 }
 
 export function assessPortfolioAttention(trade: PortfolioTrade, now = new Date()): PortfolioAttentionAssessment {
@@ -69,40 +97,71 @@ export function assessPortfolioAttention(trade: PortfolioTrade, now = new Date()
   const dte = calculateRemainingDte(trade);
   const grossRisk = getTradeGrossRisk(trade) ?? 0;
   const delta = trade.latestMarketData?.delta;
+  const reasonCodes: PortfolioAttentionReasonCode[] = [];
   let score = 0;
 
   if (quoteEligible) {
-    if (!isFiniteNumber(distanceToBreakeven)) score += PORTFOLIO_ATTENTION_POLICY.missingBreakevenScore;
+    if (!isFiniteNumber(distanceToBreakeven)) {
+      score += PORTFOLIO_ATTENTION_POLICY.missingBreakevenScore;
+      reasonCodes.push('CURRENT_BREAKEVEN_UNAVAILABLE');
+    }
     else if (distanceToBreakeven < 0) {
       score += PORTFOLIO_ATTENTION_POLICY.belowBreakevenBaseScore
         + Math.min(PORTFOLIO_ATTENTION_POLICY.belowBreakevenMaxExtraScore, Math.abs(distanceToBreakeven) * 300);
+      reasonCodes.push('BELOW_BREAKEVEN');
     } else {
       score += Math.max(0, PORTFOLIO_ATTENTION_POLICY.distanceToBreakevenBaseScore - distanceToBreakeven * 800);
+      if (distanceToBreakeven < PORTFOLIO_ATTENTION_POLICY.distanceToBreakevenBaseScore / 800) reasonCodes.push('LOW_BREAKEVEN_CUSHION');
     }
 
     if (isFiniteNumber(distanceToStrike)) {
       score += distanceToStrike < 0
         ? PORTFOLIO_ATTENTION_POLICY.belowStrikeScore
         : Math.max(0, PORTFOLIO_ATTENTION_POLICY.distanceToStrikeBaseScore - distanceToStrike * 450);
+      if (distanceToStrike < PORTFOLIO_ATTENTION_POLICY.distanceToStrikeBaseScore / 450) reasonCodes.push('NEAR_STRIKE');
     }
-    if (isFiniteNumber(delta)) score += Math.min(PORTFOLIO_ATTENTION_POLICY.maxDeltaScore, Math.abs(delta) * 70);
+    if (isFiniteNumber(delta)) {
+      score += Math.min(PORTFOLIO_ATTENTION_POLICY.maxDeltaScore, Math.abs(delta) * 70);
+      reasonCodes.push(Math.abs(delta) > 0.20 ? 'ELEVATED_CURRENT_DELTA' : 'CURRENT_DELTA_EVIDENCE');
+    }
   } else {
     // Quote-dependent components are gated. The trade remains visible as a distinct
     // request for fresh market data instead of receiving a high-confidence risk score.
     score += PORTFOLIO_ATTENTION_POLICY.missingBreakevenScore;
+    reasonCodes.push('NEEDS_FRESH_QUOTE');
   }
   if (isFiniteNumber(dte)) {
     score += dte <= 0
       ? PORTFOLIO_ATTENTION_POLICY.expiredScore
       : Math.max(0, PORTFOLIO_ATTENTION_POLICY.dteBaseScore - dte);
+    if (dte <= 0) reasonCodes.push('EXPIRED_OR_ZERO_DTE');
+    else if (dte < PORTFOLIO_ATTENTION_POLICY.dteBaseScore) reasonCodes.push('NEAR_MATURITY');
   }
   score += Math.min(PORTFOLIO_ATTENTION_POLICY.maxGrossRiskScore, grossRisk / 10_000);
 
-  return { trade, score, freshness: freshness.state, needsFreshQuote: !quoteEligible };
+  return {
+    trade,
+    score,
+    freshness: freshness.state,
+    needsFreshQuote: !quoteEligible,
+    reasonCodes,
+    reasons: reasonCodes.map(code => PORTFOLIO_ATTENTION_REASON_LABELS[code]),
+  };
 }
 
 export function getPortfolioAttentionScore(trade: PortfolioTrade, now = new Date()): number {
   return assessPortfolioAttention(trade, now).score;
+}
+
+function compareAttentionTrades(left: PortfolioTrade, right: PortfolioTrade): number {
+  const leftStrike = Number.isFinite(left.strike) ? left.strike : Number.POSITIVE_INFINITY;
+  const rightStrike = Number.isFinite(right.strike) ? right.strike : Number.POSITIVE_INFINITY;
+  const strikeOrder = leftStrike < rightStrike ? -1 : leftStrike > rightStrike ? 1 : 0;
+
+  return left.ticker.trim().toUpperCase().localeCompare(right.ticker.trim().toUpperCase())
+    || left.expiration.localeCompare(right.expiration)
+    || strikeOrder
+    || left.id.localeCompare(right.id);
 }
 
 export function buildCloseCandidates(trades: PortfolioTrade[], basis: MarkBasis, now = new Date()): CloseCandidate[] {

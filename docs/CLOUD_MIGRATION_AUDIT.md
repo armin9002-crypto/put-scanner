@@ -53,7 +53,7 @@ Regenerable current market data that must not cloud-sync:
 
 - Entire `latestMarketData` object: `underlyingPrice`, option bid/ask/mid/last, `lastTradeDate`, IV, delta, volume, open interest, DTE, refresh time, and availability status.
 
-Realized IRR is not stored. `src/lib/portfolioHistoryAnalytics.ts` derives it from durable cash-flow and date fields. Assignment is represented by `status: "assigned"`; there is no separate assignment price/share-lot model today.
+Realized AY is not stored. `src/lib/portfolioHistoryAnalytics.ts` derives it from durable realized P&L and date fields. Assignment is represented by `status: "assigned"`; there is no separate assignment price/share-lot model today.
 
 ### Watchlist model: durable facts vs transient data
 

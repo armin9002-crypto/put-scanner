@@ -19,8 +19,8 @@ This section is the authoritative product contract. It supersedes the historical
 | Current AY | `Current NY × 365 / Remaining DTE` | Gross Risk. Remaining DTE is the canonical calendar-day interval; unavailable at `<= 0`. |
 | History NY | `net sold price per share / strike` | Entry NY for the resolved position, not realized return. |
 | Realized Nominal Return | `Realized P&L / Gross Risk` | Gross Risk. May be positive, zero, or negative. |
-| Realized IRR | `(Realized P&L / Gross Risk) × 365 / actual Days Held` | Put Scanner's date-aware simple annualized realized yield. It is not textbook compounded IRR or XIRR. |
-| Total Realized IRR | `sum(position Realized IRR × Gross Risk) / sum(Gross Risk)` for positions with valid Realized IRR | Gross-Risk-weighted average using the same semantics as grouped Wtd. Avg. Realized IRR. |
+| Realized AY | `(Realized P&L / Gross Risk) × 365 / actual Days Held` | Put Scanner's date-aware simple annualized realized yield. It is not a cash-flow IRR or XIRR. |
+| Total Realized AY | `sum(position Realized AY × Gross Risk) / sum(Gross Risk)` for positions with valid Realized AY | Gross-Risk-weighted average using the same semantics as grouped Wtd. Avg. Realized AY. |
 | Remaining AY to Maturity | `current buyback cost / (gross secured cash - current buyback cost) × 365 / remaining DTE` | Current net maximum-loss capital. Kept distinct because its denominator is intentionally different. |
 
 NY and AY use the same denominator on discovery, Portfolio, and History surfaces. Contracts cancel algebraically: `(price × 100 × contracts) / (strike × 100 × contracts) = price / strike`. Aggregate NY therefore reconciles to aggregate option value divided by aggregate Gross Risk. Entry/Current AY headlines and schedule aggregates are Gross-Risk-weighted averages of valid position-level AY values. Calculations retain full precision; display rounding is presentation-only. Internal persisted field names such as `originalAnnualizedYield` remain for schema compatibility.
@@ -35,7 +35,7 @@ NY and AY use the same denominator on discovery, Portfolio, and History surfaces
 - DTE is the listed expiration calendar date minus the current America/New_York market calendar date. It uses calendar days, so weekends and holidays count; expiration day is 0 DTE and the day after is negative.
 - Bid-Ask Spread is `ask - bid`. Spread % is `(ask - bid) / ((bid + ask) / 2)` and is unavailable when quotes are invalid or the midpoint is zero.
 - Premium Captured is open-position gain/loss divided by premium collected. It is mark-dependent and not clamped.
-- For Held to Expiration, Days Held ends on Expiration. For Closed/Bought Back, it ends on the actual Close Date. Assigned/resolved lifecycles use their canonical realized ending date. Realized IRR is unavailable when Days Held is `<= 0` or Gross Risk is invalid. A worthless expiration held for its full Original DTE has `Realized P&L = Premium`, so Realized IRR equals Entry AY.
+- For Held to Expiration, Days Held ends on Expiration. For Closed/Bought Back, it ends on the actual Close Date. Assigned/resolved lifecycles use their canonical realized ending date. Realized AY is unavailable when Days Held is `<= 0` or Gross Risk is invalid. A worthless expiration held for its full Original DTE has `Realized P&L = Premium`, so Realized AY equals Entry AY.
 
 Volume and Open Interest remain transparent primitives. Put Scanner does not create a proprietary liquidity score. A user can inspect Bid, Ask, spread, Spread %, Volume, Open Interest, and quote age where supported.
 
@@ -143,8 +143,8 @@ Primary implementation: `src/lib/optionMetrics.ts`, `src/lib/portfolioMetrics.ts
 | Distance to strike | `(underlying − strike) / underlying`. | Positive means OTM for a put. |
 | Distance to breakeven | `(underlying − (strike − soldPrice)) / underlying`. | Includes the original credit cushion. |
 | Realized P&L at expiry | `premium − max(strike − expirationClose, 0) × 100 × contracts`. | Automatic archive uses an expiration close or nearest prior close and records warnings/source. Corporate actions are not modeled. |
-| Realized IRR | `(1 + realizedPnl / originalNetRisk)^(365.25/daysHeld) − 1`. | Per History trade. Returns `null` for invalid periods/capital and should not be compared casually across tiny holding periods. |
-| Total Realized IRR | XIRR of combined `-originalNetRisk` entry flows and `originalNetRisk + realizedPnl` resolution flows on actual dates. | Money-weighted realized History return. Multiple/no-real roots and incomplete valid cash-flow sets return `null`; individual IRRs are never averaged. |
+| Realized AY | `(Realized P&L / Gross Risk) × 365 / actual Days Held`. | Per History trade, using simple annualization. Returns `null` for invalid periods/capital. |
+| Total Realized AY | `sum(position Realized AY × Gross Risk) / sum(Gross Risk)` for positions with valid Realized AY. | Gross-Risk-weighted realized History return; it is not a cash-flow IRR or XIRR. |
 | Wtd. Avg. Entry Delta | `sum(entryDelta × Gross Risk) / sum(known-Delta Gross Risk)`. | Signed historical Delta. Missing values are excluded; coverage is known-Delta Gross Risk divided by total historical Gross Risk. |
 | Total Historical Notional | `sum(Gross Risk)` across all History positions. | Cumulative gross secured risk processed; no premium or current-value adjustment. |
 

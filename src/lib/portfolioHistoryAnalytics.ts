@@ -62,6 +62,7 @@ export interface HistoryGroupAggregates {
   premium: number;
   weightedAverageDaysHeld: number | null;
   weightedAverageNy: number | null;
+  weightedAverageAy: number | null;
   weightedAverageEntryVix: number | null;
   entryVixCoverage: number | null;
   weightedAverageEntryDelta: number | null;
@@ -218,7 +219,7 @@ function aggregateCashFlows(cashFlows: HistoryCashFlow[]): HistoryCashFlow[] {
 
 /**
  * General date-aware money-weighted return utility. It does not back any
- * canonical visible History yield or Realized IRR metric.
+ * canonical visible History yield or Realized AY metric.
  * Multiple/no-real roots intentionally fail closed.
  */
 export function calculateXirr(cashFlows: HistoryCashFlow[]): number | null {
@@ -277,7 +278,7 @@ export function calculateXirr(cashFlows: HistoryCashFlow[]): number | null {
 
 /**
  * Legacy/general cash-flow helper retained for explicit XIRR analysis only.
- * It does not back any canonical visible History yield or Realized IRR metric.
+ * It does not back any canonical visible History yield or Realized AY metric.
  */
 export function buildHistoryRealizedCashFlows(trades: PortfolioTrade[]): HistoryCashFlow[] | null {
   const cashFlows: HistoryCashFlow[] = [];
@@ -375,6 +376,7 @@ export function buildHistoryGroupAggregates(trades: PortfolioTrade[]): HistoryGr
     realizedPnl: realizedPnlValues.length > 0 ? realizedPnlValues.reduce((sum, value) => sum + value, 0) : null,
     weightedAverageDaysHeld: calculateGrossRiskWeightedHistoryMetric(trades, historyDaysHeld).value,
     weightedAverageNy: calculateGrossRiskWeightedHistoryMetric(trades, historyEntryNominalYield).value,
+    weightedAverageAy: calculateGrossRiskWeightedHistoryMetric(trades, calculateOriginalAnnualizedYield).value,
     weightedAverageEntryVix: entryVix.value,
     entryVixCoverage: entryVix.coverage,
     weightedAverageEntryDelta: entryDelta.value,

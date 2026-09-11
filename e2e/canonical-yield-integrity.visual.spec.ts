@@ -24,7 +24,7 @@ const ownerExampleTrade = {
   updatedAt: '2026-08-30T12:00:00.000Z',
 };
 
-test('renders canonical History NY and Realized IRR for the owner example', async ({ page }, testInfo) => {
+test('renders canonical History NY and Realized AY for the owner example', async ({ page }, testInfo) => {
   test.skip(!enabled || testInfo.project.name !== 'desktop-1440x900', 'one deterministic canonical-yield display check');
   await installDeterministicCloudAccount(page, { portfolio: [ownerExampleTrade], watchlist: [] });
 
@@ -36,6 +36,6 @@ test('renders canonical History NY and Realized IRR for the owner example', asyn
   await expect(row).toContainText('2.44%');
   await expect(row).toContainText('29.74%');
 
-  const totalRealizedIrr = page.getByText('Total Realized IRR', { exact: true }).locator('..');
-  await expect(totalRealizedIrr).toContainText('29.74%');
+  const totalRealizedAy = page.getByText('Total Realized AY', { exact: true }).locator('..');
+  await expect(totalRealizedAy).toContainText('29.74%');
 });
