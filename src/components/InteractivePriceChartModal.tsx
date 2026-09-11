@@ -374,7 +374,7 @@ export default function InteractivePriceChartModal({
               type="button"
               onClick={() => loadChart(true)}
               disabled={loading}
-              className="inline-flex min-h-[40px] items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-opacity disabled:opacity-50"
+              className="pressable inline-flex min-h-[40px] items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium disabled:opacity-50"
               style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
             >
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -383,7 +383,7 @@ export default function InteractivePriceChartModal({
             <button
               type="button"
               onClick={onClose}
-              className="flex h-10 w-10 items-center justify-center rounded-lg transition-opacity hover:opacity-80"
+              className="pressable flex h-10 w-10 items-center justify-center rounded-lg hover:opacity-80"
               style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)' }}
               aria-label="Close chart"
             >
@@ -400,7 +400,7 @@ export default function InteractivePriceChartModal({
                   type="button"
                   key={option}
                   onClick={() => setTimeframe(option)}
-                  className="pressable min-h-[44px] flex-shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition-all sm:min-h-[40px]"
+                  className="chart-timeframe-control min-h-[44px] flex-shrink-0 rounded-lg px-3 py-2 text-xs font-semibold sm:min-h-[40px]"
                   style={{
                     backgroundColor: timeframe === option ? 'var(--accent)' : 'var(--surface-alt)',
                     color: timeframe === option ? 'white' : 'var(--text-muted)',

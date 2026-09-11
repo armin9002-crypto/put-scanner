@@ -706,7 +706,7 @@ function MarkBasisToggle({ markBasis, onChange }: { markBasis: MarkBasis; onChan
             type="button"
             aria-pressed={markBasis === option}
             onClick={() => onChange(option)}
-            className="px-2.5 py-2 text-xs font-semibold min-w-[48px] sm:min-w-[52px] transition-colors duration-150 motion-reduce:transition-none"
+            className="portfolio-mark-basis-control px-2.5 py-2 text-xs font-semibold min-w-[48px] sm:min-w-[52px]"
             style={{
               backgroundColor: markBasis === option ? 'var(--accent)' : 'var(--surface-alt)',
               color: markBasis === option ? 'white' : 'var(--text-muted)',
@@ -1368,14 +1368,14 @@ function TradeModal({ trade, seed = null, onClose, onSave, onDelete }: TradeModa
 
         <div className="portfolio-trade-sheet__actions mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           {trade ? (
-            <button type="button" onClick={() => onDelete(trade.id)} className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-xs" style={{ backgroundColor: 'rgba(239,68,68,0.12)', color: 'var(--red)', border: '1px solid rgba(239,68,68,0.28)' }}>
+            <button type="button" onClick={() => onDelete(trade.id)} className="pressable inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-xs" style={{ backgroundColor: 'rgba(239,68,68,0.12)', color: 'var(--red)', border: '1px solid rgba(239,68,68,0.28)' }}>
               <Trash2 className="h-3.5 w-3.5" /> Delete
             </button>
           ) : <span className="hidden sm:block" />}
           <div className="portfolio-trade-sheet__action-group flex flex-col gap-2 sm:flex-row sm:items-center">
-            <button type="button" onClick={onClose} className="order-3 min-h-11 rounded-lg px-4 py-2 text-xs sm:order-1" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
-            {!trade && !seed && <button type="button" onClick={() => void submit(true)} disabled={saving} className="order-2 min-h-11 rounded-lg px-4 py-2 text-xs disabled:opacity-60" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>{saving ? 'Saving…' : 'Save & Add Another'}</button>}
-            <button type="button" onClick={() => void submit(false)} disabled={saving} className="order-1 min-h-11 rounded-lg px-4 py-2 text-xs font-medium text-white disabled:opacity-60 sm:order-3" style={{ backgroundColor: 'var(--accent)' }}>{saving ? 'Saving…' : trade ? 'Save Changes' : 'Save Trade'}</button>
+            <button type="button" onClick={onClose} className="pressable order-3 min-h-11 rounded-lg px-4 py-2 text-xs sm:order-1" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
+            {!trade && !seed && <button type="button" onClick={() => void submit(true)} disabled={saving} className="pressable order-2 min-h-11 rounded-lg px-4 py-2 text-xs disabled:opacity-60" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>{saving ? 'Saving…' : 'Save & Add Another'}</button>}
+            <button type="button" onClick={() => void submit(false)} disabled={saving} className="pressable order-1 min-h-11 rounded-lg px-4 py-2 text-xs font-medium text-white disabled:opacity-60 sm:order-3" style={{ backgroundColor: 'var(--accent)' }}>{saving ? 'Saving…' : trade ? 'Save Changes' : 'Save Trade'}</button>
           </div>
         </div>
       </section>
@@ -1470,8 +1470,8 @@ function DeleteTradeConfirmation({
           This permanently deletes one durable entry lot: <strong style={{ color: 'var(--text)' }}>{trade.ticker} {formatCurrency(trade.strike)} Put</strong>, expiring {formatFullDate(trade.expiration)}, entered {formatHistoryDate(trade.soldDate)}.
         </p>
         <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <button ref={cancelRef} type="button" onClick={onCancel} className="min-h-11 rounded-lg px-4 py-2 text-xs font-medium" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>Cancel</button>
-          <button type="button" onClick={onConfirm} className="min-h-11 rounded-lg px-4 py-2 text-xs font-medium text-white" style={{ backgroundColor: 'var(--red)' }}>Delete</button>
+          <button ref={cancelRef} type="button" onClick={onCancel} className="pressable min-h-11 rounded-lg px-4 py-2 text-xs font-medium" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>Cancel</button>
+          <button type="button" onClick={onConfirm} className="pressable min-h-11 rounded-lg px-4 py-2 text-xs font-medium text-white" style={{ backgroundColor: 'var(--red)' }}>Delete</button>
         </div>
       </section>
     </div>
@@ -2498,7 +2498,7 @@ export default function PortfolioPage() {
                 const collapsed = collapsedExpiryGroups[group.expiration] === true;
                 const captured = group.premiumCollected > 0 && group.totalGainLoss != null ? group.totalGainLoss / group.premiumCollected : null;
                 return (
-                  <section key={group.expiration} data-expiration={group.expiration} className="scroll-mt-20 overflow-hidden rounded-lg transition-colors duration-500 motion-reduce:transition-none" style={{ border: `1px solid ${highlightedExpiration === group.expiration ? 'var(--accent)' : 'var(--border)'}`, backgroundColor: highlightedExpiration === group.expiration ? 'var(--accent-bg)' : undefined }}>
+                  <section key={group.expiration} data-expiration={group.expiration} className="portfolio-expiry-highlight scroll-mt-20 overflow-hidden rounded-lg" style={{ border: `1px solid ${highlightedExpiration === group.expiration ? 'var(--accent)' : 'var(--border)'}`, backgroundColor: highlightedExpiration === group.expiration ? 'var(--accent-bg)' : undefined }}>
                     <button
                       onClick={() => toggleExpiryGroup(group.expiration)}
                       aria-expanded={!collapsed}
@@ -2519,7 +2519,7 @@ export default function PortfolioPage() {
                     </button>
                     {!collapsed && <div className="space-y-2 p-2" style={{ backgroundColor: 'var(--bg)' }}>
                     {group.trades.map(trade => (
-                <div key={trade.id} data-trade-id={trade.id} data-trade-ticker={trade.ticker.trim().toUpperCase()} className="scroll-mt-20 rounded-lg p-3 transition-opacity duration-300 motion-reduce:transition-none" style={{ backgroundColor: highlightedTradeId === trade.id || activeScheduleTicker === trade.ticker.trim().toUpperCase() ? 'var(--accent-bg)' : 'var(--surface)', border: `1px solid ${highlightedTradeId === trade.id ? 'var(--accent)' : 'var(--border)'}`, opacity: activeScheduleTicker && activeScheduleTicker !== trade.ticker.trim().toUpperCase() ? 0.72 : 1 }}>
+                <div key={trade.id} data-trade-id={trade.id} data-trade-ticker={trade.ticker.trim().toUpperCase()} className="portfolio-trade-highlight scroll-mt-20 rounded-lg p-3" style={{ backgroundColor: highlightedTradeId === trade.id || activeScheduleTicker === trade.ticker.trim().toUpperCase() ? 'var(--accent-bg)' : 'var(--surface)', border: `1px solid ${highlightedTradeId === trade.id ? 'var(--accent)' : 'var(--border)'}`, opacity: activeScheduleTicker && activeScheduleTicker !== trade.ticker.trim().toUpperCase() ? 0.72 : 1 }}>
                   {(() => {
                     const health = getPositionHealth(trade, markBasis);
                     return (
@@ -2612,7 +2612,7 @@ export default function PortfolioPage() {
                       const captured = group && group.premiumCollected > 0 && group.totalGainLoss != null ? group.totalGainLoss / group.premiumCollected : null;
                       const isHighlighted = group != null && 'expiration' in group && highlightedExpiration === group.expiration;
                       return <Fragment key={groupKey}>
-                        {group && <tr data-group-key={groupKey} data-expiration={'expiration' in group ? group.expiration : undefined} className="scroll-mt-20 transition-colors duration-500 motion-reduce:transition-none" style={{ backgroundColor: isHighlighted ? 'var(--accent-bg)' : 'var(--surface-alt)', borderTop: `1px solid ${isHighlighted ? 'var(--accent)' : 'var(--accent-border)'}`, borderBottom: '1px solid var(--border)', color: 'var(--text)' }}>
+                        {group && <tr data-group-key={groupKey} data-expiration={'expiration' in group ? group.expiration : undefined} className="portfolio-schedule-group-highlight scroll-mt-20" style={{ backgroundColor: isHighlighted ? 'var(--accent-bg)' : 'var(--surface-alt)', borderTop: `1px solid ${isHighlighted ? 'var(--accent)' : 'var(--accent-border)'}`, borderBottom: '1px solid var(--border)', color: 'var(--text)' }}>
                           <td className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
                             <button onClick={() => toggleScheduleGroup(groupKey)} aria-expanded={!collapsed} className="inline-flex items-center gap-1 hover:opacity-80">
                               {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
@@ -2656,7 +2656,7 @@ export default function PortfolioPage() {
                       const redeployBadges = getRedeployBadges(trade, markBasis);
                       const health = getPositionHealth(trade, markBasis);
                       return (
-                        <tr key={trade.id} data-trade-id={trade.id} data-trade-ticker={trade.ticker.trim().toUpperCase()} className="scroll-mt-20 transition-opacity duration-300 motion-reduce:transition-none" style={{ borderBottom: '1px solid var(--border)', backgroundColor: highlightedTradeId === trade.id || activeScheduleTicker === trade.ticker.trim().toUpperCase() ? 'var(--accent-bg)' : index % 2 ? 'var(--row-alt)' : 'transparent', boxShadow: highlightedTradeId === trade.id ? 'inset 3px 0 var(--accent)' : undefined, opacity: activeScheduleTicker && activeScheduleTicker !== trade.ticker.trim().toUpperCase() ? 0.72 : 1 }}>
+                        <tr key={trade.id} data-trade-id={trade.id} data-trade-ticker={trade.ticker.trim().toUpperCase()} className="portfolio-schedule-trade-highlight scroll-mt-20" style={{ borderBottom: '1px solid var(--border)', backgroundColor: highlightedTradeId === trade.id || activeScheduleTicker === trade.ticker.trim().toUpperCase() ? 'var(--accent-bg)' : index % 2 ? 'var(--row-alt)' : 'transparent', boxShadow: highlightedTradeId === trade.id ? 'inset 3px 0 var(--accent)' : undefined, opacity: activeScheduleTicker && activeScheduleTicker !== trade.ticker.trim().toUpperCase() ? 0.72 : 1 }}>
                           <td className="px-2 py-1 text-left font-mono font-bold whitespace-nowrap">
                             <Link to={buildOptionsPath(trade.ticker, trade.expiration)} state={optionsNavigationState} onClick={event => navigateToPortfolioOptions(event, isPortfolioContractPosition(trade) ? trade.lots[0] : trade)} className="underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</Link>
                           </td>

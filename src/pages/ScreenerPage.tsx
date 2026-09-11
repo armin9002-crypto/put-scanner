@@ -1153,8 +1153,8 @@ export default function ScreenerPage() {
 
         {/* Confirmation dialog */}
         {showConfirm && (
-          <div ref={confirmOverlayRef} className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-3" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-            <div ref={confirmPanelRef} role="dialog" aria-modal="true" aria-labelledby="screener-confirm-title" tabIndex={-1} className="mobile-confirm-sheet max-h-[85dvh] w-full max-w-sm overflow-y-auto rounded-t-2xl p-4 outline-none sm:rounded-xl sm:p-6" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+          <div ref={confirmOverlayRef} className="motion-backdrop-surface fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-3" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+            <div ref={confirmPanelRef} role="dialog" aria-modal="true" aria-labelledby="screener-confirm-title" tabIndex={-1} className="motion-modal mobile-confirm-sheet max-h-[85dvh] w-full max-w-sm overflow-y-auto rounded-t-2xl p-4 outline-none sm:rounded-xl sm:p-6" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
               <h3 id="screener-confirm-title" className="text-sm font-semibold mb-2" style={{ color: 'var(--text)' }}>Scan All ETFs?</h3>
               <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
                 Scanning all ETFs uses {FULL_SCAN_BATCH_COUNT} shared market-data batch requests. Proceed?
@@ -1162,14 +1162,14 @@ export default function ScreenerPage() {
               <div className="flex gap-2 justify-end">
                 <button
                   onClick={() => setShowConfirm(false)}
-                  className="px-3 py-1.5 text-xs font-medium rounded-lg"
+                  className="pressable px-3 py-1.5 text-xs font-medium rounded-lg"
                   style={{ backgroundColor: 'var(--border)', color: 'var(--text-secondary)' }}
                 >
                   Cancel
                 </button>
                 <button
                   onClick={() => executeLoad({ ...currentCriteria, selectedETFs: ETF_LIST })}
-                  className="px-4 py-1.5 text-white text-xs font-medium rounded-lg"
+                  className="pressable px-4 py-1.5 text-white text-xs font-medium rounded-lg"
                   style={{ backgroundColor: 'var(--accent)' }}
                 >
                   Confirm

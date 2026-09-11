@@ -219,7 +219,7 @@ function MarketReadStrip({
         <button
           type="button"
           onClick={onOpen}
-          className="pressable rounded px-3 py-1 text-[11px] font-semibold min-h-[44px] sm:min-h-[24px] transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-400/40 whitespace-nowrap"
+          className="pressable rounded px-3 py-1 text-[11px] font-semibold min-h-[44px] sm:min-h-[24px] hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-400/40 whitespace-nowrap"
           style={{ backgroundColor: 'var(--surface)', color: 'var(--accent-light)', border: '1px solid var(--border)' }}
         >
           Details
@@ -256,7 +256,7 @@ function MarketReadModal({ regime, posture, onClose }: { regime: RegimeAnalysis;
               <MarketBadge label={posture.label} tone="posture" />
             </div>
           </div>
-          <button type="button" aria-label="Close market read" onClick={onClose} className="rounded-lg p-2 min-h-[44px] min-w-[44px] inline-flex items-center justify-center" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+          <button type="button" aria-label="Close market read" onClick={onClose} className="pressable rounded-lg p-2 min-h-[44px] min-w-[44px] inline-flex items-center justify-center" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -313,7 +313,7 @@ function VisualPeriodSelector({ value, onChange }: { value: VisualPeriod; onChan
           type="button"
           onClick={() => onChange(period)}
           aria-pressed={value === period}
-          className="pressable min-h-[44px] flex-none px-3 py-1.5 text-[11px] font-medium transition-colors sm:min-h-0"
+          className="pulse-period-selector-control min-h-[44px] flex-none px-3 py-1.5 text-[11px] font-medium sm:min-h-0"
           style={{
             backgroundColor: value === period ? 'var(--accent-bg)' : 'var(--surface)',
             color: value === period ? 'var(--accent-light)' : 'var(--text-muted)',

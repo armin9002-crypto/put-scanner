@@ -259,7 +259,7 @@ function MethodologyModal({ run, onClose, onExport }: { run: RecommendationRun; 
   return (
     <div ref={overlayRef} className="recommendation-methodology-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
       <section ref={setPanelRef} tabIndex={-1} className="recommendation-methodology-modal outline-none" role="dialog" aria-modal="true" aria-labelledby="recommendation-methodology-title">
-        <header><div><span>DETERMINISTIC POLICY</span><h2 id="recommendation-methodology-title">Full Methodology</h2></div><button type="button" aria-label="Close methodology" onClick={onClose}><X className="h-4 w-4" /></button></header>
+        <header><div><span>DETERMINISTIC POLICY</span><h2 id="recommendation-methodology-title">Full Methodology</h2></div><button type="button" className="pressable" aria-label="Close methodology" onClick={onClose}><X className="h-4 w-4" /></button></header>
         <div className="recommendation-methodology-modal__content">
           <p className="recommendation-methodology-lead">Hard gates first, then deterministic relative ranking. There is no numerical score, recommendation quota, or minimum shortlist size.</p>
           <div className="recommendation-methodology-grid">

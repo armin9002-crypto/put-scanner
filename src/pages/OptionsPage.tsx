@@ -131,7 +131,7 @@ function OptionsEmptyState({
         <button
           onClick={onRefresh}
           disabled={loading}
-          className="inline-flex items-center gap-2 px-4 py-2.5 sm:py-2 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-all min-h-[44px] sm:min-h-0"
+          className="button-primary pressable inline-flex items-center gap-2 px-4 py-2.5 sm:py-2 text-white text-sm font-medium rounded-lg disabled:opacity-50 min-h-[44px] sm:min-h-0"
           style={{ backgroundColor: 'var(--accent)' }}
         >
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -140,7 +140,7 @@ function OptionsEmptyState({
         <button
           type="button"
           onClick={onBack}
-          className="inline-flex min-h-[44px] items-center rounded-lg px-4 py-2.5 text-sm font-medium sm:min-h-0 sm:py-2"
+          className="pressable inline-flex min-h-[44px] items-center rounded-lg px-4 py-2.5 text-sm font-medium sm:min-h-0 sm:py-2"
           style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}
         >
           {backLabel}
@@ -1199,7 +1199,7 @@ export default function OptionsPage() {
             {instrument.showHoldings && <button
               type="button"
               onClick={() => setShowUnderlyingHoldings(true)}
-              className="pressable min-h-[44px] flex-shrink-0 rounded-lg px-3 py-1.5 text-center transition-all hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-indigo-500/60"
+              className="pressable min-h-[44px] flex-shrink-0 rounded-lg px-3 py-1.5 text-center hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-indigo-500/60"
               style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}
               title={holdingsProxy.meaningful && holdingsProxy.proxyTicker
                 ? `${holdingsProxy.proxyTicker} holdings used as the underlying exposure proxy for ${holdingsProxy.sourceTicker}.`
@@ -1246,7 +1246,7 @@ export default function OptionsPage() {
               <button
                 onClick={handleRefresh}
                 disabled={loading}
-                className="pressable ml-auto sm:ml-0 flex items-center gap-1.5 px-3 py-2 sm:py-2 rounded-lg disabled:opacity-50 transition-all min-h-[44px] sm:min-h-0"
+                className="pressable ml-auto sm:ml-0 flex items-center gap-1.5 px-3 py-2 sm:py-2 rounded-lg disabled:opacity-50 min-h-[44px] sm:min-h-0"
                 style={{ backgroundColor: 'var(--border)', color: 'var(--text)' }}
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -1301,7 +1301,7 @@ export default function OptionsPage() {
                 key={exp.date}
                 onClick={() => loadExpiration(exp.date)}
                 aria-pressed={requestedExpiration === exp.date}
-                className="px-3 py-2 sm:py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap flex-shrink-0 min-h-[44px] sm:min-h-0"
+                className="option-expiry-control px-3 py-2 sm:py-1.5 rounded-lg text-xs font-medium whitespace-nowrap flex-shrink-0 min-h-[44px] sm:min-h-0"
                 style={{
                   backgroundColor: requestedExpiration === exp.date ? 'var(--accent)' : 'var(--surface)',
                   color: requestedExpiration === exp.date ? 'white' : 'var(--text-muted)',

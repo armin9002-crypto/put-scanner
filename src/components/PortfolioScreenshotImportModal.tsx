@@ -170,7 +170,7 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
               Paste or drag a brokerage positions screenshot. The app will extract sold put positions and let you review before importing.
             </p>
           </div>
-          <button onClick={onClose} className="p-2 rounded-lg min-h-[40px] min-w-[40px]" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }} aria-label="Cancel import">
+          <button onClick={onClose} className="pressable p-2 rounded-lg min-h-[40px] min-w-[40px]" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }} aria-label="Cancel import">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -186,7 +186,7 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
                 const file = [...event.dataTransfer.files].find(item => item.type.startsWith('image/'));
                 if (file) void handleFile(file);
               }}
-              className="w-full rounded-lg p-4 text-center min-h-[140px] flex flex-col items-center justify-center gap-2"
+              className="pressable w-full rounded-lg p-4 text-center min-h-[140px] flex flex-col items-center justify-center gap-2"
               style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px dashed var(--accent-border)' }}
             >
               <Upload className="w-8 h-8" style={{ color: 'var(--accent-light)' }} />
@@ -252,7 +252,7 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
                 <button
                   type="button"
                   onClick={() => setShowDiagnostics(value => !value)}
-                  className="font-medium"
+                  className="pressable font-medium"
                   style={{ color: 'var(--accent-light)' }}
                 >
                   {showDiagnostics ? 'Hide' : 'Show'} OCR diagnostics
@@ -260,7 +260,7 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
                 <button
                   type="button"
                   onClick={() => void navigator.clipboard?.writeText(JSON.stringify(diagnostics, null, 2))}
-                  className="ml-3 inline-flex items-center gap-1 font-medium"
+                  className="pressable ml-3 inline-flex items-center gap-1 font-medium"
                   style={{ color: 'var(--text-muted)' }}
                 >
                   <Copy className="w-3 h-3" /> Copy diagnostics JSON
@@ -304,11 +304,11 @@ export default function PortfolioScreenshotImportModal({ trades, onClose, onAppl
         </div>
 
         <div className="flex flex-col sm:flex-row justify-end gap-2 mt-3 pt-3 flex-shrink-0" style={{ borderTop: '1px solid var(--border)' }}>
-          <button onClick={onClose} className="px-4 py-2 rounded-lg text-xs min-h-[44px]" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
+          <button onClick={onClose} className="pressable px-4 py-2 rounded-lg text-xs min-h-[44px]" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
           <button
             onClick={applyImport}
             disabled={selectedImportableCount === 0}
-            className="px-4 py-2 rounded-lg text-xs font-medium text-white min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
+            className="pressable px-4 py-2 rounded-lg text-xs font-medium text-white min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ backgroundColor: 'var(--accent)' }}
           >
             {hasPortfolioImportMutations(plan) ? 'Apply Import' : 'Finish Review'}

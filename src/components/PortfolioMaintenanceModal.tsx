@@ -58,7 +58,7 @@ export default function PortfolioMaintenanceModal({
             <h2 id="portfolio-maintenance-title" className="text-lg font-bold" style={{ color: 'var(--text)' }}>Portfolio Maintenance</h2>
             <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Review durable lifecycle and entry snapshots. Opening this view makes no market requests and changes nothing.</p>
           </div>
-          <button type="button" onClick={onClose} className="min-h-10 rounded-lg px-3 text-xs font-semibold" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>Close</button>
+          <button type="button" onClick={onClose} className="pressable min-h-10 rounded-lg px-3 text-xs font-semibold" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>Close</button>
         </div>
 
         <div className="mt-4 space-y-2">
@@ -74,9 +74,9 @@ export default function PortfolioMaintenanceModal({
         {message && <div role="status" className="mt-3 flex items-start gap-2 rounded-lg px-3 py-2 text-xs" style={{ color: message.startsWith('Could not') ? 'var(--yellow)' : 'var(--green)', backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>{message.startsWith('Could not') ? <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> : <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />}{message}</div>}
 
         <div className="mt-4 grid gap-2 sm:grid-cols-3">
-          <button type="button" onClick={onResolveLifecycle} disabled={busy != null || lifecycleCount === 0} className="min-h-11 rounded-lg px-3 text-xs font-semibold disabled:opacity-40" style={{ color: 'var(--text)', backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}><History className="mr-1.5 inline h-3.5 w-3.5" />{busy === 'lifecycle' ? 'Reviewing...' : 'Resolve Lifecycle'}</button>
-          <button type="button" onClick={onResolveEntryVix} disabled={busy != null || entryVixCount === 0} className="min-h-11 rounded-lg px-3 text-xs font-semibold disabled:opacity-40" style={{ color: 'var(--text)', backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>{busy === 'entry-vix' ? 'Fetching...' : 'Backfill Entry VIX'}</button>
-          <button type="button" onClick={onRecoverEntrySnapshots} disabled={busy != null || recoverableSnapshotCount === 0} className="min-h-11 rounded-lg px-3 text-xs font-semibold disabled:opacity-40" style={{ color: 'var(--text)', backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>{busy === 'entry-snapshot' ? 'Recovering...' : 'Recover Stored Snapshots'}</button>
+          <button type="button" onClick={onResolveLifecycle} disabled={busy != null || lifecycleCount === 0} className="pressable min-h-11 rounded-lg px-3 text-xs font-semibold disabled:opacity-40" style={{ color: 'var(--text)', backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}><History className="mr-1.5 inline h-3.5 w-3.5" />{busy === 'lifecycle' ? 'Reviewing...' : 'Resolve Lifecycle'}</button>
+          <button type="button" onClick={onResolveEntryVix} disabled={busy != null || entryVixCount === 0} className="pressable min-h-11 rounded-lg px-3 text-xs font-semibold disabled:opacity-40" style={{ color: 'var(--text)', backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>{busy === 'entry-vix' ? 'Fetching...' : 'Backfill Entry VIX'}</button>
+          <button type="button" onClick={onRecoverEntrySnapshots} disabled={busy != null || recoverableSnapshotCount === 0} className="pressable min-h-11 rounded-lg px-3 text-xs font-semibold disabled:opacity-40" style={{ color: 'var(--text)', backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>{busy === 'entry-snapshot' ? 'Recovering...' : 'Recover Stored Snapshots'}</button>
         </div>
         <p className="mt-3 text-[11px]" style={{ color: 'var(--text-dim)' }}>Maintenance never substitutes today's Delta, IV, or underlying price for missing historical entry data.</p>
       </section>

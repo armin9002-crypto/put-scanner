@@ -6401,6 +6401,37 @@ input[type="number"] {
 @keyframes ui-modal { from { opacity: 0; translate: 0 8px; } to { opacity: 1; translate: 0 0; } }
 @keyframes ui-sheet { from { opacity: 0; translate: 0 12px; } to { opacity: 1; translate: 0 0; } }
 @keyframes ui-drawer { from { opacity: 0; translate: 12px 0; } to { opacity: 1; translate: 0 0; } }
+@keyframes ui-disclosure { from { opacity: 0; translate: 0 -3px; } to { opacity: 1; translate: 0 0; } }
+
+/* Segmented controls acknowledge selection through color and borders only. */
+:is(.option-expiry-control, .chart-timeframe-control, .pulse-period-selector-control, .portfolio-mark-basis-control) {
+  transition: color var(--transition-ui), background-color var(--transition-ui), border-color var(--transition-ui), opacity var(--transition-ui), box-shadow var(--transition-ui);
+}
+
+:is(.portfolio-expiry-highlight, .portfolio-schedule-group-highlight) {
+  transition: background-color var(--motion-medium) var(--ease-ui), border-color var(--motion-medium) var(--ease-ui);
+}
+
+:is(.portfolio-trade-highlight, .portfolio-schedule-trade-highlight) {
+  transition: background-color var(--motion-medium) var(--ease-ui), border-color var(--motion-medium) var(--ease-ui), box-shadow var(--motion-medium) var(--ease-ui), opacity var(--motion-medium) var(--ease-ui);
+}
+
+/* Local disclosures enter with the same short, quiet language as popovers. */
+@media (prefers-reduced-motion: no-preference) {
+  details[open] > :not(summary),
+  .pulse-technical-explanation__panel,
+  #portfolio-analytics-content > .portfolio-analytics-content {
+    animation: ui-disclosure var(--motion-fast) var(--ease-ui);
+  }
+
+  /* The Add Trade surface is a bottom sheet on phones and a centered modal on
+     larger screens, including phone landscape. */
+  @media (max-width: 639px), (orientation: landscape) and (max-height: 520px) and (max-width: 950px) {
+    .portfolio-trade-sheet {
+      animation: ui-sheet var(--motion-medium) var(--ease-emphasized);
+    }
+  }
+}
 /* Glass remains confined to existing navigation/header surfaces. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   :is(.app-desktop-nav, .mobile-page-header, .mobile-trade-sheet__header, .drawer-header, .mobile-bottom-nav, .pulse-mobile-controls) {
