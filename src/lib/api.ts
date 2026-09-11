@@ -135,7 +135,7 @@ export async function fetchOptions(ticker: string, date?: number, options: Fetch
   const source = options.source ?? 'fetchOptions';
   const fresh = options.fresh === true;
   const mode: RefreshMode = fresh ? 'fresh' : options.refreshMode ?? (options.bypassCache ? 'revalidate' : 'cache-first');
-  const validator = isValidOptionsChain;
+  const validator = (value: OptionsChainData) => isValidOptionsChain(value, date ?? null);
   const previousCached = peekMarketData({
     key: cacheKey,
     softTtlMs: OPTIONS_SOFT_TTL,
@@ -242,7 +242,7 @@ function isSparklineData(value: SparklineData): boolean {
     && Array.isArray(value.sparkline);
 }
 
-export async function fetchSparklineResult(ticker: string, options: { signal?: AbortSignal } = {}): Promise<SparklineRequestResult> {
+export async function fetchSparklineResult(ticker: string, options: { mode?: RefreshMode; signal?: AbortSignal } = {}): Promise<SparklineRequestResult> {
   const cacheKey = `sparkline_${ticker}`;
   const result = await requestMarketData<SparklineData>({
     key: cacheKey,
@@ -251,7 +251,7 @@ export async function fetchSparklineResult(ticker: string, options: { signal?: A
     softTtlMs: Math.min(SPARKLINE_MEM_TTL, SPARKLINE_LS_TTL),
     hardTtlMs: Math.max(SPARKLINE_LS_TTL * 4, SPARKLINE_LS_TTL + 30 * 60 * 1000),
     schemaVersion: 1,
-    mode: 'cache-first',
+    mode: options.mode ?? 'cache-first',
     allowStaleOnError: true,
     signal: options.signal,
     validator: isSparklineData,
@@ -274,13 +274,13 @@ export async function fetchSparklineResult(ticker: string, options: { signal?: A
     data: result.data,
     freshness: result.meta.freshness,
     source: result.meta.source,
-    observedAt: result.meta.fetchedAt,
+    observedAt: result.meta.observedAt ?? result.meta.fetchedAt,
     cachedAt: result.meta.cachedAt,
     staleFallbackUsed: result.meta.staleFallbackUsed,
   };
 }
 
-export async function fetchSparkline(ticker: string, options: { signal?: AbortSignal } = {}): Promise<SparklineData> {
+export async function fetchSparkline(ticker: string, options: { mode?: RefreshMode; signal?: AbortSignal } = {}): Promise<SparklineData> {
   return (await fetchSparklineResult(ticker, options)).data;
 }
 
@@ -424,7 +424,7 @@ export async function fetchTickerDetail(
       allowStaleOnError: !options.fresh,
       signal: options.signal,
       validator: value => value?.options != null && (
-        (value.availability === 'optionable' && isValidOptionsChain(value.options))
+        (value.availability === 'optionable' && isValidOptionsChain(value.options, date ?? null))
         || (value.availability === 'no_options'
           && value.options.expirations.length === 0
           && value.options.puts.length === 0

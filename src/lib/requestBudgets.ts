@@ -3,6 +3,7 @@ import { SCREENER_CHUNKS, SCREENER_TICKERS } from '../../shared/screenerUniverse
 
 export type RequestBudgetWorkflow =
   | 'scanner-load'
+  | 'scanner-market-refresh'
   | 'screener-entry'
   | 'screener-full-scan'
   | 'watchlist-refresh'
@@ -49,6 +50,12 @@ export const REQUEST_BUDGET_LEDGER: Record<RequestBudgetWorkflow, RequestBudgetL
     ceiling: { browserRequests: 7, functionInvocations: 7, providerAcquisitions: DISCOVERY_TICKER_COUNT + SCANNER_PRICE_BATCH_COUNT + 5 },
     providerHttpAttemptCeiling: DISCOVERY_TICKER_COUNT + SCANNER_PRICE_BATCH_COUNT + 10,
     fixture: `${DISCOVERY_TICKER_COUNT} Scanner symbols, one full-universe expiration dataset, ${SCANNER_PRICE_BATCH_COUNT} internal price batches, one fund-metadata request, and four market charts`,
+  },
+  'scanner-market-refresh': {
+    expected: { browserRequests: 4, functionInvocations: 4, providerAcquisitions: 4 },
+    ceiling: { browserRequests: 4, functionInvocations: 4, providerAcquisitions: 4 },
+    providerHttpAttemptCeiling: 24,
+    fixture: 'one explicit Scanner market-context revalidation for SPY, QQQ, VIX, and VXN',
   },
   'screener-entry': {
     expected: { browserRequests: 2, functionInvocations: 2, providerAcquisitions: DISCOVERY_TICKER_COUNT + 1 },

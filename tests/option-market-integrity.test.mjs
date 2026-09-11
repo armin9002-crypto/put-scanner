@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
 import { assessPutOptionSurface, trustedOptionPrice } from '../src/lib/optionMarketIntegrity.ts';
 import { normalizeOptionChainData } from '../src/lib/yahooOptionAdapter.ts';
-import { isValidOptionsChain, OPTIONS_CACHE_SCHEMA_VERSION } from '../src/lib/optionChainCache.ts';
+import { isValidOptionsChain, OPTIONS_CACHE_SCHEMA_VERSION, primeOptionsMarketDataCache } from '../src/lib/optionChainCache.ts';
 import { primeMarketDataCache, requestMarketData } from '../src/lib/marketDataRequest.ts';
 import { buildScannerOptionSnapshot } from '../src/lib/scannerOptionSnapshot.ts';
 import { buildScreenerRows, applyScreenerFilters } from '../src/lib/screenerRows.ts';
@@ -129,12 +129,33 @@ test('bad fresh chain cannot replace a trusted cache record', async () => {
   const good = chain(goodAssessment.puts, goodAssessment.integrity);
   const bad = chain(badAssessment.puts, badAssessment.integrity);
   const originalTime = Date.now() - 1_000;
-  const cacheOptions = { key, softTtlMs: 60_000, hardTtlMs: 120_000, schemaVersion: OPTIONS_CACHE_SCHEMA_VERSION, validator: isValidOptionsChain, storage: 'none' };
+  const cacheOptions = { key, softTtlMs: 60_000, hardTtlMs: 120_000, schemaVersion: OPTIONS_CACHE_SCHEMA_VERSION, validator: value => isValidOptionsChain(value, EXPIRATION), storage: 'none' };
   assert.equal(primeMarketDataCache(cacheOptions, good, originalTime), true);
   const result = await requestMarketData({ ...cacheOptions, source: 'test', endpoint: 'options', mode: 'revalidate', allowStaleOnError: true, fetcher: async () => bad });
   assert.equal(result.meta.source, 'stale-fallback');
   assert.equal(result.meta.fetchedAt, originalTime);
   assert.equal(result.data.puts[0].bid, 1);
+});
+
+test('UNKNOWN non-empty expiration evidence is rejected without poisoning a prior exact-expiry cache record', async () => {
+  const key = `expiration-cache-${Date.now()}-${Math.random()}`;
+  const assessment = assessPutOptionSurface([option(100, 1, 1.1), option(105, 2, 2.1)]);
+  const good = chain(assessment.puts, assessment.integrity, { expirationEvidence: 'match' });
+  const unknown = chain(assessment.puts, assessment.integrity, {
+    requestedExpiration: null,
+    returnedExpiration: null,
+    expirationDate: null,
+    expirationEvidence: 'unknown',
+  });
+  const originalTime = Date.now() - 2_000;
+  const cacheOptions = { key, softTtlMs: 60_000, hardTtlMs: 120_000, schemaVersion: OPTIONS_CACHE_SCHEMA_VERSION, validator: value => isValidOptionsChain(value, EXPIRATION), storage: 'none' };
+  assert.equal(isValidOptionsChain(unknown, EXPIRATION), false);
+  assert.equal(primeOptionsMarketDataCache('UPRO', EXPIRATION, unknown), false, 'the requested cache key is not returned-expiration evidence');
+  assert.equal(primeMarketDataCache(cacheOptions, good, originalTime), true);
+  const result = await requestMarketData({ ...cacheOptions, source: 'test', endpoint: 'options', mode: 'revalidate', allowStaleOnError: true, fetcher: async () => unknown });
+  assert.equal(result.meta.source, 'stale-fallback');
+  assert.equal(result.meta.fetchedAt, originalTime);
+  assert.equal(result.data.chainMeta.expirationEvidence, 'match');
 });
 
 test('Watchlist retains prior trusted snapshot and timestamp after invalid refresh', () => {

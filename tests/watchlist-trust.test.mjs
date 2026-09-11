@@ -117,6 +117,44 @@ test('valid exact returned expiration publishes Watchlist economics unchanged', 
   assert.equal(result.snapshot.deltaModelVersion, null);
 });
 
+test('Watchlist exact strike selection is order-independent and never chooses the neighboring strike', () => {
+  const saved = { ...item(snapshot()), id: makeWatchlistId('TQQQ', '2027-01-15', 100.005), strike: 100.005 };
+  const near = put({ strike: 100, bid: 9, contractSymbol: 'TQQQ270115P00100000' });
+  const exact = put({ strike: 100.005, bid: 2.5, contractSymbol: 'TQQQ270115P00100005' });
+  for (const puts of [[near, exact], [exact, near]]) {
+    const data = chain();
+    data.puts = puts;
+    data.chainMeta.putCount = puts.length;
+    const result = mergeWatchlistRefreshItem(saved, data, 100, false);
+    assert.equal(result.status, 'live');
+    assert.equal(result.snapshot.bid, 2.5);
+  }
+});
+
+test('Watchlist near-only and inconsistent OCC identities are rejected while the trusted snapshot is retained', () => {
+  const prior = snapshot();
+  const saved = { ...item(prior), id: makeWatchlistId('TQQQ', '2027-01-15', 100.005), strike: 100.005 };
+  const rejectedContracts = [
+    put({ strike: 100, bid: 9, contractSymbol: 'TQQQ270115P00100000' }),
+    put({ strike: 100.005, bid: 8, contractSymbol: 'SQQQ270115P00100005' }),
+    put({ strike: 100.005, bid: 7, contractSymbol: 'TQQQ270115C00100005' }),
+    put({ strike: 100.005, bid: 6, contractSymbol: 'TQQQ270122P00100005' }),
+  ];
+  for (const contract of rejectedContracts) {
+    const data = chain({ contract });
+    const result = mergeWatchlistRefreshItem(saved, data, 100, false);
+    assert.equal(result.status, 'unavailable');
+    assert.equal(result.snapshot.bid, prior.bid);
+    assert.equal(result.snapshot.observedAt, OBSERVED_AT);
+    assert.equal(result.snapshot.evidenceFreshness, 'retained-stale');
+  }
+
+  const wrongTickerChain = chain({ meta: { ticker: 'SQQQ' }, contract: put({ strike: 100.005 }) });
+  const result = mergeWatchlistRefreshItem(saved, wrongTickerChain, 100, false);
+  assert.equal(result.status, 'unavailable');
+  assert.equal(result.snapshot.bid, prior.bid);
+});
+
 test('an exact canonical contract symbol can prove the saved contract when chain metadata is absent', () => {
   const result = mergeWatchlistRefreshItem(item(), chain({
     meta: { returnedExpiration: null, expirationDate: null, expirationEvidence: 'unknown' },

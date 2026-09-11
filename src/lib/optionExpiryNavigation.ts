@@ -53,9 +53,9 @@ export function getOptionChainExpirationEvidence(
 export function optionChainMatchesRequestedExpiration(
   metadata: OptionChainExpirationMetadata | null | undefined,
   requestedExpiration: number,
+  contractExpirations: readonly (number | null | undefined)[] = [],
 ): boolean {
-  const returnedExpiration = getReturnedOptionExpiration(metadata);
-  return returnedExpiration == null || returnedExpiration === requestedExpiration;
+  return getOptionChainExpirationEvidence(metadata, requestedExpiration, contractExpirations) === 'match';
 }
 
 function isoFromTimestamp(timestamp: number): string | null {

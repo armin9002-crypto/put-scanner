@@ -115,6 +115,45 @@ test('context benchmark loss does not contaminate leveraged breadth', () => {
   assert.equal(market.confidence, 'Low');
 });
 
+test('current and cached-current SPY/QQQ trends remain valid narrative evidence', () => {
+  const rows = [...Array.from({ length: ETF_PULSE_LEVERAGED_UNIVERSE_SIZE }, (_, index) => row(`L${index}`)), ...contextRows()];
+  const market = deriveMarketRegime(snapshot(rows, item => item.ticker === 'SPY' ? 'cached-current' : 'current'));
+  assert.equal(market.stats.spyTrend, 'Uptrend');
+  assert.equal(market.stats.qqqTrend, 'Uptrend');
+  assert.equal(market.drivers[0], 'SPY Uptrend, QQQ Uptrend');
+});
+
+test('retained and unavailable benchmark rows cannot look current in Pulse narrative fields', () => {
+  const leveraged = Array.from({ length: ETF_PULSE_LEVERAGED_UNIVERSE_SIZE }, (_, index) => row(`L${index}`));
+  const mixed = deriveMarketRegime(snapshot([...leveraged, ...contextRows()], item => item.ticker === 'SPY' ? 'retained-stale' : 'current'));
+  assert.match(mixed.stats.spyTrend, /^retained\/stale Uptrend, observed /);
+  assert.equal(mixed.stats.qqqTrend, 'Uptrend');
+  assert.match(mixed.drivers[0], /^SPY retained\/stale Uptrend, observed /);
+
+  const retainedBoth = deriveMarketRegime(snapshot([...leveraged, ...contextRows()], item => ['SPY', 'QQQ'].includes(item.ticker) ? 'retained-stale' : 'current'));
+  assert.match(retainedBoth.stats.spyTrend, /^retained\/stale /);
+  assert.match(retainedBoth.stats.qqqTrend, /^retained\/stale /);
+
+  const unavailable = deriveMarketRegime(snapshot([...leveraged, ...contextRows()], item => item.ticker === 'SPY' ? 'unavailable' : 'current'));
+  assert.equal(unavailable.stats.spyTrend, 'unavailable');
+  assert.equal(unavailable.stats.qqqTrend, 'Uptrend');
+  assert.equal(unavailable.drivers[0], 'SPY unavailable, QQQ Uptrend');
+});
+
+test('retained benchmark values do not regain decision authority through narrative hardening', () => {
+  const leveraged = Array.from({ length: ETF_PULSE_LEVERAGED_UNIVERSE_SIZE }, (_, index) => row(`L${index}`));
+  const evidence = item => ['SPY', 'QQQ'].includes(item.ticker) ? 'retained-stale' : 'current';
+  const bullishRetained = deriveMarketRegime(snapshot([...leveraged, row('SPY'), row('QQQ')], evidence));
+  const bearishRetained = deriveMarketRegime(snapshot([
+    ...leveraged,
+    row('SPY', { trend: 'Downtrend', distance50: -0.5, distance200: -0.5 }),
+    row('QQQ', { trend: 'Downtrend', distance50: -0.5, distance200: -0.5 }),
+  ], evidence));
+  assert.equal(bullishRetained.label, bearishRetained.label);
+  assert.equal(bullishRetained.confidence, bearishRetained.confidence);
+  assert.match(bearishRetained.drivers[0], /retained\/stale Downtrend/);
+});
+
 test('local filtering cannot change the canonical snapshot regime', () => {
   const leveraged = Array.from({ length: ETF_PULSE_LEVERAGED_UNIVERSE_SIZE }, (_, index) => row(`L${index}`));
   const canonical = snapshot([...leveraged, ...contextRows()]);
@@ -131,6 +170,25 @@ test('Pulse and Recommendations shared paths produce the same base for one snaps
   const pulseMarketRead = deriveMarketRegime(canonical);
   const recommendationsMarketRead = deriveMarketRegime(canonical);
   assert.deepEqual(recommendationsMarketRead, pulseMarketRead);
+});
+
+test('Recommendations snapshot and JSON export retain truthful benchmark provenance', async () => {
+  const rows = [...Array.from({ length: ETF_PULSE_LEVERAGED_UNIVERSE_SIZE }, (_, index) => row(`L${index}`)), ...contextRows()];
+  const rowEvidence = snapshot(rows, item => item.ticker === 'SPY' ? 'retained-stale' : 'current').rowEvidence;
+  const result = await refreshRecommendations({
+    scanId: 'benchmark-provenance',
+    dependencies: {
+      loadPulse: async () => ({ rows, rowEvidence, fetchedAt: 1_800_000_000_000, total: rows.length, loaded: rows.length - 1, currentRows: rows.length - 1, retainedRows: 1, unavailableRows: 0, failed: 0, errors: [], stale: true }),
+      scan: async () => ({ initialResults: new Map(), chainsByKey: new Map(), ivVsRealizedRangeByTicker: new Map(), errors: [], failedBatchIds: [] }),
+      runEngine: async recommendationSnapshot => ({ market: recommendationSnapshot.market }),
+      now: () => 1_800_000_000_000,
+    },
+  });
+  assert.match(result.snapshot.market.regime.stats.spyTrend, /^retained\/stale Uptrend, observed /);
+  assert.equal(result.snapshot.market.regime.stats.qqqTrend, 'Uptrend');
+  const exported = JSON.stringify(result.snapshot.market.regime);
+  assert.match(exported, /retained\/stale Uptrend/);
+  assert.doesNotMatch(exported, /"drivers":\["SPY Uptrend/);
 });
 
 test('Recommendations uses the established Pulse row-cache currentness boundary', () => {

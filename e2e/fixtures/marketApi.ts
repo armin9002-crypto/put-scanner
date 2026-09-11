@@ -142,7 +142,7 @@ export async function installDeterministicMarketApi(page: Page, options: MarketF
     }
     if (endpoint === 'etf-pulse') {
       const histories = Object.fromEntries(ETF_PULSE_TICKERS.map(ticker => [ticker, chart(ticker)]));
-      return json(route, { datasetVersion: 1, fetchedAt: 1_798_000_000_000, tickers: [...ETF_PULSE_TICKERS], histories, errors: [], diagnostics: { upstreamRequests: ETF_PULSE_TICKERS.length, uniqueTickers: ETF_PULSE_TICKERS.length, maxObservedConcurrency: 6, circuitBreakerRejections: 0 } }, 200, { 'X-PutScanner-Upstream-Requests': String(ETF_PULSE_TICKERS.length) });
+      return json(route, { datasetVersion: 2, fetchedAt: 1_798_000_000_000, tickers: [...ETF_PULSE_TICKERS], histories, errors: [], diagnostics: { upstreamRequests: ETF_PULSE_TICKERS.length, uniqueTickers: ETF_PULSE_TICKERS.length, maxObservedConcurrency: 6, circuitBreakerRejections: 0 } }, 200, { 'X-PutScanner-Upstream-Requests': String(ETF_PULSE_TICKERS.length) });
     }
     return json(route, { error: `Unmocked endpoint: ${endpoint}` }, 501);
   });

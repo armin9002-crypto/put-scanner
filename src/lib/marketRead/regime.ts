@@ -41,6 +41,18 @@ function isRetained(snapshot: CanonicalPulseSnapshot, row: EtfPulseRow): boolean
   return evidenceFreshness(snapshot, row) === 'retained-stale';
 }
 
+function benchmarkTrendNarrative(snapshot: CanonicalPulseSnapshot, row: EtfPulseRow | undefined): string {
+  if (!row) return 'unavailable';
+  const freshness = evidenceFreshness(snapshot, row);
+  if (CURRENT_EVIDENCE.has(freshness)) return row.trend || 'unavailable';
+  if (freshness !== 'retained-stale') return 'unavailable';
+  const observedAt = snapshot.rowEvidence?.[row.ticker]?.observedAt ?? row.observedAt ?? null;
+  const observed = observedAt != null && Number.isFinite(observedAt)
+    ? `, observed ${new Date(observedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC`
+    : '';
+  return `retained/stale ${row.trend || 'trend unavailable'}${observed}`;
+}
+
 function populationRows(snapshot: CanonicalPulseSnapshot, context: boolean): EtfPulseRow[] {
   return snapshot.rows.filter(row => CONTEXT_BENCHMARKS.has(row.ticker) === context);
 }
@@ -152,6 +164,10 @@ export function deriveMarketRegime(snapshot: CanonicalPulseSnapshot): RegimeAnal
   }).length;
   const vix = snapshot.rows.find(row => row.ticker === 'VIX' || row.ticker === '^VIX');
   const vxn = snapshot.rows.find(row => row.ticker === 'VXN' || row.ticker === '^VXN');
+  const spyTrend = benchmarkTrendNarrative(snapshot, spy);
+  const qqqTrend = benchmarkTrendNarrative(snapshot, qqq);
+  const vixTrend = benchmarkTrendNarrative(snapshot, vix);
+  const vxnTrend = benchmarkTrendNarrative(snapshot, vxn);
   const warnings: string[] = [];
 
   if (spyAbove200 == null || qqqAbove200 == null) warnings.push('SPY or QQQ current technical context is missing.');
@@ -189,10 +205,10 @@ export function deriveMarketRegime(snapshot: CanonicalPulseSnapshot): RegimeAnal
       : 'High';
 
   const drivers = [
-    `SPY ${spy?.trend ?? 'unavailable'}, QQQ ${qqq?.trend ?? 'unavailable'}`,
+    `SPY ${spyTrend}, QQQ ${qqqTrend}`,
     `${formatPct(breadthAbove200)} of leveraged ETFs above 200D`,
     `${overboughtCount} overbought and ${oversoldCount} oversold leveraged ETFs; median 30D return ${formatPct(medianThirtyDayReturn)}`,
-    vix || vxn ? `Volatility proxies: VIX ${vix?.trend ?? 'unavailable'}, VXN ${vxn?.trend ?? 'unavailable'}` : 'Volatility context unavailable from ETF Pulse cache',
+    vix || vxn ? `Volatility proxies: VIX ${vixTrend}, VXN ${vxnTrend}` : 'Volatility context unavailable from ETF Pulse cache',
   ];
 
   const marketRead = label === 'Complacent Risk-On'
@@ -294,8 +310,8 @@ export function deriveMarketRegime(snapshot: CanonicalPulseSnapshot): RegimeAnal
     evidenceObservedAt: snapshot.fetchedAt,
     marketDataThrough: snapshot.marketDataThrough ?? null,
     stats: {
-      spyTrend: spy?.trend ?? '—',
-      qqqTrend: qqq?.trend ?? '—',
+      spyTrend,
+      qqqTrend,
       breadthAbove50,
       breadthAbove200,
       downtrendCount,
@@ -307,8 +323,8 @@ export function deriveMarketRegime(snapshot: CanonicalPulseSnapshot): RegimeAnal
       qqqRsi: currentContextValue(snapshot, qqq, row => finite(row.rsi14)),
       spyPosition52Week: currentContextValue(snapshot, spy, row => finite(row.position52Week)),
       qqqPosition52Week: currentContextValue(snapshot, qqq, row => finite(row.position52Week)),
-      vixTrend: vix?.trend ?? null,
-      vxnTrend: vxn?.trend ?? null,
+      vixTrend: vix ? vixTrend : null,
+      vxnTrend: vxn ? vxnTrend : null,
       biggestThirtyDayWinners: topMoves(snapshot, leveragedRows, 'winners'),
       biggestThirtyDayLosers: topMoves(snapshot, leveragedRows, 'losers'),
     },

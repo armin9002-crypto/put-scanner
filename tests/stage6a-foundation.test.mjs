@@ -74,11 +74,13 @@ test('watchlist keeps expiration-day contracts live and expires them the followi
   assert.equal(isPastWatchlistExpirationDte(null), false);
 });
 
-test('expiration validation rejects a provider fallback while allowing metadata-free legacy fixtures', () => {
+test('expiration validation rejects MISMATCH and UNKNOWN while allowing canonical contract-derived MATCH', () => {
   assert.equal(optionChainMatchesRequestedExpiration({ returnedExpiration: 2_000 }, 2_000), true);
   assert.equal(optionChainMatchesRequestedExpiration({ expirationDate: 2_000 }, 2_000), true);
   assert.equal(optionChainMatchesRequestedExpiration({ returnedExpiration: 3_000 }, 2_000), false);
-  assert.equal(optionChainMatchesRequestedExpiration(null, 2_000), true);
+  assert.equal(optionChainMatchesRequestedExpiration(null, 2_000), false, 'UNKNOWN returned evidence cannot prove the requested expiration');
+  assert.equal(optionChainMatchesRequestedExpiration(null, 2_000, [2_000, 2_000]), true, 'canonical contract identities can prove MATCH');
+  assert.equal(optionChainMatchesRequestedExpiration(null, 2_000, [2_000, null]), false, 'ambiguous contract identity remains UNKNOWN');
 });
 
 test('option detail accepts normalized on-demand symbols and chart publication is latest-request-only', async () => {
@@ -86,7 +88,7 @@ test('option detail accepts normalized on-demand symbols and chart publication i
   const chartModal = await readFile(path.join(root, 'src/components/InteractivePriceChartModal.tsx'), 'utf8');
   assert.match(optionsPage, /if \(!ticker\) return;/);
   assert.match(optionsPage, /resolveTickerDetailInstrument\(ticker \?\? '', optionsData\?\.instrument\)/);
-  assert.match(optionsPage, /optionChainMatchesRequestedExpiration\(opts\.chainMeta, expDate\)/);
+  assert.match(optionsPage, /optionChainMatchesRequestedExpiration\(opts\.chainMeta, expDate, opts\.puts\.map/);
   assert.match(optionsPage, /requestGeneration !== requestGenerationRef\.current/);
   assert.match(chartModal, /requestGeneration !== chartRequestGenerationRef\.current/);
   assert.match(chartModal, /chartRequestGenerationRef\.current \+= 1/);

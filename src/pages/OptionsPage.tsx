@@ -30,7 +30,7 @@ import {
   type OptionQuoteTableDisplayField,
   type OptionYieldDisplayField,
 } from '../lib/optionQuoteDisplay';
-import { isOptionContractIntegrityInvalid, trustedOptionPrice } from '../lib/optionMarketIntegrity';
+import { isOptionContractIntegrityInvalid, parseYahooOptionSymbol, trustedOptionPrice } from '../lib/optionMarketIntegrity';
 import SparklineChart from '../components/SparklineChart';
 import ErrorBoundary from '../components/ErrorBoundary';
 import MobileOptionRow from '../components/mobile/MobileOptionRow';
@@ -462,7 +462,7 @@ export default function OptionsPage() {
       const opts = preferredExp.date && preferredExp.needsChainFetch
         ? await fetchOptions(ticker, preferredExp.date, { bypassCache, fresh, signal: controller.signal, source: fresh ? 'OptionsPage:refresh:fallback' : 'OptionsPage:load:fallback' })
         : initialOpts;
-      if (preferredExp.date && !optionChainMatchesRequestedExpiration(opts.chainMeta, preferredExp.date)) {
+      if (preferredExp.date && !optionChainMatchesRequestedExpiration(opts.chainMeta, preferredExp.date, opts.puts.map(put => parseYahooOptionSymbol(put.contractSymbol).expiration))) {
         throw new Error('The requested expiration was unavailable. The previous chain was preserved.');
       }
       if (requestGeneration !== requestGenerationRef.current) return;
@@ -511,7 +511,7 @@ export default function OptionsPage() {
     try {
       // Only fetch options — preserve existing price state (Opt 5)
       const opts = await fetchOptions(ticker, expDate, { bypassCache, fresh, signal: controller.signal, source: fresh ? 'OptionsPage:refreshExpiration' : 'OptionsPage:loadExpiration' });
-      if (!optionChainMatchesRequestedExpiration(opts.chainMeta, expDate)) {
+      if (!optionChainMatchesRequestedExpiration(opts.chainMeta, expDate, opts.puts.map(put => parseYahooOptionSymbol(put.contractSymbol).expiration))) {
         throw new Error('The requested expiration was unavailable. The previous chain was preserved.');
       }
       if (requestGeneration !== requestGenerationRef.current) return;

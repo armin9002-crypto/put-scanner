@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { fetchBatchPricesResult, fetchOptions, fetchSparkline, fetchWithConcurrencyLimit } from '../lib/api';
+import { fetchBatchPricesResult, fetchOptions, fetchSparklineResult, fetchWithConcurrencyLimit } from '../lib/api';
 import type { SparklineData } from '../lib/api';
 import type { BatchPriceData } from '../lib/cache';
 import ETFCard from '../components/ETFCard';
@@ -56,6 +56,7 @@ import MobileMarketStrip from '../components/mobile/MobileMarketStrip';
 import MobileEtfRow from '../components/mobile/MobileEtfRow';
 import AnalyzeTickerForm from '../components/AnalyzeTickerForm';
 import { PageHeader, SectionHeader } from '../components/ui/PageHeader';
+import { acquireScannerMarketContext, summarizeScannerMarketContext, type ScannerMarketContext } from '../lib/scannerMarketContext';
 
 const SCANNER_PRICE_TICKERS = ETF_LIST.map(etf => etf.ticker);
 
@@ -224,12 +225,10 @@ export default function HomePage() {
   const priceAbortRef = useRef<AbortController | null>(null);
 
   // Market sparkline data (manual refresh only)
-  const [qqqData, setQqqData] = useState<SparklineData | null>(null);
-  const [spyData, setSpyData] = useState<SparklineData | null>(null);
-  const [vixData, setVixData] = useState<SparklineData | null>(null);
-  const [vxnData, setVxnData] = useState<SparklineData | null>(null);
+  const [marketContext, setMarketContext] = useState<ScannerMarketContext>({});
+  const marketContextRef = useRef<ScannerMarketContext>({});
+  marketContextRef.current = marketContext;
   const [marketLoading, setMarketLoading] = useState(true);
-  const [lastMarketUpdate, setLastMarketUpdate] = useState<Date | null>(null);
   const [marketRefreshFailed, setMarketRefreshFailed] = useState(false);
   const [chartModal, setChartModal] = useState<{ ticker: string; displayTicker: string } | null>(null);
   const marketAbortRef = useRef<AbortController | null>(null);
@@ -354,28 +353,24 @@ export default function HomePage() {
   }, [currentSearchParams, serializedScannerState, setSearchParams]);
 
   // Load market sparklines (manual refresh only, with cache)
-  const loadMarketData = useCallback(async () => {
+  const loadMarketData = useCallback(async (explicitRefresh = false) => {
     marketAbortRef.current?.abort(new DOMException('Superseded Scanner chart request', 'AbortError'));
     const controller = new AbortController();
     marketAbortRef.current = controller;
     setMarketLoading(true);
     setMarketRefreshFailed(false);
     try {
-      const [qqq, spy, vix, vxn] = await Promise.allSettled([
-        fetchSparkline('QQQ', { signal: controller.signal }),
-        fetchSparkline('SPY', { signal: controller.signal }),
-        fetchSparkline('^VIX', { signal: controller.signal }),
-        fetchSparkline('^VXN', { signal: controller.signal }),
-      ]);
+      const acquisition = await acquireScannerMarketContext(marketContextRef.current, {
+        mode: explicitRefresh ? 'revalidate' : 'cache-first',
+        signal: controller.signal,
+        fetchResult: fetchSparklineResult,
+      });
       if (controller.signal.aborted) return;
-      if (qqq.status === 'fulfilled') setQqqData(qqq.value);
-      if (spy.status === 'fulfilled') setSpyData(spy.value);
-      if (vix.status === 'fulfilled') setVixData(vix.value);
-      if (vxn.status === 'fulfilled') setVxnData(vxn.value);
-      const fulfilled = [qqq, spy, vix, vxn].filter(result => result.status === 'fulfilled').length;
-      if (fulfilled > 0) setLastMarketUpdate(new Date());
-      setMarketRefreshFailed(fulfilled < 4);
-    } catch { /* ignore */ }
+      setMarketContext(acquisition.context);
+      setMarketRefreshFailed(acquisition.failedCount > 0);
+    } catch {
+      if (!controller.signal.aborted) setMarketRefreshFailed(true);
+    }
     if (marketAbortRef.current === controller) {
       marketAbortRef.current = null;
       setMarketLoading(false);
@@ -383,12 +378,27 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    void loadMarketData();
+    void loadMarketData(false);
     return () => {
       marketAbortRef.current?.abort(new DOMException('Scanner route closed', 'AbortError'));
       marketAbortRef.current = null;
     };
   }, [loadMarketData]);
+
+  const marketSummary = useMemo(() => summarizeScannerMarketContext(marketContext), [marketContext]);
+  const qqqData = marketContext.QQQ?.data ?? null;
+  const spyData = marketContext.SPY?.data ?? null;
+  const vixData = marketContext.VIX?.data ?? null;
+  const vxnData = marketContext.VXN?.data ?? null;
+  const marketFreshnessStatus: DataFreshnessStatus = marketLoading
+    ? 'updating'
+    : marketRefreshFailed
+      ? 'failed'
+      : marketSummary.freshness === 'current'
+        ? 'fresh'
+        : marketSummary.freshness === 'cached-current'
+          ? 'cached'
+          : 'stale';
 
   const openEvidence = useCallback((ticker: string, anchor: HTMLButtonElement) => {
     setActiveEvidence({ ticker, anchor });
@@ -571,10 +581,10 @@ export default function HomePage() {
 
   if (isPhone) {
     const marketItems = [
-      { ticker: 'SPY', data: spyData, chartTicker: 'SPY', isVolatility: false },
-      { ticker: 'QQQ', data: qqqData, chartTicker: 'QQQ', isVolatility: false },
-      { ticker: 'VIX', data: vixData, chartTicker: '^VIX', isVolatility: true },
-      { ticker: 'VXN', data: vxnData, chartTicker: '^VXN', isVolatility: true },
+      { ticker: 'SPY', evidence: marketContext.SPY, chartTicker: 'SPY', isVolatility: false },
+      { ticker: 'QQQ', evidence: marketContext.QQQ, chartTicker: 'QQQ', isVolatility: false },
+      { ticker: 'VIX', evidence: marketContext.VIX, chartTicker: '^VIX', isVolatility: true },
+      { ticker: 'VXN', evidence: marketContext.VXN, chartTicker: '^VXN', isVolatility: true },
     ];
     return (
       <div className="mobile-route-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
@@ -607,11 +617,14 @@ export default function HomePage() {
 
         <MobileMarketStrip items={marketItems.map(item => ({
           ticker: item.ticker,
-          price: item.data?.price ?? null,
-          changePercent: item.data?.changePercent ?? null,
+          price: item.evidence?.data?.price ?? null,
+          changePercent: item.evidence?.data?.changePercent ?? null,
           isVolatility: item.isVolatility,
           loading: marketLoading,
-          onOpen: () => item.data && setChartModal({ ticker: item.chartTicker, displayTicker: item.ticker }),
+          evidenceFreshness: item.evidence?.freshness ?? 'unavailable',
+          observedAt: item.evidence?.observedAt ?? null,
+          source: item.evidence?.source ?? 'unknown',
+          onOpen: () => item.evidence?.data && setChartModal({ ticker: item.chartTicker, displayTicker: item.ticker }),
         }))} />
 
         <div className="mobile-scanner-results-header flex items-center justify-between gap-3 border-y px-3.5 py-2" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
@@ -736,13 +749,13 @@ export default function HomePage() {
                 <div className="scanner-market-rail__eyebrow">Market context</div>
                 <div className="scanner-market-rail__title">Index pulse</div>
               </div>
-              <DataFreshness updatedAt={lastMarketUpdate} status={marketLoading ? 'updating' : marketRefreshFailed ? 'failed' : lastMarketUpdate ? 'fresh' : 'cached'} label="Market" />
+              <DataFreshness updatedAt={marketSummary.observedAt} status={marketFreshnessStatus} evidenceFreshness={marketSummary.freshness} source={`Yahoo Finance (${marketSummary.source})`} label="Market" />
             </div>
             <div className="scanner-market-rail__grid">
-              <MarketChartCard ticker="SPY" chartTicker="SPY" data={spyData} loading={marketLoading} onRefresh={loadMarketData} onOpenChart={(chartTicker, displayTicker) => setChartModal({ ticker: chartTicker, displayTicker })} />
-              <MarketChartCard ticker="VIX" chartTicker="^VIX" data={vixData} loading={marketLoading} onRefresh={loadMarketData} onOpenChart={(chartTicker, displayTicker) => setChartModal({ ticker: chartTicker, displayTicker })} />
-              <MarketChartCard ticker="QQQ" chartTicker="QQQ" data={qqqData} loading={marketLoading} onRefresh={loadMarketData} onOpenChart={(chartTicker, displayTicker) => setChartModal({ ticker: chartTicker, displayTicker })} />
-              <MarketChartCard ticker="VXN" chartTicker="^VXN" data={vxnData} loading={marketLoading} onRefresh={loadMarketData} onOpenChart={(chartTicker, displayTicker) => setChartModal({ ticker: chartTicker, displayTicker })} />
+              <MarketChartCard ticker="SPY" chartTicker="SPY" data={spyData} loading={marketLoading} onRefresh={() => void loadMarketData(true)} onOpenChart={(chartTicker, displayTicker) => setChartModal({ ticker: chartTicker, displayTicker })} />
+              <MarketChartCard ticker="VIX" chartTicker="^VIX" data={vixData} loading={marketLoading} onRefresh={() => void loadMarketData(true)} onOpenChart={(chartTicker, displayTicker) => setChartModal({ ticker: chartTicker, displayTicker })} />
+              <MarketChartCard ticker="QQQ" chartTicker="QQQ" data={qqqData} loading={marketLoading} onRefresh={() => void loadMarketData(true)} onOpenChart={(chartTicker, displayTicker) => setChartModal({ ticker: chartTicker, displayTicker })} />
+              <MarketChartCard ticker="VXN" chartTicker="^VXN" data={vxnData} loading={marketLoading} onRefresh={() => void loadMarketData(true)} onOpenChart={(chartTicker, displayTicker) => setChartModal({ ticker: chartTicker, displayTicker })} />
             </div>
           </section>
         </section>

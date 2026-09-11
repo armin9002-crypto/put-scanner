@@ -1,7 +1,8 @@
 import { calculateDte, calculateMoneyness, calculateYieldPercent, isFiniteNumber, sanitizePositive } from './optionMetrics.ts';
 import { evidenceFreshnessFromChainMeta } from './evidence.ts';
 import { getOptionChainExpirationEvidence } from './optionExpiryNavigation.ts';
-import { isOptionContractIntegrityInvalid, parseYahooOptionSymbol } from './optionMarketIntegrity.ts';
+import { isOptionContractIntegrityInvalid, parseYahooOptionContractIdentity, parseYahooOptionSymbol } from './optionMarketIntegrity.ts';
+import { serializeExactOptionContractStrike } from './portfolioContractIdentity.ts';
 import { resolvePutDeltaWithSource } from './putDelta.ts';
 import {
   isPastWatchlistExpirationDte,
@@ -18,6 +19,23 @@ export function isWatchlistRefreshCurrent(
   signal?: Pick<AbortSignal, 'aborted'>,
 ): boolean {
   return refreshGeneration === currentGeneration && signal?.aborted !== true;
+}
+
+function findExactWatchlistPut(item: WatchlistItem, optData: OptionsChainData) {
+  if (item.optionType !== 'put') return undefined;
+  const ticker = item.ticker.trim().toUpperCase();
+  if (optData.chainMeta?.ticker && optData.chainMeta.ticker.trim().toUpperCase() !== ticker) return undefined;
+  const strike = serializeExactOptionContractStrike(item.strike);
+  return optData.puts.find(candidate => {
+    if (serializeExactOptionContractStrike(candidate.strike) !== strike) return false;
+    if (!candidate.contractSymbol) return true;
+    const identity = parseYahooOptionContractIdentity(candidate.contractSymbol);
+    return identity.ticker === ticker
+      && identity.type === 'P'
+      && identity.expiration === item.expiryTimestamp
+      && identity.strike != null
+      && serializeExactOptionContractStrike(identity.strike) === strike;
+  });
 }
 
 /**
@@ -52,7 +70,7 @@ export function mergeWatchlistRefreshItem(
     };
   }
 
-  const put = optData.puts.find(candidate => Math.abs(candidate.strike - item.strike) < 0.01);
+  const put = findExactWatchlistPut(item, optData);
   const underlyingPrice = sanitizePositive(currentPrice) ?? sanitizePositive(optData.currentPrice);
 
   if (!put) {

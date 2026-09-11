@@ -68,6 +68,18 @@ test('rejects suspicious empty and mismatched chains before they can poison shar
   const missingReturnedExpiration = structuredClone(normalLiquidResponse);
   delete missingReturnedExpiration.optionChain.result[0].options[0].expirationDate;
   assert.equal(inspectYahooOptionData(missingReturnedExpiration, EXPIRATIONS[0]).status, 'incomplete');
+
+  const unknown = structuredClone(missingReturnedExpiration);
+  unknown.optionChain.result[0].options[0].puts.forEach(contract => { contract.contractSymbol = 'malformed'; });
+  unknown.optionChain.result[0].options[0].calls.forEach(contract => { contract.contractSymbol = 'malformed'; });
+  const normalizedUnknown = normalizeOptionChainData(unknown, 'TST', EXPIRATIONS[0], 'fixture-unknown', 'network', null);
+  assert.equal(normalizedUnknown.chainMeta.expirationEvidence, 'unknown');
+  assert.equal(isValidOptionsChain(normalizedUnknown), false, 'a non-empty UNKNOWN chain is not trusted exact-expiration cache evidence');
+
+  const occDerived = structuredClone(missingReturnedExpiration);
+  const normalizedOccDerived = normalizeOptionChainData(occDerived, 'TST', EXPIRATIONS[0], 'fixture-occ', 'network', null);
+  assert.equal(normalizedOccDerived.chainMeta.expirationEvidence, 'match');
+  assert.equal(isValidOptionsChain(normalizedOccDerived), true, 'canonical contract symbols may prove the exact requested expiration');
 });
 
 test('selects nearest 60 DTE expiration with stable tier ordering', () => {

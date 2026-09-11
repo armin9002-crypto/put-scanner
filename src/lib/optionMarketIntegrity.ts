@@ -24,15 +24,34 @@ function raise(assessments: MutableAssessment[], index: number, status: Exclude<
   if (status === 'invalid' || target.status === 'clean') target.status = status;
 }
 
-export function parseYahooOptionSymbol(symbol: string | null | undefined): { expiration: number | null; type: 'C' | 'P' | null; strike: number | null } {
-  const match = symbol?.match(/(\d{6})([CP])(\d{8})$/);
-  if (!match) return { expiration: null, type: null, strike: null };
-  const [, yymmdd, type, strikeRaw] = match;
+export interface YahooOptionContractIdentity {
+  ticker: string | null;
+  expiration: number | null;
+  type: 'C' | 'P' | null;
+  strike: number | null;
+}
+
+export function parseYahooOptionContractIdentity(symbol: string | null | undefined): YahooOptionContractIdentity {
+  const match = symbol?.match(/^(.+?)(\d{6})([CP])(\d{8})$/);
+  if (!match) return { ticker: null, expiration: null, type: null, strike: null };
+  const [, ticker, yymmdd, type, strikeRaw] = match;
+  const year = 2000 + Number(yymmdd.slice(0, 2));
+  const month = Number(yymmdd.slice(2, 4));
+  const day = Number(yymmdd.slice(4, 6));
+  const expirationMs = Date.UTC(year, month - 1, day);
+  const canonicalDate = new Date(expirationMs).toISOString().slice(2, 10).replace(/-/g, '');
+  if (canonicalDate !== yymmdd) return { ticker: null, expiration: null, type: null, strike: null };
   return {
-    expiration: Math.floor(Date.UTC(2000 + Number(yymmdd.slice(0, 2)), Number(yymmdd.slice(2, 4)) - 1, Number(yymmdd.slice(4, 6))) / 1_000),
+    ticker: ticker.trim().toUpperCase(),
+    expiration: Math.floor(expirationMs / 1_000),
     type: type as 'C' | 'P',
     strike: Number(strikeRaw) / 1_000,
   };
+}
+
+export function parseYahooOptionSymbol(symbol: string | null | undefined): { expiration: number | null; type: 'C' | 'P' | null; strike: number | null } {
+  const { expiration, type, strike } = parseYahooOptionContractIdentity(symbol);
+  return { expiration, type, strike };
 }
 
 /** Assesses a same-expiration put surface in O(n log n) time and O(n) space. */

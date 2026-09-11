@@ -30,7 +30,9 @@ export default function DataFreshness({
   const timestamp = updatedAt instanceof Date ? updatedAt.getTime() : typeof updatedAt === 'number' ? updatedAt : updatedAt ? Date.parse(updatedAt) : NaN;
   const validTimestamp = Number.isFinite(timestamp);
   const time = validTimestamp ? new Date(timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : null;
-  const evidenceText = evidenceFreshness === 'retained-stale'
+  const evidenceText = evidenceFreshness === 'unavailable'
+    ? 'Unavailable'
+    : evidenceFreshness === 'retained-stale'
     ? time ? `showing retained data observed ${time}` : 'showing retained data'
     : evidenceFreshness === 'cached-current'
       ? time ? `Cached Â· observed ${time}` : 'Cached'
