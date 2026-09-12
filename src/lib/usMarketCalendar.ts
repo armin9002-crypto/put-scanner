@@ -8,6 +8,18 @@ import { normalizeMarketTimestamp } from './marketTimestamp.ts';
 const DAY_MS = 86_400_000;
 const holidayCache = new Map<number, Set<string>>();
 
+/**
+ * Versioned, static full-day U.S. equity closures that are not recurring
+ * holidays. This intentionally excludes early closes and venue-specific
+ * outages. Trading-session age/freshness uses this set; calendar-day DTE does not.
+ */
+export const US_EQUITY_EXCEPTIONAL_FULL_DAY_CLOSURES_V1: ReadonlySet<string> = new Set([
+  '2004-06-11', // National day of mourning for President Ronald Reagan.
+  '2012-10-29', // Hurricane Sandy.
+  '2012-10-30', // Hurricane Sandy.
+  '2018-12-05', // National day of mourning for President George H.W. Bush.
+]);
+
 export type MarketDateInput = Date | number | string;
 
 export function calendarDateIso(value: MarketDateInput | null | undefined): string | null {
@@ -129,8 +141,16 @@ export function usEquityMarketHolidayDates(year: number): Set<string> {
   ]);
   // Juneteenth became a regular NYSE/Nasdaq closure in 2022.
   if (year >= 2022) holidays.add(observedFixedHoliday(year, 6, 19));
+  for (const closure of US_EQUITY_EXCEPTIONAL_FULL_DAY_CLOSURES_V1) {
+    if (closure.startsWith(`${year}-`)) holidays.add(closure);
+  }
   holidayCache.set(year, holidays);
   return holidays;
+}
+
+export function isUsEquityExceptionalFullDayClosure(value: string | Date): boolean {
+  const date = typeof value === 'string' ? dateFromIso(value) : value;
+  return date ? US_EQUITY_EXCEPTIONAL_FULL_DAY_CLOSURES_V1.has(dateKey(date)) : false;
 }
 
 export function isUsEquityMarketHoliday(value: string | Date): boolean {

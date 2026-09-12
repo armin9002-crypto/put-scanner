@@ -208,11 +208,20 @@ export default function HomePage() {
   const [snapshotIssueRows, setSnapshotIssueRows] = useState<{ ticker: string; status: string; reason: string }[]>([]);
   const [snapshotProgress, setSnapshotProgress] = useState<SnapshotUpdateProgress | null>(null);
   const snapshotUpdateRunningRef = useRef(false);
+  const snapshotRunRef = useRef<{ generation: number; controller: AbortController | null }>({ generation: 0, controller: null });
   const [activeEvidence, setActiveEvidence] = useState<{ ticker: string; anchor: HTMLButtonElement } | null>(null);
   const activeEvidenceRef = useRef<{ ticker: string; anchor: HTMLButtonElement } | null>(null);
   activeEvidenceRef.current = activeEvidence;
   const { expirations: availableExps, availability: expiryAvailability } = expirationState;
   const expirationAvailabilityReady = expirationState.coverage !== 'cached';
+
+  useEffect(() => () => {
+    const currentRun = snapshotRunRef.current;
+    currentRun.generation += 1;
+    currentRun.controller?.abort(new DOMException('Scanner route closed', 'AbortError'));
+    currentRun.controller = null;
+    snapshotUpdateRunningRef.current = false;
+  }, []);
 
   // Batch price data
   const [prices, setPrices] = useState<BatchPriceData>({});
@@ -498,16 +507,29 @@ export default function HomePage() {
 
   const updateVisibleOptionSnapshots = useCallback(async () => {
     closeEvidence();
-    if (snapshotUpdateRunningRef.current) return;
+    snapshotRunRef.current.controller?.abort(new DOMException('Superseded Scanner snapshot sweep', 'AbortError'));
+    const controller = new AbortController();
+    const run = {
+      generation: snapshotRunRef.current.generation + 1,
+      controller,
+    };
+    snapshotRunRef.current = run;
+    snapshotUpdateRunningRef.current = true;
+    const isCurrentRun = () => snapshotRunRef.current === run
+      && snapshotRunRef.current.generation === run.generation
+      && !controller.signal.aborted;
     const tickers = [...new Set(filtered.map(etf => etf.ticker.trim().toUpperCase()))]
       .filter(ticker => isScannerOptionSnapshotStale(optionSnapshots[ticker]) || snapshotDiagnostics[ticker]?.status === 'failed');
     setSnapshotIssueRows([]);
     if (tickers.length === 0) {
-      setSnapshotProgress({ current: 0, total: 0, updated: 0, expanded: 0, unavailable: 0, failed: 0, complete: true });
+      if (isCurrentRun()) {
+        setSnapshotProgress({ current: 0, total: 0, updated: 0, expanded: 0, unavailable: 0, failed: 0, complete: true });
+        snapshotUpdateRunningRef.current = false;
+        snapshotRunRef.current = { ...run, controller: null };
+      }
       return;
     }
 
-    snapshotUpdateRunningRef.current = true;
     setSnapshotProgress({ current: 0, total: tickers.length, updated: 0, expanded: 0, unavailable: 0, failed: 0, complete: false });
     const tasks = tickers.map(ticker => async () => {
       try {
@@ -515,23 +537,26 @@ export default function HomePage() {
           ticker,
           scannerPrice: prices[ticker]?.price ?? null,
           expirationDates: getCachedScannerExpirations(ticker) ?? [],
-          fetchChain: expiration => fetchOptions(
+          signal: controller.signal,
+          fetchChain: (expiration, signal) => fetchOptions(
             ticker,
             expiration,
-            { source: expiration == null ? 'Scanner:updateSnapshot:discovery' : 'Scanner:updateSnapshot:selected' },
+            { source: expiration == null ? 'Scanner:updateSnapshot:discovery' : 'Scanner:updateSnapshot:selected', signal },
           ),
         });
+        if (!isCurrentRun()) throw new DOMException('Scanner snapshot sweep superseded', 'AbortError');
         if (outcome.snapshot && hasScannerSnapshotData(outcome.snapshot)) {
           cacheScannerOptionSnapshot(outcome.snapshot);
         }
         return outcome;
       } finally {
-        setSnapshotProgress(current => current ? { ...current, current: current.current + 1 } : current);
+        if (isCurrentRun()) setSnapshotProgress(current => current ? { ...current, current: current.current + 1 } : current);
       }
     });
 
     try {
-      const settled = await fetchWithConcurrencyLimit(tasks, 3);
+      const settled = await fetchWithConcurrencyLimit(tasks, 3, { signal: controller.signal });
+      if (!isCurrentRun()) return;
       const outcomes = settled.map(result => result.status === 'fulfilled'
         ? result.value
         : {
@@ -554,7 +579,10 @@ export default function HomePage() {
       setSnapshotDiagnostics(getScannerSnapshotDiagnostics());
       setSnapshotProgress(current => current ? { ...current, ...summary, complete: true } : current);
     } finally {
-      snapshotUpdateRunningRef.current = false;
+      if (isCurrentRun()) {
+        snapshotUpdateRunningRef.current = false;
+        snapshotRunRef.current = { ...run, controller: null };
+      }
     }
   }, [closeEvidence, filtered, optionSnapshots, prices, snapshotDiagnostics]);
 

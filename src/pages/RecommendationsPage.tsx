@@ -418,7 +418,6 @@ export default function RecommendationsPage() {
   }, [run]);
 
   const openContract = (candidate: RecommendationCandidate) => {
-    setEvidenceCandidateId(null);
     setDrawerCandidateId(candidate.id);
   };
 

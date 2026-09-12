@@ -1,5 +1,11 @@
 # Stage 6B.3 — Request Observability and Deterministic Browser E2E
 
+> **STATUS: HISTORICAL / SUPERSEDED.** This report contains Stage 6B.3 request-graph and
+> fixture snapshots, including the former 42-ETF-era counts. Those numbers are not current
+> production ceilings. The authoritative current request budgets are maintained in
+> [`src/lib/requestBudgets.ts`](../src/lib/requestBudgets.ts); run `npm run request:ledger`
+> for the current expected/ceiling ledger.
+
 Scope: the existing leveraged-ETF / short-put Put Scanner only. This stage does not add a broader stock universe, Wheel/covered-call workflows, earnings, rolling, alerts, social, subscriptions, or recommendations. Financial formulas and the Stage 3–5 cloud architecture are unchanged.
 
 ## Request graph
@@ -45,9 +51,12 @@ The logs and browser collector explicitly exclude auth tokens, cookies/Yahoo cru
 
 The existing development Network diagnostics panel now summarizes browser requests, Vercel responses, provider attempts, retries, failures, aborts, and per-endpoint cache/circuit/concurrency counters. It is active in development; production remains inert unless the existing device-local `put_scanner_debug_network=true` flag is deliberately set. It uploads nothing.
 
-## Request budgets
+## Historical request-budget snapshot (superseded)
 
-`src/lib/requestBudgets.ts` defines upper regression thresholds, not brittle claims that every conditional retry/cache state has the same exact count.
+The table below records the Stage 6B.3 historical snapshot only. It must not be used as a
+current production limit. `src/lib/requestBudgets.ts` defines the live upper regression
+thresholds, not brittle claims that every conditional retry/cache state has the same exact
+count.
 
 | Workflow | Browser | Vercel | Provider ceiling |
 |---|---:|---:|---:|
@@ -76,7 +85,10 @@ Low-risk propagation now covers:
 
 Generation checks remain the final publication guard. Server routes listen for an aborted request/closed response and pass the resulting signal into provider helpers where supported. Some explicit maintenance paths remain generation-guarded rather than being redesigned; this stage does not add complex cross-function cancellation infrastructure.
 
-## Screener partial retry
+## Historical screener partial-retry example (superseded)
+
+The following 42-ETF example is retained for historical context only. Current request
+authority remains the request ledger linked above.
 
 Every scan result records only internal `failedBatchIds`; the UI exposes no IDs. A partial load keeps normalized results/maps from successful fixed chunks and shows “Some results could not be loaded.” with **Retry failed results**. Retry reconstructs plans from the original ETF/expiration criteria, requests only failed fixed chunks with revalidation, and merges Maps by canonical ticker/expiration keys, preventing duplicate rows.
 

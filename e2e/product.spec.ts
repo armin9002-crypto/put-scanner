@@ -135,6 +135,24 @@ test('Scanner expiration selector stays operable and uses authoritative per-tick
   expect(marketHarness.counts.get('screener-expirations')).toBeLessThanOrEqual(2, 'development Strict Mode may abort and restart the mount request once');
 });
 
+test('Scanner snapshot maintenance stops queued work when the route is abandoned', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop-1440x900', 'one deterministic Scanner cancellation scenario');
+  marketHarness.delays.set('options', 250);
+  await page.goto('/');
+  await expect(page.getByPlaceholder(/Filter \/ Search by Ticker/i).first()).toBeVisible();
+
+  const update = page.locator('.scanner-control-plane__update');
+  await expect(update).toBeVisible();
+  await update.click();
+  await expect.poll(() => marketHarness.counts.get('options') ?? 0, { timeout: 10_000 }).toBe(3);
+
+  await page.goto('/screener');
+  await expect(page.getByRole('button', { name: /Load|Run Screener/i }).first()).toBeVisible();
+  await page.waitForTimeout(400);
+
+  expect(marketHarness.counts.get('options') ?? 0).toBe(3, 'unmount aborts the active bounded set before queued snapshots start');
+});
+
 test('Screener retries failed batches only and preserves successful rows', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop-1440x900', 'one deterministic desktop request-count scenario');
   test.setTimeout(120_000);

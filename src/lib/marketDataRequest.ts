@@ -301,6 +301,7 @@ export async function requestMarketData<T>(options: MarketDataRequestOptions<T>)
     try {
       recordRequestDiagnostic(options.endpoint, 'network', options.source);
       const data = await options.fetcher(controller.signal);
+      if (controller.signal.aborted) throw abortReason(controller.signal);
       if (!options.validator(data)) throw new Error(`Invalid ${options.endpoint} response`);
       const record = writeRecord(options, data);
       noteSuccess(options.endpoint);

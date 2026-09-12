@@ -1,5 +1,6 @@
 import type { ExpirationDate, OptionContract, OptionIntegrityReasonCode, OptionIntegrityStatus, OptionsChainData } from './types';
 import type { DataFreshness } from './marketDataRequest';
+import { isAbortError } from './marketDataRequest.ts';
 import { isOptionContractIntegrityInvalid } from './optionMarketIntegrity.ts';
 import { calculateDte } from './optionMetrics.ts';
 import { exactOptionTradeSessionAge } from './usMarketCalendar.ts';
@@ -621,12 +622,14 @@ export async function updateScannerSnapshotForTicker({
   scannerPrice,
   expirationDates,
   fetchChain,
+  signal,
   now = new Date(),
 }: {
   ticker: string;
   scannerPrice: number | null;
   expirationDates: number[];
-  fetchChain: (expiration?: number) => Promise<OptionsChainData>;
+  fetchChain: (expiration?: number, signal?: AbortSignal) => Promise<OptionsChainData>;
+  signal?: AbortSignal;
   now?: Date;
 }): Promise<ScannerSnapshotUpdateOutcome> {
   const requestedExpirations: Array<number | null> = [];
@@ -635,6 +638,7 @@ export async function updateScannerSnapshotForTicker({
   const requestedKeys = new Set<string>();
 
   const request = async (expiration?: number): Promise<OptionsChainData> => {
+    if (signal?.aborted) throw signal.reason ?? new DOMException('Scanner snapshot update aborted', 'AbortError');
     const key = expiration == null ? 'initial' : String(expiration);
     if (requestedKeys.has(key)) {
       const cached = expiration == null ? null : chainsByExpiration.get(expiration);
@@ -644,7 +648,8 @@ export async function updateScannerSnapshotForTicker({
     if (requestedExpirations.length >= 2) throw new Error('Two-expiration request limit reached.');
     requestedKeys.add(key);
     requestedExpirations.push(expiration ?? null);
-    const chain = await fetchChain(expiration);
+    const chain = await fetchChain(expiration, signal);
+    if (signal?.aborted) throw signal.reason ?? new DOMException('Scanner snapshot update aborted', 'AbortError');
     requestedChains.push(chain);
     const returnedExpiration = chain.chainMeta?.returnedExpiration ?? chain.chainMeta?.expirationDate ?? null;
     if (returnedExpiration != null) chainsByExpiration.set(returnedExpiration, chain);
@@ -724,6 +729,7 @@ export async function updateScannerSnapshotForTicker({
       requestedExpirations,
     };
   } catch (error) {
+    if (isAbortError(error) || signal?.aborted) throw error;
     return {
       status: 'failed',
       snapshot: null,

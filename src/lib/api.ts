@@ -446,7 +446,8 @@ export async function fetchTickerDetail(
 // Concurrency-limited fetch for screener (Opt 4)
 export async function fetchWithConcurrencyLimit<T>(
   tasks: (() => Promise<T>)[],
-  limit = 5
+  limit = 5,
+  options: { signal?: AbortSignal } = {},
 ): Promise<PromiseSettledResult<T>[]> {
-  return mapWithConcurrency(tasks, limit, task => task());
+  return mapWithConcurrency(tasks, limit, task => task(), { signal: options.signal });
 }

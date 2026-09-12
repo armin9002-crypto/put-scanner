@@ -7,10 +7,14 @@ import {
 } from '../src/lib/marketTimestamp.ts';
 import {
   elapsedUsEquityTradingSessions,
+  isUsEquityExceptionalFullDayClosure,
   isUsEquityMarketHoliday,
   isUsEquityTradingSession,
+  calendarDaysBetween,
   usEquityMarketHolidayDates,
 } from '../src/lib/usMarketCalendar.ts';
+import { calculateDte } from '../src/lib/optionMetrics.ts';
+import { getOptionLastTradeFreshness } from '../src/lib/optionLastTradeFreshness.ts';
 import { getPortfolioQuoteFreshness } from '../src/lib/portfolioQuoteFreshness.ts';
 import { normalizeOptionChainData } from '../src/lib/yahooOptionAdapter.ts';
 
@@ -60,6 +64,25 @@ test('local equity calendar covers weekends, federal closures, Good Friday, June
   assert.equal(usEquityMarketHolidayDates(2026).has('2026-11-26'), true);
   assert.equal(elapsedUsEquityTradingSessions('2024-03-28', '2024-04-01'), 1);
   assert.equal(elapsedUsEquityTradingSessions('2026-08-28', '2026-08-31'), 1);
+});
+
+test('exceptional full-day closures affect trading-session age but not calendar-day DTE or held-day semantics', () => {
+  for (const date of ['2004-06-11', '2012-10-29', '2012-10-30', '2018-12-05']) {
+    assert.equal(isUsEquityExceptionalFullDayClosure(date), true, `${date} is a maintained exceptional closure`);
+    assert.equal(isUsEquityMarketHoliday(date), true, `${date} is a market closure`);
+    assert.equal(isUsEquityTradingSession(date), false, `${date} is not a trading session`);
+  }
+  assert.equal(isUsEquityTradingSession('2012-10-26'), true);
+  assert.equal(isUsEquityTradingSession('2012-10-31'), true);
+  assert.equal(isUsEquityTradingSession('2018-12-04'), true);
+  assert.equal(isUsEquityTradingSession('2018-12-06'), true);
+
+  assert.equal(elapsedUsEquityTradingSessions('2012-10-26', '2012-10-31'), 1, 'Sandy closures are omitted from session age');
+  assert.equal(elapsedUsEquityTradingSessions('2018-12-04', '2018-12-06'), 1, 'the Bush mourning closure is omitted from session age');
+  assert.equal(getOptionLastTradeFreshness('2012-10-26T15:00:00Z', '2012-10-31T16:00:00Z').ageSessions, 1);
+
+  assert.equal(calculateDte('2012-10-31', '2012-10-26'), 5, 'DTE remains calendar-day based');
+  assert.equal(calendarDaysBetween('2012-10-26', '2012-10-31'), 5, 'Days Held/calendar duration remains unchanged');
 });
 
 test('Portfolio freshness uses provider market time, ignores cache reads, and separates last trade age', () => {
