@@ -1,3 +1,6 @@
+import { parseYahooOptionContractIdentity } from './optionMarketIntegrity.ts';
+import type { OptionContract } from './types.ts';
+
 export interface PortfolioContractIdentity {
   ticker: string;
   optionType: string;
@@ -41,4 +44,29 @@ export function makePortfolioContractKey(identity: PortfolioContractIdentity): s
     return `${identity.ticker.trim().toUpperCase()}|${identity.optionType.trim().toLowerCase()}|${expiration}|${String(identity.strike)}`;
   }
   return buildExactOptionContractKey({ ...identity, expiration });
+}
+
+/**
+ * Matches a put row to canonical Portfolio identity and, when supplied, requires
+ * its OCC/Yahoo symbol to describe that same ticker, expiry, type, and strike.
+ */
+export function optionContractMatchesExactIdentity(
+  contract: Pick<OptionContract, 'strike' | 'contractSymbol'>,
+  identity: ExactOptionContractIdentity,
+): boolean {
+  const ticker = identity.ticker.trim().toUpperCase();
+  const optionType = identity.optionType.trim().toLowerCase();
+  const expiration = normalizePortfolioContractExpiration(identity.expiration);
+  const expirationSeconds = Date.parse(`${expiration}T00:00:00Z`) / 1_000;
+  const strike = serializeExactOptionContractStrike(identity.strike);
+  if (!ticker || optionType !== 'put' || !Number.isSafeInteger(expirationSeconds)
+    || serializeExactOptionContractStrike(contract.strike) !== strike) return false;
+  if (!contract.contractSymbol) return true;
+
+  const occ = parseYahooOptionContractIdentity(contract.contractSymbol);
+  return occ.ticker === ticker
+    && occ.type === 'P'
+    && occ.expiration === expirationSeconds
+    && occ.strike != null
+    && serializeExactOptionContractStrike(occ.strike) === strike;
 }

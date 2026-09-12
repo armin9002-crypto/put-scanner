@@ -122,6 +122,51 @@ test('new current trade captures Delta and percentage-point IV from one exact-co
   );
 });
 
+test('entry snapshot capture requires canonical strike, put/OCC identity, and authoritative expiration evidence', async () => {
+  const now = new Date('2026-08-28T15:05:00.000Z');
+  const exact = { ...chain().puts[0], delta: -0.31, impliedVolatility: 61 };
+  const near = { ...chain().puts[0], strike: 50.00009, delta: -0.91, impliedVolatility: 99 };
+  for (const puts of [[near, exact], [exact, near]]) {
+    const result = entrySnapshotFromExactChain(trade(), chain({ puts }), now);
+    assert.equal(result.status, 'captured');
+    assert.deepEqual([result.capture.entryDelta, result.capture.entryIv], [-0.31, 61], 'the exact row wins independent of provider order');
+  }
+
+  for (const candidate of [
+    near,
+    { ...exact, contractSymbol: 'TQQQ261016P00051000' },
+    { ...exact, contractSymbol: 'SPY261016P00050000' },
+    { ...exact, contractSymbol: 'TQQQ261016C00050000' },
+  ]) {
+    const result = entrySnapshotFromExactChain(trade(), chain({ puts: [candidate] }), now);
+    assert.equal(result.status, 'unavailable');
+    assert.equal(result.capture, undefined);
+  }
+
+  const fractionalTrade = trade({ strike: 50.00009 });
+  assert.equal(entrySnapshotFromExactChain(fractionalTrade, chain({ puts: [exact] }), now).status, 'unavailable');
+
+  const unknownExpiration = chain({
+    puts: [exact],
+    chainMeta: { ...chain().chainMeta, requestedExpiration: 1_792_108_800, returnedExpiration: null, expirationDate: null, expirationEvidence: 'unknown' },
+  });
+  assert.equal(entrySnapshotFromExactChain(trade(), unknownExpiration, now).status, 'unavailable', 'the request parameter alone is not expiration evidence');
+
+  const occExpiration = chain({
+    puts: [{ ...exact, contractSymbol: 'TQQQ261016P00050000' }],
+    chainMeta: { ...chain().chainMeta, requestedExpiration: 1_792_108_800, returnedExpiration: null, expirationDate: null, expirationEvidence: 'unknown' },
+  });
+  assert.equal(entrySnapshotFromExactChain(trade(), occExpiration, now).status, 'captured', 'canonical OCC evidence can prove expiration');
+
+  const uncaptured = trade({ entrySnapshot: undefined, entryDelta: undefined, entryDeltaSource: undefined, entryIv: undefined, entryIvSource: undefined });
+  const enriched = await enrichCurrentTradeEntrySnapshot(uncaptured, async () => chain({ puts: [near] }), now);
+  assert.equal(enriched.status, 'unavailable');
+  assert.equal(enriched.trade, uncaptured);
+  assert.equal(enriched.trade.entrySnapshot, undefined);
+  assert.equal(enriched.trade.entryDelta, undefined);
+  assert.equal(enriched.trade.entryIv, undefined);
+});
+
 test('snapshot lookup failure leaves an eligible open trade saveable without Delta or IV', async () => {
   const now = new Date('2026-08-31T15:05:00.000Z');
   const current = trade({ soldDate: '2026-08-31', expiration: '2026-09-18', entrySnapshot: undefined, latestMarketData: undefined });
@@ -205,6 +250,14 @@ test('manual Entry Delta and Entry IV remain position-specific and quote refresh
   assert.deepEqual(merged.map(item => item.entryDelta), [-0.21, -0.33]);
   assert.deepEqual(merged.map(item => item.entryIv), [51, 72]);
   assert.deepEqual(merged.map(item => item.latestMarketData.delta), [-0.7, -0.8]);
+});
+
+test('an in-flight refresh cannot publish onto a near-fractional strike edit', () => {
+  const requested = trade({ strike: 50, latestMarketData: { optionBid: 1, refreshedAt: '2026-08-28T15:00:00.000Z' } });
+  const refreshed = { ...requested, latestMarketData: { optionBid: 9, refreshedAt: '2026-08-28T16:00:00.000Z' } };
+  const edited = { ...requested, strike: 50.00009, latestMarketData: { optionBid: 2, refreshedAt: '2026-08-28T15:30:00.000Z' } };
+  assert.equal(mergePortfolioMarketRefresh([edited], [refreshed])[0], edited);
+  assert.equal(mergePortfolioMarketRefresh([edited], [refreshed])[0].latestMarketData.optionBid, 2);
 });
 
 test('legacy Entry Delta recovery uses only a stored entry snapshot and preserves lifecycle history', () => {

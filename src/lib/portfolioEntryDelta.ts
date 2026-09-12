@@ -1,7 +1,9 @@
 import { isFiniteNumber } from './optionMetrics.ts';
 import { resolvePutDeltaWithSource } from './putDelta.ts';
 import type { OptionsChainData } from './types.ts';
-import { isOptionContractIntegrityInvalid } from './optionMarketIntegrity.ts';
+import { isOptionContractIntegrityInvalid, parseYahooOptionSymbol } from './optionMarketIntegrity.ts';
+import { getOptionChainExpirationEvidence } from './optionExpiryNavigation.ts';
+import { optionContractMatchesExactIdentity } from './portfolioContractIdentity.ts';
 import { calendarDaysBetween, usMarketDateIso } from './usMarketCalendar.ts';
 import type {
   PortfolioEntryDeltaSource,
@@ -125,12 +127,6 @@ function calculateDteAt(expiration: string, marketDate: string): number | null {
   return calendarDaysBetween(marketDate, expiration);
 }
 
-function expirationDateIso(value: number): string | null {
-  const timestamp = value < 10_000_000_000 ? value * 1000 : value;
-  const date = new Date(timestamp);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
-}
-
 export function entrySnapshotFromExactChain(
   trade: Pick<PortfolioTrade, 'ticker' | 'strike' | 'expiration' | 'soldDate' | 'status'>,
   chain: OptionsChainData,
@@ -145,12 +141,8 @@ export function entrySnapshotFromExactChain(
   if (trade.expiration < trade.soldDate) {
     return { status: 'ineligible', reason: 'An expired contract cannot receive a current entry snapshot.' };
   }
-  if (chain.chainMeta?.ticker && chain.chainMeta.ticker.toUpperCase() !== trade.ticker.toUpperCase()) {
+  if (!chain.chainMeta?.ticker || chain.chainMeta.ticker.trim().toUpperCase() !== trade.ticker.trim().toUpperCase()) {
     return { status: 'unavailable', reason: 'The option chain belongs to a different ticker.' };
-  }
-  const chainExpiration = chain.chainMeta?.returnedExpiration ?? chain.chainMeta?.expirationDate ?? chain.chainMeta?.requestedExpiration;
-  if (isFiniteNumber(chainExpiration) && expirationDateIso(chainExpiration) !== trade.expiration) {
-    return { status: 'unavailable', reason: 'The option chain belongs to a different expiration.' };
   }
   if (chain.chainMeta?.staleFallbackUsed || chain.chainMeta?.freshness === 'stale') {
     return { status: 'unavailable', reason: 'The available option chain is stale.' };
@@ -159,8 +151,18 @@ export function entrySnapshotFromExactChain(
     return { status: 'unavailable', reason: 'The option chain was not observed on the trade entry date.' };
   }
 
-  const put = chain.puts.find(candidate => Math.abs(candidate.strike - trade.strike) < 0.0001);
+  const expirationSeconds = isoDateToUnixSeconds(trade.expiration)!;
+  const identity = { ticker: trade.ticker, optionType: 'put', expiration: trade.expiration, strike: trade.strike };
+  const put = chain.puts.find(candidate => optionContractMatchesExactIdentity(candidate, identity));
   if (!put) return { status: 'unavailable', reason: 'The exact put contract was not available.' };
+  const expirationEvidence = getOptionChainExpirationEvidence(
+    chain.chainMeta,
+    expirationSeconds,
+    [parseYahooOptionSymbol(put.contractSymbol).expiration],
+  );
+  if (expirationEvidence !== 'match') {
+    return { status: 'unavailable', reason: 'The exact contract expiration could not be verified.' };
+  }
   if (isOptionContractIntegrityInvalid(put)) {
     return { status: 'unavailable', reason: 'The exact contract quote is financially inconsistent; Entry Delta and IV were not captured.' };
   }

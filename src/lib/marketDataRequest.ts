@@ -1,4 +1,5 @@
 import { recordRequestDiagnostic, type RequestEndpoint } from './requestDiagnostics.ts';
+import { normalizeMarketTimestamp } from './marketTimestamp.ts';
 
 export type DataFreshness = 'fresh' | 'stale' | 'expired';
 export type RefreshMode = 'cache-first' | 'revalidate' | 'fresh';
@@ -7,6 +8,7 @@ export type RequestPriority = 'interactive' | 'user_refresh' | 'background_reuse
 export interface CacheRecord<T> {
   data: T;
   fetchedAt: number;
+  observedAt?: number;
   cachedAt?: number;
   softExpiresAt: number;
   hardExpiresAt: number;
@@ -133,10 +135,23 @@ function readRecord<T>(options: MarketDataRequestOptions<T>): { record: CacheRec
   }
 }
 
+function providerObservationTime<T>(data: T, fetchedAt: number): number {
+  const providerMarketTime = data && typeof data === 'object' && 'providerMarketTime' in data
+    ? (data as { providerMarketTime?: unknown }).providerMarketTime
+    : null;
+  return normalizeMarketTimestamp(providerMarketTime, { nowMs: fetchedAt }) ?? fetchedAt;
+}
+
+function recordObservationTime<T>(record: CacheRecord<T>): number {
+  return normalizeMarketTimestamp(record.observedAt, { nowMs: record.fetchedAt })
+    ?? providerObservationTime(record.data, record.fetchedAt);
+}
+
 function writeRecord<T>(options: MarketDataRequestOptions<T>, data: T, fetchedAt = Date.now()): CacheRecord<T> {
   const record: CacheRecord<T> = {
     data,
     fetchedAt,
+    observedAt: providerObservationTime(data, fetchedAt),
     cachedAt: Date.now(),
     softExpiresAt: fetchedAt + options.softTtlMs,
     hardExpiresAt: fetchedAt + options.hardTtlMs,
@@ -223,7 +238,7 @@ function resultFromRecord<T>(record: CacheRecord<T>, source: 'memory' | 'persist
       networkCall: false,
       deduped,
       staleFallbackUsed: source === 'stale-fallback',
-      observedAt: record.fetchedAt,
+      observedAt: recordObservationTime(record),
       cachedAt: record.cachedAt,
     },
   };
@@ -315,7 +330,7 @@ export async function requestMarketData<T>(options: MarketDataRequestOptions<T>)
           networkCall: true,
           deduped: false,
           staleFallbackUsed: false,
-          observedAt: record.fetchedAt,
+          observedAt: recordObservationTime(record),
           cachedAt: record.cachedAt,
         },
       };

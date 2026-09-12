@@ -124,7 +124,7 @@ test('Scanner expiration selector stays operable and uses authoritative per-tick
 
   const expirationSelect = page.locator('select[aria-label="Scanner expiration"], .scanner-control-plane__expiration select').first();
   await expect(expirationSelect).toBeVisible();
-  await expect(page.getByText(/^42 results/).first()).toBeVisible();
+  await expect(page.getByText(new RegExp(`^${scannerTickers.length} results`)).first()).toBeVisible();
   await expirationSelect.click();
   await expect(expirationSelect).toBeFocused();
 
@@ -133,6 +133,7 @@ test('Scanner expiration selector stays operable and uses authoritative per-tick
   await expirationSelect.selectOption('date_1801180800');
   await expect(page.getByText(/^6 results/).first()).toBeVisible();
   expect(marketHarness.counts.get('screener-expirations')).toBeLessThanOrEqual(2, 'development Strict Mode may abort and restart the mount request once');
+  expect(consoleErrors, consoleErrors.join('\n')).toEqual([]);
 });
 
 test('Scanner snapshot maintenance stops queued work when the route is abandoned', async ({ page }, testInfo) => {

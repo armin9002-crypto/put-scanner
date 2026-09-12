@@ -104,6 +104,8 @@ A signed-in export is constructed directly from the tracked canonical cloud rows
 
 Restore is signed-in only, explicitly confirmed, validated before writing, and performs revision-checked namespace cloud mutations. The mandatory pre-import recovery download is also generated from cloud state. A stale revision stops the restore, reloads cloud state, and requires an explicit retry. Signed-out import controls are disabled and explain that sign-in is required.
 
+Namespace restores commit sequentially and are not atomic across the three namespaces. If a later namespace fails, any earlier namespace that already passed CAS remains restored; the UI reports the restore as incomplete, reloads authoritative cloud state, and shows no success message. The user should review the reloaded account state and explicitly retry if needed rather than assuming an all-or-nothing rollback.
+
 ## Removed architecture
 
 Stage 7A deletes the Stage 4 migration planner/restore path, Stage 5 device identity and enrollment, fingerprints, local/cloud revision metadata, reconciliation matrix, namespace freeze/recovery dialogs, retry queue, startup sync coordinator, development migration/sync harnesses, and their intentionally obsolete tests. The cloud transport, validation, schema, RLS assumptions, CAS primitive, mutation signal, durable domain validation, and manual backup format remain.

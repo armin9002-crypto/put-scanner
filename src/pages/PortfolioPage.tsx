@@ -7,6 +7,7 @@ import { fetchBatchPricesResult, fetchOptions } from '../lib/api';
 import { resolvePutDelta } from '../lib/putDelta';
 import type { OptionsChainData } from '../lib/types';
 import { isOptionContractIntegrityInvalid } from '../lib/optionMarketIntegrity';
+import { getOptionLastTradeFreshness } from '../lib/optionLastTradeFreshness';
 import { acquireOptionChains, canonicalOptionChainKey } from '../lib/optionChainRequests';
 import { formatCurrency, formatDate, formatOptionPrice, formatPercent, formatPercentPoints, normalizeTimestampMs } from '../lib/format';
 import { calculateDte, calculateMoneyness, calculateVolumeOpenInterestRatio, calculateYieldPercent, isFiniteNumber, sanitizePositive } from '../lib/optionMetrics';
@@ -129,6 +130,7 @@ import {
 } from '../lib/portfolioEntryDelta';
 import { assessPortfolioMaintenance } from '../lib/portfolioMaintenance';
 import { getPortfolioQuoteFreshness, isPortfolioQuoteDecisionEligible, summarizePortfolioQuoteFreshness } from '../lib/portfolioQuoteFreshness';
+import { makePortfolioContractKey } from '../lib/portfolioContractIdentity';
 import { resolvePortfolioEntryVix } from '../lib/portfolioEntryVix';
 import { confirmPortfolioTradeExpiredWorthless, isManualWorthlessConfirmationEligible } from '../lib/portfolioRealizedEconomics';
 import RollingHistoricalAnalyticsChart from '../components/RollingHistoricalAnalyticsChart';
@@ -388,19 +390,6 @@ function getPortfolioMidMark(trade: PortfolioTrade): number | null {
   return bid != null && ask != null && ask >= bid ? (bid + ask) / 2 : null;
 }
 
-function getLastTradeStaleness(value: string | number | null | undefined): { label: string | null; color: string } {
-  const timestamp = typeof value === 'number' ? normalizeTimestampMs(value) : value ? new Date(value).getTime() : null;
-  if (timestamp == null || Number.isNaN(timestamp)) return { label: null, color: 'var(--text-muted)' };
-  const tradeDate = new Date(timestamp);
-  const now = new Date();
-  const tradeMidnight = new Date(tradeDate.getFullYear(), tradeDate.getMonth(), tradeDate.getDate()).getTime();
-  const nowMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const ageDays = Math.max(0, Math.floor((nowMidnight - tradeMidnight) / 86400000));
-  if (ageDays > 7) return { label: 'Very stale', color: 'var(--red)' };
-  if (ageDays > 2) return { label: 'Stale', color: 'var(--yellow)' };
-  return { label: null, color: 'var(--text-muted)' };
-}
-
 function TooltipRows({ rows }: { rows: Array<{ label: string; value: string; color?: string }> }) {
   return (
     <div className="mt-1 grid gap-1">
@@ -459,7 +448,7 @@ function HoverTooltip({ children, content, ariaLabel }: { children: ReactNode; c
 }
 
 function CurrentMarkTooltipContent({ trade, markBasis }: { trade: PortfolioTrade; markBasis: MarkBasis }) {
-  const stale = getLastTradeStaleness(trade.latestMarketData?.lastTradeDate);
+  const lastTradeFreshness = getOptionLastTradeFreshness(trade.latestMarketData?.lastTradeDate);
   const quoteFreshness = getPortfolioQuoteFreshness(trade);
   return (
     <div>
@@ -474,8 +463,8 @@ function CurrentMarkTooltipContent({ trade, markBasis }: { trade: PortfolioTrade
         }).map(({ field, label, value }) => ({ label, value: formatOptionQuoteValue(field, value, formatOptionPrice) })),
         {
           label: 'Last Trade Date',
-          value: `${formatFullDate(trade.latestMarketData?.lastTradeDate)}${stale.label ? ` · ${stale.label}` : ''}`,
-          color: stale.label ? stale.color : undefined,
+          value: `${formatFullDate(trade.latestMarketData?.lastTradeDate)}${lastTradeFreshness.label ? ` · ${lastTradeFreshness.label}` : ''}`,
+          color: lastTradeFreshness.color,
         },
         { label: 'Quote Freshness', value: resolvePortfolioMark(trade, markBasis).source === 'last_fallback' ? 'Stale Last valuation only' : `${quoteFreshness.label} · ${quoteFreshness.freshnessTimestampSource === 'provider_market_time' ? 'provider market time' : quoteFreshness.freshnessTimestampSource === 'provider_quote' ? 'provider quote time' : 'observation time'}` },
       ]} />
@@ -1778,9 +1767,7 @@ export default function PortfolioPage() {
     const next = latest.map(current => {
       if (current.id !== inspected.id
         || current.updatedAt !== inspected.updatedAt
-        || current.ticker !== inspected.ticker
-        || current.expiration !== inspected.expiration
-        || current.strike !== inspected.strike) return current;
+        || makePortfolioContractKey(current) !== makePortfolioContractKey(inspected)) return current;
       const addDelta = !isValidEntryDelta(current.entryDelta) && isValidEntryDelta(result.trade.entryDelta);
       const addIv = !isValidEntryIv(current.entryIv) && isValidEntryIv(result.trade.entryIv);
       if (!addDelta && !addIv) return current;

@@ -85,6 +85,25 @@ test('exceptional full-day closures affect trading-session age but not calendar-
   assert.equal(calendarDaysBetween('2012-10-26', '2012-10-31'), 5, 'Days Held/calendar duration remains unchanged');
 });
 
+test('Portfolio Last Trade tooltip authority uses New York trading sessions at closures and thresholds', () => {
+  const cases = [
+    ['2026-09-11T15:00:00Z', '2026-09-14T16:00:00Z', 1],
+    ['2012-10-26T15:00:00Z', '2012-10-31T16:00:00Z', 1],
+    ['2018-12-04T15:00:00Z', '2018-12-06T16:00:00Z', 1],
+    ['2004-06-10T15:00:00Z', '2004-06-14T16:00:00Z', 1],
+  ];
+  for (const [lastTrade, asOf, expectedAge] of cases) {
+    const presentation = getOptionLastTradeFreshness(lastTrade, asOf);
+    assert.equal(presentation.ageSessions, expectedAge);
+    assert.equal(presentation.freshness, 'recent');
+    assert.equal(presentation.label, null);
+  }
+
+  assert.deepEqual(getOptionLastTradeFreshness('2026-09-09T15:00:00Z', '2026-09-14T16:00:00Z'), { freshness: 'stale', ageSessions: 3, label: 'Stale', color: 'var(--yellow)' });
+  assert.deepEqual(getOptionLastTradeFreshness('2026-09-01T15:00:00Z', '2026-09-14T16:00:00Z'), { freshness: 'very_stale', ageSessions: 8, label: 'Very stale', color: 'var(--red)' });
+  assert.equal(getOptionLastTradeFreshness('2026-09-04T19:30:00Z', '2026-09-08T00:30:00Z').ageSessions, 0, 'UTC Tuesday is still the Monday holiday in New York');
+});
+
 test('Portfolio freshness uses provider market time, ignores cache reads, and separates last trade age', () => {
   const fresh = getPortfolioQuoteFreshness(trade({ underlyingPrice: 65, optionBid: 1, refreshedAt: '2026-08-31T15:00:00Z', providerMarketAt: '2026-08-31T15:30:00Z', cachedAt: '2026-08-31T15:59:00Z', lastTradeDate: '2026-08-20T15:00:00Z', availabilityStatus: 'live' }), new Date(NOW));
   assert.equal(fresh.state, 'fresh');

@@ -1,5 +1,6 @@
 import { isFiniteNumber } from './optionMetrics.ts';
 import { calculatePremiumCollected } from './portfolioMetrics.ts';
+import { makePortfolioContractKey } from './portfolioContractIdentity.ts';
 import { usMarketDateIso } from './portfolioEntryDelta.ts';
 import type { PortfolioTrade } from './portfolioStorage.ts';
 
@@ -195,9 +196,7 @@ export function reconcilePortfolioTradeEconomics(previous: PortfolioTrade | null
 
   const assignmentEconomicsChanged = previous == null
     || previous.status !== 'assigned'
-    || previous.ticker !== candidate.ticker
-    || previous.expiration !== candidate.expiration
-    || previous.strike !== candidate.strike
+    || makePortfolioContractKey(previous) !== makePortfolioContractKey(candidate)
     || previous.contracts !== candidate.contracts
     || previous.soldPrice !== candidate.soldPrice
     || previous.soldDate !== candidate.soldDate;

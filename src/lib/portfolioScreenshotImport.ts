@@ -1,4 +1,4 @@
-import { makePortfolioContractKey } from './portfolioContractIdentity.ts';
+import { makePortfolioContractKey, serializeExactOptionContractStrike } from './portfolioContractIdentity.ts';
 import type { PortfolioTrade, PortfolioTradeInput } from './portfolioStorage';
 
 export type OptionSide = 'short' | 'long' | 'unknown';
@@ -518,7 +518,7 @@ export function getImportDifferences(existingTradeOrLots: PortfolioTrade | Portf
   const differences: ImportDifference[] = [];
   addTextDifference(differences, 'Ticker', existingTrade.ticker, row.ticker);
   addTextDifference(differences, 'Expiry', existingTrade.expiration, row.expiration);
-  addNumberDifference(differences, 'Strike', existingTrade.strike, row.strike, 0.0001, formatPlainNumber);
+  addStrikeDifference(differences, existingTrade.strike, row.strike);
   addNumberDifference(differences, 'Quantity', -Math.abs(trackedContracts), row.quantity, 0.01, formatPlainNumber);
   addNumberDifference(differences, 'Contracts', trackedContracts, row.contracts, 0.01, formatPlainNumber);
   addNumberDifference(differences, 'Avg. cost basis', trackedSoldPrice, getExactSoldPrice(row), 0.005, formatOptionDiff);
@@ -579,6 +579,19 @@ function addTextDifference(differences: ImportDifference[], field: string, exist
   if (!existingValue && !importedValue) return;
   if (existingValue === importedValue) return;
   differences.push({ field, existing: existingValue || '—', imported: importedValue || '—' });
+}
+
+function addStrikeDifference(
+  differences: ImportDifference[],
+  existing: number | null | undefined,
+  imported: number | null | undefined,
+): void {
+  const existingValid = Number.isFinite(existing);
+  const importedValid = Number.isFinite(imported);
+  if (!existingValid && !importedValid) return;
+  if (existingValid && importedValid
+    && serializeExactOptionContractStrike(Number(existing)) === serializeExactOptionContractStrike(Number(imported))) return;
+  differences.push({ field: 'Strike', existing: formatPlainNumber(existing), imported: formatPlainNumber(imported) });
 }
 
 function addNumberDifference(

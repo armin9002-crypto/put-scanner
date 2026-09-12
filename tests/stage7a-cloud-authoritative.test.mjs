@@ -465,6 +465,34 @@ test('signed-in backup is built from canonical cloud rows and explicit restore u
   assert.equal(backend.updateCalls.every(call => call.expectedRevision === 10), true);
 });
 
+test('restore is sequential and reports partial completion when a later namespace CAS fails', async t => {
+  const backend = new SharedCloudBackend();
+  const device = runtime(backend);
+  t.after(() => device.manager.destroy());
+  await device.manager.setAccount(userId, true);
+  const backup = createPutScannerBackupFromCloudState(device.manager.getSnapshot().cloud, { now: fixedNow, appVersion: '7.0.0' });
+  const edited = validatePutScannerBackup(clone(backup));
+  edited.data.portfolio.data[0].notes = 'portfolio committed first';
+  edited.data.watchlist.data[0].note = 'watchlist should fail';
+  backend.beforeUpdate = async () => {
+    if (backend.updateCalls.length === 2) backend.updateError = true;
+  };
+
+  const result = await device.manager.restoreBackup(edited);
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'network_error');
+  assert.match(result.message, /not fully restored/i);
+  assert.deepEqual(backend.updateCalls.map(call => call.namespace), ['portfolio', 'watchlist'], 'the failed namespace is not blindly retried and later namespaces are not attempted');
+  assert.equal(backend.state.portfolio.payload.data[0].notes, 'portfolio committed first', 'the earlier successful CAS remains committed');
+  assert.equal(backend.state.watchlist.payload.data[0].note, 'cloud watch', 'the failed namespace is not falsely committed');
+  assert.deepEqual(backend.fetchNamespaceCalls, ['watchlist'], 'the failed namespace is authoritatively reloaded');
+  assert.equal(readPortfolioTrades(device.storage).data[0].notes, 'portfolio committed first');
+  assert.equal(readWatchlist(device.storage).data[0].note, 'cloud watch');
+  assert.equal(device.manager.getSnapshot().phase, 'error');
+  assert.equal(device.manager.getSnapshot().pendingWrites, 0);
+  assert.doesNotMatch(device.manager.getSnapshot().message, /Backup restored to your account/i);
+});
+
 test('legacy cleanup is an explicit account-only allowlist', () => {
   assert.deepEqual([...LEGACY_DURABLE_ACCOUNT_KEYS], [
     'put_scanner_portfolio_trades',

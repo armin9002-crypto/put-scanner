@@ -68,6 +68,25 @@ test('LEAP E: never synthesize Last from entry, another contract, zero, or nonfi
   assert.equal(findExactPortfolioPut(trade, { ...chain, puts: [{ ...put, contractSymbol: 'LABU280121P00040000' }] }).last, 5);
 });
 
+test('Portfolio refresh selects only canonical exact identity independent of row order', () => {
+  const exactTrade = { ...trade, strike: 50 };
+  const exact = { ...put, strike: 50, last: 4, rawLastPrice: 4 };
+  const near = { ...put, strike: 50.00009, last: 9, rawLastPrice: 9 };
+  for (const puts of [[near, exact], [exact, near]]) {
+    assert.equal(findExactPortfolioPut(exactTrade, { ...chain, puts })?.last, 4);
+  }
+  assert.equal(findExactPortfolioPut(exactTrade, { ...chain, puts: [near] }), null);
+  assert.equal(findExactPortfolioPut({ ...exactTrade, strike: 50.00009 }, { ...chain, puts: [exact] }), null);
+  for (const contractSymbol of [
+    'LABU280121P00051000',
+    'SPY280121P00050000',
+    'LABU280121C00050000',
+  ]) {
+    assert.equal(findExactPortfolioPut(exactTrade, { ...chain, puts: [{ ...exact, contractSymbol }] }), null);
+  }
+  assert.equal(findExactPortfolioPut(exactTrade, { ...chain, puts: [{ ...exact, contractSymbol: 'LABU280121P00050000' }] })?.last, 4);
+});
+
 test('whole-chain rejection exposes already acquired Last only to Portfolio, with one request and no invalid cache write', async () => {
   const rejected = { ...chain, chainMeta: { ...chain.chainMeta, integrity: { status: 'invalid' } } };
   const options = { key: 'test-portfolio-rejected-chain', endpoint: 'options', source: 'test', mode: 'revalidate', softTtlMs: 1000, hardTtlMs: 10000, schemaVersion: 5, validator: isValidOptionsChain };

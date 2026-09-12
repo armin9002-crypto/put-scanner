@@ -124,6 +124,59 @@ test('explicit sparkline revalidation does not accept an 11-minute local record 
   }
 });
 
+test('Scanner sparkline observation time follows normalized provider time across network, cache, and explicit refresh', async () => {
+  const realNow = Date.now;
+  const providerAt = Date.parse('2026-09-11T13:55:00Z');
+  const completedAt = Date.parse('2026-09-11T14:00:00Z');
+  const cacheReadAt = Date.parse('2026-09-11T14:04:00Z');
+  let now = completedAt;
+  let providerMarketTime = providerAt / 1_000;
+  let calls = 0;
+  Date.now = () => now;
+  const options = {
+    key: `sparkline-provider-time-${Math.random()}`,
+    source: 'fetchSparkline',
+    endpoint: 'price',
+    softTtlMs: 10 * 60 * 1000,
+    hardTtlMs: 60 * 60 * 1000,
+    schemaVersion: 1,
+    storage: 'none',
+    allowStaleOnError: true,
+    validator: value => value?.price > 0,
+    fetcher: async () => ({ price: 100 + ++calls, providerMarketTime }),
+  };
+  try {
+    const initial = await requestMarketData(options);
+    assert.equal(initial.meta.observedAt, providerAt, 'provider seconds are normalized instead of using response completion');
+    assert.equal(initial.meta.fetchedAt, completedAt);
+    assert.equal(initial.meta.cachedAt, completedAt);
+
+    now = cacheReadAt;
+    const cached = await requestMarketData(options);
+    assert.equal(cached.meta.source, 'memory');
+    assert.equal(cached.meta.observedAt, providerAt, 'cache reads retain the original provider observation');
+    assert.equal(cached.meta.fetchedAt, completedAt, 'operational fetch time remains separate');
+
+    now += 60_000;
+    providerMarketTime = providerAt + 30_000;
+    const refreshed = await requestMarketData({ ...options, mode: 'revalidate' });
+    assert.equal(calls, 2);
+    assert.equal(refreshed.meta.observedAt, providerAt + 30_000, 'provider milliseconds remain milliseconds on explicit Refresh');
+    assert.notEqual(refreshed.meta.observedAt, now, 'Refresh click/response time is not market evidence time');
+
+    for (const [label, invalidProviderTime] of [
+      ['invalid', 'not-a-timestamp'],
+      ['implausibly old', Date.parse('1999-12-31T23:59:59Z')],
+      ['future', now + 10 * 60 * 1000],
+    ]) {
+      const fallback = await requestMarketData({ ...options, key: `${options.key}-${label}`, mode: 'fresh', fetcher: async () => ({ price: 100, providerMarketTime: invalidProviderTime }) });
+      assert.equal(fallback.meta.observedAt, now, `${label} provider time uses the canonical completion-time fallback`);
+    }
+  } finally {
+    Date.now = realNow;
+  }
+});
+
 test('desktop and compact mobile presentations expose retained and unavailable state', async () => {
   const retained = sparklineResult({ source: 'stale-fallback', freshness: 'stale', staleFallbackUsed: true });
   assert.match(compactScannerMarketFreshness({ freshness: 'retained-stale', observedAt: retained.observedAt }), /^Stale · /);

@@ -5,6 +5,7 @@ import {
   type ExpirationCloseResult,
 } from './portfolioExpirationArchive.ts';
 import { confirmPortfolioTradeExpiredWorthless, reconcilePortfolioTradeEconomics } from './portfolioRealizedEconomics.ts';
+import { makePortfolioContractKey } from './portfolioContractIdentity.ts';
 import { makePortfolioTradeId, normalizePortfolioTrade, type PortfolioTrade, type PortfolioTradeInput } from './portfolioStorage.ts';
 import { usMarketDateIso } from './portfolioEntryDelta.ts';
 
@@ -45,17 +46,13 @@ export function inferHistoricalTradeOutcome(trade: PortfolioTrade | null): Histo
 }
 
 function resolutionIdentityMatches(existing: PortfolioTrade, candidate: PortfolioTrade): boolean {
-  return existing.ticker === candidate.ticker
-    && existing.expiration === candidate.expiration
-    && existing.strike === candidate.strike
+  return makePortfolioContractKey(existing) === makePortfolioContractKey(candidate)
     && existing.soldDate === candidate.soldDate;
 }
 
 function contractIdentityChanged(existing: PortfolioTrade | null, candidate: PortfolioTrade): boolean {
   return existing != null && (
-    existing.ticker !== candidate.ticker
-    || existing.expiration !== candidate.expiration
-    || existing.strike !== candidate.strike
+    makePortfolioContractKey(existing) !== makePortfolioContractKey(candidate)
     || existing.soldDate !== candidate.soldDate
   );
 }

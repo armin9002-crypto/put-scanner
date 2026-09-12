@@ -1,6 +1,9 @@
 import { normalizeTimestampMs } from './marketDataNormalize.ts';
 import { elapsedMarketSessions } from './portfolioQuoteFreshness.ts';
 import { RejectedOptionChainError } from './optionChainCache.ts';
+import { getOptionChainExpirationEvidence } from './optionExpiryNavigation.ts';
+import { parseYahooOptionSymbol } from './optionMarketIntegrity.ts';
+import { makePortfolioContractKey, optionContractMatchesExactIdentity } from './portfolioContractIdentity.ts';
 import type { PortfolioMarketData, PortfolioTrade } from './portfolioStorage.ts';
 import type { OptionContract, OptionsChainData, OptionIntegrityReasonCode } from './types.ts';
 
@@ -88,10 +91,7 @@ export function retainPortfolioMarketAfterUntrustedRefresh(
 function sameMarketDataTarget(current: PortfolioTrade, requested: PortfolioTrade): boolean {
   return current.status === 'open'
     && requested.status === 'open'
-    && current.optionType === requested.optionType
-    && current.ticker.trim().toUpperCase() === requested.ticker.trim().toUpperCase()
-    && current.expiration === requested.expiration
-    && Math.abs(current.strike - requested.strike) < 0.0001;
+    && makePortfolioContractKey(current) === makePortfolioContractKey(requested);
 }
 
 function refreshedAt(value: PortfolioTrade): number {
@@ -147,16 +147,16 @@ export function findExactPortfolioPut(trade: PortfolioTrade, chain: OptionsChain
   if (!chain || trade.status !== 'open' || trade.optionType !== 'put') return null;
   const expiration = Date.parse(`${trade.expiration}T00:00:00Z`) / 1000;
   const meta = chain.chainMeta;
-  if (!meta || meta.ticker.trim().toUpperCase() !== trade.ticker.trim().toUpperCase()
-    || (meta.returnedExpiration ?? meta.expirationDate) !== expiration) return null;
-  const put = chain.puts.find(candidate => Math.abs(candidate.strike - trade.strike) < 0.0001);
+  if (!Number.isSafeInteger(expiration) || !meta
+    || meta.ticker.trim().toUpperCase() !== trade.ticker.trim().toUpperCase()) return null;
+  const identity = { ticker: trade.ticker, optionType: trade.optionType, expiration: trade.expiration, strike: trade.strike };
+  const put = chain.puts.find(candidate => optionContractMatchesExactIdentity(candidate, identity));
   if (!put) return null;
-  if (put.contractSymbol) {
-    const match = put.contractSymbol.match(/^(.+?)(\d{6})P(\d{8})$/);
-    if (!match || match[1].toUpperCase() !== trade.ticker.trim().toUpperCase()
-      || match[2] !== trade.expiration.replace(/-/g, '').slice(2)
-      || Number(match[3]) / 1000 !== trade.strike) return null;
-  }
+  if (getOptionChainExpirationEvidence(
+    meta,
+    expiration,
+    [parseYahooOptionSymbol(put.contractSymbol).expiration],
+  ) !== 'match') return null;
   return put;
 }
 
