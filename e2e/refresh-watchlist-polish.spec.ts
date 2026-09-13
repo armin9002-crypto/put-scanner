@@ -26,7 +26,7 @@ test('refresh diagnostics, flat Watchlist, and Portfolio Last fallback responsiv
 
   await page.goto('/watchlist');
   await expect(page.getByText(/^3 saved(?: contracts)?$/)).toBeVisible();
-  await page.getByLabel('Group by', { exact: false }).selectOption('none');
+  await page.getByLabel('Group watchlist by', { exact: true }).selectOption('none');
   await expect(page.locator('.watchlist-group-header')).toHaveCount(0);
   const before = api.counts.get('options') ?? 0;
   const mobileSort = page.getByLabel('Sort watchlist', { exact: true });
@@ -34,8 +34,8 @@ test('refresh diagnostics, flat Watchlist, and Portfolio Last fallback responsiv
     await mobileSort.selectOption('strike');
     await page.getByRole('button', { name: 'Sort descending', exact: true }).click();
   } else {
-    await page.getByRole('columnheader', { name: 'Strike', exact: true }).click();
-    await page.getByRole('columnheader', { name: 'Strike', exact: true }).click();
+    await page.getByRole('button', { name: 'Strike; sort ascending', exact: true }).click();
+    await page.getByRole('button', { name: 'Strike; sort descending', exact: true }).click();
   }
   expect(api.counts.get('options') ?? 0).toBe(before);
   await expect.poll(() => (cloud.rows.find(row => row.namespace === 'watchlist')!.payload.data as unknown[]).length).toBe(3);
@@ -50,12 +50,13 @@ test('refresh diagnostics, flat Watchlist, and Portfolio Last fallback responsiv
   if (await filters.isVisible()) await filters.click();
   await page.getByRole('button', { name: 'Update liquidity', exact: true }).click();
   await expect(page.getByRole('button', { name: /Updating .*needing refresh/ })).toBeVisible();
-  await page.getByRole('button', { name: /1 issue/ }).click();
-  await expect(page.getByRole('dialog', { name: 'Liquidity refresh details' })).toContainText('LABU');
-  await expect(page.getByRole('dialog', { name: 'Liquidity refresh details' })).toContainText('failed');
+  await page.getByLabel('Show liquidity refresh issue details', { exact: true }).click();
+  const issueDetails = page.locator('#scanner-liquidity-issue-details');
+  await expect(issueDetails).toContainText('LABU');
+  await expect(issueDetails).toContainText('failed');
   await page.screenshot({ path: info.outputPath('scanner-touch-details.png'), fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
-  await page.getByRole('button', { name: 'Close Liquidity refresh details', exact: true }).last().click();
+  await page.getByLabel('Show liquidity refresh issue details', { exact: true }).last().click();
   if (page.viewportSize()?.width === 390) {
     await page.evaluate(() => localStorage.setItem('put_scanner_text_size', 'large'));
     await page.goto('/portfolio');
