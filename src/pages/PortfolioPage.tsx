@@ -1,7 +1,7 @@
 import { resolvePortfolioMark } from '../lib/portfolioValuation';
 import { uiTextCssPx } from '../lib/uiTextSizePreference';
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type MouseEvent as ReactMouseEvent, type ReactNode, type SetStateAction } from 'react';
-import { AlertTriangle, Briefcase, ChevronDown, ChevronRight, Download, Edit2, FileImage, FileSpreadsheet, Loader2, MoreHorizontal, Plus, RefreshCw, SlidersHorizontal, Trash2, Wrench } from 'lucide-react';
+import { AlertTriangle, Briefcase, ChevronDown, ChevronRight, Download, Edit2, FileSpreadsheet, Loader2, MoreHorizontal, Plus, RefreshCw, SlidersHorizontal, Trash2, Wrench } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { fetchBatchPricesResult, fetchOptions } from '../lib/api';
 import { resolvePutDelta } from '../lib/putDelta';
@@ -129,7 +129,7 @@ import {
   usMarketDateIso,
 } from '../lib/portfolioEntryDelta';
 import { assessPortfolioMaintenance } from '../lib/portfolioMaintenance';
-import { getPortfolioQuoteFreshness, isPortfolioQuoteDecisionEligible, summarizePortfolioQuoteFreshness } from '../lib/portfolioQuoteFreshness';
+import { getPortfolioQuoteFreshness, isPortfolioQuoteDecisionEligible } from '../lib/portfolioQuoteFreshness';
 import { makePortfolioContractKey } from '../lib/portfolioContractIdentity';
 import { resolvePortfolioEntryVix } from '../lib/portfolioEntryVix';
 import { confirmPortfolioTradeExpiredWorthless, isManualWorthlessConfirmationEligible } from '../lib/portfolioRealizedEconomics';
@@ -213,6 +213,23 @@ const PORTFOLIO_SCHEDULE_SORT_OPTIONS: Array<{ value: PortfolioScheduleSortField
   { value: 'currentNy', label: 'Current NY' },
   { value: 'currentAy', label: 'Current AY' },
 ];
+
+function PortfolioDataTools({ historicalAvailable, onHistorical, onBackup }: { historicalAvailable: boolean; onHistorical: () => void; onBackup: () => void }) {
+  const root = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const dismiss = (event: PointerEvent) => { if (root.current && !root.current.contains(event.target as Node)) root.current.open = false; };
+    document.addEventListener('pointerdown', dismiss);
+    return () => document.removeEventListener('pointerdown', dismiss);
+  }, []);
+  const choose = (action: () => void) => { if (root.current) root.current.open = false; action(); };
+  return <details ref={root} className="relative" onKeyDown={event => { if (event.key === 'Escape' && root.current) { root.current.open = false; root.current.querySelector('summary')?.focus(); } }} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node) && root.current) root.current.open = false; }}>
+    <summary className="button-secondary flex min-h-11 sm:min-h-9 cursor-pointer list-none items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs whitespace-nowrap"><Download className="h-3.5 w-3.5" /> Data Tools <ChevronDown className="h-3.5 w-3.5" /></summary>
+    <div className="overlay-panel motion-disclosure sm:absolute right-0 z-40 mt-1 grid w-full sm:w-64 gap-1 rounded-lg border p-1" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
+      <button type="button" disabled={!historicalAvailable} onClick={() => choose(onHistorical)} className="button-secondary min-h-11 rounded px-3 py-2 text-left text-xs disabled:opacity-40" title={historicalAvailable ? undefined : 'Sign in and wait for cloud Portfolio to finish loading'}>Import / Export Historical Excel</button>
+      <button type="button" onClick={() => choose(onBackup)} className="button-secondary min-h-11 rounded px-3 py-2 text-left text-xs">Data Backup</button>
+    </div>
+  </details>;
+}
 
 function todayIso(): string {
   return usMarketDateIso();
@@ -1594,20 +1611,18 @@ export default function PortfolioPage() {
   const markSummary = useMemo(() => calculatePortfolioMarkSummary(openTrades, markBasis), [openTrades, markBasis]);
   const currentAyCoverage = useMemo(() => calculatePortfolioCurrentAyCoverage(openTrades, markBasis), [openTrades, markBasis]);
   const maintenanceAssessment = useMemo(() => assessPortfolioMaintenance(trades), [trades]);
-  const quoteFreshnessSummary = useMemo(() => summarizePortfolioQuoteFreshness(openPositions), [openPositions]);
   const lastFallbackCount = openPositions.filter(trade => resolvePortfolioMark(trade, markBasis).source === 'last_fallback').length;
   const unavailableMarkCount = openPositions.filter(trade => resolvePortfolioMark(trade, markBasis).value == null).length;
   const currentQuoteCount = openPositions.filter(trade => resolvePortfolioMark(trade, markBasis).source === 'selected' && getPortfolioQuoteFreshness(trade).state === 'fresh').length;
   const retainedMarkCount = openPositions.length - currentQuoteCount - lastFallbackCount - unavailableMarkCount;
-  const marketDetails = openPositions.length > 0 && <details className="my-2 rounded-lg border p-2 text-xs" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}><summary className="min-h-9 cursor-pointer py-2">{currentQuoteCount} current quotes · {lastFallbackCount} stale Last fallback{retainedMarkCount > 0 ? ` \u00b7 ${retainedMarkCount} prior marks retained` : ''}{unavailableMarkCount > 0 ? ` \u00b7 ${unavailableMarkCount} unavailable` : ''}{refreshWarning ? ' · refresh issues' : ''}</summary><div className="space-y-2 pt-2">{openPositions.map(trade => {
+  const marketHealthDetails = openPositions.map(trade => {
     const mark = resolvePortfolioMark(trade, markBasis);
-    const market = trade.latestMarketData;
-    const outcome = market?.refreshOutcome;
-    const reason = outcome === 'quote_inconsistent' ? 'integrity-rejected quote' : outcome === 'refresh_failed' ? 'provider refresh unavailable' : outcome === 'unavailable' ? 'exact contract missing' : outcome === 'no_usable_price' ? 'no usable current exact-contract price' : 'selected mark unavailable';
-    const status = mark.source === 'last_fallback' ? 'Stale Last fallback' : mark.value == null ? 'Needs quote' : outcome && outcome !== 'current' ? 'Prior trusted mark retained' : 'Current mark';
-    return <div key={trade.id} className="break-words"><strong>{trade.ticker} {trade.expiration} {formatOptionPrice(trade.strike)} put</strong> — {status}{mark.source === 'last_fallback' ? ` ${formatCurrency(mark.value, 2)} · Last trade ${formatFullDate(market?.lastTradeDate)} · ${reason}. Valuation only; not executable.` : outcome && outcome !== 'current' || mark.value == null ? ` · ${reason}` : ''}</div>;
-  })}</div></details>;
-  const positionsNeedingFreshData = quoteFreshnessSummary.stale + quoteFreshnessSummary.unavailable;
+    const freshness = getPortfolioQuoteFreshness(trade);
+    return `${trade.ticker} ${trade.expiration} ${formatOptionPrice(trade.strike)} put: ${mark.source === 'last_fallback' ? 'Stale Last fallback; valuation only, not executable' : freshness.label}. ${freshness.reason}`;
+  }).join('\n');
+  const marketDetails = openPositions.length > 0 && <p role="status" className="my-1 text-xs" style={{ color: refreshWarning ? 'var(--yellow)' : 'var(--text-muted)' }} title={`${marketHealthDetails}${refreshWarning ? '\nSome trades could not be refreshed. Saved trade data was preserved.' : ''}`}>
+    {currentQuoteCount} current quotes · {lastFallbackCount} stale Last fallback{retainedMarkCount > 0 ? ` · ${retainedMarkCount} prior marks retained` : ''}{unavailableMarkCount > 0 ? ` · ${unavailableMarkCount} unavailable` : ''}{refreshWarning ? ' · refresh issues; saved data preserved' : ''}
+  </p>;
   const historicalExcelImportAvailable = account.phase === 'ready' && account.cloud !== null && account.userId !== null;
 
   const scheduleTotals = useMemo(() => buildScheduleTotals(openTrades, markBasis), [openTrades, markBasis]);
@@ -2254,12 +2269,12 @@ export default function PortfolioPage() {
   if (isPhone && !isPhoneLandscape) {
     return (
       <div className="mobile-route-page portfolio-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
-        {trades.length === 0 ? <div className="px-6 py-16 text-center"><Briefcase className="mx-auto mb-3 h-7 w-7" style={{ color: 'var(--text-dim)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No open positions</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Add a trade or import historical lots.</p><div className="mx-auto mt-4 grid max-w-xs grid-cols-2 gap-2"><button type="button" onClick={() => setShowAddModal(true)} className="mobile-sheet-action primary"><Plus className="h-4 w-4" /> Add Trade</button><button type="button" onClick={() => setShowImportModal(true)} className="mobile-sheet-action secondary"><FileImage className="h-4 w-4" /> Screenshot</button><button type="button" disabled={!historicalExcelImportAvailable} onClick={() => setShowHistoricalExcelImport(true)} className="mobile-sheet-action secondary col-span-2 disabled:opacity-40"><FileSpreadsheet className="h-4 w-4" /> Import / Export Historical Excel</button></div><button type="button" onClick={() => setShowDataBackup(true)} className="pressable mt-3 inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-xs font-semibold" style={{ color: 'var(--text-muted)' }}><Download className="h-4 w-4" /> Data Backup</button></div> : (
+        {trades.length === 0 ? <div className="px-6 py-16 text-center"><Briefcase className="mx-auto mb-3 h-7 w-7" style={{ color: 'var(--text-dim)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No open positions</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Add a trade or import historical lots.</p><div className="mx-auto mt-4 grid max-w-xs grid-cols-2 gap-2"><button type="button" onClick={() => setShowAddModal(true)} className="mobile-sheet-action primary"><Plus className="h-4 w-4" /> Add Trade</button><button type="button" disabled={!historicalExcelImportAvailable} onClick={() => setShowHistoricalExcelImport(true)} className="mobile-sheet-action secondary col-span-2 disabled:opacity-40"><FileSpreadsheet className="h-4 w-4" /> Import / Export Historical Excel</button></div><button type="button" onClick={() => setShowDataBackup(true)} className="pressable mt-3 inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-xs font-semibold" style={{ color: 'var(--text-muted)' }}><Download className="h-4 w-4" /> Data Backup</button></div> : (
           <>
             <section className="mobile-portfolio-hero px-4 pb-3 pt-3" style={{ backgroundColor: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
               <div className="portfolio-mobile-headline flex items-start justify-between gap-3">
                 <div className="min-w-0"><div className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: 'var(--text-muted)' }}>Open trade book</div><div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-dim)' }}>{openPositions.length} {openPositions.length === 1 ? 'position' : 'positions'} · {markBasis.charAt(0).toUpperCase() + markBasis.slice(1)} marks</div></div>
-                <button type="button" onClick={() => void handleRefreshOpenTrades()} disabled={refreshing || openTrades.length === 0} className="pressable portfolio-mobile-refresh flex h-11 w-11 flex-none items-center justify-center rounded-full disabled:cursor-not-allowed disabled:opacity-40" aria-label="Refresh open trades" title="Refresh open trades" style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)' }}><RefreshCw className={`h-5 w-5 ${refreshing ? 'animate-spin' : ''}`} /></button>
+                <button type="button" onClick={() => void handleRefreshOpenTrades()} disabled={refreshing || openTrades.length === 0} className="pressable portfolio-mobile-refresh flex h-11 w-11 flex-none items-center justify-center rounded-full disabled:cursor-not-allowed disabled:opacity-40" aria-label="Refresh open trades" title="Refresh open trades" style={{ color: 'var(--accent-contrast)', backgroundColor: 'var(--accent)' }}><RefreshCw className={`h-5 w-5 ${refreshing ? 'animate-spin' : ''}`} /></button>
               </div>
               <div className="portfolio-mobile-metrics motion-refresh-region mt-2 grid grid-cols-4 border-y" data-refreshing={refreshing} style={{ borderColor: 'var(--border)' }}>
                 {[
@@ -2276,7 +2291,6 @@ export default function PortfolioPage() {
               <div className="portfolio-mobile-mark-control mt-2 flex items-center gap-3"><span className="portfolio-mobile-mark-label flex-none"><b>Mark basis</b><small>Revalues P&amp;L + Current AY</small></span><div className="min-w-0 flex-1"><MobileSegmentedControl value={markBasis} onChange={setMarkBasis} label="Portfolio mark basis" options={MARK_BASIS_OPTIONS.map(value => ({ value, label: value.charAt(0).toUpperCase() + value.slice(1) }))} /></div></div>
               {marketDetails}
               <DataFreshness className="portfolio-mobile-freshness" updatedAt={lastRefreshed} status={refreshing ? 'updating' : refreshWarning ? 'stale' : lastRefreshed ? 'cached' : 'stale'} label="Portfolio marks" />
-              {positionsNeedingFreshData > 0 && <p className="mt-1 text-[11px]" style={{ color: 'var(--yellow)' }}>{positionsNeedingFreshData} {positionsNeedingFreshData === 1 ? 'position needs' : 'positions need'} fresh market data.</p>}
               {openTrades.length > 0 && markSummary.totalGainLoss == null && <p className="portfolio-partial-mark" role="status">Partial marks · one or more open quotes are unavailable; aggregate P&amp;L stays — until refreshed.</p>}
               {durableActivityNotice && <p role="status" className="mt-2 text-[11px] leading-4" style={{ color: 'var(--yellow)' }}>{durableActivityNotice}</p>}
             </section>
@@ -2304,7 +2318,7 @@ export default function PortfolioPage() {
         )}
 
         {mobilePositionControlsOpen && <MobileBottomSheet title="Position display & sort" description="Refine the open-position scan without reloading data" onClose={() => setMobilePositionControlsOpen(false)} footer={<button type="button" onClick={() => setMobilePositionControlsOpen(false)} className="mobile-sheet-action primary w-full">Done</button>}><div className="space-y-4"><label htmlFor="mobile-portfolio-sort" className="block"><span className="mobile-sheet-label">Sort positions</span><select id="mobile-portfolio-sort" value={sortField} onChange={event => setSortField(event.target.value as PortfolioScheduleSortField)} className="mobile-control-field w-full">{PORTFOLIO_SCHEDULE_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><div><span className="mobile-sheet-label">Direction</span><MobileSegmentedControl value={sortDir} onChange={setSortDir} label="Position sort direction" options={[{ value: 'asc', label: 'Ascending' }, { value: 'desc', label: 'Descending' }]} /></div><div><span className="mobile-sheet-label">Optional detail</span><DisplayToggle checked={showEntryDeltas} onChange={setShowEntryDeltas} label="Show Entry Deltas / IV" className="min-h-11 w-full" /></div></div></MobileBottomSheet>}
-        {mobileActionsOpen && <MobileBottomSheet title="Portfolio actions" onClose={() => setMobileActionsOpen(false)}><div className="space-y-2"><button type="button" onClick={() => { setMobileActionsOpen(false); setShowAddModal(true); }} className="mobile-sheet-action primary w-full"><Plus className="h-4 w-4" /> Add Trade</button><button type="button" onClick={() => { setMobileActionsOpen(false); setShowImportModal(true); }} className="mobile-sheet-action secondary w-full"><FileImage className="h-4 w-4" /> Import Screenshot</button><button type="button" disabled={!historicalExcelImportAvailable} onClick={() => { setMobileActionsOpen(false); setShowHistoricalExcelImport(true); }} className="mobile-sheet-action secondary w-full disabled:opacity-40"><FileSpreadsheet className="h-4 w-4" /> Import / Export Historical Excel</button><button type="button" onClick={() => { setMobileActionsOpen(false); setShowMaintenance(true); setMaintenanceMessage(''); }} className="mobile-sheet-action secondary w-full"><Wrench className="h-4 w-4" /> Portfolio Maintenance</button><button type="button" onClick={() => { setMobileActionsOpen(false); setShowDataBackup(true); }} className="mobile-sheet-action secondary w-full"><Download className="h-4 w-4" /> Data Backup</button></div></MobileBottomSheet>}
+        {mobileActionsOpen && <MobileBottomSheet title="Portfolio actions" onClose={() => setMobileActionsOpen(false)}><div className="space-y-2"><button type="button" onClick={() => { setMobileActionsOpen(false); setShowAddModal(true); }} className="mobile-sheet-action primary w-full"><Plus className="h-4 w-4" /> Add Trade</button><PortfolioDataTools historicalAvailable={historicalExcelImportAvailable} onHistorical={() => { setMobileActionsOpen(false); setShowHistoricalExcelImport(true); }} onBackup={() => { setMobileActionsOpen(false); setShowDataBackup(true); }} /><button type="button" onClick={() => { setMobileActionsOpen(false); setShowMaintenance(true); setMaintenanceMessage(''); }} className="mobile-sheet-action secondary w-full"><Wrench className="h-4 w-4" /> Portfolio Maintenance</button></div></MobileBottomSheet>}
         {(showAddModal || editingTrade) && <TradeModal trade={editingTrade} seed={addPositionSeed} onClose={() => { setShowAddModal(false); setEditingTrade(null); setAddPositionSeed(null); }} onSave={handleSaveTrade} onDelete={requestDeleteTrade} />}
         {editingPosition && <ContractPositionEditor position={editingPosition} onClose={() => setEditingPosition(null)} onEditLot={lot => { setEditingPosition(null); setEditingTrade(lot); }} onAddToPosition={addToContractPosition} />}
         {drawerSelection && <ErrorBoundary title="Option sheet unavailable" message="Close it and try again."><Suspense fallback={null}><OptionDetailDrawer option={drawerSelection.option} ticker={drawerSelection.ticker} expirationLabel={drawerSelection.expirationLabel} dte={drawerSelection.dte} underlyingPrice={drawerSelection.underlyingPrice} onClose={() => setDrawerSelection(null)} /></Suspense></ErrorBoundary>}
@@ -2328,21 +2342,13 @@ export default function PortfolioPage() {
             <button onClick={() => setShowAddModal(true)} className="button-primary inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs whitespace-nowrap" style={{ backgroundColor: 'var(--accent)' }}>
               <Plus className="w-3.5 h-3.5" /> Add Trade
             </button>
-            <button onClick={handleRefreshOpenTrades} disabled={refreshing || openTrades.length === 0} data-action-tier="primary" className="button-secondary portfolio-refresh-action inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-50 whitespace-nowrap" style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)', border: '1px solid var(--accent-border)' }}>
-              {refreshing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-              Refresh Open Trades
-            </button>
-            <button onClick={() => setShowImportModal(true)} className="button-secondary inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs whitespace-nowrap" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
-              <FileImage className="w-3.5 h-3.5" /> Import Screenshot
-            </button>
-            <button disabled={!historicalExcelImportAvailable} onClick={() => setShowHistoricalExcelImport(true)} className="button-secondary inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-40" title={historicalExcelImportAvailable ? 'Stage historical V5 Excel lots' : 'Sign in and wait for cloud Portfolio to finish loading'} style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
-              <FileSpreadsheet className="w-3.5 h-3.5" /> Import / Export Historical Excel
-            </button>
-            <button onClick={() => setShowDataBackup(true)} className="button-secondary inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs whitespace-nowrap" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
-              <Download className="w-3.5 h-3.5" /> Data Backup
-            </button>
+            <PortfolioDataTools historicalAvailable={historicalExcelImportAvailable} onHistorical={() => setShowHistoricalExcelImport(true)} onBackup={() => setShowDataBackup(true)} />
             <button onClick={() => { setShowMaintenance(true); setMaintenanceMessage(''); }} className="button-secondary inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs whitespace-nowrap" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
               <Wrench className="w-3.5 h-3.5" /> Maintenance
+            </button>
+            <button onClick={handleRefreshOpenTrades} disabled={refreshing || openTrades.length === 0} data-action-tier="primary" className="button-primary portfolio-refresh-action inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-50 whitespace-nowrap" style={{ backgroundColor: 'var(--accent)', color: 'var(--accent-contrast)' }}>
+              {refreshing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+              Refresh Open Trades
             </button>
           </div>}
         />
@@ -2352,14 +2358,6 @@ export default function PortfolioPage() {
           </div>
         )}
         {marketDetails}
-        {refreshWarning && (
-          <div className="flex items-center gap-2 rounded-lg px-3 py-2 mb-3 text-xs" style={{ backgroundColor: 'rgba(250,204,21,0.10)', color: 'var(--yellow)', border: '1px solid rgba(250,204,21,0.22)' }}>
-            <AlertTriangle className="w-3.5 h-3.5" /> Some trades could not be refreshed. Saved trade data was preserved.
-          </div>
-        )}
-        {positionsNeedingFreshData > 0 && (
-          <p className="mb-3 text-xs" role="status" style={{ color: 'var(--text-muted)' }}>{positionsNeedingFreshData} open {positionsNeedingFreshData === 1 ? 'position needs' : 'positions need'} fresh market data. Stale inputs are excluded from high-confidence attention and close-candidate signals.</p>
-        )}
 
         {trades.length === 0 ? (
           <div className="text-center py-20">
@@ -2370,9 +2368,7 @@ export default function PortfolioPage() {
               <button onClick={() => setShowAddModal(true)} className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium text-white min-h-[44px]" style={{ backgroundColor: 'var(--accent)' }}>
                 <Plus className="w-3.5 h-3.5" /> Add Trade
               </button>
-              <button onClick={() => setShowImportModal(true)} className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium min-h-[44px]" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
-                <FileImage className="w-3.5 h-3.5" /> Import Screenshot
-              </button>
+
               <button disabled={!historicalExcelImportAvailable} onClick={() => setShowHistoricalExcelImport(true)} className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-xs font-medium disabled:opacity-40" style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
                 <FileSpreadsheet className="w-3.5 h-3.5" /> Import / Export Historical Excel
               </button>
@@ -2639,7 +2635,6 @@ export default function PortfolioPage() {
                       const currentMark = calculateCurrentOptionMark(trade, markBasis);
                       const delta = trade.latestMarketData?.delta ?? null;
                       const quoteFreshness = getPortfolioQuoteFreshness(trade);
-                      const visibleFreshness = quoteFreshness.state === 'stale' || quoteFreshness.state === 'unavailable' ? quoteFreshness.label : null;
                       const redeployBadges = getRedeployBadges(trade, markBasis);
                       const health = getPositionHealth(trade, markBasis);
                       return (
@@ -2666,7 +2661,7 @@ export default function PortfolioPage() {
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(calculateEquityAtRisk(trade), 0)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">
                             <HoverTooltip content={<CurrentMarkTooltipContent trade={trade} markBasis={markBasis} />} ariaLabel={`${trade.ticker} current mark details`}>
-                              {formatOptionPrice(currentMark)}{resolvePortfolioMark(trade, markBasis).source === 'last_fallback' && <span className="block text-[9px]" style={{ color: 'var(--yellow)' }}>Last fallback</span>}
+                              {formatOptionPrice(currentMark)}
                             </HoverTooltip>
                           </td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(currentValue, 0)}</td>
@@ -2674,14 +2669,14 @@ export default function PortfolioPage() {
                           <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: pnlColor(calculatePercentCaptured(trade, markBasis)) }}>{formatPctValue(calculatePercentCaptured(trade, markBasis))}</td>
                           <td className={`portfolio-paired-metric-cell px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap ${showEntryDeltas ? 'min-w-[112px]' : 'min-w-[76px]'}`} title={quoteFreshness.reason}>
                             {showEntryDeltas && <span className="portfolio-paired-metric__line"><span className="portfolio-paired-metric__label">Entry</span> {isValidEntryDelta(trade.entryDelta) ? <HoverTooltip content={<EntryDeltaTooltipContent trade={trade} />} ariaLabel={`${trade.ticker} Entry Delta details`}>{formatDelta(trade.entryDelta)}</HoverTooltip> : DASH}</span>}
-                            <span className="portfolio-paired-metric__line">{showEntryDeltas && <span className="portfolio-paired-metric__label">Current</span>} <span className="font-semibold" style={{ color: pnlColor(delta) }}>{formatDelta(delta)}</span>{visibleFreshness && <span className="portfolio-paired-metric__status" data-freshness={quoteFreshness.state}> · {visibleFreshness}</span>}</span>
+                            <span className="portfolio-paired-metric__line">{showEntryDeltas && <span className="portfolio-paired-metric__label">Current</span>} <span className="font-semibold" style={{ color: pnlColor(delta) }}>{formatDelta(delta)}</span></span>
                           </td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(calculateBreakeven(trade))}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums">{formatCurrency(trade.latestMarketData?.underlyingPrice)}</td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums" style={{ color: percentColor(calculateDistanceToStrike(trade)) }}>{formatPctValue(calculateDistanceToStrike(trade))}</td>
                           <td className="portfolio-paired-metric-cell px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">
                             {showEntryDeltas && <span className="portfolio-paired-metric__line"><span className="portfolio-paired-metric__label">Entry</span> {isValidEntryIv(trade.entryIv) ? <HoverTooltip content={<EntryIvTooltipContent trade={trade} />} ariaLabel={`${trade.ticker} Entry IV details`}>{formatPercentPoints(trade.entryIv, 1)}</HoverTooltip> : DASH}</span>}
-                            <span className="portfolio-paired-metric__line">{showEntryDeltas && <span className="portfolio-paired-metric__label">Current</span>} {formatPercentPoints(trade.latestMarketData?.iv, 1)}{visibleFreshness && <span className="portfolio-paired-metric__status" data-freshness={quoteFreshness.state}> · {visibleFreshness}</span>}</span>
+                            <span className="portfolio-paired-metric__line">{showEntryDeltas && <span className="portfolio-paired-metric__label">Current</span>} {formatPercentPoints(trade.latestMarketData?.iv, 1)}</span>
                           </td>
                           <td className="px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap">
                             {isFiniteNumber(trade.entryVixClose) ? <HoverTooltip content={<VixEntryTooltipContent trade={trade} />} ariaLabel={`${trade.ticker} VIX at entry details`}>{trade.entryVixClose.toFixed(2)}</HoverTooltip> : DASH}

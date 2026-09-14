@@ -167,6 +167,7 @@ interface ScannerEvidencePopoverProps {
 interface EvidencePlacement {
   top: number;
   left: number;
+  maxHeight: number;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -196,18 +197,21 @@ export default function ScannerEvidencePopover({ id, ticker, anchor, snapshot, d
       const viewportHeight = window.innerHeight;
       const preferredLeft = anchorRect.right - panelRect.width;
       const left = clamp(preferredLeft, gutter, viewportWidth - panelRect.width - gutter);
-      const below = anchorRect.bottom + gutter;
-      const above = anchorRect.top - panelRect.height - gutter;
-      const top = below + panelRect.height <= viewportHeight - gutter || above < gutter ? below : above;
-      setPlacement({ top: clamp(top, gutter, viewportHeight - panelRect.height - gutter), left });
+      const spaceBelow = Math.max(0, viewportHeight - anchorRect.bottom - gutter * 2);
+      const spaceAbove = Math.max(0, anchorRect.top - gutter * 2);
+      const useBelow = panelRect.height <= spaceBelow || spaceBelow >= spaceAbove;
+      const maxHeight = useBelow ? spaceBelow : spaceAbove;
+      const top = useBelow ? anchorRect.bottom + gutter : anchorRect.top - Math.min(panelRect.height, maxHeight) - gutter;
+      setPlacement({ top, left, maxHeight });
     };
 
     place();
     window.addEventListener('resize', place);
-    window.addEventListener('scroll', place, true);
+    const dismissOnScroll = () => onClose(false);
+    window.addEventListener('scroll', dismissOnScroll, true);
     return () => {
       window.removeEventListener('resize', place);
-      window.removeEventListener('scroll', place, true);
+      window.removeEventListener('scroll', dismissOnScroll, true);
     };
   }, [anchor, onClose]);
 
@@ -221,6 +225,7 @@ export default function ScannerEvidencePopover({ id, ticker, anchor, snapshot, d
       style={{
         top: placement?.top ?? 0,
         left: placement?.left ?? 0,
+        maxHeight: placement?.maxHeight,
         visibility: placement ? 'visible' : 'hidden',
         backgroundColor: 'var(--surface)',
         border: '1px solid var(--border)',

@@ -1,3 +1,4 @@
+import { HISTORICAL_VISIBLE_RANGES, selectHistoricalVisiblePoints, type HistoricalVisibleRange } from '../lib/historicalVisibleRange';
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { formatCurrency, formatPercent, formatPercentPoints, formatSignedPercent } from '../lib/format';
 import { getNiceYAxisScale, type YAxisScale } from '../lib/chartScale';
@@ -264,7 +265,12 @@ export default function RollingHistoricalAnalyticsChart({
   const [isInteracting, setIsInteracting] = useState(false);
   const [plotSize, setPlotSize] = useState({ width: CHART_WIDTH, height: CHART_HEIGHT });
   const plotRef = useRef<HTMLDivElement>(null);
-  const series = useMemo(() => historicalSeries(trades, metric, windowMonths), [metric, trades, windowMonths]);
+  const [visibleRange, setVisibleRange] = useState<HistoricalVisibleRange>('Since Inception');
+  const computedSeries = useMemo(() => historicalSeries(trades, metric, windowMonths), [metric, trades, windowMonths]);
+  const series = useMemo(() => {
+    const points = selectHistoricalVisiblePoints(computedSeries.points, computedSeries.domain.endDate, visibleRange);
+    return { ...computedSeries, points, domain: { ...computedSeries.domain, startDate: points[0]?.date ?? null } };
+  }, [computedSeries, visibleRange]);
   const scale = useMemo(() => buildMetricYAxisScale(series.points.map(point => point.value ?? Number.NaN), metric), [metric, series.points]);
   const latestIndex = latestAvailableIndex(series.points);
   const resolvedSelectedIndex = isInteracting && selectedIndex != null && selectedIndex < series.points.length ? selectedIndex : latestIndex;
@@ -342,6 +348,12 @@ export default function RollingHistoricalAnalyticsChart({
           <p className="rolling-historical-analytics__metadata">{pointMetadata(selectedPoint)}</p>
         </div>
         <div className="rolling-historical-analytics__controls">
+          <label className="rolling-historical-analytics__metric-control">
+            <span>Visible range</span>
+            <select aria-label="Visible range" value={visibleRange} onChange={event => { setVisibleRange(event.target.value as HistoricalVisibleRange); setSelectedIndex(null); setIsInteracting(false); }}>
+              {HISTORICAL_VISIBLE_RANGES.map(range => <option key={range} value={range}>{range}</option>)}
+            </select>
+          </label>
           <label className="rolling-historical-analytics__metric-control">
             <span>Analytics</span>
             <select value={metric} onChange={event => { const next = event.target.value as HistoricalMetric; onMetricChange?.(next); if (!onMetricChange) setUncontrolledMetric(next); setSelectedIndex(null); setIsInteracting(false); }} aria-label="Analytics">

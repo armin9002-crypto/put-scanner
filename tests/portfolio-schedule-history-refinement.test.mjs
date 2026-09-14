@@ -22,8 +22,6 @@ test('Schedule Entry Delta / IV display toggle defaults off and keeps paired val
   assert.match(portfolio, /showEntryDeltas && <span className="portfolio-paired-metric__line"><span className="portfolio-paired-metric__label">Entry/);
   assert.match(portfolio, /<span className="portfolio-paired-metric__line">\{showEntryDeltas && <span className="portfolio-paired-metric__label">Current<\/span>\} <span className="font-semibold"[^>]*>\{formatDelta\(delta\)/);
   assert.match(portfolio, /const quoteFreshness = getPortfolioQuoteFreshness\(trade\)/);
-  assert.match(portfolio, /const visibleFreshness = quoteFreshness\.state === 'stale' \|\| quoteFreshness\.state === 'unavailable' \? quoteFreshness\.label : null/);
-  assert.match(portfolio, /visibleFreshness && <span className="portfolio-paired-metric__status" data-freshness=\{quoteFreshness\.state\}>/);
   assert.doesNotMatch(portfolio, /<br \/><\/span><span className="text-\[9px\]"/);
   assert.match(portfolio, /showEntryDelta=\{showEntryDeltas\}/);
   assert.match(portfolio, /showEntryIv=\{showEntryDeltas\}/);
@@ -35,8 +33,9 @@ test('Schedule Entry Delta / IV display toggle defaults off and keeps paired val
   assert.match(mobile, /Current IV/);
   assert.match(mobile, /showEntryDelta = true/);
   assert.match(mobile, /showEntryDelta &&/);
-  assert.match(mobile, /const freshnessStatus = freshness \?/);
-  assert.match(mobile, /Current IV[\s\S]*freshnessStatus/);
+  assert.doesNotMatch(mobile, /freshnessStatus/);
+  assert.match(mobile, /title=\{freshness \|\| undefined\}/);
+  assert.doesNotMatch(portfolio, /visibleFreshness && <span/);
   assert.doesNotMatch(mobile, /OTM<br \/>\{freshness\}/);
   assert.match(styles, /\.portfolio-paired-metric__line \{[\s\S]*display: block/);
   assert.match(styles, /\.portfolio-paired-metric__status \{/);

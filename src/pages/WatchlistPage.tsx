@@ -118,12 +118,6 @@ function lastTradeStatusLabel(value: number | null | undefined): string {
   return `${freshness.label ?? 'Recent'} · ${age}`;
 }
 
-function deltaSourceLabel(source: WatchlistSnapshot['deltaSource']): string {
-  if (source === 'provider') return 'Provider';
-  if (source === 'calculated') return 'Calculated';
-  return 'Unavailable';
-}
-
 function buildRow(item: WatchlistItem): LiveRow {
   const snapshot: WatchlistSnapshot = item.snapshot ?? {};
   const rawDte = calculateDte(item.expiry);
@@ -496,7 +490,7 @@ export default function WatchlistPage() {
             moneynessState={row.moneynessState}
             integrityStatus={row.snapshot?.integrityStatus}
             denseQuoteView
-            statusText={`${row.statusLabel}${row.statusDetail ? ` · ${row.statusDetail}` : ''}`}
+            statusText={row.statusLabel}
             statusTextColor={row.statusColor}
             watched
             onToggleWatchlist={() => handleRemove(row.id)}
@@ -771,13 +765,11 @@ export default function WatchlistPage() {
                         {OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => <td key={field} className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={mutedStyle} title={OPTION_QUOTE_DISPLAY_LABELS[field]}>{formatOptionQuoteValue(field, row[field], formatMoney)}</td>)}
                         <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={{ ...mutedStyle, color: deltaColor(row.delta) }} title={row.deltaSource === 'calculated' && row.deltaModelVersion ? `Calculated Delta · ${row.deltaModelVersion}` : row.deltaSource === 'provider' ? 'Provider Delta' : 'Delta unavailable'}>
                           <span className="block">{isFiniteNumber(row.delta) ? row.delta.toFixed(2) : '—'}</span>
-                          <span className="block text-[9px] font-semibold" style={{ color: 'var(--text-tertiary)' }}>{deltaSourceLabel(row.deltaSource)}</span>
                         </td>
                         <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={{ ...mutedStyle, color: row.moneynessColor }}>{row.moneynessLabel}</td>
                         <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={{ ...mutedStyle, color: ivColor(row.iv) }}>{isFiniteNumber(row.iv) ? row.iv.toFixed(1) + '%' : '—'}</td>
                         <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={{ ...mutedStyle, color: getOptionLastTradeFreshness(row.lastTradeDate).color }} title={lastTradeStatusLabel(row.lastTradeDate)}>
                           <span className="block">{formatOptionLastTradeDate(row.lastTradeDate)}</span>
-                          <span className="block text-[9px] font-semibold">{lastTradeStatusLabel(row.lastTradeDate)}</span>
                         </td>
                         {visibleOptionYieldFields(showNominalYields).map(field => {
                           const value = row[field];
@@ -788,7 +780,6 @@ export default function WatchlistPage() {
                         <td className="px-1.5 py-0.5 text-left whitespace-nowrap" style={mutedStyle}>
                           <div className="watchlist-state" title={row.statusDetail ? `${row.statusLabel} · ${row.statusDetail}` : row.statusLabel}>
                             <span className="watchlist-status inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-semibold" data-status={row.status} style={{ color: row.statusColor }}>{row.statusLabel}</span>
-                            {row.statusDetail && <span className="watchlist-status-detail block text-[9px]" style={{ color: 'var(--text-tertiary)' }}>{row.statusDetail}</span>}
                           </div>
                         </td>
                         <td className="watchlist-note-cell px-1.5 py-0.5 text-left min-w-[180px] max-w-[260px]" style={mutedStyle}>

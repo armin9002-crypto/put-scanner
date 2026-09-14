@@ -40,6 +40,7 @@ interface ScreenerCriteria {
   deltaFilter: string;
   moneynessFilter: string;
   yieldFilter: string;
+  yieldLastFilter: string;
   oiFilter: string;
   volFilter: string;
   ivVsRealizedRangeFilter: string;
@@ -290,6 +291,7 @@ export default function ScreenerPage() {
   const [deltaFilter, setDeltaFilter] = useState('all');
   const [moneynessFilter, setMoneynessFilter] = useState('all');
   const [yieldFilter, setYieldFilter] = useState('all');
+  const [yieldLastFilter, setYieldLastFilter] = useState('all');
   const [oiFilter, setOiFilter] = useState('all');
   const [volFilter, setVolFilter] = useState('all');
   const [ivVsRealizedRangeFilter, setIvVsRealizedRangeFilter] = useState('all');
@@ -453,6 +455,7 @@ export default function ScreenerPage() {
     setDeltaFilter('all');
     setMoneynessFilter('all');
     setYieldFilter('all');
+    setYieldLastFilter('all');
     setOiFilter('all');
     setVolFilter('all');
     setIvVsRealizedRangeFilter('all');
@@ -466,11 +469,12 @@ export default function ScreenerPage() {
     deltaFilter,
     moneynessFilter,
     yieldFilter,
+    yieldLastFilter,
     oiFilter,
     volFilter,
     ivVsRealizedRangeFilter,
     recentTradesOnly,
-  }), [selectedETFs, expFilter, deltaFilter, moneynessFilter, yieldFilter, oiFilter, volFilter, ivVsRealizedRangeFilter, recentTradesOnly]);
+  }), [selectedETFs, expFilter, deltaFilter, moneynessFilter, yieldFilter, yieldLastFilter, oiFilter, volFilter, ivVsRealizedRangeFilter, recentTradesOnly]);
 
   const currentCriteria = useMemo(() => getCurrentCriteria(), [getCurrentCriteria]);
 
@@ -486,6 +490,7 @@ export default function ScreenerPage() {
     setDeltaFilter(snapshot.criteria.deltaFilter);
     setMoneynessFilter(snapshot.criteria.moneynessFilter);
     setYieldFilter(snapshot.criteria.yieldFilter);
+    setYieldLastFilter(snapshot.criteria.yieldLastFilter ?? 'all');
     setOiFilter(snapshot.criteria.oiFilter);
     setVolFilter(snapshot.criteria.volFilter);
     setIvVsRealizedRangeFilter(snapshot.criteria.ivVsRealizedRangeFilter);
@@ -517,6 +522,7 @@ export default function ScreenerPage() {
       ['Delta', optionLabel(DELTA_OPTIONS, currentCriteria.deltaFilter)],
       ['Moneyness', optionLabel(MONEYNESS_OPTIONS, currentCriteria.moneynessFilter)],
       ['Annualized Yield Bid', optionLabel(YIELD_OPTIONS, currentCriteria.yieldFilter)],
+      ['Annualized Yield Last', optionLabel(YIELD_OPTIONS, currentCriteria.yieldLastFilter)],
       ['Min OI', optionLabel(OI_OPTIONS, currentCriteria.oiFilter)],
       ['Min Volume', optionLabel(VOL_OPTIONS, currentCriteria.volFilter)],
       ['IV vs 1Y Realized Range', optionLabel(IV_VS_REALIZED_RANGE_OPTIONS, currentCriteria.ivVsRealizedRangeFilter)],
@@ -815,12 +821,13 @@ export default function ScreenerPage() {
     deltaFilter !== 'all',
     moneynessFilter !== 'all',
     yieldFilter !== 'all',
+    yieldLastFilter !== 'all',
     oiFilter !== 'all',
     volFilter !== 'all',
     ivVsRealizedRangeFilter !== 'all',
     recentTradesOnly,
   ].filter(Boolean).length;
-  const localFilterCount = [deltaFilter !== 'all', moneynessFilter !== 'all', yieldFilter !== 'all', oiFilter !== 'all', volFilter !== 'all', ivVsRealizedRangeFilter !== 'all', recentTradesOnly].filter(Boolean).length;
+  const localFilterCount = [deltaFilter !== 'all', moneynessFilter !== 'all', yieldFilter !== 'all', yieldLastFilter !== 'all', oiFilter !== 'all', volFilter !== 'all', ivVsRealizedRangeFilter !== 'all', recentTradesOnly].filter(Boolean).length;
   const scopeLabel = selectedETFs.length === 0 ? 'All ETFs' : selectedETFs.map(etf => etf.ticker).join(', ');
   const loadedScopeLabel = lastLoadedCriteria ? (lastLoadedCriteria.selectedETFs.length === 0 ? 'All ETFs' : lastLoadedCriteria.selectedETFs.map(etf => etf.ticker).join(', ')) : scopeLabel;
   const loadedExpirationLabel = lastLoadedCriteria ? optionLabel(expDropdownOptions, lastLoadedCriteria.expFilter) : optionLabel(expDropdownOptions, expFilter);
@@ -836,6 +843,7 @@ export default function ScreenerPage() {
       deltaFilter !== 'all' ? `Δ ${DELTA_OPTIONS.find(option => option.value === deltaFilter)?.label}` : null,
       moneynessFilter !== 'all' ? MONEYNESS_OPTIONS.find(option => option.value === moneynessFilter)?.label : null,
       yieldFilter !== 'all' ? `AY ${YIELD_OPTIONS.find(option => option.value === yieldFilter)?.label}` : null,
+      yieldLastFilter !== 'all' ? `AY Last ${YIELD_OPTIONS.find(option => option.value === yieldLastFilter)?.label}` : null,
       oiFilter !== 'all' ? `OI ${OI_OPTIONS.find(option => option.value === oiFilter)?.label}` : null,
       recentTradesOnly ? 'Recent trades' : null,
     ].filter(Boolean).join(' · ') || 'All deltas · All moneyness · All yields';
@@ -876,7 +884,7 @@ export default function ScreenerPage() {
           <div className="space-y-4">
             <div><label htmlFor="screener-etf-search" className="mobile-sheet-label">ETFs</label><div className="flex min-h-11 flex-wrap gap-1.5 rounded-lg border p-1.5" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--input-bg)' }}>{selectedETFs.map(etf => <span key={etf.ticker} className="inline-flex items-center gap-1 rounded-md px-2 text-xs" style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)' }}>{etf.ticker}<button type="button" onClick={() => removeETF(etf.ticker)} className="flex h-7 w-7 items-center justify-center" aria-label={`Remove ${etf.ticker}`}><X className="h-3 w-3" /></button></span>)}<input id="screener-etf-search" value={etfSearch} onChange={event => { setEtfSearch(event.target.value); setShowEtfDropdown(true); }} onFocus={() => setShowEtfDropdown(true)} placeholder={selectedETFs.length ? 'Add ETF' : 'All ETFs'} className="min-w-[100px] flex-1 bg-transparent px-2 text-base outline-none" style={{ color: 'var(--text)' }} /></div>{showEtfDropdown && etfOptions.length > 0 && <div className="motion-popover mt-1 max-h-40 overflow-y-auto rounded-lg border" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>{etfOptions.slice(0, 20).map(etf => <button type="button" key={etf.ticker} onClick={() => addETF(etf)} className="flex min-h-11 w-full items-center gap-2 border-b px-3 text-left" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}><b className="font-mono">{etf.ticker}</b><span className="truncate text-xs" style={{ color: 'var(--text-muted)' }}>{etf.name}</span></button>)}</div>}</div>
             <ExpirationFilter value={expFilter} onChange={setExpFilter} options={expDropdownOptions} loadingDates={loadingDates} datesLoaded={datesLoaded} />
-            {([['Delta (abs)', deltaFilter, setDeltaFilter, DELTA_OPTIONS], ['Moneyness', moneynessFilter, setMoneynessFilter, MONEYNESS_OPTIONS], ['Annualized Yield Bid', yieldFilter, setYieldFilter, YIELD_OPTIONS], ['Minimum OI', oiFilter, setOiFilter, OI_OPTIONS], ['Minimum Volume', volFilter, setVolFilter, VOL_OPTIONS], ['IV vs 1Y Realized Range', ivVsRealizedRangeFilter, setIvVsRealizedRangeFilter, IV_VS_REALIZED_RANGE_OPTIONS]] as const).map(([label, value, setter, options]) => <label key={label} className="block"><span className="mobile-sheet-label">{label}</span><select value={value} onChange={event => setter(event.target.value)} className="mobile-control-field w-full">{options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>)}
+            {([['Delta (abs)', deltaFilter, setDeltaFilter, DELTA_OPTIONS], ['Moneyness', moneynessFilter, setMoneynessFilter, MONEYNESS_OPTIONS], ['Annualized Yield Bid', yieldFilter, setYieldFilter, YIELD_OPTIONS], ['Annualized Yield Last', yieldLastFilter, setYieldLastFilter, YIELD_OPTIONS], ['Minimum OI', oiFilter, setOiFilter, OI_OPTIONS], ['Minimum Volume', volFilter, setVolFilter, VOL_OPTIONS], ['IV vs 1Y Realized Range', ivVsRealizedRangeFilter, setIvVsRealizedRangeFilter, IV_VS_REALIZED_RANGE_OPTIONS]] as const).map(([label, value, setter, options]) => <label key={label} className="block"><span className="mobile-sheet-label">{label}</span><select value={value} onChange={event => setter(event.target.value)} className="mobile-control-field w-full">{options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>)}
             <details className="screener-iv-help screener-iv-help--mobile">
               <summary>What does IV vs 1Y realized range mean?</summary>
               <p>Current ATM put IV positioned in the trailing 1-year range of 4-week realized volatility. This is not traditional historical IV Rank.</p>
@@ -916,7 +924,7 @@ export default function ScreenerPage() {
             <ChevronDown className={`h-4 w-4 transition-transform ${mobileFiltersOpen ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} />
           </button>
 
-          <div id="screener-filter-controls" className={`screener-filter-controls grid grid-cols-1 min-[430px]:grid-cols-2 sm:flex sm:flex-row sm:flex-wrap xl:flex-nowrap sm:items-end gap-2 ${mobileFiltersOpen ? 'is-open' : ''}`}>
+          <div id="screener-filter-controls" className={`screener-filter-controls grid grid-cols-1 min-[430px]:grid-cols-2 sm:grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-2 ${mobileFiltersOpen ? 'is-open' : ''}`}>
             {/* ETF Selector */}
             <div className="screener-filter-field screener-filter-field--structural w-full sm:min-w-[180px] sm:w-auto min-w-0 min-[430px]:col-span-2 sm:col-span-1">
               <div className="screener-filter-group-tag"><strong>Fetch scope</strong><span>Changes require Load</span></div>
@@ -1003,9 +1011,19 @@ export default function ScreenerPage() {
 
             {/* Ann Yield */}
             <div className="screener-filter-field screener-filter-field--local w-full sm:w-auto min-w-0">
-              <label className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Annualized Yield Bid</label>
-              <select value={yieldFilter} onChange={e => setYieldFilter(e.target.value)}
+              <label htmlFor="screener-yield-bid" className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Annualized Yield Bid</label>
+              <select id="screener-yield-bid" value={yieldFilter} onChange={e => setYieldFilter(e.target.value)}
                 className="w-full sm:w-auto rounded-lg px-3 py-2 sm:py-1.5 text-base sm:text-xs outline-none cursor-pointer min-h-[44px] sm:min-h-0"
+                style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
+                {YIELD_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+
+            {/* Ann Yield at Last: local refinement against the canonical AY-at-Last field. */}
+            <div className="screener-filter-field screener-filter-field--local w-full sm:w-auto min-w-0">
+              <label htmlFor="screener-yield-last" className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Annualized Yield Last</label>
+              <select id="screener-yield-last" value={yieldLastFilter} onChange={e => setYieldLastFilter(e.target.value)}
+                className="w-full rounded-lg px-3 py-2 sm:py-1.5 text-base sm:text-xs outline-none cursor-pointer min-h-[44px] sm:min-h-0"
                 style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
                 {YIELD_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>

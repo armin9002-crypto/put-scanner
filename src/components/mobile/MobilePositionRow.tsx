@@ -45,7 +45,6 @@ export default function MobilePositionRow({
   onEdit: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const freshnessStatus = freshness ? <span className="portfolio-paired-metric__status" data-freshness={freshness.toLowerCase()}> · {freshness}</span> : null;
   const pnlColor = pnl.startsWith('-') ? 'var(--red)' : 'var(--green)';
   const capturedColor = captured.startsWith('-') ? 'var(--red)' : 'var(--green)';
 
@@ -75,10 +74,10 @@ export default function MobilePositionRow({
       {expanded && (
         <div className="motion-disclosure mobile-position-row__details">
           <div className="mobile-position-row__meta">{contracts} {contracts === 1 ? 'contract' : 'contracts'} · Entry {entryDate} · VIX {entryVix}</div>
-          <div className="mobile-position-row__metrics">
+          <div className="mobile-position-row__metrics" title={freshness || undefined}>
             <span>Mark <b className="font-mono">{mark}</b></span>
-            <span>{showEntryDelta && <>Entry Δ <b className="font-mono">{entryDelta}</b><br /></>}Current Δ <b className="font-mono">{currentDelta}</b>{freshnessStatus}</span>
-            <span>{showEntryIv && <>Entry IV <b className="font-mono">{entryIv}</b><br /></>}Current IV <b className="font-mono">{currentIv}</b>{freshnessStatus}</span>
+            <span>{showEntryDelta && <>Entry Δ <b className="font-mono">{entryDelta}</b><br /></>}Current Δ <b className="font-mono">{currentDelta}</b></span>
+            <span>{showEntryIv && <>Entry IV <b className="font-mono">{entryIv}</b><br /></>}Current IV <b className="font-mono">{currentIv}</b></span>
             <span><b className="font-mono">{distance}</b> OTM</span>
           </div>
           <div className="mobile-position-row__actions">

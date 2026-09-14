@@ -48,6 +48,8 @@ export interface ScreenerFilterCriteria {
   deltaFilter: string;
   moneynessFilter: string;
   yieldFilter: string;
+  /** Local filter for the canonical annualized yield calculated from Last. */
+  yieldLastFilter?: string;
   oiFilter: string;
   volFilter: string;
   ivVsRealizedRangeFilter: string;
@@ -174,6 +176,7 @@ export function applyScreenerFilters(
   return rows.filter(row => matchDeltaAbs(row.delta, criteria.deltaFilter)
     && matchMoneyness(row.moneynessPct, criteria.moneynessFilter)
     && matchYield(row.annYieldBid, criteria.yieldFilter)
+    && matchYield(row.annYieldLast, criteria.yieldLastFilter ?? 'all')
     && matchMinimum(row.openInterest, criteria.oiFilter)
     && matchMinimum(row.volume, criteria.volFilter)
     && matchIvVsRealizedRange(row.ivVsRealizedRange, criteria.ivVsRealizedRangeFilter)

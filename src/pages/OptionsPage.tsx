@@ -242,12 +242,6 @@ function ivVsRealizedRangeColor(value: number): string {
   return 'var(--green)';
 }
 
-function deltaSourceLabel(source: PutDeltaSource | null): string {
-  if (source === 'provider') return 'Provider';
-  if (source === 'calculated') return 'Calculated';
-  return 'Unavailable';
-}
-
 function lastTradeStatusLabel(value: number | null | undefined): string {
   const freshness = getOptionLastTradeFreshness(value);
   if (freshness.ageSessions == null) return 'Unavailable';
@@ -1597,7 +1591,7 @@ export default function OptionsPage() {
                       const isWatched = watchlistIds.has(wlId);
                       const isSelected = selectedOption?.strike === put.strike;
                       const isFocused = focusedStrike === put.strike;
-                      const rowBackground = isSelected ? 'var(--accent-bg)' : moneyness.backgroundColor ?? altBg;
+                      const rowBackground = isSelected ? 'var(--accent-bg)' : altBg;
 
                       rows.push(
                         <tr
@@ -1620,14 +1614,14 @@ export default function OptionsPage() {
                             boxShadow: isSelected ? 'inset 3px 0 0 var(--accent)' : isFocused ? 'inset 3px 0 0 var(--accent), 0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent)' : 'none',
                           }}
                         >
-                          <td className="px-1.5 sm:px-2 py-1.5 text-center text-xs w-6">
+                          <td className="px-1.5 sm:px-2 py-1 text-center text-xs w-6">
                             <button
                               type="button"
                               onClick={(event) => {
                                 event.stopPropagation();
                                 toggleWatchlist(put);
                               }}
-                              className="transition-opacity hover:opacity-70 min-h-[44px] min-w-[32px] flex items-center justify-center"
+                              className="transition-opacity hover:opacity-70 min-h-0 min-w-[32px] flex items-center justify-center"
                               aria-label={isWatched ? 'Remove from watchlist' : 'Add to watchlist'}
                               title={isWatched ? 'Remove from watchlist' : 'Add to watchlist'}
                             >
@@ -1637,7 +1631,7 @@ export default function OptionsPage() {
                               />
                             </button>
                           </td>
-                          <td className="sticky-stack left-0 z-[2] px-1.5 sm:px-2 py-1.5 text-left text-xs whitespace-nowrap border-r w-[88px]" style={{ borderColor: 'var(--border)', backgroundColor: isSelected ? 'var(--accent-bg)' : moneyness.backgroundColor ?? altBg }}>
+                          <td className="sticky-stack left-0 z-[2] px-1.5 sm:px-2 py-1 text-left text-xs whitespace-nowrap border-r w-[88px]" style={{ borderColor: 'var(--border)', backgroundColor: isSelected ? 'var(--accent-bg)' : altBg }}>
                             <div className="flex items-center gap-1.5">
                               <span className="font-mono font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{formatPrice(put.strike)}</span>
                               {put.integrityStatus === 'invalid' && <span title={`Quote inconsistent: ${put.integrityReasonCodes.join(', ')}`} aria-label="Quote inconsistent"><AlertTriangle className="h-3.5 w-3.5" style={{ color: 'var(--yellow)' }} /></span>}
@@ -1645,19 +1639,17 @@ export default function OptionsPage() {
                             </div>
                             {put.integrityStatus !== 'clean' && <div className="mt-0.5 text-[9px] font-semibold" style={{ color: 'var(--yellow)' }}>{put.integrityStatus === 'invalid' ? 'Invalid quote · economics unavailable' : 'Degraded quote · use with caution'}</div>}
                           </td>
-                          <td className="w-20 px-1.5 py-1.5 text-right font-mono text-xs tabular-nums hidden md:table-cell" title={lastTradeStatusLabel(put.lastTradeDate)} style={{ color: getOptionLastTradeFreshness(put.lastTradeDate).color }}>
+                          <td className="w-20 px-1.5 py-1 text-right font-mono text-xs tabular-nums hidden md:table-cell" title={lastTradeStatusLabel(put.lastTradeDate)} style={{ color: getOptionLastTradeFreshness(put.lastTradeDate).color }}>
                             <span className="block">{formatOptionLastTradeDate(put.lastTradeDate)}</span>
-                            <span className="block text-[9px] font-semibold">{lastTradeStatusLabel(put.lastTradeDate)}</span>
                           </td>
-                          {OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => <td key={field} className={`px-2 py-1.5 text-right text-xs font-mono tabular-nums w-14 ${field === 'last' ? 'hidden md:table-cell' : ''}`} style={{ color: 'var(--text)' }}>{formatOptionQuoteValue(field, put[field], formatPrice)}</td>)}
-                          <td className="px-1.5 py-1.5 text-right text-xs font-mono tabular-nums w-12" style={{ color: deltaColor(put.delta) }}>
+                          {OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => <td key={field} className={`px-2 py-1 text-right text-xs font-mono tabular-nums w-14 ${field === 'last' ? 'hidden md:table-cell' : ''}`} style={{ color: 'var(--text)' }}>{formatOptionQuoteValue(field, put[field], formatPrice)}</td>)}
+                          <td className="px-1.5 py-1 text-right text-xs font-mono tabular-nums w-12" style={{ color: deltaColor(put.delta) }}>
                             <span className="block">{put.delta != null ? put.delta.toFixed(2) : '—'}</span>
-                            <span className="block text-[9px] font-semibold" title={put.deltaSource === 'calculated' && put.deltaModelVersion ? `Calculated Delta · ${put.deltaModelVersion}` : undefined}>{deltaSourceLabel(put.deltaSource)}</span>
                           </td>
-                          <td className="px-1.5 py-1.5 text-right text-xs font-mono tabular-nums hidden md:table-cell w-20" style={{ color: put.otmItmColor }}>
+                          <td className="px-1.5 py-1 text-right text-xs font-mono tabular-nums hidden md:table-cell w-20" style={{ color: put.otmItmColor }}>
                             {put.otmItmLabel || '—'}
                           </td>
-                          <td className="px-1.5 py-1.5 text-right text-xs font-mono tabular-nums hidden md:table-cell w-12" style={{ color: ivColor(put.impliedVolatility) }}>
+                          <td className="px-1.5 py-1 text-right text-xs font-mono tabular-nums hidden md:table-cell w-12" style={{ color: ivColor(put.impliedVolatility) }}>
                             {put.impliedVolatility != null ? put.impliedVolatility.toFixed(1) + '%' : '—'}
                           </td>
                           {visibleYieldFields.map(field => {

@@ -3433,12 +3433,12 @@ td {
 }
 
 .option-chain-surface .financial-table tbody tr {
-  min-height: 52px;
+  min-height: 34px;
 }
 
 .option-chain-surface .financial-table tbody td {
-  padding-top: 0.65rem;
-  padding-bottom: 0.65rem;
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
 }
 
 .drawer-shell {
@@ -5487,6 +5487,12 @@ td {
 }
 
 @media (min-width: 640px) {
+  .screener-filter-controls { column-gap: 1rem; row-gap: 0.75rem; }
+  .screener-filter-controls .screener-filter-field select { width: 100%; min-height: 32px; }
+  .screener-filter-group-tag { min-height: 18px; margin-bottom: 2px; }
+  .screener-filter-field--structural:not(:has(.screener-filter-group-tag)),
+  .screener-filter-field--local:not(:has(.screener-filter-group-tag)) { padding-top: 20px; }
+  .screener-filter-field > div > label { display: flex; align-items: flex-end; min-height: 1.15rem; line-height: 1.05; }
   .screener-filter-field > label,
   .screener-filter-field > .expiration-filter > label {
     display: flex !important;

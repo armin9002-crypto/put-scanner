@@ -66,12 +66,6 @@ function freshnessText(value: number | null | undefined): string {
   return `${freshness.label ?? 'Recent'} · ${age}`;
 }
 
-function deltaSourceText(source: PutDeltaSource | null | undefined): string {
-  if (source === 'provider') return 'Provider';
-  if (source === 'calculated') return 'Calculated';
-  return 'Unavailable';
-}
-
 /** Compact portrait row. The drawer remains the home for secondary option data. */
 export default function MobileOptionRow(props: MobileOptionRowProps) {
   const title = `$${money(props.strike)} Put`;
@@ -132,14 +126,12 @@ export default function MobileOptionRow(props: MobileOptionRowProps) {
             <div role="cell" className="mobile-option-chain-cell mobile-option-chain-cell--trade" data-field="last-trade" style={{ color: getOptionLastTradeFreshness(props.lastTradeDate).color }} title={`${formatOptionLastTradeDate(props.lastTradeDate ?? null)} · ${freshnessText(props.lastTradeDate)}`}>
               <small className="mobile-option-chain-cell__context">Last Trade</small>
               <span className="font-mono tabular-nums">{formatOptionLastTradeDate(props.lastTradeDate ?? null)}</span>
-              <small className="mobile-option-chain-cell__status">{freshnessText(props.lastTradeDate)}</small>
             </div>
           </div>
           <div className="mobile-option-chain-row__metric-grid">
             <div role="cell" className="mobile-option-chain-cell" data-field="delta" title={props.deltaSource === 'calculated' && props.deltaModelVersion ? `Calculated Delta · ${props.deltaModelVersion}` : undefined}>
               <small className="mobile-option-chain-cell__context">Delta</small>
               <span className="font-mono tabular-nums">{props.delta == null || !Number.isFinite(props.delta) ? '\u2014' : props.delta.toFixed(2)}</span>
-              <small className="mobile-option-chain-cell__status">{deltaSourceText(props.deltaSource)}</small>
             </div>
             <div role="cell" className="mobile-option-chain-cell" data-field="iv">
               <small className="mobile-option-chain-cell__context">IV</small>

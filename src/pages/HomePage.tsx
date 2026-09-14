@@ -488,6 +488,37 @@ export default function HomePage() {
     if (!filtered.some(etf => etf.ticker === activeEvidence.ticker) || !activeEvidence.anchor.isConnected) closeEvidence();
   }, [activeEvidence, closeEvidence, filtered]);
 
+  useEffect(() => {
+    if (!activeEvidence) return;
+    const handlePointerOut = (event: PointerEvent) => {
+      const origin = event.target as Node | null;
+      const next = event.relatedTarget as Node | null;
+      if (origin && activeEvidence.anchor.contains(origin) && (!next || !activeEvidence.anchor.contains(next))) closeEvidence();
+    };
+    const handleFocusOut = (event: FocusEvent) => {
+      const origin = event.target as Node | null;
+      const next = event.relatedTarget as Node | null;
+      if (origin && activeEvidence.anchor.contains(origin) && (!next || !activeEvidence.anchor.contains(next))) closeEvidence();
+    };
+    const handleOutsidePointerDown = (event: PointerEvent) => {
+      if (!activeEvidence.anchor.contains(event.target as Node)) closeEvidence();
+    };
+    const handleEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') closeEvidence(); };
+    const handleWindowBlur = () => closeEvidence();
+    document.addEventListener('pointerdown', handleOutsidePointerDown);
+    document.addEventListener('keydown', handleEscape);
+    window.addEventListener('blur', handleWindowBlur);
+    document.addEventListener('pointerout', handlePointerOut);
+    document.addEventListener('focusout', handleFocusOut);
+    return () => {
+      document.removeEventListener('pointerdown', handleOutsidePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+      window.removeEventListener('blur', handleWindowBlur);
+      document.removeEventListener('pointerout', handlePointerOut);
+      document.removeEventListener('focusout', handleFocusOut);
+    };
+  }, [activeEvidence, closeEvidence]);
+
   const expDropdownOptions = useMemo(() => buildExpirationOptions(availableExps, expFilter), [availableExps, expFilter]);
 
   const handleExpirationChange = useCallback((value: string) => {
@@ -756,14 +787,15 @@ export default function HomePage() {
           </div>
             <div className="scanner-control-plane__toolbar">
               <div className="scanner-control-plane__criteria">
-            <div className="grid grid-cols-[86px_minmax(96px,1fr)_70px_62px] items-end gap-1">
+              <p className="mb-2 text-[10px] leading-4" style={{ color: 'var(--text-dim)' }}>Selected expiration confirms exact listed availability; IV60 and liquidity use a bounded ~60 DTE benchmark.</p>
+            <div className="grid grid-cols-2 items-end gap-2 lg:grid-cols-4">
               <div className="min-w-0">
                 <span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Leverage</span>
                 <div className="flex gap-1">
                   {LEVERAGE_OPTIONS.map(opt => <button key={opt} onClick={() => handleLeverageChange(opt)} className="scanner-filter-control pressable h-8 w-[26px] rounded-md px-0 text-[11px] font-medium" style={{ backgroundColor: leverageFilter === opt ? 'var(--accent)' : 'var(--surface-alt)', color: leverageFilter === opt ? 'white' : 'var(--text-muted)', border: `1px solid ${leverageFilter === opt ? 'var(--accent)' : 'var(--border)'}` }}>{opt}</button>)}
                 </div>
               </div>
-              <div className="scanner-control-plane__expiration"><ExpirationFilter value={expFilter} onChange={handleExpirationChange} options={expDropdownOptions} loadingDates={expirationDatesLoading} datesLoaded={availableExps.length > 0} /><p className="mt-1 text-[10px] leading-4" style={{ color: 'var(--text-dim)' }}>Selected expiration confirms exact listed availability; IV60 and liquidity use a bounded ~60 DTE benchmark.</p></div>
+              <div className="scanner-control-plane__expiration"><ExpirationFilter value={expFilter} onChange={handleExpirationChange} options={expDropdownOptions} loadingDates={expirationDatesLoading} datesLoaded={availableExps.length > 0} /></div>
               <label className="min-w-0"><span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Sort</span><select value={scannerSort} onChange={event => handleSortChange(event.target.value as ScannerSort)} className="scanner-filter-control h-8 w-full rounded-md px-1.5 text-[11px] outline-none" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>{SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
               <label className="min-w-0"><span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Liquidity</span><select value={liquidityFilter} onChange={event => handleLiquidityChange(event.target.value as ScannerLiquidityFilter)} className="scanner-filter-control h-8 w-full rounded-md px-1.5 text-[11px] outline-none" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}><option value="all">All</option><option value="mediumPlus">Medium+</option><option value="liquidPlus">Liquid+</option></select></label>
             </div>
