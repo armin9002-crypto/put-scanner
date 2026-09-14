@@ -25,6 +25,7 @@ import { shortPutMoneynessPresentation, type ShortPutMoneynessState } from '../l
 import { CALCULATED_PUT_DELTA_MODEL, type PutDeltaSource } from '../lib/putDelta';
 import { getOptionLastTradeFreshness } from '../lib/optionLastTradeFreshness';
 import { useBlockingOverlayBehavior } from '../lib/blockingOverlay';
+import { useOverlayDismiss } from '../lib/overlayMotion';
 import type { OptionIntegrityReasonCode, OptionIntegrityStatus } from '../lib/types';
 
 export interface OptionDetail {
@@ -184,6 +185,8 @@ export default function OptionDetailDrawer({
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
   const setPanelRef = (element: HTMLElement | null) => { panelRef.current = element; };
+  const optionIdentity = option ? `${ticker}|${expirationLabel}|${option.strike}` : null;
+  const requestClose = useOverlayDismiss(onClose, panelRef, overlayRef, optionIdentity);
   const moneyness = option?.otmItmState ? shortPutMoneynessPresentation(option.otmItmState) : null;
   const moneynessLabel = option?.otmItmLabel || moneyness?.label || '—';
   const moneynessColor = moneyness?.color ?? option?.otmItmColor;
@@ -210,7 +213,7 @@ export default function OptionDetailDrawer({
     isOpen: Boolean(option),
     panelRef,
     overlayRef,
-    onEscape: onClose,
+    onEscape: requestClose,
   });
 
   if (!option) return null;
@@ -289,7 +292,7 @@ export default function OptionDetailDrawer({
                 <h2 id={titleId} className="truncate font-mono text-[18px] font-bold" style={{ color: 'var(--text)' }}>{ticker} {formatCurrency(option.strike, option.strike % 1 === 0 ? 0 : 2)} Put</h2>
                 <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>{expirationLabel || '—'} · {isFiniteNumber(dte) ? `${dte} DTE` : '— DTE'} · Underlying {formatCurrency(underlyingPrice)}</p>
               </div>
-              <button type="button" onClick={onClose} className="pressable flex h-11 w-11 flex-none items-center justify-center rounded-full" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }} aria-label="Close option details"><X className="h-5 w-5" /></button>
+              <button type="button" onClick={requestClose} className="pressable flex h-11 w-11 flex-none items-center justify-center rounded-full" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }} aria-label="Close option details"><X className="h-5 w-5" /></button>
             </div>
           </header>
 
@@ -369,7 +372,7 @@ export default function OptionDetailDrawer({
                 <h2 id={titleId} className="truncate font-mono text-[18px] font-bold" style={{ color: 'var(--text)' }}>{ticker} {formatCurrency(option.strike, option.strike % 1 === 0 ? 0 : 2)} Put</h2>
                 <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>{expirationLabel || '—'} · {isFiniteNumber(dte) ? `${dte} DTE` : '— DTE'} · Underlying {formatCurrency(underlyingPrice)}</p>
               </div>
-              <button type="button" onClick={onClose} className="pressable flex h-11 w-11 flex-none items-center justify-center rounded-full" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }} aria-label="Close option details"><X className="h-5 w-5" /></button>
+              <button type="button" onClick={requestClose} className="pressable flex h-11 w-11 flex-none items-center justify-center rounded-full" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }} aria-label="Close option details"><X className="h-5 w-5" /></button>
             </div>
           </header>
 
@@ -465,7 +468,7 @@ export default function OptionDetailDrawer({
       <button
         type="button"
         aria-label="Close option detail drawer"
-        onClick={onClose}
+        onClick={requestClose}
         className="motion-backdrop absolute inset-0 bg-black/50"
       />
       <aside
@@ -491,7 +494,7 @@ export default function OptionDetailDrawer({
             </p>
           </div>
           <button
-            onClick={onClose}
+            onClick={requestClose}
             aria-label="Close option detail drawer"
             className="icon-button p-2 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center"
             style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}

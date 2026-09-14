@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
+import { useOverlayDismiss } from '../lib/overlayMotion';
 
 interface MobileAccountSheetProps {
   id?: string;
@@ -22,6 +23,9 @@ export default function MobileAccountSheet({
   const generatedTitleId = useId();
   const generatedDescriptionId = useId();
   const panelRef = useRef<HTMLDivElement | null>(null);
+
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const requestClose = useOverlayDismiss(onClose, panelRef, overlayRef);
 
   useEffect(() => {
     const body = document.body;
@@ -46,7 +50,7 @@ export default function MobileAccountSheet({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
-        onClose();
+        requestClose();
         return;
       }
       if (event.key !== 'Tab' || !panelRef.current) return;
@@ -80,17 +84,17 @@ export default function MobileAccountSheet({
       window.scrollTo(0, scrollY);
       previousFocus?.focus();
     };
-  }, [onClose]);
+  }, [requestClose]);
 
   if (typeof document === 'undefined') return null;
 
   const sheet = (
-    <div className="mobile-account-sheet-layer fixed inset-0 z-[110] flex items-end justify-center" data-account-overlay="mobile">
+    <div ref={overlayRef} className="mobile-account-sheet-layer fixed inset-0 z-[110] flex items-end justify-center" data-account-overlay="mobile">
       <button
         type="button"
         className="motion-backdrop absolute inset-0 bg-black/65"
         aria-label="Close Account"
-        onClick={onClose}
+        onClick={requestClose}
       />
       <div
         id={id}
@@ -114,7 +118,7 @@ export default function MobileAccountSheet({
             </div>
             <button
               type="button"
-              onClick={onClose}
+              onClick={requestClose}
               className="pressable -mr-1 flex h-11 w-11 min-h-11 min-w-11 flex-none items-center justify-center rounded-full"
               style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }}
               aria-label="Close Account"

@@ -9,6 +9,7 @@ import { presentUnderlyingTechnicalAssessment, underlyingTechnicalEvidencePresen
 import { shortPutMoneynessPresentation } from '../lib/moneynessPresentation.ts';
 import { useResponsiveMode } from '../lib/responsive.ts';
 import { useBlockingOverlayBehavior } from '../lib/blockingOverlay.ts';
+import { useOverlayDismiss } from '../lib/overlayMotion.ts';
 import MobileBottomSheet from './mobile/MobileBottomSheet.tsx';
 
 function valueOrDash(value: number | null | undefined, decimals = 2): string {
@@ -224,13 +225,14 @@ export default function RecommendationEvidenceDrawer({
   const panelRef = useRef<HTMLElement | null>(null);
   const setPanelRef = (element: HTMLElement | null) => { panelRef.current = element; };
   const title = `${candidate.ticker} ${formatCurrency(candidate.strike)} Put`;
+  const requestClose = useOverlayDismiss(onClose, panelRef, overlayRef, `${candidate.ticker}|${candidate.expirationLabel}|${candidate.strike}`);
   const actions = <div className="grid grid-cols-3 gap-2"><button type="button" className="button-secondary min-h-10 rounded-lg px-2 text-xs font-semibold" onClick={onOpenContract}>Open Contract</button><button type="button" className="button-secondary min-h-10 rounded-lg px-2 text-xs font-semibold" onClick={onToggleWatch}>{watched ? 'Watching' : 'Watch'}</button><button type="button" className="button-primary min-h-10 rounded-lg px-2 text-xs font-semibold" onClick={onViewChain}>View Chain</button></div>;
 
   useBlockingOverlayBehavior({
     isOpen: !isPhone,
     panelRef,
     overlayRef,
-    onEscape: onClose,
+    onEscape: requestClose,
   });
 
   if (isPhone) {
@@ -238,11 +240,11 @@ export default function RecommendationEvidenceDrawer({
   }
   return (
     <div ref={overlayRef} className="fixed inset-0 z-[90] flex justify-end">
-      <button type="button" className="motion-backdrop absolute inset-0 bg-black/60" aria-label="Close recommendation evidence" onClick={onClose} />
+      <button type="button" className="motion-backdrop absolute inset-0 bg-black/60" aria-label="Close recommendation evidence" onClick={requestClose} />
       <aside ref={setPanelRef} className="recommendation-evidence-drawer overlay-panel relative z-10 flex h-full w-full max-w-[720px] flex-col outline-none" role="dialog" aria-modal="true" aria-label={`${title} recommendation evidence`} tabIndex={-1} style={{ backgroundColor: 'var(--bg)', borderLeft: '1px solid var(--border)' }}>
         <header className="flex flex-none items-start justify-between gap-3 border-b px-5 py-4" style={{ borderColor: 'var(--border)' }}>
           <div><div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Recommendation evidence · {candidate.verdict}</div><h2 className="mt-1 text-lg font-semibold" style={{ color: 'var(--text)' }}>{title}</h2><p className="text-xs" style={{ color: 'var(--text-muted)' }}>{candidate.expirationLabel}</p></div>
-          <button type="button" onClick={onClose} className="pressable flex h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text-muted)' }} aria-label="Close recommendation evidence"><X className="h-5 w-5" /></button>
+          <button type="button" onClick={requestClose} className="pressable flex h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text-muted)' }} aria-label="Close recommendation evidence"><X className="h-5 w-5" /></button>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4"><EvidenceContent candidate={candidate} run={run} /></div>
         <footer className="flex-none border-t px-5 py-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>{actions}</footer>

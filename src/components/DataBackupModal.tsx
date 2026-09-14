@@ -10,6 +10,7 @@ import {
 import { useAuth } from '../lib/authContext';
 import { useAccountState } from '../lib/cloudState/accountStateContext';
 import { useBlockingOverlayBehavior } from '../lib/blockingOverlay';
+import { useOverlayDismiss } from '../lib/overlayMotion';
 
 interface DataBackupModalProps {
   onClose: () => void;
@@ -40,11 +41,12 @@ export default function DataBackupModal({ onClose, onImported }: DataBackupModal
   const [busy, setBusy] = useState(false);
   const accountReady = Boolean(user && account.cloud && (account.phase === 'ready' || account.phase === 'conflict'));
 
+  const requestClose = useOverlayDismiss(onClose, panelRef, overlayRef);
   useBlockingOverlayBehavior({
     panelRef,
     overlayRef,
     initialFocusRef: closeButtonRef,
-    onEscape: onClose,
+    onEscape: requestClose,
   });
 
   const exportCurrentData = (prefix = 'put-scanner-backup') => {
@@ -104,14 +106,14 @@ export default function DataBackupModal({ onClose, onImported }: DataBackupModal
   const summary = pendingBackup ? getPutScannerBackupSummary(pendingBackup) : null;
 
   return (
-    <div ref={overlayRef} className="motion-backdrop-surface fixed inset-0 z-[100] flex items-end justify-center p-0 sm:items-center sm:p-4" style={{ backgroundColor: 'rgba(0,0,0,0.72)' }} role="presentation" onMouseDown={event => { if (event.currentTarget === event.target) onClose(); }}>
+    <div ref={overlayRef} className="motion-backdrop-surface fixed inset-0 z-[100] flex items-end justify-center p-0 sm:items-center sm:p-4" style={{ backgroundColor: 'rgba(0,0,0,0.72)' }} role="presentation" onMouseDown={event => { if (event.currentTarget === event.target) requestClose(); }}>
       <section ref={setPanelRef} tabIndex={-1} className="motion-modal max-h-[94dvh] w-full overflow-y-auto rounded-t-2xl p-4 shadow-2xl outline-none sm:max-w-xl sm:rounded-2xl sm:p-5" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }} role="dialog" aria-modal="true" aria-labelledby="data-backup-title">
         <header className="flex items-start justify-between gap-3">
           <div>
             <h2 id="data-backup-title" className="text-lg font-semibold" style={{ color: 'var(--text)' }}>Data Backup</h2>
             <p className="mt-1 text-xs leading-5" style={{ color: 'var(--text-muted)' }}>Export or explicitly restore canonical cloud account data. Market-data caches are never included.</p>
           </div>
-          <button ref={closeButtonRef} type="button" onClick={onClose} className="pressable flex h-11 w-11 flex-none items-center justify-center rounded-full" aria-label="Close data backup" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }}><X className="h-5 w-5" /></button>
+          <button ref={closeButtonRef} type="button" onClick={requestClose} className="pressable flex h-11 w-11 flex-none items-center justify-center rounded-full" aria-label="Close data backup" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }}><X className="h-5 w-5" /></button>
         </header>
 
         {!accountReady && <div className="mt-4 rounded-lg border px-3 py-2 text-xs leading-5" role="status" style={{ color: 'var(--yellow)', borderColor: 'color-mix(in srgb, var(--yellow) 30%, var(--border))' }}>Sign in and load your account to export or restore durable data.</div>}

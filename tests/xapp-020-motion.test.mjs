@@ -12,12 +12,14 @@ test('XAPP-020 preserves the canonical Motion V2 tokens and reduced-motion contr
   assert.match(styles, /--motion-instant: 90ms;/);
   assert.match(styles, /--motion-fast: 150ms;/);
   assert.match(styles, /--motion-medium: 210ms;/);
+  assert.match(styles, /--motion-reveal: 320ms;/);
+  assert.match(styles, /--motion-exit: 140ms;/);
   assert.match(styles, /--ease-ui: cubic-bezier\(0\.2, 0, 0, 1\);/);
   assert.match(styles, /--ease-emphasized: cubic-bezier\(0\.16, 1, 0\.3, 1\);/);
   assert.match(styles, /--transition-ui: var\(--motion-fast\) var\(--ease-ui\);/);
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*animation-duration: 0\.01ms !important;/);
   assert.match(styles, /\.motion-backdrop[\s\S]*animation: ui-backdrop var\(--motion-fast\) var\(--ease-ui\);/);
-  assert.match(styles, /\.motion-modal[\s\S]*animation: ui-modal var\(--motion-medium\) var\(--ease-emphasized\);/);
+  assert.match(styles, /\.motion-modal[\s\S]*animation: ui-modal var\(--motion-reveal\) var\(--ease-emphasized\);/);
 });
 
 test('XAPP-020 normalizes both Portfolio import modal overlays', async () => {

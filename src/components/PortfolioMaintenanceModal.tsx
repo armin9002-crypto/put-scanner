@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { AlertTriangle, CheckCircle2, History, Wrench } from 'lucide-react';
 import type { PortfolioMaintenanceAssessment } from '../lib/portfolioMaintenance';
 import { useBlockingOverlayBehavior } from '../lib/blockingOverlay';
+import { useOverlayDismiss } from '../lib/overlayMotion';
 
 interface PortfolioMaintenanceModalProps {
   assessment: PortfolioMaintenanceAssessment;
@@ -37,7 +38,8 @@ export default function PortfolioMaintenanceModal({
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
   const setPanelRef = (element: HTMLElement | null) => { panelRef.current = element; };
-  useBlockingOverlayBehavior({ panelRef, overlayRef, onEscape: onClose });
+  const requestClose = useOverlayDismiss(onClose, panelRef, overlayRef);
+  useBlockingOverlayBehavior({ panelRef, overlayRef, onEscape: requestClose });
   const lifecycleCount = assessment.expiredLifecycleReview.length;
   const entryVixCount = assessment.missingEntryVix.length;
   const recoverableDeltaCount = assessment.recoverableEntryDelta.length;
@@ -50,7 +52,7 @@ export default function PortfolioMaintenanceModal({
   ]).size;
   return (
     <div ref={overlayRef} className="fixed inset-0 z-[85]">
-      <button type="button" aria-label="Close Portfolio Maintenance" onClick={onClose} className="motion-backdrop absolute inset-0 bg-black/55" />
+      <button type="button" aria-label="Close Portfolio Maintenance" onClick={requestClose} className="motion-backdrop absolute inset-0 bg-black/55" />
       <section ref={setPanelRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="portfolio-maintenance-title" className="motion-modal absolute inset-x-0 bottom-0 max-h-[94dvh] overflow-y-auto rounded-t-2xl p-4 outline-none shadow-2xl sm:inset-x-1/2 sm:top-[3dvh] sm:bottom-auto sm:w-[min(680px,calc(100vw-32px))] sm:-translate-x-1/2 sm:rounded-xl sm:p-5" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -58,7 +60,7 @@ export default function PortfolioMaintenanceModal({
             <h2 id="portfolio-maintenance-title" className="text-lg font-bold" style={{ color: 'var(--text)' }}>Portfolio Maintenance</h2>
             <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Review durable lifecycle and entry snapshots. Opening this view makes no market requests and changes nothing.</p>
           </div>
-          <button type="button" onClick={onClose} className="pressable min-h-10 rounded-lg px-3 text-xs font-semibold" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>Close</button>
+          <button type="button" onClick={requestClose} className="pressable min-h-10 rounded-lg px-3 text-xs font-semibold" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>Close</button>
         </div>
 
         <div className="mt-4 space-y-2">

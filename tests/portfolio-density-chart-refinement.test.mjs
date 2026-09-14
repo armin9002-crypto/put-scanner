@@ -12,7 +12,7 @@ test('Portfolio density uses compact card tokens without changing headline compo
     read('src/pages/PortfolioPage.tsx'),
     read('src/index.css'),
   ]);
-  assert.match(source, /className="portfolio-summary-grid hidden grid-cols-2 md:grid md:grid-cols-4 2xl:grid-cols-8 gap-1\.5 mb-3"/);
+  assert.match(source, /className="portfolio-summary-grid motion-refresh-region hidden grid-cols-2 md:grid md:grid-cols-4 2xl:grid-cols-8 gap-1\.5 mb-3"/);
   for (const label of ['Premium', 'Gross Risk', 'Gain/Loss', '% Captured', 'Entry Wtd. Avg. AY', 'Current Wtd. Avg. AY', 'Weighted Avg Delta', 'Weighted Avg DTE']) {
     assert.match(source, new RegExp(`label="${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`));
   }

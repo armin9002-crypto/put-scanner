@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { useState } from 'react';
 
 export default function MobilePositionRow({
@@ -68,12 +68,12 @@ export default function MobilePositionRow({
             <span><small>Gain/Loss</small><b className="font-mono tabular-nums" style={{ color: pnlColor }}>{pnl}</b></span>
             <span><small>% Captured</small><b className="font-mono tabular-nums" style={{ color: capturedColor }}>{captured}</b></span>
           </span>
-          <span className="mobile-position-row__chevron" aria-hidden="true">{expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</span>
+          <span className="mobile-position-row__chevron" aria-hidden="true"><ChevronRight className={`motion-chevron h-4 w-4 ${expanded ? 'rotate-90' : ''}`} /></span>
         </button>
         <span className="mobile-position-row__health rounded px-1.5 py-0.5 text-[10px] font-semibold" title={health.title} style={{ color: health.color, backgroundColor: health.bg, border: `1px solid ${health.border}` }}>{health.label}</span>
       </div>
       {expanded && (
-        <div className="mobile-position-row__details">
+        <div className="motion-disclosure mobile-position-row__details">
           <div className="mobile-position-row__meta">{contracts} {contracts === 1 ? 'contract' : 'contracts'} · Entry {entryDate} · VIX {entryVix}</div>
           <div className="mobile-position-row__metrics">
             <span>Mark <b className="font-mono">{mark}</b></span>

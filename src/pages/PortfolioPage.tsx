@@ -621,7 +621,7 @@ function SummaryCard({ label, value, color, detail }: { label: string; value: st
   return (
     <div className="portfolio-summary-card rounded-lg p-2 min-w-0" title={detail} style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
       <div className="portfolio-summary-card__label text-[9px] uppercase tracking-wider mb-0.5" title={detail ?? label} style={{ color: 'var(--text-dim)' }}>{label}</div>
-      <div className="portfolio-summary-card__value text-xs xl:text-sm font-mono font-semibold tabular-nums" title={detail ?? value} style={{ color: color ?? 'var(--text)' }}>{value}</div>
+      <div key={value} className="portfolio-summary-card__value motion-value text-xs xl:text-sm font-mono font-semibold tabular-nums" title={detail ?? value} style={{ color: color ?? 'var(--text)' }}>{value}</div>
     </div>
   );
 }
@@ -2261,7 +2261,7 @@ export default function PortfolioPage() {
                 <div className="min-w-0"><div className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: 'var(--text-muted)' }}>Open trade book</div><div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-dim)' }}>{openPositions.length} {openPositions.length === 1 ? 'position' : 'positions'} · {markBasis.charAt(0).toUpperCase() + markBasis.slice(1)} marks</div></div>
                 <button type="button" onClick={() => void handleRefreshOpenTrades()} disabled={refreshing || openTrades.length === 0} className="pressable portfolio-mobile-refresh flex h-11 w-11 flex-none items-center justify-center rounded-full disabled:cursor-not-allowed disabled:opacity-40" aria-label="Refresh open trades" title="Refresh open trades" style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)' }}><RefreshCw className={`h-5 w-5 ${refreshing ? 'animate-spin' : ''}`} /></button>
               </div>
-              <div className="portfolio-mobile-metrics mt-2 grid grid-cols-4 border-y" style={{ borderColor: 'var(--border)' }}>
+              <div className="portfolio-mobile-metrics motion-refresh-region mt-2 grid grid-cols-4 border-y" data-refreshing={refreshing} style={{ borderColor: 'var(--border)' }}>
                 {[
                   ['Premium', formatCurrency(summary.totalPremiumCollected, 0), 'var(--text)'],
                   ['Gross Risk', formatCurrency(summary.totalEquityAtRisk, 0), 'var(--text)'],
@@ -2271,7 +2271,7 @@ export default function PortfolioPage() {
                   ['Current AY', formatPctValue(markSummary.portfolioCurrentAnnualizedYield), 'var(--text)'],
                   ['Avg Delta', formatDelta(markSummary.weightedAverageDelta), 'var(--text)'],
                   ['Avg DTE', isFiniteNumber(summary.weightedAverageRemainingDte) ? `${Math.round(summary.weightedAverageRemainingDte)} DTE` : DASH, 'var(--text)'],
-                ].map(([label, value, color], index) => <div key={label} className="portfolio-mobile-metric min-w-0" data-primary={index < 4 ? 'true' : 'false'}><div className="portfolio-mobile-metric-label uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>{label}</div><div className="portfolio-mobile-metric-value font-mono font-semibold tabular-nums" style={{ color }}>{value}</div></div>)}
+                ].map(([label, value, color], index) => <div key={label} className="portfolio-mobile-metric min-w-0" data-primary={index < 4 ? 'true' : 'false'}><div className="portfolio-mobile-metric-label uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>{label}</div><div key={value} className="portfolio-mobile-metric-value motion-value font-mono font-semibold tabular-nums" style={{ color }}>{value}</div></div>)}
               </div>
               <div className="portfolio-mobile-mark-control mt-2 flex items-center gap-3"><span className="portfolio-mobile-mark-label flex-none"><b>Mark basis</b><small>Revalues P&amp;L + Current AY</small></span><div className="min-w-0 flex-1"><MobileSegmentedControl value={markBasis} onChange={setMarkBasis} label="Portfolio mark basis" options={MARK_BASIS_OPTIONS.map(value => ({ value, label: value.charAt(0).toUpperCase() + value.slice(1) }))} /></div></div>
               {marketDetails}
@@ -2401,7 +2401,7 @@ export default function PortfolioPage() {
               </details>
             </div>
 
-            <div className="portfolio-summary-grid hidden grid-cols-2 md:grid md:grid-cols-4 2xl:grid-cols-8 gap-1.5 mb-3">
+            <div className="portfolio-summary-grid motion-refresh-region hidden grid-cols-2 md:grid md:grid-cols-4 2xl:grid-cols-8 gap-1.5 mb-3" data-refreshing={refreshing}>
               <SummaryCard label="Premium" value={formatCurrency(summary.totalPremiumCollected, 0)} color="var(--green)" />
               <SummaryCard label="Gross Risk" value={formatCurrency(summary.totalEquityAtRisk, 0)} />
               <SummaryCard label="Gain/Loss" value={formatCurrency(markSummary.totalGainLoss, 0)} color={pnlColor(markSummary.totalGainLoss)} />
@@ -2983,7 +2983,7 @@ function MobileHistoryTradeRow({
         <span className="portfolio-history-mobile-row__identity"><span className="portfolio-history-group-chevron" aria-hidden="true">{expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</span><strong className="font-mono">{trade.ticker}</strong><span>Exp. {formatHistoryDate(trade.expiration)}</span><span className="font-mono">{formatCurrency(trade.strike)}</span></span>
         <span className="portfolio-history-mobile-row__primary"><span><small>Realized P&amp;L</small><b className="font-mono" style={{ color: pnlColor(realizedPnl) }}>{formatCurrency(realizedPnl)}</b></span><span><small>Realized AY</small><b className="font-mono" style={{ color: pnlColor(realizedIrr) }}>{formatPctValue(realizedIrr)}</b></span></span>
       </button>
-      {expanded && <div className="portfolio-history-mobile-row__details">
+      {expanded && <div className="portfolio-history-mobile-row__details motion-disclosure">
         <div className="portfolio-history-mobile-row__meta">Entry {position ? formatPositionEntryDate(position) : formatHistoryDate(trade.soldDate)} · {formatDays(historyDaysHeld(trade))} held · {getArchiveOutcomeLabel(trade)}</div>
         <Link to={buildOptionsPath(trade.ticker, trade.expiration)} state={optionsNavigationState ?? PORTFOLIO_DEFAULT_OPTIONS_STATE} onClick={event => onOptionsNavigate?.(event, lifecycleTrade)} className="mt-1 inline-block text-[11px] font-semibold underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>Open Options</Link>
         <div className="portfolio-history-mobile-row__metrics">

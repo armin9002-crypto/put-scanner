@@ -6,6 +6,7 @@ import { useResponsiveMode } from '../lib/responsive';
 import MobileAccountSheet from './MobileAccountSheet';
 import { useAccountState } from '../lib/cloudState/accountStateContext';
 import { useBlockingOverlayBehavior } from '../lib/blockingOverlay';
+import { useOverlayDismiss } from '../lib/overlayMotion';
 
 const CloudAccountStatus = lazy(() => import('./CloudSyncSection'));
 
@@ -194,18 +195,19 @@ export function DesktopAccountDialog({ onClose, accountSyncContent }: { onClose:
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
 
+  const requestClose = useOverlayDismiss(onClose, panelRef, overlayRef);
   useBlockingOverlayBehavior({
     panelRef,
     overlayRef,
     initialFocusRef: panelRef,
-    onEscape: onClose,
+    onEscape: requestClose,
   });
 
   if (typeof document === 'undefined') return null;
 
   const dialog = (
     <div ref={overlayRef} className="fixed inset-0 z-[95] flex items-center justify-center p-4" data-account-overlay="desktop">
-      <button type="button" className="motion-backdrop absolute inset-0 bg-black/60" aria-label="Close account" onClick={onClose} />
+      <button type="button" className="motion-backdrop absolute inset-0 bg-black/60" aria-label="Close account" onClick={requestClose} />
       <div
         ref={panelRef}
         role="dialog"
@@ -220,7 +222,7 @@ export function DesktopAccountDialog({ onClose, accountSyncContent }: { onClose:
             <h2 id={titleId} className="text-base font-semibold" style={{ color: 'var(--text)' }}>Put Scanner Account</h2>
             <p className="mt-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>Cloud-backed account data</p>
           </div>
-          <button type="button" onClick={onClose} className="pressable flex h-10 w-10 items-center justify-center rounded-full" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }} aria-label="Close account">
+          <button type="button" onClick={requestClose} className="pressable flex h-10 w-10 items-center justify-center rounded-full" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }} aria-label="Close account">
             <X className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>

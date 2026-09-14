@@ -11,6 +11,7 @@ import { getTrueLeverageForPeriod, getTrueLeverageForRange, getYtdTrueLeverage, 
 import DataFreshness from './DataFreshness';
 import { useResponsiveMode } from '../lib/responsive';
 import { useBlockingOverlayBehavior } from '../lib/blockingOverlay';
+import { useOverlayDismiss } from '../lib/overlayMotion';
 
 const CHART_WIDTH = 900;
 const CHART_HEIGHT = 360;
@@ -112,6 +113,7 @@ export default function InteractivePriceChartModal({
   const titleId = useId();
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const setPanelRef = (element: HTMLElement | null) => { panelRef.current = element; };
   const [timeframe, setTimeframe] = useState<ChartTimeframe>('1D');
   const [data, setData] = useState<ChartHistoryResponse | null>(null);
@@ -197,11 +199,13 @@ export default function InteractivePriceChartModal({
     };
   }, [isOpen, normalizedProxyTicker, shouldFetchProxy, timeframe]);
 
+  const requestClose = useOverlayDismiss(onClose, panelRef, overlayRef, isOpen ? requestedTicker : null);
   useBlockingOverlayBehavior({
     isOpen,
     panelRef,
     overlayRef,
-    onEscape: onClose,
+    initialFocusRef: closeButtonRef,
+    onEscape: requestClose,
   });
 
   const points = useMemo(() => activeData?.points ?? [], [activeData]);
@@ -329,7 +333,7 @@ export default function InteractivePriceChartModal({
         type="button"
         className="motion-backdrop absolute inset-0 cursor-default"
         style={{ backgroundColor: 'rgba(0,0,0,0.62)' }}
-        onClick={onClose}
+        onClick={requestClose}
         aria-label="Close chart"
       />
 
@@ -381,8 +385,9 @@ export default function InteractivePriceChartModal({
               <span className="chart-refresh-label">Refresh</span>
             </button>
             <button
+              ref={closeButtonRef}
               type="button"
-              onClick={onClose}
+              onClick={requestClose}
               className="pressable flex h-10 w-10 items-center justify-center rounded-lg hover:opacity-80"
               style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text)' }}
               aria-label="Close chart"
@@ -400,6 +405,7 @@ export default function InteractivePriceChartModal({
                   type="button"
                   key={option}
                   onClick={() => setTimeframe(option)}
+                  aria-pressed={timeframe === option}
                   className="chart-timeframe-control min-h-[44px] flex-shrink-0 rounded-lg px-3 py-2 text-xs font-semibold sm:min-h-[40px]"
                   style={{
                     backgroundColor: timeframe === option ? 'var(--accent)' : 'var(--surface-alt)',
@@ -621,7 +627,7 @@ export default function InteractivePriceChartModal({
                       </text>
                     </>
                   )}
-                  <path d={chart.linePath} fill="none" stroke={lineColor} strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />
+                  <path className="chart-price-path" d={chart.linePath} fill="none" stroke={lineColor} strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />
                   {selectedIndex != null && chart.scaledPoints[selectedIndex] && (
                     <>
                       <line

@@ -21,7 +21,7 @@ function marketValue(item: MobileMarketItem): string {
 
 export default function MobileMarketStrip({ items }: { items: MobileMarketItem[] }) {
   return (
-    <section className="mobile-market-strip" aria-label="Market overview">
+    <section className="mobile-market-strip motion-refresh-region" data-refreshing={items.some(item => item.loading)} aria-label="Market overview">
       {items.map(item => {
         const change = item.changePercent;
         const color = change == null ? 'var(--text-dim)' : change >= 0 ? 'var(--green)' : 'var(--red)';

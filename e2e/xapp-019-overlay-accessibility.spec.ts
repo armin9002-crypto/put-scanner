@@ -1,14 +1,18 @@
 import { expect, test } from '@playwright/test';
+import { installDeterministicMarketApi } from './fixtures/marketApi';
 
 test('XAPP-019 nested Recommendation Evidence to Option Drawer keeps one active overlay', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop-1440x900', 'focused desktop nested-overlay regression');
+
+  await installDeterministicMarketApi(page);
 
   await page.goto('/recommendations?recommendations-fixture=conditional', { waitUntil: 'domcontentloaded' });
   const card = page.locator('.recommendation-card').filter({ hasText: 'CONDITIONAL' }).first();
   const origin = card.getByRole('button', { name: 'Evidence', exact: true });
   await origin.click();
 
-  const evidence = page.getByRole('dialog', { name: /recommendation evidence/i });
+  // The lower dialog is intentionally aria-hidden/inert while a child is open.
+  const evidence = page.getByRole('dialog', { name: /recommendation evidence/i, includeHidden: true });
   await expect(evidence).toBeVisible();
   const evidenceClose = evidence.getByRole('button', { name: /Close recommendation evidence/i });
   await expect(evidenceClose).toBeFocused();

@@ -14,6 +14,7 @@ import { regimePresentation } from '../lib/marketRead/presentation';
 import DataFreshness from '../components/DataFreshness';
 import { useResponsiveMode } from '../lib/responsive';
 import { useBlockingOverlayBehavior } from '../lib/blockingOverlay';
+import { useOverlayDismiss } from '../lib/overlayMotion';
 import MobileBottomSheet from '../components/mobile/MobileBottomSheet';
 import MobileSegmentedControl from '../components/mobile/MobileSegmentedControl';
 import { presentUnderlyingTechnicalAssessment, underlyingTechnicalEvidencePresentation, underlyingTechnicalStatePresentation } from '../lib/underlyingTechnicalPresentation';
@@ -236,15 +237,16 @@ function MarketReadModal({ regime, posture, onClose }: { regime: RegimeAnalysis;
   const setPanelRef = (element: HTMLElement | null) => { panelRef.current = element; };
   const presentation = regimePresentation(regime);
 
+  const requestClose = useOverlayDismiss(onClose, panelRef, overlayRef);
   useBlockingOverlayBehavior({
     panelRef,
     overlayRef,
-    onEscape: onClose,
+    onEscape: requestClose,
   });
 
   return (
     <div ref={overlayRef} className="fixed inset-0 z-[90] flex items-end sm:block">
-      <button type="button" aria-label="Close market read" onClick={onClose} className="motion-backdrop absolute inset-0 bg-black/55" />
+      <button type="button" aria-label="Close market read" onClick={requestClose} className="motion-backdrop absolute inset-0 bg-black/55" />
       <section ref={setPanelRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className="market-read-sheet relative z-10 w-full max-h-[92dvh] overflow-y-auto rounded-t-2xl p-3 outline-none sm:absolute sm:inset-x-1/2 sm:top-6 sm:w-[680px] sm:-translate-x-1/2 sm:rounded-lg sm:max-h-[85dvh] sm:p-4 shadow-2xl" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
         <div className="mx-auto mb-2 h-1 w-10 rounded-full sm:hidden" aria-hidden="true" style={{ backgroundColor: 'var(--border-strong)' }} />
         <div className="flex items-start justify-between gap-3 mb-3">
@@ -256,7 +258,7 @@ function MarketReadModal({ regime, posture, onClose }: { regime: RegimeAnalysis;
               <MarketBadge label={posture.label} tone="posture" />
             </div>
           </div>
-          <button type="button" aria-label="Close market read" onClick={onClose} className="pressable rounded-lg p-2 min-h-[44px] min-w-[44px] inline-flex items-center justify-center" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+          <button type="button" aria-label="Close market read" onClick={requestClose} className="pressable rounded-lg p-2 min-h-[44px] min-w-[44px] inline-flex items-center justify-center" style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -948,7 +950,7 @@ export default function EtfPulsePage() {
 
   if (isPhone) {
     return (
-      <div className="mobile-route-page pulse-mobile-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
+      <div data-refreshing={loading} className="motion-refresh-region mobile-route-page pulse-mobile-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
         <section className="pulse-mobile-read border-b px-3.5 py-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
           <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: 'var(--text-dim)' }}>Market Read</div>
           {regime && posture ? <><div className="flex flex-wrap items-center gap-1.5"><MarketBadge label={regime.label} /><MarketBadge label={posture.label} tone="posture" /><MarketBadge label={regimePresentation(regime).confidenceLabel} tone="confidence" /></div><p className="mt-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>{regimePresentation(regime).coverageLabel}</p><p className="mt-1 line-clamp-2 text-[12px] leading-5" style={{ color: 'var(--text-secondary)' }}>{regime.marketRead}</p><button type="button" onClick={() => setShowMarketRead(true)} className="pressable mt-1 inline-flex min-h-11 items-center text-[12px] font-semibold" style={{ color: 'var(--accent-light)' }}>Details</button></> : <div className="flex min-h-[64px] items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>{loading ? <><Loader2 className="h-4 w-4 animate-spin" /> Acquiring aggregate market data…</> : 'Market Read unavailable'}</div>}
@@ -988,7 +990,7 @@ export default function EtfPulsePage() {
   return (
     <div className="etf-pulse-page min-h-[calc(100dvh-2.75rem)]" style={{ backgroundColor: 'var(--bg)' }}>
       <div className="page-frame page-frame--wide py-3">
-        <div className="etf-pulse-controls flex-shrink-0 -mx-2 sm:-mx-4 lg:-mx-6 px-2 sm:px-4 lg:px-6 pb-1.5 mb-2" style={{ backgroundColor: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
+        <div data-refreshing={loading} className="etf-pulse-controls motion-refresh-region flex-shrink-0 -mx-2 sm:-mx-4 lg:-mx-6 px-2 sm:px-4 lg:px-6 pb-1.5 mb-2" style={{ backgroundColor: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
           <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-1.5 mb-1.5">
             <div className="pulse-title-block min-w-0 flex-shrink-0">
               <h1 className="text-xl sm:text-2xl font-bold tracking-tight leading-none flex items-center gap-2" style={{ color: 'var(--text)' }}>

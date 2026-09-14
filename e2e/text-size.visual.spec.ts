@@ -224,6 +224,7 @@ test('text control persistence, request isolation, dense themes and charts', asy
 });
 
 test('motion controls, overlays and reduced motion', async ({ page, browser }, info) => {
+  test.setTimeout(120_000);
   await installDeterministicMarketApi(page);
   await installDeterministicCloudAccount(page, { portfolio, watchlist, preferences: {} });
   await page.addInitScript(() => localStorage.setItem('theme_migration_version', '2'));
@@ -274,14 +275,14 @@ test('motion controls, overlays and reduced motion', async ({ page, browser }, i
       animation.finish();
       return sample;
     });
-    expect(entrance.duration).toBe(210);
+    expect(entrance.duration).toBe(320);
     expect(entrance.opacity).toBeGreaterThan(0);
     expect(entrance.opacity).toBeLessThan(1);
     expect(entrance.translate).not.toBe('none');
 
     await page.screenshot({ path: path.join(directory, `${theme}-account.png`), animations: 'disabled' });
   }
-  const touchContext = await browser.newContext({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 }, baseURL: 'http://127.0.0.1:4317' });
+  const touchContext = await browser.newContext({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 }, baseURL: new URL(page.url()).origin });
   const touchPage = await touchContext.newPage();
   await installDeterministicMarketApi(touchPage);
   await touchPage.goto('/');
@@ -290,10 +291,14 @@ test('motion controls, overlays and reduced motion', async ({ page, browser }, i
   await touchPage.waitForLoadState('networkidle');
   const bounds = await touchControl.boundingBox();
   expect(bounds).not.toBeNull();
-  // Chromium applies touch :active during tap completion, not a held touchStart.
+  // Chromium synthesizes mouse contact during tap completion. Capture that
+  // event synchronously instead of polling :active after the finger has lifted.
+  await touchControl.evaluate(el => el.addEventListener('mousedown', () => {
+    (el as HTMLElement).dataset.touchContactScale = getComputedStyle(el).scale;
+  }, { once: true }));
   await touchControl.tap();
+  await expect(touchControl).toHaveAttribute('data-touch-contact-scale', '0.985');
   await expect(touchControl).toHaveAttribute('title', 'Text size: Medium');
-  await expect.poll(() => touchControl.evaluate(el => getComputedStyle(el).scale)).toBe('0.985');
   expect(await touchControl.evaluate(el => (el as HTMLElement).offsetHeight)).toBeGreaterThanOrEqual(44);
   await touchContext.close();
   await page.emulateMedia({ reducedMotion: 'reduce' });

@@ -771,7 +771,7 @@ export default function HomePage() {
               <div className="scanner-control-plane__types min-w-0"><span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Type</span><div className="grid min-w-0 grid-cols-6 gap-1">{TYPE_OPTIONS.map(opt => <button key={opt} title={opt} onClick={() => handleTypeChange(opt)} className="scanner-filter-control pressable h-8 min-w-0 truncate rounded-md px-1 text-[10px] font-medium" style={{ backgroundColor: typeFilter === opt ? 'var(--accent)' : 'var(--surface-alt)', color: typeFilter === opt ? 'white' : 'var(--text-muted)', border: `1px solid ${typeFilter === opt ? 'var(--accent)' : 'var(--border)'}` }}>{opt === 'Broad Index' ? 'Broad' : opt}</button>)}</div></div>
             </div>
           </section>
-          <section className="scanner-market-rail" aria-label="Market context">
+          <section className="scanner-market-rail motion-refresh-region" data-refreshing={marketLoading} aria-label="Market context">
             <div className="scanner-market-rail__header">
               <div>
                 <div className="scanner-market-rail__eyebrow">Market context</div>

@@ -1,6 +1,7 @@
 import { useId, useRef, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { useBlockingOverlayBehavior } from '../../lib/blockingOverlay';
+import { useOverlayDismiss } from '../../lib/overlayMotion';
 
 interface MobileBottomSheetProps {
   title: string;
@@ -23,17 +24,18 @@ export default function MobileBottomSheet({
   const descriptionId = useId();
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const requestClose = useOverlayDismiss(onClose, panelRef, overlayRef, title);
 
   useBlockingOverlayBehavior({
     panelRef,
     overlayRef,
     initialFocusRef: panelRef,
-    onEscape: onClose,
+    onEscape: requestClose,
   });
 
   return (
     <div ref={overlayRef} className="mobile-sheet-layer fixed inset-0 z-[95] flex items-end justify-center">
-      <button type="button" className="motion-backdrop absolute inset-0 bg-black/60" aria-label={`Close ${title}`} onClick={onClose} />
+      <button type="button" className="motion-backdrop absolute inset-0 bg-black/60" aria-label={`Close ${title}`} onClick={requestClose} />
       <div
         ref={panelRef}
         role="dialog"
@@ -51,7 +53,7 @@ export default function MobileBottomSheet({
               <h2 id={titleId} className="text-[17px] font-semibold" style={{ color: 'var(--text)' }}>{title}</h2>
               {description && <p id={descriptionId} className="mt-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>{description}</p>}
             </div>
-            <button type="button" onClick={onClose} className="pressable -mr-2 flex h-11 w-11 flex-none items-center justify-center rounded-full" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }} aria-label={`Close ${title}`}>
+            <button type="button" onClick={requestClose} className="pressable -mr-2 flex h-11 w-11 flex-none items-center justify-center rounded-full" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface-alt)' }} aria-label={`Close ${title}`}>
               <X className="h-5 w-5" />
             </button>
           </div>

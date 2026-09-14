@@ -37,7 +37,7 @@ test('SCN-009 retains last-good chart data with displayed-timeframe semantics', 
   assert.match(chart, /getChartHistory\(requestedTicker, timeframe/);
   assert.match(chart, /chartRequestGenerationRef/);
   assert.doesNotMatch(chart, /setData\(null\)/);
-  assert.match(styles, /\.chart-data-surface[\s\S]*animation: chart-data-crossfade var\(--motion-fast\)/);
+  assert.match(styles, /\.chart-data-surface[\s\S]*animation: chart-data-crossfade var\(--motion-reveal\)/);
 });
 
 test('SCN-012 gives clickable cards canonical press feedback while mobile rows stay spatially still', async () => {
