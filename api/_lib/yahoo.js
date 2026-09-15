@@ -35,12 +35,18 @@ export function inspectYahooOptionData(data, requestedDate = null) {
   const expirationDates = [...new Set((result.expirationDates ?? []).map(normalizeTimestampSeconds).filter(value => value != null))];
   const returnedExpiration = normalizeTimestampSeconds(result.options?.[0]?.expirationDate);
   const puts = Array.isArray(result.options?.[0]?.puts) ? result.options[0].puts : [];
-  const calls = Array.isArray(result.options?.[0]?.calls) ? result.options[0].calls : [];
   if (requestedDate != null && requestedDate !== returnedExpiration) {
     return { status: 'incomplete', expirationDates, returnedExpiration, putCount: puts.length };
   }
   if (puts.length > 0) return { status: 'optionable', expirationDates, returnedExpiration, putCount: puts.length };
-  if (requestedDate == null && expirationDates.length === 0 && calls.length === 0) return { status: 'no_options', expirationDates, returnedExpiration, putCount: 0 };
+  // Missing/malformed fields are not an authoritative empty chain. In particular,
+  // a quote-only partial result must not become a cacheable no-options response.
+  const explicitlyEmpty = Array.isArray(result.expirationDates) && result.expirationDates.length === 0
+    && Array.isArray(result.options) && result.options.every(chain => chain != null
+      && chain.expirationDate == null
+      && Array.isArray(chain.puts) && chain.puts.length === 0
+      && Array.isArray(chain.calls) && chain.calls.length === 0);
+  if (requestedDate == null && explicitlyEmpty) return { status: 'no_options', expirationDates, returnedExpiration, putCount: 0 };
   return { status: 'incomplete', expirationDates, returnedExpiration, putCount: 0 };
 }
 

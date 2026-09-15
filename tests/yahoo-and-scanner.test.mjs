@@ -2,13 +2,65 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeOptionChainData, parseYahooOptionSymbol } from '../src/lib/yahooOptionAdapter.ts';
 import { isValidOptionsChain } from '../src/lib/optionChainCache.ts';
-import { inspectYahooOptionData } from '../api/_lib/yahoo.js';
+import { inspectYahooOptionData, invalidateYahooSession } from '../api/_lib/yahoo.js';
+import optionsHandler from '../api/options.js';
 import { buildScannerOptionSnapshot, rankScannerSnapshotExpirations, selectScannerSnapshotExpiration } from '../src/lib/scannerOptionSnapshot.ts';
 import { EXPIRATIONS, malformedResponse, missingFieldsResponse, normalLiquidResponse, oneSidedResponse, sparseResponse, staleTradeResponse, zeroBidResponse } from './fixtures/yahoo-options.mjs';
 
 const NOW = new Date('2026-08-12T12:00:00Z');
 const normalize = response => normalizeOptionChainData(response, 'TST', EXPIRATIONS[0], 'fixture', 'network', null);
 const candidate = selectScannerSnapshotExpiration(EXPIRATIONS, NOW);
+
+test('only explicit empty provider fields establish no options, never a partial quote-only result', () => {
+  const response = fields => ({ optionChain: { result: [{ quote: { regularMarketPrice: 100 }, ...fields }] } });
+  for (const fields of [
+    {}, { expirationDates: [] }, { options: [] },
+    { expirationDates: [null, 'invalid'], options: [] },
+    { expirationDates: [], options: [{}] },
+    { expirationDates: [], options: [{ puts: [] }] },
+    { expirationDates: [], options: [{ puts: [], calls: [], expirationDate: EXPIRATIONS[0] }] },
+    { expirationDates: [], options: [{ puts: [], calls: [] }, normalLiquidResponse.optionChain.result[0].options[0]] },
+  ]) assert.equal(inspectYahooOptionData(response(fields)).status, 'incomplete', JSON.stringify(fields));
+  for (const options of [[], [{ puts: [], calls: [] }]]) {
+    const raw = response({ expirationDates: [], options });
+    assert.equal(inspectYahooOptionData(raw).status, 'no_options');
+    assert.equal(inspectYahooOptionData(raw, EXPIRATIONS[0]).status, 'incomplete');
+  }
+});
+
+test('options endpoint rejects partial emptiness and preserves authoritative empty and full payloads', async t => {
+  let payload;
+  let optionRequests = 0;
+  invalidateYahooSession();
+  t.after(invalidateYahooSession);
+  t.mock.method(globalThis, 'fetch', async url => {
+    if (String(url).startsWith('https://finance.yahoo.com/quote/')) return new Response('{"crumb":"test-only"}');
+    assert.match(String(url), /\/v7\/finance\/options\/TST\?/);
+    optionRequests++;
+    return Response.json(payload);
+  });
+  for (const [raw, status] of [
+    [{ optionChain: { result: [{ quote: { regularMarketPrice: 100 } }] } }, 502],
+    [{ optionChain: { result: [{ quote: { regularMarketPrice: 100 }, expirationDates: [], options: [] }] } }, 200],
+    [normalLiquidResponse, 200],
+  ]) {
+    payload = raw;
+    const headers = new Map();
+    const response = {
+      statusCode: 200,
+      setHeader(name, value) { headers.set(name, value); },
+      getHeader(name) { return headers.get(name); },
+      status(value) { this.statusCode = value; return this; },
+      json(value) { this.body = value; return this; },
+    };
+    await optionsHandler({ query: { ticker: 'TST' }, headers: {} }, response);
+    assert.equal(response.statusCode, status);
+    if (status === 200) assert.deepEqual(response.body, raw, 'server must preserve every raw provider field');
+    else assert.match(response.body.error, /incomplete option chain/);
+    if (status === 200 && raw.optionChain.result[0].options.length === 0) assert.equal(headers.get('Cache-Control'), 'no-store');
+  }
+  assert.equal(optionRequests, 3, 'one chain request per handler call; no new fan-out');
+});
 
 test('normalizes Yahoo units, timestamps, put delta sign, expiration metadata, and deduplicated sorted strikes', () => {
   const raw = structuredClone(normalLiquidResponse);
