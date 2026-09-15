@@ -1,4 +1,6 @@
 import { calculateCalendarDte, getAllCachedScannerExpirations, type ScannerSnapshotDiagnostic, type ScannerSnapshotUpdateOutcome } from './scannerOptionSnapshot.ts';
+import { normalizeAvailabilityTickers, OPTION_AVAILABILITY_HARD_TTL_MS, trustedListedExpirations } from './optionAvailability.ts';
+import { usMarketDateIso } from '../../shared/marketDate.js';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -13,6 +15,7 @@ export interface CachedExpirationState {
   coverage: 'complete' | 'partial' | 'failed' | 'cached';
   errors: Array<{ ticker?: string; message: string }>;
   retentionReason: string | null;
+  observedAtByTicker?: Record<string, number>;
 }
 
 export interface SnapshotUpdateProgress {
@@ -30,10 +33,25 @@ export function buildExpirationState(
   coverage: CachedExpirationState['coverage'] = 'cached',
   errors: Array<{ ticker?: string; message: string }> = [],
   retentionReason: string | null = null,
+  observedAtByTicker?: Record<string, number>,
+  now = new Date(),
 ): CachedExpirationState {
+  // Per-ticker successes survive partial coverage; explicit ticker/global errors do not.
+  const normalized = normalizeAvailabilityTickers(availability);
+  const isCurrent = (ticker: string) => observedAtByTicker == null || (
+    Number.isFinite(observedAtByTicker[ticker]) && observedAtByTicker[ticker] <= now.getTime()
+    && now.getTime() - observedAtByTicker[ticker] < OPTION_AVAILABILITY_HARD_TTL_MS
+  );
+  availability = Object.fromEntries(Object.entries(normalized).filter(([ticker]) =>
+    trustedListedExpirations(normalized, ticker, errors) != null && isCurrent(ticker),
+  ));
+  if (Object.keys(normalized).some(ticker => !isCurrent(ticker))) {
+    coverage = 'partial';
+    retentionReason = 'Expiration availability evidence expired.';
+  }
   const expirationMap = new Map<number, { date: number; label: string; dte: number }>();
   Object.values(availability).flat().forEach(date => {
-    const dte = calculateCalendarDte(date);
+    const dte = calculateCalendarDte(date, now);
     if (dte != null && dte > 0 && !expirationMap.has(date)) expirationMap.set(date, { date, label: formatExpirationDropdownLabel(date), dte });
   });
   return {
@@ -42,7 +60,30 @@ export function buildExpirationState(
     coverage,
     errors,
     retentionReason,
+    observedAtByTicker,
   };
+}
+
+/** One local deadline; no provider polling. Also re-evaluate DTE at the next market-date boundary. */
+export function nextScannerExpirationCheckAt(state: CachedExpirationState, nowMs = Date.now()): number | null {
+  const deadlines = Object.keys(state.availability).map(ticker =>
+    (state.observedAtByTicker?.[ticker] ?? NaN) + OPTION_AVAILABILITY_HARD_TTL_MS,
+  ).filter(deadline => Number.isFinite(deadline) && deadline > nowMs);
+  if (deadlines.length === 0) return null;
+  const marketDate = usMarketDateIso(nowMs);
+  let low = nowMs;
+  let high = nowMs + 26 * 60 * 60 * 1_000;
+  // Search using the canonical market calendar, including DST transitions.
+  while (high - low > 1) {
+    const middle = Math.floor((low + high) / 2);
+    if (usMarketDateIso(middle) === marketDate) low = middle;
+    else high = middle;
+  }
+  return Math.min(...deadlines, high);
+}
+
+export function revalidateScannerExpirationState(state: CachedExpirationState, now = new Date()): CachedExpirationState {
+  return buildExpirationState(state.availability, state.coverage, state.errors, state.retentionReason, state.observedAtByTicker, now);
 }
 
 export function buildCachedExpirationState(): CachedExpirationState {
@@ -58,19 +99,20 @@ export function scannerExpirationMatch(
   coverage: CachedExpirationState['coverage'],
   now = new Date(),
 ): ScannerExpirationMatch {
-  if (expirationFilter === 'all') return 'present';
-  if (coverage === 'cached') return 'unknown';
-  const dates = availability[ticker.trim().toUpperCase()];
+  if (coverage === 'cached' || coverage === 'failed') return 'unknown';
+  const dates = trustedListedExpirations(availability, ticker);
   if (!dates) return 'unknown';
+  const futureDates = dates.filter(date => (calculateCalendarDte(date, now) ?? -1) > 0);
+  if (expirationFilter === 'all' || expirationFilter === 'nearest') return futureDates.length > 0 ? 'present' : 'absent';
   if (expirationFilter === 'lte_30dte') {
-    return dates.some(date => {
+    return futureDates.some(date => {
       const dte = calculateCalendarDte(date, now);
-      return dte != null && dte >= 0 && dte <= 30;
+      return dte != null && dte > 0 && dte <= 30;
     }) ? 'present' : 'absent';
   }
-  if (!expirationFilter.startsWith('date_')) return 'present';
+  if (!expirationFilter.startsWith('date_')) return 'unknown';
   const targetDate = Number(expirationFilter.slice(5));
-  return Number.isSafeInteger(targetDate) && dates.includes(targetDate) ? 'present' : 'absent';
+  return Number.isSafeInteger(targetDate) && futureDates.includes(targetDate) ? 'present' : 'absent';
 }
 
 export function tickerMatchesScannerExpiration(
@@ -81,13 +123,8 @@ export function tickerMatchesScannerExpiration(
   now = new Date(),
   coverage: CachedExpirationState['coverage'] | null = null,
 ): boolean {
-  if (expirationFilter === 'all' || !authoritativeAvailabilityReady) return true;
-  if (!coverage) {
-    const dates = availability[ticker.trim().toUpperCase()];
-    // Partial endpoint failures are unknown, not evidence that the ticker has no options.
-    if (!dates) return true;
-  }
-  return scannerExpirationMatch(ticker, expirationFilter, availability, coverage ?? 'complete', now) !== 'absent';
+  if (!authoritativeAvailabilityReady) return false;
+  return scannerExpirationMatch(ticker, expirationFilter, availability, coverage ?? 'complete', now) === 'present';
 }
 
 export function summarizeSnapshotOutcomes(outcomes: ScannerSnapshotUpdateOutcome[]): Pick<SnapshotUpdateProgress, 'updated' | 'expanded' | 'unavailable' | 'failed'> {

@@ -4,7 +4,7 @@ import type { SparklineData } from '../lib/api';
 import type { BatchPriceData } from '../lib/cache';
 import ETFCard from '../components/ETFCard';
 import ScannerEvidencePopover from '../components/ScannerSnapshotEvidence';
-import ExpirationFilter, { buildExpirationOptions } from '../components/ExpirationFilter';
+import ExpirationFilter, { buildExpirationOptions, formatExpirationDropdownLabel } from '../components/ExpirationFilter';
 import SparklineChart from '../components/SparklineChart';
 import ErrorBoundary from '../components/ErrorBoundary';
 import DataFreshness, { type DataFreshnessStatus } from '../components/DataFreshness';
@@ -40,6 +40,8 @@ import {
   summarizeSnapshotOutcomes,
   scannerExpirationMatch,
   tickerMatchesScannerExpiration,
+  nextScannerExpirationCheckAt,
+  revalidateScannerExpirationState,
   type CachedExpirationState,
   type SnapshotUpdateProgress,
 } from '../lib/scannerUpdateState';
@@ -318,6 +320,8 @@ export default function HomePage() {
           result.expirationsByTicker,
           result.complete ? 'complete' : 'partial',
           result.errors,
+          result.retentionReason ?? null,
+          result.observedAtByTicker,
         ));
       })
       .catch(() => {
@@ -326,7 +330,7 @@ export default function HomePage() {
             ...current,
             coverage: 'failed',
             errors: [...current.errors, { message: 'Expiration availability refresh failed.' }],
-            retentionReason: 'Expiration refresh failed; prior availability evidence was retained.',
+            retentionReason: 'Expiration availability could not be confirmed.',
           }));
         }
       })
@@ -337,12 +341,20 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
+    const checkAt = nextScannerExpirationCheckAt(expirationState);
+    if (checkAt == null) return;
+    const revalidate = () => setExpirationState(current => revalidateScannerExpirationState(current));
+    const timer = window.setTimeout(revalidate, Math.max(0, checkAt - Date.now()));
+    window.addEventListener('focus', revalidate);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('focus', revalidate);
+    };
+  }, [expirationState]);
+
+  useEffect(() => {
     if (!expirationAvailabilityReady) return;
-    setExpFilter(current => resolveScannerExpiration(
-      current,
-      availableExps.filter(expiration => expiration.dte > 30).map(expiration => expiration.date),
-      availableExps.some(expiration => expiration.dte <= 30),
-    ));
+    setExpFilter(current => resolveScannerExpiration(current));
   }, [availableExps, expirationAvailabilityReady]);
 
   const serializedScannerState = serializeScannerState({
@@ -474,7 +486,6 @@ export default function HomePage() {
   }, [candidates, expFilter, expiryAvailability, expirationAvailabilityReady, expirationState.coverage, prices, scannerSort, optionSnapshots]);
 
   const expirationScope = useMemo(() => {
-    if (expFilter === 'all') return null;
     return candidates.reduce((summary, etf) => {
       const match = scannerExpirationMatch(etf.ticker, expFilter, expiryAvailability, expirationState.coverage);
       if (match === 'present') summary.confirmed += 1;
@@ -519,7 +530,15 @@ export default function HomePage() {
     };
   }, [activeEvidence, closeEvidence]);
 
-  const expDropdownOptions = useMemo(() => buildExpirationOptions(availableExps, expFilter), [availableExps, expFilter]);
+  const expDropdownOptions = useMemo(() => {
+    const options = buildExpirationOptions(availableExps, expFilter);
+    // Keep the selected scope visible even when discovery cannot confirm a match.
+    if (!options.some(option => option.value === expFilter)) {
+      if (expFilter === 'lte_30dte') options.push({ value: expFilter, label: '≤30 DTE' });
+      else if (expFilter.startsWith('date_')) options.push({ value: expFilter, label: formatExpirationDropdownLabel(Number(expFilter.slice(5))) });
+    }
+    return options;
+  }, [availableExps, expFilter]);
 
   const handleExpirationChange = useCallback((value: string) => {
     closeEvidence();
@@ -689,14 +708,14 @@ export default function HomePage() {
         <div className="mobile-scanner-results-header flex items-center justify-between gap-3 border-y px-3.5 py-2" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
           <div className="min-w-0">
             <h2 className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>ETF opportunities</h2>
-            {expirationScope && <p className="text-[10px]" style={{ color: expirationScope.unverified > 0 || expirationState.coverage !== 'complete' ? 'var(--yellow)' : 'var(--text-muted)' }}>{expirationScope.confirmed} confirmed · {expirationScope.unverified} unverified{expirationState.coverage !== 'complete' ? ' · availability incomplete' : ''}</p>}
+            {expirationScope && <p className="text-[10px]" style={{ color: expirationScope.unverified > 0 || expirationState.coverage !== 'complete' ? 'var(--yellow)' : 'var(--text-muted)' }}>{expirationScope.confirmed} confirmed · {expirationScope.unverified} temporarily unverified{expirationState.coverage !== 'complete' ? ' · availability incomplete' : ''}</p>}
             <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}><ScannerResultCount count={filtered.length} /> · {expDropdownOptions.find(option => option.value === expFilter)?.label ?? 'All dates'}</p>
           </div>
           {(pricesLoading || marketLoading) && <span className="flex items-center gap-1 text-[11px]" style={{ color: 'var(--text-muted)' }}><Loader2 className="h-3 w-3 animate-spin" /> Updating</span>}
         </div>
 
         <div className="mobile-financial-list">
-          {pricesLoading && Object.keys(prices).length === 0 ? Array.from({ length: 5 }).map((_, index) => (
+          {(expirationDatesLoading && filtered.length === 0) || (pricesLoading && Object.keys(prices).length === 0) ? Array.from({ length: 5 }).map((_, index) => (
             <div key={index} className="mobile-etf-row mobile-etf-row--skeleton animate-pulse"><div className="h-4 w-20 rounded" style={{ backgroundColor: 'var(--border)' }} /><div className="mt-3 h-3 w-44 rounded" style={{ backgroundColor: 'var(--border)' }} /><div className="mt-5 h-3 w-full rounded" style={{ backgroundColor: 'var(--border)' }} /></div>
           )) : filtered.map(etf => (
             <MobileEtfRow
@@ -715,8 +734,7 @@ export default function HomePage() {
           ))}
         </div>
 
-        {expirationScope && expirationState.coverage !== 'complete' && expirationScope.confirmed === 0 && <div className="px-4 py-3 text-center text-[11px]" style={{ color: 'var(--yellow)' }}>No confirmed matches yet · availability incomplete. Unverified ETFs remain available below.</div>}
-        {filtered.length === 0 && !pricesLoading && <div className="mobile-scanner-empty-state px-6 py-12 text-center"><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>{expirationScope && expirationState.coverage !== 'complete' ? 'No confirmed matches yet · availability incomplete' : 'No matching ETFs'}</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Try clearing search or widening your filters.</p><button type="button" onClick={resetScannerFilters} className="tap-target mt-3 rounded-lg px-4 text-xs font-semibold" style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)' }}>Reset Filters</button></div>}
+        {filtered.length === 0 && !pricesLoading && !expirationDatesLoading && <div className="mobile-scanner-empty-state px-6 py-12 text-center"><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>{expirationScope && expirationState.coverage !== 'complete' ? 'No confirmed matches yet · availability incomplete' : 'No matching ETFs'}</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>{expirationState.coverage !== 'complete' ? 'Unverified ETFs are temporarily excluded. Try again later.' : 'Try clearing search or widening your filters.'}</p><button type="button" onClick={resetScannerFilters} className="tap-target mt-3 rounded-lg px-4 text-xs font-semibold" style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)' }}>Reset Filters</button></div>}
 
         {mobileFiltersOpen && (
           <MobileBottomSheet
@@ -821,7 +839,8 @@ export default function HomePage() {
         </section>
 
         <section aria-label="ETF opportunities">
-          <SectionHeader title="ETF opportunities" actions={<div className="scanner-results-meta"><DataFreshness updatedAt={pricesUpdatedAt} status={pricesFreshness} label="Scanner prices" />{pricesError && <span className="scanner-status-line__error">{pricesError}</span>}{expirationScope && <span className="scanner-expiration-coverage">{expirationScope.confirmed} confirmed · {expirationScope.unverified} unverified{expirationState.coverage !== 'complete' ? ' · incomplete' : ''}</span>}<ScannerResultCount count={filtered.length} /></div>} />
+          <SectionHeader title="ETF opportunities" actions={<div className="scanner-results-meta"><DataFreshness updatedAt={pricesUpdatedAt} status={pricesFreshness} label="Scanner prices" />{pricesError && <span className="scanner-status-line__error">{pricesError}</span>}{expirationScope && <span className="scanner-expiration-coverage">{expirationScope.confirmed} confirmed · {expirationScope.unverified} temporarily unverified{expirationState.coverage !== 'complete' ? ' · incomplete' : ''}</span>}<ScannerResultCount count={filtered.length} /></div>} />
+          {expirationDatesLoading && filtered.length === 0 && <div className="scanner-incomplete-availability" role="status"><Loader2 className="inline h-3 w-3 animate-spin" /> Checking option availability...</div>}
           <div className="scanner-results-grid">
           {filtered.map(etf => (
             <ETFCard
@@ -842,11 +861,10 @@ export default function HomePage() {
           ))}
           </div>
 
-        {expirationScope && expirationState.coverage !== 'complete' && expirationScope.confirmed === 0 && <div className="scanner-incomplete-availability" role="status">No confirmed matches yet · availability incomplete. Unverified ETFs remain available below.</div>}
-        {filtered.length === 0 && (
+        {filtered.length === 0 && !expirationDatesLoading && (
           <div className="scanner-empty-state surface-inset">
             <p className="font-semibold" style={{ color: 'var(--text)' }}>{expirationScope && expirationState.coverage !== 'complete' ? 'No confirmed matches yet · availability incomplete' : 'No ETFs match your filters.'}</p>
-            <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Try clearing search or widening the opportunity set.</p>
+            <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>{expirationState.coverage !== 'complete' ? 'Unverified ETFs are temporarily excluded. Try again later.' : 'Try clearing search or widening the opportunity set.'}</p>
             <button type="button" className="button-secondary mt-3 rounded-md px-3 py-1.5 text-xs" onClick={resetScannerFilters}>Reset Filters</button>
           </div>
         )}

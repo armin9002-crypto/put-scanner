@@ -18,12 +18,13 @@ import {
 import type { OptionsChainData, OptionChainSource } from './types.ts';
 import { normalizeOptionChainData } from './yahooOptionAdapter.ts';
 import { calculateDte } from './optionMetrics.ts';
+import { normalizeAvailabilityTickers, OPTION_AVAILABILITY_HARD_TTL_MS, trustedListedExpirations } from './optionAvailability.ts';
 
 const SCREENER_DATASET_VERSION = 4;
 const BATCH_SOFT_TTL_MS = 5 * 60 * 1_000;
 const BATCH_HARD_TTL_MS = 45 * 60 * 1_000;
 const EXPIRATION_SOFT_TTL_MS = 2 * 60 * 60 * 1_000;
-const EXPIRATION_HARD_TTL_MS = 8 * 60 * 60 * 1_000;
+const EXPIRATION_HARD_TTL_MS = OPTION_AVAILABILITY_HARD_TTL_MS;
 
 interface BatchTickerPayload {
   ticker: string;
@@ -61,6 +62,7 @@ interface ScreenerExpirationPayload {
   complete: boolean;
   expirationsByTicker: Record<string, number[]>;
   errors: Array<{ ticker?: string; message: string }>;
+  retainedExpirationsByTicker?: Record<string, { dates: number[]; fetchedAt: number }>;
   diagnostics: {
     upstreamRequests: number;
     maxObservedConcurrency: number;
@@ -72,6 +74,10 @@ export interface ScreenerExpirationAvailability {
   expirationsByTicker: Record<string, number[]>;
   complete: boolean;
   errors: Array<{ ticker?: string; message: string }>;
+  fetchedAt?: number;
+  retentionReason?: string | null;
+  observedAtByTicker?: Record<string, number>;
+  refreshErrors?: Array<{ ticker?: string; message: string }>;
 }
 
 export type ScreenerExpirationEvidence = 'present' | 'absent' | 'unknown';
@@ -85,10 +91,8 @@ export function classifyScreenerExpirationEvidence(
   ticker: string,
   expirationDate: number,
 ): ScreenerExpirationEvidence {
-  const normalizedTicker = ticker.trim().toUpperCase();
-  if (!availability.complete || availability.errors.some(error => error.ticker == null || error.ticker.trim().toUpperCase() === normalizedTicker)) return 'unknown';
-  const dates = availability.expirationsByTicker[normalizedTicker];
-  if (!Array.isArray(dates)) return 'unknown';
+  const dates = trustedListedExpirations(availability.expirationsByTicker, ticker, availability.errors);
+  if (dates == null) return 'unknown';
   return dates.includes(expirationDate) ? 'present' : 'absent';
 }
 
@@ -534,7 +538,7 @@ export async function retryFailedScreenerBatches(options: {
   };
 }
 
-async function fetchScreenerExpirationPayload(options: { signal?: AbortSignal } = {}): Promise<ScreenerExpirationPayload> {
+async function fetchScreenerExpirationPayload(options: { signal?: AbortSignal } = {}): Promise<ScreenerExpirationPayload & { staleFallbackUsed: boolean }> {
   const key = `screener_expirations_v${SCREENER_DATASET_VERSION}`;
   const cacheOptions = {
     key,
@@ -549,7 +553,8 @@ async function fetchScreenerExpirationPayload(options: { signal?: AbortSignal } 
     ...cacheOptions,
     source: 'Screener:expirations',
     endpoint: 'screener-expirations',
-    mode: cached && !cached.data.complete ? 'revalidate' : 'cache-first',
+    mode: cached && (!cached.data.complete || cached.meta.freshness !== 'fresh'
+      || Date.now() - cached.data.fetchedAt >= EXPIRATION_SOFT_TTL_MS) ? 'revalidate' : 'cache-first',
     signal: options.signal,
     priority: 'background_reuse',
     allowStaleOnError: true,
@@ -557,19 +562,76 @@ async function fetchScreenerExpirationPayload(options: { signal?: AbortSignal } 
     fetcher: async signal => {
       const response = await fetchObservedMarketData('screener-expirations', `/api/screener-expirations?v=${SCREENER_DATASET_VERSION}`, { signal }, 'Screener:expirations');
       if (!response.ok) throw responseError(response, `Screener expirations failed (${response.status})`);
-      return response.json() as Promise<ScreenerExpirationPayload>;
+      const payload = await response.json() as ScreenerExpirationPayload;
+      return retainScreenerExpirationEvidence(payload, cached?.data);
     },
   });
-  return result.data;
+  return { ...result.data, staleFallbackUsed: result.meta.staleFallbackUsed };
 }
 
 export async function fetchScreenerExpirationAvailability(options: { signal?: AbortSignal } = {}): Promise<ScreenerExpirationAvailability> {
   const payload = await fetchScreenerExpirationPayload(options);
-  const expirationsByTicker = Object.fromEntries(Object.entries(payload.expirationsByTicker).map(([ticker, values]) => [
+  return normalizeScreenerExpirationAvailability(payload, payload.staleFallbackUsed);
+}
+
+/** Keep provider observation time authoritative even when an HTTP cache returns an older payload. */
+export function normalizeScreenerExpirationAvailability(
+  payload: ScreenerExpirationAvailability & { fetchedAt: number; retainedExpirationsByTicker?: Record<string, { dates: number[]; fetchedAt: number }> },
+  staleFallbackUsed = false,
+  nowMs = Date.now(),
+): ScreenerExpirationAvailability {
+  payload = { ...payload, expirationsByTicker: normalizeAvailabilityTickers(payload.expirationsByTicker) };
+  const expired = !Number.isFinite(payload.fetchedAt) || payload.fetchedAt > nowMs
+    || nowMs - payload.fetchedAt >= EXPIRATION_HARD_TTL_MS;
+  const expirationsByTicker = Object.fromEntries(Object.entries(payload.expirationsByTicker).filter(([ticker, values]) =>
+    !expired && trustedListedExpirations(payload.expirationsByTicker, ticker, payload.errors) != null
+    // Failed refreshes may retain bounded positive evidence, never stale negatives.
+    && (!staleFallbackUsed || values.some(value => (calculateDte(value, nowMs) ?? -1) > 0)),
+  ).map(([ticker, values]) => [
     ticker.trim().toUpperCase(),
-    [...new Set(values.filter(value => Number.isInteger(value) && value > 0))].sort((a, b) => a - b),
+    [...new Set(values.filter(value => Number.isInteger(value) && value > 0
+      && (!staleFallbackUsed || (calculateDte(value, nowMs) ?? -1) > 0)))].sort((a, b) => a - b),
   ]));
-  return { expirationsByTicker, complete: payload.complete, errors: payload.errors };
+  const observedAtByTicker = Object.fromEntries(Object.keys(expirationsByTicker).map(ticker => [ticker, payload.fetchedAt]));
+  const retainedTickers = new Set<string>();
+  for (const [ticker, evidence] of Object.entries(payload.retainedExpirationsByTicker ?? {})) {
+    // A current authoritative response, including [], always supersedes retention.
+    if (Object.prototype.hasOwnProperty.call(expirationsByTicker, ticker) || !Number.isFinite(evidence.fetchedAt)
+      || evidence.fetchedAt > nowMs || nowMs - evidence.fetchedAt >= EXPIRATION_HARD_TTL_MS) continue;
+    const dates = trustedListedExpirations({ [ticker]: evidence.dates }, ticker)?.filter(date => (calculateDte(date, nowMs) ?? -1) > 0);
+    if (!dates?.length) continue;
+    expirationsByTicker[ticker] = dates;
+    observedAtByTicker[ticker] = evidence.fetchedAt;
+    retainedTickers.add(ticker);
+  }
+  return {
+    expirationsByTicker,
+    complete: payload.complete && !staleFallbackUsed && !expired,
+    // Acquisition failures remain available separately; retained positives have their own trusted observation.
+    errors: payload.errors.filter(error => error.ticker == null ? retainedTickers.size === 0 : !retainedTickers.has(error.ticker.trim().toUpperCase())),
+    refreshErrors: payload.errors,
+    observedAtByTicker,
+    fetchedAt: payload.fetchedAt,
+    retentionReason: expired ? 'Expiration availability evidence expired.'
+      : staleFallbackUsed || retainedTickers.size > 0 ? 'Availability refresh failed; recent confirmed expirations retained.' : null,
+  };
+}
+
+/** Extend only the existing bounded session dataset, preserving each original observation time. */
+export function retainScreenerExpirationEvidence(
+  current: ScreenerExpirationPayload,
+  previous?: ScreenerExpirationPayload,
+  nowMs = Date.now(),
+): ScreenerExpirationPayload {
+  current = { ...current, expirationsByTicker: normalizeAvailabilityTickers(current.expirationsByTicker) };
+  if (!previous || current.complete) return current;
+  const prior = normalizeScreenerExpirationAvailability(previous, true, nowMs);
+  const retainedExpirationsByTicker: NonNullable<ScreenerExpirationPayload['retainedExpirationsByTicker']> = {};
+  for (const [ticker, dates] of Object.entries(prior.expirationsByTicker)) {
+    if (trustedListedExpirations(current.expirationsByTicker, ticker, current.errors) != null || dates.length === 0) continue;
+    retainedExpirationsByTicker[ticker] = { dates, fetchedAt: prior.observedAtByTicker![ticker] };
+  }
+  return { ...current, retainedExpirationsByTicker };
 }
 
 export async function fetchScreenerExpirations(options: { signal?: AbortSignal } = {}): Promise<Array<{ date: number; dte: number }>> {

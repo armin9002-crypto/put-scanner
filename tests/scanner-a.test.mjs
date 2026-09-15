@@ -46,8 +46,28 @@ test('Scanner A expiration coverage distinguishes PRESENT, ABSENT, and UNKNOWN',
   assert.equal(scannerExpirationMatch('AAA', `date_${target}`, state.availability, state.coverage), 'present');
   assert.equal(scannerExpirationMatch('BBB', `date_${target}`, state.availability, state.coverage), 'absent');
   assert.equal(scannerExpirationMatch('CCC', `date_${target}`, state.availability, state.coverage), 'unknown');
-  assert.equal(tickerMatchesScannerExpiration('CCC', `date_${target}`, state.availability, true, new Date(), state.coverage), true);
+  assert.equal(tickerMatchesScannerExpiration('CCC', `date_${target}`, state.availability, true, new Date(), state.coverage), false);
   assert.equal(tickerMatchesScannerExpiration('BBB', `date_${target}`, state.availability, true, new Date(), state.coverage), false);
+});
+
+test('Scanner expiration eligibility requires a future listed date and honors canonical DTE boundaries', () => {
+  const now = new Date('2026-09-06T12:00:00Z');
+  const day = date => Date.parse(`${date}T00:00:00Z`) / 1000;
+  const d0 = day('2026-09-06');
+  const d1 = day('2026-09-07');
+  const d30 = day('2026-10-06');
+  const d31 = day('2026-10-07');
+  const availability = { QQUP: [], TST: [d0, d1, d30, d31] };
+  assert.equal(scannerExpirationMatch('QQUP', 'all', availability, 'complete', now), 'absent');
+  assert.equal(scannerExpirationMatch('QQUP', `date_${d1}`, availability, 'complete', now), 'absent');
+  assert.equal(scannerExpirationMatch('MISSING', 'all', availability, 'partial', now), 'unknown');
+  assert.equal(scannerExpirationMatch('TST', 'all', availability, 'complete', now), 'present');
+  assert.equal(scannerExpirationMatch('TST', 'nearest', availability, 'complete', now), 'present');
+  assert.equal(scannerExpirationMatch('TST', 'lte_30dte', availability, 'complete', now), 'present');
+  assert.equal(scannerExpirationMatch('TST', `date_${d30}`, availability, 'complete', now), 'present');
+  assert.equal(scannerExpirationMatch('TST', `date_${d31}`, availability, 'complete', now), 'present');
+  assert.equal(scannerExpirationMatch('TST', 'all', availability, 'cached', now), 'unknown');
+  assert.equal(scannerExpirationMatch('TST', 'all', availability, 'failed', now), 'unknown');
 });
 
 test('Scanner A incomplete coverage never presents a categorical no-match state', () => {

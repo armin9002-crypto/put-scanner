@@ -57,6 +57,10 @@ function yahooChain(ticker, expiration = EXPIRATION_ONE, expirationDates = [EXPI
   };
 }
 
+function yahooNoOptions() {
+  return { optionChain: { result: [{ expirationDates: [], options: [{ expirationDate: null, puts: [], calls: [] }] }] } };
+}
+
 function batchPayload(plan, overrides = {}) {
   return {
     datasetVersion: 4,
@@ -158,6 +162,24 @@ test('server batch reuses initial options for realized-vol context, isolates fai
   assert.ok(Date.now() - startedAt < 1_000, 'deterministic mocked cold-batch fixture should complete well below one second');
 });
 
+test('authoritative no-options is a successful empty ticker and skips phase-two work', async () => {
+  const chunk = SCREENER_CHUNKS.find(candidate => candidate.tickers.includes('QQUP'));
+  const calls = [];
+  const dataset = await buildScreenerBatch({
+    chunkId: chunk.id,
+    fetchOptions: async (ticker, date) => {
+      calls.push({ ticker, date });
+      return ticker === 'QQUP' ? yahooNoOptions() : yahooChain(ticker, date ?? EXPIRATION_ONE);
+    },
+    fetchVolatilityContext: async ticker => { calls.push({ ticker, volatility: true }); return { rangePosition: 40 }; },
+  });
+  assert.equal(dataset.complete, true);
+  assert.deepEqual(dataset.errors, []);
+  assert.equal(dataset.tickers.QQUP.availability, 'no_options');
+  assert.deepEqual(dataset.tickers.QQUP.expirationDates, []);
+  assert.equal(calls.some(call => call.ticker === 'QQUP' && (call.date != null || call.volatility)), false);
+});
+
 test('Recommendations representative planner measures three selected tenors plus bounded discovery and volatility work', async () => {
   const nowMs = Date.parse('2026-09-02T15:00:00.000Z');
   const day = Math.floor(Date.parse('2026-09-02T00:00:00.000Z') / 1_000);
@@ -210,6 +232,20 @@ test('expiration discovery covers the full Scanner universe behind one bounded p
   assert.equal(dataset.diagnostics.upstreamRequests, SCREENER_TICKERS.length);
   assert.equal(Object.keys(dataset.expirationsByTicker).length, SCREENER_TICKERS.length - 1);
   assert.deepEqual(dataset.errors, [{ ticker: 'LABU', message: 'fixture expiration failure' }]);
+});
+
+test('expiration discovery accepts no-options as authoritative empty while incomplete remains an error', async () => {
+  const dataset = await buildScreenerExpirationDataset({
+    fetchOptions: async ticker => {
+      if (ticker === 'QQUP') return yahooNoOptions();
+      if (ticker === 'AGQ') return { optionChain: { result: [] } };
+      return yahooChain(ticker);
+    },
+  });
+  assert.deepEqual(dataset.expirationsByTicker.QQUP, []);
+  assert.equal(dataset.errors.some(error => error.ticker === 'QQUP'), false);
+  assert.deepEqual(dataset.errors, [{ ticker: 'AGQ', message: 'Yahoo returned incomplete expiration metadata for AGQ' }]);
+  assert.equal(dataset.complete, false);
 });
 
 test('expiration availability preserves per-ticker membership for Scanner filtering', async () => {
@@ -556,7 +592,7 @@ test('Screener expiration absence is only trusted with complete ticker-specific 
   const complete = { complete: true, expirationsByTicker: { TST: [expiration] }, errors: [] };
   assert.equal(classifyScreenerExpirationEvidence(complete, 'TST', expiration), 'present');
   assert.equal(classifyScreenerExpirationEvidence(complete, 'TST', expiration + 86_400), 'absent');
-  assert.equal(classifyScreenerExpirationEvidence({ ...complete, complete: false }, 'TST', expiration), 'unknown');
+  assert.equal(classifyScreenerExpirationEvidence({ ...complete, complete: false }, 'TST', expiration), 'present');
   assert.equal(classifyScreenerExpirationEvidence({ ...complete, errors: [{ ticker: 'TST', message: 'timeout' }] }, 'TST', expiration), 'unknown');
   assert.equal(classifyScreenerExpirationEvidence(complete, 'MISSING', expiration), 'unknown');
 });

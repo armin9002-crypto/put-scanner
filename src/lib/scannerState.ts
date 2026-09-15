@@ -64,14 +64,9 @@ export function serializeScannerState(state: ScannerState): URLSearchParams {
   return params;
 }
 
-export function resolveScannerExpiration(value: string, availableDates: number[], hasShortDated = availableDates.length > 0): string {
-  if (value === 'all') return value;
-  if (value === 'lte_30dte') return hasShortDated ? value : 'all';
+/** Discovery must never silently broaden or substitute an explicitly selected scope. */
+export function resolveScannerExpiration(value: string): string {
+  if (value === 'all' || value === 'lte_30dte') return value;
   const requested = value.startsWith('date_') ? Number(value.slice(5)) : NaN;
-  if (!Number.isFinite(requested) || availableDates.length === 0) return 'all';
-  if (availableDates.includes(requested)) return value;
-  const nearest = availableDates.reduce((best, date) => (
-    Math.abs(date - requested) < Math.abs(best - requested) ? date : best
-  ));
-  return `date_${nearest}`;
+  return Number.isSafeInteger(requested) && requested > 0 ? value : 'all';
 }

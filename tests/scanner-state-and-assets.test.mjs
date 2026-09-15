@@ -29,11 +29,11 @@ test('Scanner URL state uses defaults for missing or invalid parameters', () => 
   assert.deepEqual(parseScannerState(new URLSearchParams('expiry=nope&leverage=9x&type=Bad&sort=wat&liquidity=none')), DEFAULT_SCANNER_STATE);
 });
 
-test('Scanner expiration restoration keeps valid dates and falls back to nearest valid date', () => {
-  assert.equal(resolveScannerExpiration('date_200', [100, 200, 300]), 'date_200');
-  assert.equal(resolveScannerExpiration('date_240', [100, 200, 300]), 'date_200');
-  assert.equal(resolveScannerExpiration('date_240', []), 'all');
-  assert.equal(resolveScannerExpiration('lte_30dte', [100], false), 'all');
+test('Scanner expiration restoration preserves the exact selected scope', () => {
+  assert.equal(resolveScannerExpiration('date_200'), 'date_200');
+  assert.equal(resolveScannerExpiration('date_240'), 'date_240');
+  assert.equal(resolveScannerExpiration('invalid'), 'all');
+  assert.equal(resolveScannerExpiration('lte_30dte'), 'lte_30dte');
 });
 
 test('Scanner expiration state uses market-wide membership and treats partial failures as unknown', () => {
@@ -45,8 +45,8 @@ test('Scanner expiration state uses market-wide membership and treats partial fa
   assert.deepEqual(state.expirations.map(expiration => expiration.date), [oct23, feb19]);
   assert.equal(tickerMatchesScannerExpiration('AAA', `date_${feb19}`, availability, true, now), true);
   assert.equal(tickerMatchesScannerExpiration('BBB', `date_${feb19}`, availability, true, now), false);
-  assert.equal(tickerMatchesScannerExpiration('DDD', `date_${feb19}`, availability, true, now), true, 'missing partial data must not hide a ticker');
-  assert.equal(tickerMatchesScannerExpiration('BBB', `date_${feb19}`, availability, false, now), true, 'local cache is not authoritative while discovery loads');
+  assert.equal(tickerMatchesScannerExpiration('DDD', `date_${feb19}`, availability, true, now), false, 'missing partial data remains unknown and hidden');
+  assert.equal(tickerMatchesScannerExpiration('BBB', `date_${feb19}`, availability, false, now), false, 'loading data is hidden until authoritative');
   assert.equal(passesScannerLiquidityFilter(null, 'all'), true, 'a failed liquidity snapshot must not remove an ETF from the unfiltered universe');
 });
 
