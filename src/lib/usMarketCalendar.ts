@@ -16,6 +16,10 @@ const EASTERN_MARKET_CLOCK = new Intl.DateTimeFormat('en-US', {
   minute: '2-digit',
   hourCycle: 'h23',
 });
+const EASTERN_OFFSET_CLOCK = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  timeZoneName: 'longOffset',
+});
 
 /**
  * Versioned, static full-day U.S. equity closures that are not recurring
@@ -185,6 +189,39 @@ export function isUsEquityRegularSession(value: MarketDateInput): boolean {
   const sessionDate = `${parts.year}-${parts.month}-${parts.day}`;
   const minutes = Number(parts.hour) * 60 + Number(parts.minute);
   return isUsEquityTradingSession(sessionDate) && minutes >= 9 * 60 + 30 && minutes < 16 * 60;
+}
+
+function easternDateIso(value: Date): string {
+  const parts = Object.fromEntries(EASTERN_MARKET_CLOCK.formatToParts(value).map(part => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function easternOffsetMs(value: number): number {
+  const zone = EASTERN_OFFSET_CLOCK.formatToParts(new Date(value)).find(part => part.type === 'timeZoneName')?.value ?? 'GMT';
+  const match = /^GMT([+-])(\d{1,2})(?::(\d{2}))?$/.exec(zone);
+  if (!match) return 0;
+  const minutes = Number(match[2]) * 60 + Number(match[3] ?? 0);
+  return (match[1] === '-' ? -1 : 1) * minutes * 60_000;
+}
+
+function easternSessionOpenAt(dateIso: string): number {
+  const nominalUtc = Date.parse(`${dateIso}T09:30:00Z`);
+  return nominalUtc - easternOffsetMs(nominalUtc);
+}
+
+/** Return the next 09:30 America/New_York regular-session boundary, if any. */
+export function nextUsEquityRegularSessionOpenAt(value: MarketDateInput = Date.now()): number | null {
+  const timestamp = value instanceof Date ? value.getTime() : new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) return null;
+  const cursor = new Date(`${easternDateIso(new Date(timestamp))}T12:00:00Z`);
+  for (let offset = 0; offset < 15; offset += 1) {
+    if (isUsEquityTradingSession(cursor)) {
+      const openAt = easternSessionOpenAt(cursor.toISOString().slice(0, 10));
+      if (openAt > timestamp) return openAt;
+    }
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return null;
 }
 
 export function elapsedUsEquityTradingSessions(from: string | Date, to: string | Date): number {

@@ -34,18 +34,21 @@ import {
   buildCachedExpirationState,
   buildExpirationState,
   diagnosticForOutcome,
+  nextScannerExpirationSessionCheckAt,
   snapshotIssueLabel,
   snapshotProgressDetails,
   snapshotProgressLabel,
   summarizeSnapshotOutcomes,
   scannerExpirationMatch,
   tickerMatchesScannerExpiration,
-  nextScannerExpirationCheckAt,
   revalidateScannerExpirationState,
+  retainScannerPositiveEvidenceAfterFailure,
+  scannerExpirationStateNeedsRevalidation,
   type CachedExpirationState,
   type SnapshotUpdateProgress,
 } from '../lib/scannerUpdateState';
 import { fetchScreenerExpirationAvailability } from '../lib/screenerAcquisition';
+import { isUsEquityRegularSession, usMarketDateIso } from '../lib/usMarketCalendar';
 import { passesScannerLiquidityFilter, sortScannerEtfs, type ScannerLiquidityFilter, type ScannerSort } from '../lib/scannerDiscovery';
 import { fetchFundAssets, type FundAssetsData } from '../lib/fundAssets';
 import { DEFAULT_SCANNER_STATE, parseScannerState, resolveScannerExpiration, serializeScannerState, type ScannerState } from '../lib/scannerState';
@@ -207,6 +210,11 @@ export default function HomePage() {
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [expirationState, setExpirationState] = useState<CachedExpirationState>(initialExpirationStateRef.current!);
   const [expirationDatesLoading, setExpirationDatesLoading] = useState(true);
+  const expirationStateRef = useRef(expirationState);
+  expirationStateRef.current = expirationState;
+  const expirationRequestRef = useRef<{ generation: number; controller: AbortController | null }>({ generation: 0, controller: null });
+  const expirationSessionAttemptRef = useRef<string | null>(null);
+  const expirationLifecycleTokenRef = useRef(0);
   const [optionSnapshots, setOptionSnapshots] = useState<Record<string, ScannerOptionSnapshot>>(() => getScannerOptionSnapshots());
   const [snapshotDiagnostics, setSnapshotDiagnostics] = useState<Record<string, ScannerSnapshotDiagnostic>>(() => getScannerSnapshotDiagnostics());
   const [snapshotIssueRows, setSnapshotIssueRows] = useState<{ ticker: string; status: string; reason: string }[]>([]);
@@ -312,47 +320,85 @@ export default function HomePage() {
     return () => controller.abort(new DOMException('Scanner route closed', 'AbortError'));
   }, []);
 
-  useEffect(() => {
+  const acquireExpirationAvailability = useCallback((reason: 'initial' | 'session' | 'focus') => {
+    const nowMs = Date.now();
+    const current = expirationStateRef.current;
+    const due = scannerExpirationStateNeedsRevalidation(current, nowMs);
+    const sessionDate = usMarketDateIso(nowMs);
+    if (reason !== 'initial') {
+      if (!isUsEquityRegularSession(nowMs) || !due || (sessionDate && expirationSessionAttemptRef.current === sessionDate)) return;
+      if (sessionDate) expirationSessionAttemptRef.current = sessionDate;
+    } else if (sessionDate && isUsEquityRegularSession(nowMs) && due) {
+      expirationSessionAttemptRef.current = sessionDate;
+    }
+    if (expirationRequestRef.current.controller) return;
+
     const controller = new AbortController();
+    const generation = ++expirationRequestRef.current.generation;
+    expirationRequestRef.current.controller = controller;
     setExpirationDatesLoading(true);
-    fetchScreenerExpirationAvailability({ signal: controller.signal })
+    fetchScreenerExpirationAvailability({ signal: controller.signal, nowMs })
       .then(result => {
-        if (controller.signal.aborted) return;
-        setExpirationState(buildExpirationState(
+        if (controller.signal.aborted || generation !== expirationRequestRef.current.generation) return;
+        const nextState = buildExpirationState(
           result.expirationsByTicker,
           result.complete ? 'complete' : 'partial',
           result.errors,
           result.retentionReason ?? null,
           result.observedAtByTicker,
-        ));
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) {
-          setExpirationState(current => ({
-            ...current,
-            coverage: 'failed',
-            errors: [...current.errors, { message: 'Expiration availability refresh failed.' }],
-            retentionReason: 'Expiration availability could not be confirmed.',
-          }));
+        );
+        expirationStateRef.current = nextState;
+        setExpirationState(nextState);
+        const completedAt = Date.now();
+        if (sessionDate && isUsEquityRegularSession(completedAt) && scannerExpirationStateNeedsRevalidation(nextState, completedAt)) {
+          expirationSessionAttemptRef.current = sessionDate;
         }
       })
+      .catch(() => {
+        if (controller.signal.aborted || generation !== expirationRequestRef.current.generation) return;
+        const nextState = retainScannerPositiveEvidenceAfterFailure(expirationStateRef.current, new Date());
+        expirationStateRef.current = nextState;
+        setExpirationState(nextState);
+      })
       .finally(() => {
-        if (!controller.signal.aborted) setExpirationDatesLoading(false);
+        if (expirationRequestRef.current.controller === controller) expirationRequestRef.current.controller = null;
+        if (!controller.signal.aborted && generation === expirationRequestRef.current.generation) setExpirationDatesLoading(false);
       });
-    return () => controller.abort(new DOMException('Scanner route closed', 'AbortError'));
   }, []);
 
   useEffect(() => {
-    const checkAt = nextScannerExpirationCheckAt(expirationState);
-    if (checkAt == null) return;
-    const revalidate = () => setExpirationState(current => revalidateScannerExpirationState(current));
-    const timer = window.setTimeout(revalidate, Math.max(0, checkAt - Date.now()));
-    window.addEventListener('focus', revalidate);
+    const lifecycleToken = ++expirationLifecycleTokenRef.current;
+    const requestState = expirationRequestRef.current;
+    acquireExpirationAvailability('initial');
     return () => {
-      window.clearTimeout(timer);
-      window.removeEventListener('focus', revalidate);
+      queueMicrotask(() => {
+        // This ref intentionally bridges React StrictMode's effect replay; it is not a DOM ref.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        if (expirationLifecycleTokenRef.current !== lifecycleToken) return;
+        requestState.generation += 1;
+        requestState.controller?.abort(new DOMException('Scanner route closed', 'AbortError'));
+        requestState.controller = null;
+      });
     };
-  }, [expirationState]);
+  }, [acquireExpirationAvailability]);
+
+  useEffect(() => {
+    const checkAt = nextScannerExpirationSessionCheckAt(expirationState);
+    const wakeForSession = () => {
+      setExpirationState(current => revalidateScannerExpirationState(current));
+      acquireExpirationAvailability('session');
+    };
+    const timer = checkAt == null ? null : window.setTimeout(wakeForSession, Math.max(0, checkAt - Date.now()));
+    const onFocus = () => {
+      setExpirationState(current => revalidateScannerExpirationState(current));
+      acquireExpirationAvailability('focus');
+    };
+    window.addEventListener('focus', onFocus);
+    return () => {
+      if (timer != null) window.clearTimeout(timer);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [acquireExpirationAvailability, expirationState]);
 
   useEffect(() => {
     if (!expirationAvailabilityReady) return;

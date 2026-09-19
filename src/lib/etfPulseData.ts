@@ -7,7 +7,7 @@ import { ETF_PULSE_LEVERAGED_TICKERS, ETF_PULSE_TICKERS } from '../../shared/etf
 import { ETF_PULSE_SYMBOLS } from '../../shared/symbolRegistry.js';
 import { isUnderlyingTechnicalAssessment } from './underlyingTechnical.ts';
 import type { EvidenceFreshness } from './evidence.ts';
-import { hasTrustedFutureListedPutExpiration } from './optionAvailability.ts';
+import { hasTrustedFutureListedPutExpiration, trustedListedExpirations } from './optionAvailability.ts';
 import type { ScreenerExpirationAvailability } from './screenerAcquisition.ts';
 
 export interface EtfPulseRowEvidence {
@@ -47,6 +47,31 @@ export const ETF_PULSE_ROW_CACHE_HARD_TTL_MS = 24 * 60 * 60 * 1000;
 export const ETF_PULSE_CURRENTNESS_MAX_AGE_MS = ETF_PULSE_ROW_CACHE_SOFT_TTL_MS;
 
 export type EtfPulseRefreshIntent = 'pulse' | 'recommendations';
+
+export interface EtfPulseOptionabilityCoverage {
+  total: number;
+  confirmed: number;
+  temporarilyUnverified: number;
+  noOptions: number;
+}
+
+export function summarizeEtfPulseOptionability(
+  availability: Pick<ScreenerExpirationAvailability, 'expirationsByTicker' | 'errors'> | null,
+  now: Date | number | string = new Date(),
+): EtfPulseOptionabilityCoverage | null {
+  if (!availability) return null;
+  return ETF_PULSE_LEVERAGED_TICKERS.reduce<EtfPulseOptionabilityCoverage>((summary, ticker) => {
+    summary.total += 1;
+    if (hasTrustedFutureListedPutExpiration(availability.expirationsByTicker, ticker, availability.errors, now)) {
+      summary.confirmed += 1;
+      return summary;
+    }
+    const dates = trustedListedExpirations(availability.expirationsByTicker, ticker, availability.errors);
+    if (dates?.length === 0) summary.noOptions += 1;
+    else summary.temporarilyUnverified += 1;
+    return summary;
+  }, { total: 0, confirmed: 0, temporarilyUnverified: 0, noOptions: 0 });
+}
 
 /** Keep context benchmarks visible while requiring Scanner-grade optionability for leveraged rows. */
 export function filterEtfPulseOpportunityRows(

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeScreenerExpirationAvailability, retainScreenerExpirationEvidence, classifyScreenerExpirationEvidence, fetchScreenerExpirationAvailability } from '../src/lib/screenerAcquisition.ts';
-import { buildExpirationState, tickerMatchesScannerExpiration } from '../src/lib/scannerUpdateState.ts';
+import { buildExpirationState, nextScannerExpirationSessionCheckAt, retainScannerPositiveEvidenceAfterFailure, scannerExpirationStateNeedsRevalidation, tickerMatchesScannerExpiration } from '../src/lib/scannerUpdateState.ts';
 import { primeMarketDataCache, clearMarketDataCache } from '../src/lib/marketDataRequest.ts';
 import { SCREENER_TICKERS } from '../shared/screenerUniverse.js';
 
@@ -112,6 +112,35 @@ test('open Scanner state keeps structural evidence through the closed weekend an
   const beforeDstMidnight = Date.parse('2026-11-02T04:30:00Z');
   const dstState = buildExpirationState({ TQQQ: [future] }, 'complete', [], null, { TQQQ: beforeDstMidnight }, new Date(beforeDstMidnight));
   assert.equal(nextScannerExpirationCheckAt(dstState, beforeDstMidnight), Date.parse('2026-11-02T05:00:00Z'));
+});
+
+test('Scanner session lifecycle is quiet until Monday open and retains bounded positives after a failed reacquisition', async () => {
+  const friday = Date.parse('2026-09-18T20:00:00Z');
+  const saturday = Date.parse('2026-09-19T18:00:00Z');
+  const sunday = Date.parse('2026-09-20T18:00:00Z');
+  const mondayPreOpen = Date.parse('2026-09-21T13:00:00Z');
+  const mondayOpen = Date.parse('2026-09-21T13:30:00Z');
+  const state = buildExpirationState(
+    { TQQQ: [future], QQUP: [] },
+    'complete',
+    [],
+    null,
+    { TQQQ: friday, QQUP: friday },
+    new Date(friday),
+  );
+
+  assert.equal(scannerExpirationStateNeedsRevalidation(state, saturday), false);
+  assert.equal(scannerExpirationStateNeedsRevalidation(state, sunday), false);
+  assert.equal(scannerExpirationStateNeedsRevalidation(state, mondayPreOpen), false);
+  assert.equal(scannerExpirationStateNeedsRevalidation(state, mondayOpen), true);
+  assert.equal(nextScannerExpirationSessionCheckAt(state, friday), mondayOpen);
+
+  const retained = retainScannerPositiveEvidenceAfterFailure(state, new Date(mondayOpen));
+  assert.deepEqual(retained.availability, { TQQQ: [future] });
+  assert.equal(retained.observedAtByTicker.TQQQ, friday);
+  assert.equal(retained.observedAtByTicker.QQUP, undefined);
+  assert.equal(tickerMatchesScannerExpiration('TQQQ', 'all', retained.availability, true, new Date(mondayOpen), retained.coverage), true);
+  assert.equal(tickerMatchesScannerExpiration('QQUP', 'all', retained.availability, true, new Date(mondayOpen), retained.coverage), false);
 });
 
 test('Friday optionability keeps its original observation across weekend, expires only past dates, and revalidates in the next session', async () => {

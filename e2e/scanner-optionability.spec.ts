@@ -66,3 +66,89 @@ test('explicit manual ticker investigation still navigates when ticker has no co
   await page.getByRole('button', { name: 'Go to Option Chain', exact: true }).click();
   await expect(page).toHaveURL(/\/options\/QQUP/);
 });
+
+test('continuously open Scanner reacquires once at the next regular session and stays quiet after focus rerenders', async ({ page }) => {
+  const friday = new Date('2026-09-18T20:00:00Z');
+  const saturday = new Date('2026-09-19T18:00:00Z');
+  const sunday = new Date('2026-09-20T18:00:00Z');
+  const mondayPreOpen = new Date('2026-09-21T13:00:00Z');
+  const mondayOpen = new Date('2026-09-21T13:30:00Z');
+  const future = Date.parse('2026-11-20T00:00:00Z') / 1000;
+  let expirationRequests = 0;
+
+  await page.clock.install({ time: friday });
+  await installDeterministicMarketApi(page);
+  await installDeterministicCloudAccount(page, { portfolio: [], watchlist: [], preferences: {} });
+  await page.route('**/api/screener-expirations**', async route => {
+    expirationRequests += 1;
+    const mondayRefresh = expirationRequests > 1;
+    await route.fulfill({ json: {
+      datasetVersion: 4,
+      fetchedAt: (mondayRefresh ? mondayOpen : friday).getTime(),
+      complete: false,
+      expirationsByTicker: mondayRefresh ? { TQQQ: [], UPRO: [future] } : { TQQQ: [future] },
+      errors: [],
+      diagnostics: { upstreamRequests: 2, maxObservedConcurrency: 1, circuitBreakerRejections: 0 },
+    } });
+  });
+
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('a[href^="/options/TQQQ"]')).toBeVisible();
+  expect(expirationRequests).toBe(1);
+
+  await page.clock.fastForward(saturday.getTime() - friday.getTime());
+  await page.clock.fastForward(sunday.getTime() - saturday.getTime());
+  await page.clock.fastForward(mondayPreOpen.getTime() - sunday.getTime());
+  expect(expirationRequests).toBe(1);
+
+  await page.clock.fastForward(mondayOpen.getTime() - mondayPreOpen.getTime());
+  await expect.poll(() => expirationRequests).toBe(2);
+  await expect(page.locator('a[href^="/options/TQQQ"]')).toHaveCount(0);
+  await expect(page.locator('a[href^="/options/UPRO"]')).toBeVisible();
+
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await page.getByPlaceholder('Filter / Search by Ticker').fill('UPRO');
+  await page.getByPlaceholder('Filter / Search by Ticker').fill('');
+  await page.clock.fastForward(1000);
+  expect(expirationRequests).toBe(2);
+});
+
+test('continuously open Scanner retains Friday positive evidence when Monday revalidation fails', async ({ page }) => {
+  const friday = new Date('2026-09-18T20:00:00Z');
+  const mondayPreOpen = new Date('2026-09-21T13:00:00Z');
+  const mondayOpen = new Date('2026-09-21T13:30:00Z');
+  const future = Date.parse('2026-11-20T00:00:00Z') / 1000;
+  let expirationRequests = 0;
+
+  await page.clock.install({ time: friday });
+  await installDeterministicMarketApi(page);
+  await installDeterministicCloudAccount(page, { portfolio: [], watchlist: [], preferences: {} });
+  await page.route('**/api/screener-expirations**', async route => {
+    expirationRequests += 1;
+    if (expirationRequests > 1) {
+      await route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ error: 'temporary outage' }) });
+      return;
+    }
+    await route.fulfill({ json: {
+      datasetVersion: 4,
+      fetchedAt: friday.getTime(),
+      complete: false,
+      expirationsByTicker: { TQQQ: [future], QQUP: [] },
+      errors: [],
+      diagnostics: { upstreamRequests: 2, maxObservedConcurrency: 1, circuitBreakerRejections: 0 },
+    } });
+  });
+
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('a[href^="/options/TQQQ"]')).toBeVisible();
+  expect(expirationRequests).toBe(1);
+  await page.clock.fastForward(mondayPreOpen.getTime() - friday.getTime());
+  expect(expirationRequests).toBe(1);
+  await page.clock.fastForward(mondayOpen.getTime() - mondayPreOpen.getTime());
+  await expect.poll(() => expirationRequests).toBe(2);
+  await expect(page.locator('a[href^="/options/TQQQ"]')).toBeVisible();
+  await expect(page.getByText(/1 confirmed .*incomplete/).first()).toBeVisible();
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await page.clock.fastForward(1000);
+  expect(expirationRequests).toBe(2);
+});

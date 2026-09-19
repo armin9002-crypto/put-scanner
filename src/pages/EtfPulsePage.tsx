@@ -2,7 +2,7 @@ import { uiTextCssPx } from '../lib/uiTextSizePreference';
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Activity, AlertTriangle, Info, Loader2, RefreshCw, X, SlidersHorizontal, ChevronDown } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
-import { buildEtfPulseRows, filterEtfPulseOpportunityRows, getEtfPulseUniverse, type EtfPulseLoadResult, type EtfPulseProgress } from '../lib/etfPulseData';
+import { buildEtfPulseRows, filterEtfPulseOpportunityRows, getEtfPulseUniverse, summarizeEtfPulseOptionability, type EtfPulseLoadResult, type EtfPulseProgress } from '../lib/etfPulseData';
 import { fetchScreenerExpirationAvailability, type ScreenerExpirationAvailability } from '../lib/screenerAcquisition';
 import type { EtfPulseRow } from '../lib/etfPulseMetrics';
 import { getReturnForPeriod, heatmapTileStyle, matchesTrend, sortValue, trendStyle, type PulseSortField, type TrendFilter, type VisualPeriod } from '../lib/etfPulseViewModel';
@@ -24,7 +24,7 @@ import { buildOptionsPath, createOptionsNavigationState, resolveOptionsReturnOri
 import { ETF_PULSE_CONTEXT_BENCHMARK_COUNT, ETF_PULSE_LEVERAGED_UNIVERSE_SIZE } from '../../shared/etfPulseUniverse.js';
 
 const DASH = '\u2014';
-const PULSE_UNIVERSE_LABEL = `${ETF_PULSE_LEVERAGED_UNIVERSE_SIZE} leveraged ETFs + ${ETF_PULSE_CONTEXT_BENCHMARK_COUNT} context benchmarks`;
+const PULSE_UNIVERSE_LABEL = `${ETF_PULSE_LEVERAGED_UNIVERSE_SIZE} leveraged ETFs tracked + ${ETF_PULSE_CONTEXT_BENCHMARK_COUNT} context benchmarks`;
 
 type SortDirection = 'asc' | 'desc';
 
@@ -711,6 +711,7 @@ export default function EtfPulsePage() {
 
   const rows = useMemo(() => result?.rows ?? [], [result]);
   const opportunityRows = useMemo(() => filterEtfPulseOpportunityRows(rows, optionability), [optionability, rows]);
+  const optionabilityCoverage = useMemo(() => summarizeEtfPulseOptionability(optionability), [optionability]);
   const regime = useMemo(() => result && result.rows.length > 0 ? deriveMarketRegime({
     rows: result.rows,
     total: result.total,
@@ -1013,6 +1014,7 @@ export default function EtfPulsePage() {
                 <Activity className="w-5 h-5" style={{ color: 'var(--accent-light)' }} /> ETF Pulse
               </h1>
               <p className="pulse-title-context">{PULSE_UNIVERSE_LABEL} · market regime overview.</p>
+              {optionabilityCoverage && <p className="pulse-title-context" aria-label="ETF Pulse optionability coverage">{optionabilityCoverage.confirmed} optionable{optionabilityCoverage.temporarilyUnverified > 0 ? ` · ${optionabilityCoverage.temporarilyUnverified} temporarily unverified` : ''}{optionabilityCoverage.noOptions > 0 ? ` · ${optionabilityCoverage.noOptions} no listed puts` : ''}</p>}
             </div>
             <div className="min-w-0 xl:flex-1">
               <MarketReadStrip regime={regime} posture={posture} unavailable={rows.length === 0} onOpen={() => setShowMarketRead(true)} />

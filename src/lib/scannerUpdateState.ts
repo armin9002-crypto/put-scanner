@@ -1,5 +1,6 @@
 import { calculateCalendarDte, getAllCachedScannerExpirations, type ScannerSnapshotDiagnostic, type ScannerSnapshotUpdateOutcome } from './scannerOptionSnapshot.ts';
-import { isTrustedOptionAvailabilityObservation, normalizeAvailabilityTickers, trustedListedExpirations } from './optionAvailability.ts';
+import { isTrustedOptionAvailabilityObservation, normalizeAvailabilityTickers, optionAvailabilityNeedsRevalidation, trustedListedExpirations } from './optionAvailability.ts';
+import { nextUsEquityRegularSessionOpenAt } from './usMarketCalendar.ts';
 import { usMarketDateIso } from '../../shared/marketDate.js';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -80,8 +81,35 @@ export function nextScannerExpirationCheckAt(state: CachedExpirationState, nowMs
   return high;
 }
 
+export function scannerExpirationStateNeedsRevalidation(state: CachedExpirationState, nowMs = Date.now()): boolean {
+  const observedAt = Object.values(state.observedAtByTicker ?? {});
+  return observedAt.length > 0 && observedAt.some(value => optionAvailabilityNeedsRevalidation(value, nowMs));
+}
+
+/** Schedule one wake-up for the next session; the caller decides whether acquisition is due. */
+export function nextScannerExpirationSessionCheckAt(state: CachedExpirationState, nowMs = Date.now()): number | null {
+  if (Object.keys(state.availability).length === 0 && Object.keys(state.observedAtByTicker ?? {}).length === 0) return null;
+  return nextUsEquityRegularSessionOpenAt(nowMs);
+}
+
 export function revalidateScannerExpirationState(state: CachedExpirationState, now = new Date()): CachedExpirationState {
   return buildExpirationState(state.availability, state.coverage, state.errors, state.retentionReason, state.observedAtByTicker, now);
+}
+
+/** Keep only positive evidence after an unavailable refresh; never retain authoritative negatives as fresh fact. */
+export function retainScannerPositiveEvidenceAfterFailure(state: CachedExpirationState, now = new Date()): CachedExpirationState {
+  const availability = Object.fromEntries(Object.entries(state.availability).filter(([, dates]) => dates.length > 0));
+  const observedAtByTicker = state.observedAtByTicker
+    ? Object.fromEntries(Object.entries(state.observedAtByTicker).filter(([ticker]) => Object.prototype.hasOwnProperty.call(availability, ticker)))
+    : undefined;
+  return buildExpirationState(
+    availability,
+    'partial',
+    [],
+    'Expiration availability refresh failed; recent confirmed expirations retained.',
+    observedAtByTicker,
+    now,
+  );
 }
 
 export function buildCachedExpirationState(): CachedExpirationState {
