@@ -15,6 +15,7 @@ import {
   archiveExpiredOpenTrades,
   getExpirationClosePrice,
   isArchivedTrade,
+  isExpiredUnresolvedOpenTrade,
   resolveExpiredTradeWithClose,
 } from '../lib/portfolioExpirationArchive';
 import {
@@ -1558,6 +1559,7 @@ export default function PortfolioPage() {
   const quoteRefreshInFlightRef = useRef(false);
   const quoteRefreshGenerationRef = useRef(0);
   const quoteRefreshAbortRef = useRef<AbortController | null>(null);
+  const lifecycleSweepInFlightRef = useRef(false);
 
   useEffect(() => {
     const origin = resolveOptionsReturnOrigin(location.state, 'portfolio');
@@ -1598,7 +1600,7 @@ export default function PortfolioPage() {
     setTrades(stored);
     const latest = Math.max(...stored.map(trade => trade.latestMarketData?.refreshedAt ? new Date(trade.latestMarketData.refreshedAt).getTime() : 0));
     if (latest > 0) setLastRefreshed(new Date(latest));
-  }, []);
+  }, [account.phase, account.renderVersion]);
 
   const summary = useMemo(() => calculatePortfolioSummary(trades), [trades]);
   const openTrades = useMemo(() => trades.filter(trade => trade.status === 'open'), [trades]);
@@ -1761,6 +1763,35 @@ export default function PortfolioPage() {
     setTrades(next);
     return true;
   }, []);
+
+  useEffect(() => {
+    if ((account.phase !== 'ready' && account.phase !== 'anonymous') || lifecycleSweepInFlightRef.current) return;
+    const inspected = loadPortfolioTrades();
+    if (!inspected.some(trade => isExpiredUnresolvedOpenTrade(trade))) return;
+
+    lifecycleSweepInFlightRef.current = true;
+    let cancelled = false;
+    void archiveExpiredOpenTrades(inspected)
+      .then(resolved => {
+        if (cancelled) return;
+        const latest = loadPortfolioTrades();
+        const reconciled = resolved.changed
+          ? mergePortfolioLifecycleResults(latest, inspected, resolved.trades)
+          : latest;
+        if (reconciled.some((trade, index) => trade !== latest[index])) persistTrades(reconciled);
+        else setTrades(latest);
+      })
+      .catch(() => {
+        // Preserve the existing trades when historical expiration evidence is unavailable.
+      })
+      .finally(() => {
+        lifecycleSweepInFlightRef.current = false;
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [account.phase, account.renderVersion, persistTrades]);
 
   const handleShowNominalYieldChange = useCallback((value: boolean) => {
     setShowNominalYield(value);
@@ -1981,7 +2012,7 @@ export default function PortfolioPage() {
     setDurableActivityNotice('');
     try {
       const sweepTrades = loadPortfolioTrades();
-      const open = sweepTrades.filter(trade => trade.status === 'open');
+      const open = sweepTrades.filter(trade => trade.status === 'open' && !isExpiredUnresolvedOpenTrade(trade));
       if (open.length === 0) {
         if (refreshGeneration !== quoteRefreshGenerationRef.current) return;
         setTrades(sweepTrades);

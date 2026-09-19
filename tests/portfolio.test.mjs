@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildExpirationScheduleGroups, buildFlatScheduleTrades, buildUnderlyingScheduleGroups } from '../src/lib/portfolioAnalytics.ts';
 import { calculateCurrentOptionMark, calculatePortfolioMarkSummary, calculatePortfolioSummary } from '../src/lib/portfolioMetrics.ts';
-import { assessExpirationCorporateActionBasis, isExpiredUnresolvedOpenTrade, markExpirationPricePending, resolveExpiredTradeWithClose, selectExpirationClose } from '../src/lib/portfolioExpirationArchive.ts';
+import { archiveExpiredOpenTrades, assessExpirationCorporateActionBasis, isExpiredUnresolvedOpenTrade, markExpirationPricePending, resolveExpiredTradeWithClose, selectExpirationClose } from '../src/lib/portfolioExpirationArchive.ts';
 import { resolveEntryVixFromPoints, resolvePortfolioEntryVix, selectEntryVixClose, unresolvedEntryVixDates } from '../src/lib/portfolioEntryVix.ts';
 import { persistPortfolioGroupMode, readCollapsedExpirationGroups, readCollapsedUnderlyingGroups, readPortfolioGroupMode, setAllExpirationGroupsCollapsed, toggleCollapsedExpirationGroup } from '../src/lib/portfolioSchedulePreferences.ts';
 import { normalizePortfolioTrade, readPortfolioTrades, writePortfolioTrades } from '../src/lib/portfolioStorage.ts';
@@ -263,6 +263,38 @@ test('expired positions resolve worthless or ITM and retain pending fallback sta
   assert.equal(itm.finalOptionValue, 1_000);
   assert.equal(itm.realizedPnl, -600);
   assert.equal(markExpirationPricePending(expired).status, 'expired_price_pending');
+});
+
+test('automatic expiration sweep archives exact lots, preserves pending economics, and leaves 0 DTE open', async () => {
+  const now = new Date('2026-06-21T12:00:00Z');
+  const base = trade({ expiration: '2026-06-19', soldDate: '2026-05-01', latestMarketData: undefined });
+  const pointsByTicker = {
+    TST: [{ timestamp: Date.parse('2026-06-19T00:00:00Z') / 1000, date: '2026-06-19', price: 55 }],
+    ITM: [{ timestamp: Date.parse('2026-06-19T00:00:00Z') / 1000, date: '2026-06-19', price: 45 }],
+  };
+  const result = await archiveExpiredOpenTrades([
+    base,
+    trade({ id: 'itm', ticker: 'ITM', expiration: '2026-06-19', soldDate: '2026-05-01', latestMarketData: undefined }),
+    trade({ id: 'pending', expiration: '2026-06-19', soldDate: '2026-05-01', ticker: 'NOHISTORY', latestMarketData: undefined }),
+    trade({ id: 'today', expiration: '2026-06-21', soldDate: '2026-05-01', latestMarketData: undefined }),
+  ], {
+    now,
+    findRichHistory: (ticker) => ticker === 'NOHISTORY' ? null : {
+      ticker, timeframe: 'custom', points: pointsByTicker[ticker] ?? [], corporateActions: [], fetchedAt: Date.now(),
+    },
+    fetchClose: async () => null,
+  });
+  const byId = new Map(result.trades.map(item => [item.id, item]));
+  assert.equal(byId.get('t1').status, 'expired');
+  assert.equal(byId.get('t1').resolutionType, 'expired_worthless');
+  assert.equal(byId.get('t1').realizedPnl, 400);
+  assert.equal(byId.get('t1').finalOptionValue, 0);
+  assert.equal(byId.get('itm').status, 'expired');
+  assert.equal(byId.get('itm').resolutionType, 'expired_itm');
+  assert.equal(byId.get('itm').finalOptionValue, 1000);
+  assert.equal(byId.get('pending').status, 'expired_price_pending');
+  assert.equal(byId.get('pending').finalOptionValue, undefined);
+  assert.equal(byId.get('today').status, 'open', '0 DTE remains current on expiration day');
 });
 
 const historicalInput = (overrides = {}) => ({

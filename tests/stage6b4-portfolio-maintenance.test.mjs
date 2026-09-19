@@ -408,14 +408,19 @@ test('maintenance assessment is local, distinguishes actionable recovery from pe
   assert.deepEqual(assessment.missingEntryVix.map(item => item.id), ['expired', 'unavailable']);
 });
 
-test('Portfolio mount, refresh, save, and import keep durable maintenance explicit', async () => {
+test('Portfolio mount automatically sweeps expired lifecycle while refresh remains quote-only', async () => {
   const page = await read('src/pages/PortfolioPage.tsx');
   const mount = page.slice(page.indexOf('useEffect(() => {\n    const stored = loadPortfolioTrades'), page.indexOf('const summary = useMemo'));
+  const lifecycle = page.slice(page.indexOf('useEffect(() => {\n    if ((account.phase'), page.indexOf('const handleShowNominalYieldChange'));
   const save = page.slice(page.indexOf('const handleSaveTrade'), page.indexOf('const handleBackupImported'));
   const refresh = page.slice(page.indexOf('const handleRefreshOpenTrades'), page.indexOf('const handleRetryResolve'));
   const screenshot = page.slice(page.indexOf('const handleScreenshotImported'), page.indexOf('const handleDeleteTrade'));
   assert.doesNotMatch(mount, /archiveExpiredOpenTrades|resolvePortfolioEntryVix|savePortfolioTrades/);
+  assert.match(lifecycle, /archiveExpiredOpenTrades\(inspected\)/);
+  assert.match(lifecycle, /mergePortfolioLifecycleResults/);
+  assert.match(lifecycle, /persistTrades\(reconciled\)/);
   assert.doesNotMatch(save, /archiveExpiredOpenTrades|resolvePortfolioEntryVix/);
+  assert.match(refresh, /!isExpiredUnresolvedOpenTrade\(trade\)/);
   assert.doesNotMatch(refresh, /archiveExpiredOpenTrades|resolvePortfolioEntryVix|entryVixClose|entryDelta:|entryIv:/);
   assert.doesNotMatch(screenshot, /archiveExpiredOpenTrades|resolvePortfolioEntryVix/);
   assert.match(page, /Portfolio Maintenance/);
