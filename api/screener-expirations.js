@@ -7,8 +7,9 @@ export default async function handler(req, res) {
   try {
     const dataset = await buildScreenerExpirationDataset({ signal: observation.signal });
     observation.setCounts({ tickerCount: Object.keys(dataset.expirationsByTicker).length });
+    const freshRequested = String(req?.query?.fresh ?? '') === '1';
     const cacheControl = dataset.complete
-      ? 'public, s-maxage=7200, stale-while-revalidate=21600'
+      ? freshRequested ? 'private, no-store' : 'public, s-maxage=259200, stale-while-revalidate=86400'
       : 'private, no-store';
     res.setHeader('Cache-Control', cacheControl);
     res.setHeader('X-PutScanner-Upstream-Requests', String(dataset.diagnostics.upstreamRequests));

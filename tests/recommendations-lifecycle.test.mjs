@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { withEtfPulseTechnicalAssessment } from '../src/lib/etfPulseMetrics.ts';
 import { buildEtfPulseRows, ETF_PULSE_CURRENTNESS_MAX_AGE_MS, ETF_PULSE_ROW_CACHE_KEY, getEtfPulseUniverse } from '../src/lib/etfPulseData.ts';
 import { createLatestScreenerScanGate } from '../src/lib/screenerAcquisition.ts';
-import { recommendationRunDescription } from '../src/lib/recommendations/presentation.ts';
+import { recommendationMarketClosedText, recommendationRunDescription } from '../src/lib/recommendations/presentation.ts';
 import {
   RecommendationAcquisitionError,
   RecommendationEngineError,
@@ -72,6 +72,28 @@ function emptyScan() {
     failedBatchIds: [],
   };
 }
+
+test('Saturday Recommendations refresh executes against retained evidence and keeps market closure presentation-only', async () => {
+  const saturday = Date.parse('2026-09-19T15:00:00Z');
+  let scanCalled = false;
+  const result = await refreshRecommendations({
+    scanId: 'lifecycle-weekend',
+    onlyEvaluateAtLeast60Dte: true,
+    dependencies: {
+      now: () => saturday,
+      loadPulse: async () => pulseResult({ fetchedAt: Date.parse('2026-09-18T21:00:00Z') }),
+      scan: async () => {
+        scanCalled = true;
+        return emptyScan();
+      },
+      runEngine: async () => buildRecommendationVisualFixture('no-trade'),
+    },
+  });
+
+  assert.equal(scanCalled, true);
+  assert.equal(result.run.operationalStatus, 'COMPLETE');
+  assert.equal(recommendationMarketClosedText(saturday), 'Market closed · quotes are indicative until the next session.');
+});
 
 test('terminal state matrix keeps complete NO TRADE separate from incomplete analysis', () => {
   const actionable = buildRecommendationVisualFixture('actionable');

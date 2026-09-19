@@ -38,7 +38,7 @@ test('failed partial refresh retains only bounded positive evidence without rest
   assert.equal(result.refreshErrors.length, 2);
   const again = retainScreenerExpirationEvidence({ ...failure, fetchedAt: now + hour }, merged, now + hour);
   assert.equal(again.retainedExpirationsByTicker.TQQQ.fetchedAt, previous.fetchedAt);
-  const expired = normalizeScreenerExpirationAvailability(again, false, now + 5 * hour);
+  const expired = normalizeScreenerExpirationAvailability(again, false, now + 4 * 86400000);
   assert.deepEqual(expired.expirationsByTicker, {});
 });
 
@@ -57,25 +57,26 @@ test('whole request fallback drops negatives and expired dates; provider observa
   assert.deepEqual(fallback.expirationsByTicker, { TQQQ: [future] });
   assert.equal(fallback.fetchedAt, previous.fetchedAt);
   assert.equal(fallback.complete, false);
-  assert.deepEqual(normalizeScreenerExpirationAvailability(previous, false, now + 5 * hour).expirationsByTicker, {});
+  assert.deepEqual(normalizeScreenerExpirationAvailability(previous, false, now + 4 * 86400000).expirationsByTicker, {});
 });
 
-test('real shared request cache revalidates after soft TTL and retains positive evidence on HTTP failure', async () => {
+test('real shared request cache retains positive evidence after a failed next-session refresh', async () => {
   const key = 'screener_expirations_v4';
   const originalFetch = globalThis.fetch;
-  const observed = Date.now() - 3 * hour;
-  const dynamicFuture = Math.floor((Date.now() + 20 * 86400000) / 1000);
+  const observed = Date.parse('2026-09-18T21:00:00Z');
+  const mondayOpen = Date.parse('2026-09-21T14:00:00Z');
+  const dynamicFuture = Math.floor(Date.parse('2026-10-16T00:00:00Z') / 1000);
   const previous = payload(Object.fromEntries(SCREENER_TICKERS.map(ticker => [ticker, ticker === 'TQQQ' ? [dynamicFuture] : []])), { complete: true, fetchedAt: observed });
-  primeMarketDataCache({ key, softTtlMs: 2 * hour, hardTtlMs: 8 * hour, schemaVersion: 4, storage: 'session', validator: () => true }, previous, observed);
+  primeMarketDataCache({ key, softTtlMs: 2 * hour, hardTtlMs: 14 * 86400000, schemaVersion: 4, storage: 'local', validator: () => true }, previous, observed);
   let requests = 0;
   globalThis.fetch = async () => { requests++; return Response.json({ error: 'unavailable' }, { status: 502 }); };
   try {
-    const result = await fetchScreenerExpirationAvailability();
+    const result = await fetchScreenerExpirationAvailability({ nowMs: mondayOpen });
     assert.equal(requests, 1);
     assert.deepEqual(result.expirationsByTicker, { TQQQ: [dynamicFuture] });
     assert.equal(result.fetchedAt, observed);
     assert.equal(result.complete, false);
-  } finally { globalThis.fetch = originalFetch; clearMarketDataCache(key, 'session'); }
+  } finally { globalThis.fetch = originalFetch; clearMarketDataCache(key, 'local'); }
 });
 
 test('QQUP stays in the registry while authoritative discovery drives absence, unknown, and reappearance', async () => {
@@ -96,17 +97,47 @@ test('QQUP stays in the registry while authoritative discovery drives absence, u
   }
 });
 
-test('open Scanner state expires retained evidence locally and observes the canonical market day boundary', async () => {
+test('open Scanner state keeps structural evidence through the closed weekend and observes the canonical market day boundary', async () => {
   const { nextScannerExpirationCheckAt, revalidateScannerExpirationState } = await import('../src/lib/scannerUpdateState.ts');
-  const observed = now - 8 * hour + 60000;
-  const state = buildExpirationState({ TQQQ: [future] }, 'partial', [], 'retained', { TQQQ: observed }, new Date(now));
-  assert.equal(nextScannerExpirationCheckAt(state, now), now + 60000);
-  const expired = revalidateScannerExpirationState(state, new Date(now + 60000));
+  const observed = Date.parse('2026-09-18T21:00:00Z');
+  const saturday = Date.parse('2026-09-19T18:00:00Z');
+  const state = buildExpirationState({ TQQQ: [future] }, 'complete', [], 'retained', { TQQQ: observed }, new Date(saturday));
+  assert.deepEqual(state.availability, { TQQQ: [future] });
+  assert.equal(nextScannerExpirationCheckAt(state, saturday), Date.parse('2026-09-20T04:00:00Z'));
+  const monday = revalidateScannerExpirationState(state, new Date('2026-09-21T14:00:00Z'));
+  assert.deepEqual(monday.availability, { TQQQ: [future] });
+  const expired = revalidateScannerExpirationState(state, new Date('2026-09-24T14:00:00Z'));
   assert.deepEqual(expired.availability, {});
-  assert.equal(nextScannerExpirationCheckAt(expired, now + 60000), null);
+  assert.equal(nextScannerExpirationCheckAt(expired, Date.parse('2026-09-24T14:00:00Z')), null);
   const beforeDstMidnight = Date.parse('2026-11-02T04:30:00Z');
   const dstState = buildExpirationState({ TQQQ: [future] }, 'complete', [], null, { TQQQ: beforeDstMidnight }, new Date(beforeDstMidnight));
   assert.equal(nextScannerExpirationCheckAt(dstState, beforeDstMidnight), Date.parse('2026-11-02T05:00:00Z'));
+});
+
+test('Friday optionability keeps its original observation across weekend, expires only past dates, and revalidates in the next session', async () => {
+  const { isTrustedOptionAvailabilityObservation, optionAvailabilityNeedsRevalidation } = await import('../src/lib/optionAvailability.ts');
+  const friday = Date.parse('2026-09-18T21:00:00Z');
+  const saturday = Date.parse('2026-09-19T18:00:00Z');
+  const sunday = Date.parse('2026-09-20T18:00:00Z');
+  const mondayPreOpen = Date.parse('2026-09-21T13:00:00Z');
+  const mondayOpen = Date.parse('2026-09-21T14:00:00Z');
+  const fridayExpiration = Date.parse('2026-09-18T00:00:00Z') / 1000;
+  const futureExpiration = Date.parse('2026-10-16T00:00:00Z') / 1000;
+  const source = payload({ TQQQ: [fridayExpiration, futureExpiration] }, { fetchedAt: friday, complete: true });
+  for (const asOf of [saturday, sunday, mondayPreOpen]) {
+    const result = normalizeScreenerExpirationAvailability(source, false, asOf);
+    assert.deepEqual(result.expirationsByTicker, { TQQQ: [futureExpiration] });
+    assert.equal(result.observedAtByTicker.TQQQ, friday);
+    assert.equal(eligible(result, 'TQQQ'), true);
+    assert.equal(isTrustedOptionAvailabilityObservation(friday, asOf), true);
+    assert.equal(optionAvailabilityNeedsRevalidation(friday, asOf), false);
+  }
+  assert.equal(optionAvailabilityNeedsRevalidation(friday, mondayOpen), true);
+  assert.equal(optionAvailabilityNeedsRevalidation(mondayOpen, Date.parse('2026-09-21T21:00:00Z')), false, 'same-session after-hours remains quiet');
+  const failed = normalizeScreenerExpirationAvailability(source, true, mondayOpen);
+  assert.deepEqual(failed.expirationsByTicker, { TQQQ: [futureExpiration] });
+  assert.equal(failed.observedAtByTicker.TQQQ, friday);
+  assert.equal(failed.complete, false);
 });
 
 test('normalized ticker keys preserve successes and a mixed-case authoritative negative overrides retention', () => {

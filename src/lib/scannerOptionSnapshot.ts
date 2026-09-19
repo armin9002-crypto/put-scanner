@@ -3,6 +3,7 @@ import type { DataFreshness } from './marketDataRequest';
 import { isAbortError } from './marketDataRequest.ts';
 import { isOptionContractIntegrityInvalid } from './optionMarketIntegrity.ts';
 import { calculateDte } from './optionMetrics.ts';
+import { isTrustedOptionAvailabilityObservation } from './optionAvailability.ts';
 import { exactOptionTradeSessionAge } from './usMarketCalendar.ts';
 
 export type SnapshotConfidence = 'high' | 'normal' | 'reduced' | 'low';
@@ -97,7 +98,6 @@ const EXPIRATION_CACHE_KEY = 'scanner_option_expirations_v1';
 const DIAGNOSTIC_CACHE_KEY = 'scanner_option_snapshot_diagnostics_v2';
 export const SCANNER_OPTION_SNAPSHOT_TTL = 8 * 60 * 60 * 1000;
 export const SCANNER_OPTION_SNAPSHOT_HARD_TTL = 24 * 60 * 60 * 1000;
-export const SCANNER_EXPIRATION_METADATA_TTL = 12 * 60 * 60 * 1000;
 
 const CONFIDENCE_ORDER: SnapshotConfidence[] = ['low', 'reduced', 'normal', 'high'];
 const LIQUIDITY_LABEL_ORDER: Array<Exclude<ScannerLiquidityLabel, 'unavailable'>> = ['illiquid', 'thin', 'medium', 'liquid', 'very_liquid'];
@@ -816,7 +816,7 @@ export function getCachedScannerExpirations(ticker: string): number[] | null {
   const cached = readRecord<CachedScannerExpirations>(EXPIRATION_CACHE_KEY)[ticker.trim().toUpperCase()];
   if (!cached || !Array.isArray(cached.dates)) return null;
   const updatedAt = Date.parse(cached.updatedAt);
-  if (!Number.isFinite(updatedAt) || Date.now() - updatedAt > SCANNER_EXPIRATION_METADATA_TTL) return null;
+  if (!Number.isFinite(updatedAt) || !isTrustedOptionAvailabilityObservation(updatedAt)) return null;
   return cached.dates.filter(Number.isFinite);
 }
 
@@ -824,7 +824,9 @@ export function getAllCachedScannerExpirations(): Record<string, number[]> {
   const cached = readRecord<CachedScannerExpirations>(EXPIRATION_CACHE_KEY);
   return Object.fromEntries(Object.entries(cached).map(([ticker, entry]) => [
     ticker,
-    Array.isArray(entry?.dates) ? entry.dates.filter(date => Number.isFinite(date) && (calculateCalendarDte(date) ?? -1) > 0) : [],
+    Array.isArray(entry?.dates) && isTrustedOptionAvailabilityObservation(Date.parse(entry.updatedAt))
+      ? entry.dates.filter(date => Number.isFinite(date) && (calculateCalendarDte(date) ?? -1) > 0)
+      : [],
   ]));
 }
 

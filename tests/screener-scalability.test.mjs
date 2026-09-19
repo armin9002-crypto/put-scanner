@@ -121,6 +121,18 @@ test('batch planning is deterministic and only structural expiration changes alt
   assert.deepEqual(all[1].selectedTickers, ['TQQQ']);
 });
 
+test('an explicit Screener scan remains runnable on a closed market session', async () => {
+  const result = await runScreenerBatchScan({
+    scanId: 'closed-session-screener-fixture',
+    selectedTickers: ['TQQQ'],
+    expFilter: 'all',
+    fetchBatch: async plan => ({ payload: batchPayload(plan), meta: networkMeta }),
+  });
+  assert.equal(result.completedBatches, 1);
+  assert.equal(result.failedBatchIds.length, 0);
+  assert.equal(result.initialResults.has('TQQQ'), true);
+});
+
 test('server batch reuses initial options for realized-vol context, isolates failures, and caps Yahoo concurrency at three', async () => {
   const startedAt = Date.now();
   let active = 0;

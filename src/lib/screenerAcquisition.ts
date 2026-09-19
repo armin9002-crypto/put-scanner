@@ -18,13 +18,20 @@ import {
 import type { OptionsChainData, OptionChainSource } from './types.ts';
 import { normalizeOptionChainData } from './yahooOptionAdapter.ts';
 import { calculateDte } from './optionMetrics.ts';
-import { normalizeAvailabilityTickers, OPTION_AVAILABILITY_HARD_TTL_MS, trustedListedExpirations } from './optionAvailability.ts';
+import {
+  isTrustedOptionAvailabilityObservation,
+  normalizeAvailabilityTickers,
+  OPTION_AVAILABILITY_CACHE_HARD_TTL_MS,
+  optionAvailabilityNeedsRevalidation,
+  trustedListedExpirations,
+} from './optionAvailability.ts';
+import { isUsEquityRegularSession } from './usMarketCalendar.ts';
 
 const SCREENER_DATASET_VERSION = 4;
 const BATCH_SOFT_TTL_MS = 5 * 60 * 1_000;
 const BATCH_HARD_TTL_MS = 45 * 60 * 1_000;
 const EXPIRATION_SOFT_TTL_MS = 2 * 60 * 60 * 1_000;
-const EXPIRATION_HARD_TTL_MS = OPTION_AVAILABILITY_HARD_TTL_MS;
+const EXPIRATION_HARD_TTL_MS = OPTION_AVAILABILITY_CACHE_HARD_TTL_MS;
 
 interface BatchTickerPayload {
   ticker: string;
@@ -538,29 +545,41 @@ export async function retryFailedScreenerBatches(options: {
   };
 }
 
-async function fetchScreenerExpirationPayload(options: { signal?: AbortSignal } = {}): Promise<ScreenerExpirationPayload & { staleFallbackUsed: boolean }> {
+async function fetchScreenerExpirationPayload(options: { signal?: AbortSignal; nowMs?: number } = {}): Promise<ScreenerExpirationPayload & { staleFallbackUsed: boolean }> {
   const key = `screener_expirations_v${SCREENER_DATASET_VERSION}`;
   const cacheOptions = {
     key,
     softTtlMs: EXPIRATION_SOFT_TTL_MS,
     hardTtlMs: EXPIRATION_HARD_TTL_MS,
     schemaVersion: SCREENER_DATASET_VERSION,
-    storage: 'session' as const,
+    storage: 'local' as const,
     validator: isExpirationPayload,
   };
   const cached = peekMarketData<ScreenerExpirationPayload>(cacheOptions);
+  const nowMs = options.nowMs ?? Date.now();
+  const sessionRevalidationDue = optionAvailabilityNeedsRevalidation(cached?.data.fetchedAt, nowMs);
+  const bypassHttpCache = isUsEquityRegularSession(nowMs) && sessionRevalidationDue;
   const result = await requestMarketData<ScreenerExpirationPayload>({
     ...cacheOptions,
     source: 'Screener:expirations',
     endpoint: 'screener-expirations',
-    mode: cached && (!cached.data.complete || cached.meta.freshness !== 'fresh'
-      || Date.now() - cached.data.fetchedAt >= EXPIRATION_SOFT_TTL_MS) ? 'revalidate' : 'cache-first',
+    // Structural availability is quiet overnight/weekend; revalidate only when a new
+    // regular session is open. The generic cache still provides bounded persistence.
+    mode: sessionRevalidationDue ? 'revalidate' : 'cache-first',
     signal: options.signal,
     priority: 'background_reuse',
     allowStaleOnError: true,
     timeoutMs: 45_000,
     fetcher: async signal => {
-      const response = await fetchObservedMarketData('screener-expirations', `/api/screener-expirations?v=${SCREENER_DATASET_VERSION}`, { signal }, 'Screener:expirations');
+      const query = new URLSearchParams({ v: String(SCREENER_DATASET_VERSION) });
+      if (bypassHttpCache) {
+        query.set('fresh', '1');
+        query.set('_', String(Date.now()));
+      }
+      const response = await fetchObservedMarketData('screener-expirations', `/api/screener-expirations?${query}`, {
+        ...(bypassHttpCache ? { cache: 'no-store' as RequestCache } : {}),
+        signal,
+      }, 'Screener:expirations');
       if (!response.ok) throw responseError(response, `Screener expirations failed (${response.status})`);
       const payload = await response.json() as ScreenerExpirationPayload;
       return retainScreenerExpirationEvidence(payload, cached?.data);
@@ -569,9 +588,9 @@ async function fetchScreenerExpirationPayload(options: { signal?: AbortSignal } 
   return { ...result.data, staleFallbackUsed: result.meta.staleFallbackUsed };
 }
 
-export async function fetchScreenerExpirationAvailability(options: { signal?: AbortSignal } = {}): Promise<ScreenerExpirationAvailability> {
+export async function fetchScreenerExpirationAvailability(options: { signal?: AbortSignal; nowMs?: number } = {}): Promise<ScreenerExpirationAvailability> {
   const payload = await fetchScreenerExpirationPayload(options);
-  return normalizeScreenerExpirationAvailability(payload, payload.staleFallbackUsed);
+  return normalizeScreenerExpirationAvailability(payload, payload.staleFallbackUsed, options.nowMs ?? Date.now());
 }
 
 /** Keep provider observation time authoritative even when an HTTP cache returns an older payload. */
@@ -581,23 +600,21 @@ export function normalizeScreenerExpirationAvailability(
   nowMs = Date.now(),
 ): ScreenerExpirationAvailability {
   payload = { ...payload, expirationsByTicker: normalizeAvailabilityTickers(payload.expirationsByTicker) };
-  const expired = !Number.isFinite(payload.fetchedAt) || payload.fetchedAt > nowMs
-    || nowMs - payload.fetchedAt >= EXPIRATION_HARD_TTL_MS;
-  const expirationsByTicker = Object.fromEntries(Object.entries(payload.expirationsByTicker).filter(([ticker, values]) =>
-    !expired && trustedListedExpirations(payload.expirationsByTicker, ticker, payload.errors) != null
-    // Failed refreshes may retain bounded positive evidence, never stale negatives.
-    && (!staleFallbackUsed || values.some(value => (calculateDte(value, nowMs) ?? -1) > 0)),
-  ).map(([ticker, values]) => [
+  const expired = !isTrustedOptionAvailabilityObservation(payload.fetchedAt, nowMs);
+  const expirationsByTicker = Object.fromEntries(Object.entries(payload.expirationsByTicker).filter(([ticker, values]) => {
+    if (expired || trustedListedExpirations(payload.expirationsByTicker, ticker, payload.errors) == null) return false;
+    // A failed refresh may retain positive evidence, never stale authoritative negatives.
+    return !staleFallbackUsed || values.some(value => (calculateDte(value, nowMs) ?? -1) > 0);
+  }).map(([ticker, values]) => [
     ticker.trim().toUpperCase(),
-    [...new Set(values.filter(value => Number.isInteger(value) && value > 0
-      && (!staleFallbackUsed || (calculateDte(value, nowMs) ?? -1) > 0)))].sort((a, b) => a - b),
+    [...new Set(values.filter(value => Number.isInteger(value) && value > 0 && (calculateDte(value, nowMs) ?? -1) > 0))].sort((a, b) => a - b),
   ]));
   const observedAtByTicker = Object.fromEntries(Object.keys(expirationsByTicker).map(ticker => [ticker, payload.fetchedAt]));
   const retainedTickers = new Set<string>();
   for (const [ticker, evidence] of Object.entries(payload.retainedExpirationsByTicker ?? {})) {
     // A current authoritative response, including [], always supersedes retention.
     if (Object.prototype.hasOwnProperty.call(expirationsByTicker, ticker) || !Number.isFinite(evidence.fetchedAt)
-      || evidence.fetchedAt > nowMs || nowMs - evidence.fetchedAt >= EXPIRATION_HARD_TTL_MS) continue;
+      || !isTrustedOptionAvailabilityObservation(evidence.fetchedAt, nowMs)) continue;
     const dates = trustedListedExpirations({ [ticker]: evidence.dates }, ticker)?.filter(date => (calculateDte(date, nowMs) ?? -1) > 0);
     if (!dates?.length) continue;
     expirationsByTicker[ticker] = dates;
@@ -612,7 +629,7 @@ export function normalizeScreenerExpirationAvailability(
     refreshErrors: payload.errors,
     observedAtByTicker,
     fetchedAt: payload.fetchedAt,
-    retentionReason: expired ? 'Expiration availability evidence expired.'
+    retentionReason: expired ? 'Expiration availability evidence exceeded the market-session retention bound.'
       : staleFallbackUsed || retainedTickers.size > 0 ? 'Availability refresh failed; recent confirmed expirations retained.' : null,
   };
 }

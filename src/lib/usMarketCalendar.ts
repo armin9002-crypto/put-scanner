@@ -7,6 +7,15 @@ import { normalizeMarketTimestamp } from './marketTimestamp.ts';
 
 const DAY_MS = 86_400_000;
 const holidayCache = new Map<number, Set<string>>();
+const EASTERN_MARKET_CLOCK = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
 
 /**
  * Versioned, static full-day U.S. equity closures that are not recurring
@@ -166,6 +175,16 @@ export function isUsEquityTradingSession(value: string | Date): boolean {
   if (!date) return false;
   const weekday = date.getUTCDay();
   return weekday !== 0 && weekday !== 6 && !isUsEquityMarketHoliday(date);
+}
+
+/** True only during the regular 09:30–16:00 America/New_York equity session. */
+export function isUsEquityRegularSession(value: MarketDateInput): boolean {
+  const date = value instanceof Date ? value : new Date(typeof value === 'number' ? value : value);
+  if (!Number.isFinite(date.getTime())) return false;
+  const parts = Object.fromEntries(EASTERN_MARKET_CLOCK.formatToParts(date).map(part => [part.type, part.value]));
+  const sessionDate = `${parts.year}-${parts.month}-${parts.day}`;
+  const minutes = Number(parts.hour) * 60 + Number(parts.minute);
+  return isUsEquityTradingSession(sessionDate) && minutes >= 9 * 60 + 30 && minutes < 16 * 60;
 }
 
 export function elapsedUsEquityTradingSessions(from: string | Date, to: string | Date): number {

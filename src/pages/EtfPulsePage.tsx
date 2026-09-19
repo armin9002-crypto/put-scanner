@@ -2,7 +2,8 @@ import { uiTextCssPx } from '../lib/uiTextSizePreference';
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Activity, AlertTriangle, Info, Loader2, RefreshCw, X, SlidersHorizontal, ChevronDown } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
-import { buildEtfPulseRows, getEtfPulseUniverse, type EtfPulseLoadResult, type EtfPulseProgress } from '../lib/etfPulseData';
+import { buildEtfPulseRows, filterEtfPulseOpportunityRows, getEtfPulseUniverse, type EtfPulseLoadResult, type EtfPulseProgress } from '../lib/etfPulseData';
+import { fetchScreenerExpirationAvailability, type ScreenerExpirationAvailability } from '../lib/screenerAcquisition';
 import type { EtfPulseRow } from '../lib/etfPulseMetrics';
 import { getReturnForPeriod, heatmapTileStyle, matchesTrend, sortValue, trendStyle, type PulseSortField, type TrendFilter, type VisualPeriod } from '../lib/etfPulseViewModel';
 import { formatCurrency, formatPercent } from '../lib/format';
@@ -629,6 +630,8 @@ export default function EtfPulsePage() {
   const { isPhone } = useResponsiveMode();
   const location = useLocation();
   const [result, setResult] = useState<EtfPulseLoadResult | null>(null);
+  const [optionability, setOptionability] = useState<ScreenerExpirationAvailability | null>(null);
+  const [optionabilityError, setOptionabilityError] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [progress, setProgress] = useState<EtfPulseProgress>({ loaded: 0, total: getEtfPulseUniverse().length });
@@ -668,16 +671,28 @@ export default function EtfPulsePage() {
     const requestGeneration = ++requestGenerationRef.current;
     setLoading(true);
     setError('');
+    setOptionabilityError('');
     setProgress({ loaded: 0, total: getEtfPulseUniverse().length, phase: 'acquiring' });
     try {
-      const next = await buildEtfPulseRows({
-        forceRefresh,
-        signal: controller.signal,
-        onProgress: progress => {
-          if (requestGeneration === requestGenerationRef.current) setProgress(progress);
-        },
-      });
+      const [pulseResult, availabilityResult] = await Promise.allSettled([
+        buildEtfPulseRows({
+          forceRefresh,
+          signal: controller.signal,
+          onProgress: progress => {
+            if (requestGeneration === requestGenerationRef.current) setProgress(progress);
+          },
+        }),
+        fetchScreenerExpirationAvailability({ signal: controller.signal }),
+      ]);
+      if (pulseResult.status === 'rejected') throw pulseResult.reason;
       if (requestGeneration !== requestGenerationRef.current) return;
+      const next = pulseResult.value;
+      if (availabilityResult.status === 'fulfilled') {
+        setOptionability(availabilityResult.value);
+      } else if ((availabilityResult.reason as { name?: unknown })?.name !== 'AbortError') {
+        setOptionability(null);
+        setOptionabilityError('Leveraged ETF rows are hidden until listed put availability is confirmed.');
+      }
       setResult(next);
       setProgress({ loaded: next.currentRows ?? next.loaded, total: next.total, phase: 'processing' });
     } catch (err) {
@@ -695,6 +710,7 @@ export default function EtfPulsePage() {
   }, [loadRows]);
 
   const rows = useMemo(() => result?.rows ?? [], [result]);
+  const opportunityRows = useMemo(() => filterEtfPulseOpportunityRows(rows, optionability), [optionability, rows]);
   const regime = useMemo(() => result && result.rows.length > 0 ? deriveMarketRegime({
     rows: result.rows,
     total: result.total,
@@ -720,7 +736,7 @@ export default function EtfPulsePage() {
 
   const filteredRows = useMemo(() => {
     const query = search.trim().toLowerCase();
-    const filtered = rows.filter(row => {
+    const filtered = opportunityRows.filter(row => {
       const searchMatch = !query || row.ticker.toLowerCase().includes(query) || row.name.toLowerCase().includes(query) || row.underlying.toLowerCase().includes(query);
       return searchMatch &&
         (leverageFilter === 'All' || row.leverage === leverageFilter) &&
@@ -737,7 +753,7 @@ export default function EtfPulsePage() {
       if (typeof aValue === 'string' || typeof bValue === 'string') return String(aValue).localeCompare(String(bValue)) * direction;
       return (aValue - bValue) * direction;
     });
-  }, [leverageFilter, rows, search, sort, trendFilter, typeFilter]);
+  }, [leverageFilter, opportunityRows, search, sort, trendFilter, typeFilter]);
   const pulseFilterCount = [search.trim() !== '', leverageFilter !== 'All', typeFilter !== 'All', trendFilter !== 'All'].filter(Boolean).length;
   const sortLabel = sort.field === 'ticker' ? 'Ticker' : sort.field === 'oneDay' ? '1D return' : sort.field === 'thirtyDay' ? '30D return' : sort.field === 'threeMonth' ? '3M return' : sort.field === 'rsi14' ? 'RSI' : sort.field === 'realizedVolatility20' ? '20D volatility' : sort.field === 'drawdown52Week' ? '52W drawdown' : 'Trend';
   const selectedPerformanceColumn = ({ '1D': 'oneDay', '5D': 'fiveDay', '30D': 'thirtyDay', '3M': 'threeMonth', '6M': 'sixMonth', YTD: 'yearToDate', '1Y': 'oneYear' } as const)[selectedVisualPeriod];
@@ -1018,6 +1034,11 @@ export default function EtfPulsePage() {
           {error && (
             <div className="flex items-center gap-2 rounded-lg px-3 py-2 mb-2 text-xs" style={{ backgroundColor: 'rgba(239,68,68,0.10)', color: 'var(--red)', border: '1px solid rgba(239,68,68,0.24)' }}>
               <AlertTriangle className="w-3.5 h-3.5" /> {error}
+            </div>
+          )}
+          {optionabilityError && (
+            <div className="flex items-center gap-2 rounded-lg px-3 py-2 mb-2 text-xs" style={{ backgroundColor: 'rgba(250,204,21,0.10)', color: 'var(--yellow)', border: '1px solid rgba(250,204,21,0.22)' }}>
+              <AlertTriangle className="w-3.5 h-3.5" /> {optionabilityError}
             </div>
           )}
           {result && ((result.retainedRows ?? 0) > 0 || (result.unavailableRows ?? result.failed) > 0 || result.errors.length > 0) && (

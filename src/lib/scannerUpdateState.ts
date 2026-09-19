@@ -1,5 +1,5 @@
 import { calculateCalendarDte, getAllCachedScannerExpirations, type ScannerSnapshotDiagnostic, type ScannerSnapshotUpdateOutcome } from './scannerOptionSnapshot.ts';
-import { normalizeAvailabilityTickers, OPTION_AVAILABILITY_HARD_TTL_MS, trustedListedExpirations } from './optionAvailability.ts';
+import { isTrustedOptionAvailabilityObservation, normalizeAvailabilityTickers, trustedListedExpirations } from './optionAvailability.ts';
 import { usMarketDateIso } from '../../shared/marketDate.js';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -39,15 +39,15 @@ export function buildExpirationState(
   // Per-ticker successes survive partial coverage; explicit ticker/global errors do not.
   const normalized = normalizeAvailabilityTickers(availability);
   const isCurrent = (ticker: string) => observedAtByTicker == null || (
-    Number.isFinite(observedAtByTicker[ticker]) && observedAtByTicker[ticker] <= now.getTime()
-    && now.getTime() - observedAtByTicker[ticker] < OPTION_AVAILABILITY_HARD_TTL_MS
+    Number.isFinite(observedAtByTicker[ticker])
+    && isTrustedOptionAvailabilityObservation(observedAtByTicker[ticker], now.getTime())
   );
-  availability = Object.fromEntries(Object.entries(normalized).filter(([ticker]) =>
-    trustedListedExpirations(normalized, ticker, errors) != null && isCurrent(ticker),
-  ));
+  availability = Object.fromEntries(Object.entries(normalized)
+    .filter(([ticker]) => trustedListedExpirations(normalized, ticker, errors) != null && isCurrent(ticker))
+    .map(([ticker, dates]) => [ticker, dates.filter(date => (calculateCalendarDte(date, now) ?? -1) > 0)]));
   if (Object.keys(normalized).some(ticker => !isCurrent(ticker))) {
     coverage = 'partial';
-    retentionReason = 'Expiration availability evidence expired.';
+    retentionReason = 'Expiration availability evidence exceeded the market-session retention bound.';
   }
   const expirationMap = new Map<number, { date: number; label: string; dte: number }>();
   Object.values(availability).flat().forEach(date => {
@@ -64,13 +64,11 @@ export function buildExpirationState(
   };
 }
 
-/** One local deadline; no provider polling. Also re-evaluate DTE at the next market-date boundary. */
+/** One local date-boundary check; no provider polling. Also re-evaluate DTE locally. */
 export function nextScannerExpirationCheckAt(state: CachedExpirationState, nowMs = Date.now()): number | null {
-  const deadlines = Object.keys(state.availability).map(ticker =>
-    (state.observedAtByTicker?.[ticker] ?? NaN) + OPTION_AVAILABILITY_HARD_TTL_MS,
-  ).filter(deadline => Number.isFinite(deadline) && deadline > nowMs);
-  if (deadlines.length === 0) return null;
+  if (Object.keys(state.availability).length === 0) return null;
   const marketDate = usMarketDateIso(nowMs);
+  if (!marketDate) return null;
   let low = nowMs;
   let high = nowMs + 26 * 60 * 60 * 1_000;
   // Search using the canonical market calendar, including DST transitions.
@@ -79,7 +77,7 @@ export function nextScannerExpirationCheckAt(state: CachedExpirationState, nowMs
     if (usMarketDateIso(middle) === marketDate) low = middle;
     else high = middle;
   }
-  return Math.min(...deadlines, high);
+  return high;
 }
 
 export function revalidateScannerExpirationState(state: CachedExpirationState, now = new Date()): CachedExpirationState {

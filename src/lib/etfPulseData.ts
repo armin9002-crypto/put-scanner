@@ -3,10 +3,12 @@ import type { ETFInfo } from './types.ts';
 import type { ChartPoint } from './chartHistory.ts';
 import { fetchObservedMarketData, recordRequestDiagnostic } from './requestDiagnostics.ts';
 import { isAbortError } from './marketDataRequest.ts';
-import { ETF_PULSE_TICKERS } from '../../shared/etfPulseUniverse.js';
+import { ETF_PULSE_LEVERAGED_TICKERS, ETF_PULSE_TICKERS } from '../../shared/etfPulseUniverse.js';
 import { ETF_PULSE_SYMBOLS } from '../../shared/symbolRegistry.js';
 import { isUnderlyingTechnicalAssessment } from './underlyingTechnical.ts';
 import type { EvidenceFreshness } from './evidence.ts';
+import { hasTrustedFutureListedPutExpiration } from './optionAvailability.ts';
+import type { ScreenerExpirationAvailability } from './screenerAcquisition.ts';
 
 export interface EtfPulseRowEvidence {
   freshness: EvidenceFreshness;
@@ -45,6 +47,17 @@ export const ETF_PULSE_ROW_CACHE_HARD_TTL_MS = 24 * 60 * 60 * 1000;
 export const ETF_PULSE_CURRENTNESS_MAX_AGE_MS = ETF_PULSE_ROW_CACHE_SOFT_TTL_MS;
 
 export type EtfPulseRefreshIntent = 'pulse' | 'recommendations';
+
+/** Keep context benchmarks visible while requiring Scanner-grade optionability for leveraged rows. */
+export function filterEtfPulseOpportunityRows(
+  rows: EtfPulseRow[],
+  availability: Pick<ScreenerExpirationAvailability, 'expirationsByTicker' | 'errors'> | null,
+  now: Date | number | string = new Date(),
+): EtfPulseRow[] {
+  const leveragedTickers = new Set<string>(ETF_PULSE_LEVERAGED_TICKERS);
+  return rows.filter(row => !leveragedTickers.has(row.ticker)
+    || (availability != null && hasTrustedFutureListedPutExpiration(availability.expirationsByTicker, row.ticker, availability.errors, now)));
+}
 
 interface EtfPulseHistory {
   ticker: string;

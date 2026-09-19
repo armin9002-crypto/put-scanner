@@ -148,10 +148,10 @@ export const REQUEST_BUDGET_LEDGER: Record<RequestBudgetWorkflow, RequestBudgetL
     fixture: 'calculator and quote-basis interactions use the selected row',
   },
   'etf-pulse': {
-    expected: { browserRequests: 1, functionInvocations: 1, providerAcquisitions: PULSE_TICKER_COUNT },
-    ceiling: { browserRequests: 1, functionInvocations: 1, providerAcquisitions: PULSE_TICKER_COUNT },
-    providerHttpAttemptCeiling: PULSE_TICKER_COUNT,
-    fixture: `one aggregate dataset with ${PULSE_TICKER_COUNT} cold history acquisitions`,
+    expected: { browserRequests: 2, functionInvocations: 2, providerAcquisitions: PULSE_TICKER_COUNT + DISCOVERY_TICKER_COUNT },
+    ceiling: { browserRequests: 2, functionInvocations: 2, providerAcquisitions: PULSE_TICKER_COUNT + DISCOVERY_TICKER_COUNT },
+    providerHttpAttemptCeiling: PULSE_TICKER_COUNT + DISCOVERY_TICKER_COUNT,
+    fixture: `one aggregate dataset with ${PULSE_TICKER_COUNT} cold history acquisitions plus one canonical ${DISCOVERY_TICKER_COUNT}-ticker optionability dataset; warm availability cache hits reduce actual work`,
   },
   'recommendations-refresh': {
     expected: { browserRequests: SCREENER_BATCH_COUNT + 1, functionInvocations: SCREENER_BATCH_COUNT + 1, providerAcquisitions: PULSE_TICKER_COUNT + DISCOVERY_TICKER_COUNT * 5 },
