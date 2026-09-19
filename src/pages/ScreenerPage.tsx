@@ -27,6 +27,7 @@ import { SCREENER_CHUNKS } from '../../shared/screenerUniverse.js';
 import { buildOptionsPath, createOptionsNavigationState, resolveOptionsReturnOrigin, type OptionsNavigationState, type ScreenerOriginPresentation } from '../lib/optionsNavigation';
 import { shortPutMoneynessPresentation } from '../lib/moneynessPresentation';
 import { useBlockingOverlayBehavior } from '../lib/blockingOverlay';
+import { formatScreenerDelta } from '../lib/screenerPresentation';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 const FULL_SCAN_BATCH_COUNT = SCREENER_CHUNKS.length;
@@ -793,9 +794,9 @@ export default function ScreenerPage() {
   };
   const baseColumns: ScreenerColumn[] = [
     { field: 'ticker', label: 'Symbol', align: 'text-left' },
-    { field: 'price', label: 'Price', align: 'text-right', hideOnMobile: true },
     { field: 'expDate', label: 'Exp Date', align: 'text-right' },
     { field: 'strike', label: 'Strike', align: 'text-right' },
+    { field: 'price', label: 'Price', align: 'text-right', hideOnMobile: true },
     { field: 'moneyness', label: 'Moneyness', align: 'text-right', hideOnMobile: true },
     { field: 'delta', label: 'Delta', align: 'text-right' },
     ...OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => quoteColumns[field]),
@@ -877,7 +878,7 @@ export default function ScreenerPage() {
         {hasStructuralCriteriaChanged && <div role="status" className="border-b px-3.5 py-2 text-[11px]" style={{ borderColor: 'var(--border)', color: 'var(--yellow)', backgroundColor: 'rgba(250,204,21,0.08)' }}>ETF or expiration changed since the last Load. Run Screener to refresh the dataset.</div>}
 
         {loadError && !loading && !loaded ? <div className="screener-mobile-state screener-mobile-state--error px-6 text-center"><AlertTriangle className="mx-auto mb-3 h-6 w-6" style={{ color: 'var(--red)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Screener load failed</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>{loadError}</p><button type="button" onClick={() => void handleLoad()} className="mobile-sheet-action secondary mt-4"><RefreshCw className="h-4 w-4" /> Retry</button></div> : !loaded && !loading ? <div className="screener-mobile-state screener-mobile-state--ready px-6 text-center"><Search className="mx-auto mb-3 h-6 w-6" style={{ color: 'var(--text-dim)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Ready to screen</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Choose criteria, then run the screener.</p></div> : loaded && sortedRows.length === 0 ? <div className="screener-mobile-state screener-mobile-state--empty px-6 text-center"><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>{noMatchTitle}</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>{noMatchDescription}</p><button type="button" onClick={() => setMobileFiltersOpen(true)} className="mobile-sheet-action secondary mt-4">Adjust filters</button></div> : (
-          <div className="mobile-financial-list">{sortedRows.map(row => <MobileOptionRow key={`${row.ticker}-${row.expDate}-${row.strike}`} ticker={row.ticker} tickerTo={buildOptionsPath(row.ticker, row.expDate)} tickerNavigationState={optionsNavigationState} onTickerNavigate={rememberScreenerNavigation} strike={row.strike} expirationLabel={row.expLabel} dte={row.dte} bid={row.bid} ask={row.ask} last={row.last} lastTradeDate={row.lastTradeDate} annualYield={row.annYieldBid} annYieldLast={row.annYieldLast} annYieldAsk={row.annYieldAsk} delta={row.delta} deltaSource={row.deltaSource} deltaModelVersion={row.deltaSource === 'calculated' ? CALCULATED_PUT_DELTA_MODEL.version : null} impliedVolatility={row.iv} openInterest={row.openInterest} moneynessLabel={row.moneynessLabel} moneynessColor={row.moneynessColor} moneynessState={row.moneynessState} integrityStatus={row.integrityStatus} denseQuoteView statusText={`Vol ${formatNumber(row.volume)} · OI ${formatNumber(row.openInterest)}`} onSelect={() => setSelectedOption({ option: optionDetailFromScreenerRow(row), ticker: row.ticker, expirationLabel: row.expLabel, dte: row.dte, underlyingPrice: row.currentPrice != null && row.currentPrice > 0 ? row.currentPrice : null })} />)}</div>
+          <div className="mobile-financial-list">{sortedRows.map(row => <MobileOptionRow key={`${row.ticker}-${row.expDate}-${row.strike}`} ticker={row.ticker} tickerTo={buildOptionsPath(row.ticker, row.expDate)} tickerNavigationState={optionsNavigationState} onTickerNavigate={rememberScreenerNavigation} strike={row.strike} expirationLabel={row.expLabel} dte={row.dte} bid={row.bid} ask={row.ask} last={row.last} lastTradeDate={row.lastTradeDate} annualYield={row.annYieldBid} annYieldLast={row.annYieldLast} annYieldAsk={row.annYieldAsk} delta={row.delta} deltaSource={row.deltaSource} deltaModelVersion={row.deltaSource === 'calculated' ? CALCULATED_PUT_DELTA_MODEL.version : null} deltaFormatter={formatScreenerDelta} impliedVolatility={row.iv} openInterest={row.openInterest} moneynessLabel={row.moneynessLabel} moneynessColor={row.moneynessColor} moneynessState={row.moneynessState} integrityStatus={row.integrityStatus} denseQuoteView statusText={`Vol ${formatNumber(row.volume)} · OI ${formatNumber(row.openInterest)}`} onSelect={() => setSelectedOption({ option: optionDetailFromScreenerRow(row), ticker: row.ticker, expirationLabel: row.expLabel, dte: row.dte, underlyingPrice: row.currentPrice != null && row.currentPrice > 0 ? row.currentPrice : null })} />)}</div>
         )}
 
         {mobileFiltersOpen && <MobileBottomSheet title="Screener filters" description="Define the contracts you want to find" onClose={() => setMobileFiltersOpen(false)} footer={<div className="grid grid-cols-2 gap-2"><button type="button" onClick={resetFilters} className="mobile-sheet-action secondary">Reset</button><button type="button" onClick={() => setMobileFiltersOpen(false)} className="mobile-sheet-action primary">Done</button></div>}>
@@ -924,6 +925,7 @@ export default function ScreenerPage() {
             <ChevronDown className={`h-4 w-4 transition-transform ${mobileFiltersOpen ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} />
           </button>
 
+          <div className="screener-filter-body">
           <div id="screener-filter-controls" className={`screener-filter-controls grid grid-cols-1 min-[430px]:grid-cols-2 sm:grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-2 ${mobileFiltersOpen ? 'is-open' : ''}`}>
             {/* ETF Selector */}
             <div className="screener-filter-field screener-filter-field--structural w-full sm:min-w-[180px] sm:w-auto min-w-0 min-[430px]:col-span-2 sm:col-span-1">
@@ -1092,39 +1094,35 @@ export default function ScreenerPage() {
               </button>
             </div>
 
-            {/* VIX Chart - manual refresh only, hidden on mobile */}
-            <div className="hidden sm:block ml-auto flex-shrink-0">
-              <div className="rounded-lg p-2" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)' }}>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[10px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>VIX</span>
-                  <button type="button" onClick={loadVix} disabled={vixLoading} className="p-0.5 rounded transition-opacity hover:opacity-70 disabled:opacity-50" aria-label="Refresh VIX market data">
-                    <RefreshCw className={`w-3 h-3 ${vixLoading ? 'animate-spin' : ''}`} style={{ color: 'var(--text-muted)' }} />
-                  </button>
-                </div>
-                {vixLoading && !vixData ? (
-                  <div className="flex items-center justify-center" style={{ width: 120, height: 36 }}>
-                    <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--text-muted)' }} />
-                  </div>
-                ) : vixData ? (
-                  <>
-                    <SparklineChart data={vixData.sparkline} color={vixLineColor} width={120} height={36} />
-                    <div className="flex items-center justify-between mt-1">
-                      <span className="text-xs font-mono font-semibold" style={{ color: 'var(--text)' }}>
-                        {vixData.price.toFixed(2)}
-                      </span>
-                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ color: vixStatus.color, backgroundColor: `${vixStatus.color}15` }}>
-                        {vixStatus.text}
-                      </span>
-                    </div>
-                    <div className="text-[9px] mt-0.5" data-evidence-freshness={vixEvidenceLabel.toLowerCase().replace(/ /g, '-')} style={{ color: vixEvidenceLabel === 'Retained stale' ? 'var(--yellow)' : 'var(--text-dim)' }}>
-                      {vixEvidenceLabel} · {vixObservationLabel}
-                    </div>
-                  </>
-                ) : (
-                  <div className="flex items-center justify-center text-xs" style={{ width: 120, height: 36, color: 'var(--text-muted)' }}>N/A</div>
-                )}
-              </div>
+          </div>
+          <aside className="screener-vix-panel hidden sm:flex" aria-label="VIX market context">
+            <div className="screener-vix-panel__header">
+              <span className="text-[10px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>VIX</span>
+              <button type="button" onClick={loadVix} disabled={vixLoading} className="p-0.5 rounded transition-opacity hover:opacity-70 disabled:opacity-50" aria-label="Refresh VIX market data">
+                <RefreshCw className={`w-3 h-3 ${vixLoading ? 'animate-spin' : ''}`} style={{ color: 'var(--text-muted)' }} />
+              </button>
             </div>
+            <div className="screener-vix-panel__plot">
+              {vixLoading && !vixData ? (
+                <div className="flex h-full items-center justify-center">
+                  <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--text-muted)' }} />
+                </div>
+              ) : vixData ? (
+                <SparklineChart data={vixData.sparkline} color={vixLineColor} width={320} height={96} />
+              ) : (
+                <div className="flex h-full items-center justify-center text-xs" style={{ color: 'var(--text-muted)' }}>N/A</div>
+              )}
+            </div>
+            {vixData && <>
+              <div className="flex items-center justify-between gap-2 mt-1">
+                <span className="text-xs font-mono font-semibold" style={{ color: 'var(--text)' }}>{vixData.price.toFixed(2)}</span>
+                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ color: vixStatus.color, backgroundColor: `${vixStatus.color}15` }}>{vixStatus.text}</span>
+              </div>
+              <div className="text-[9px] mt-0.5" data-evidence-freshness={vixEvidenceLabel.toLowerCase().replace(/ /g, '-')} style={{ color: vixEvidenceLabel === 'Retained stale' ? 'var(--yellow)' : 'var(--text-dim)' }}>
+                {vixEvidenceLabel} · {vixObservationLabel}
+              </div>
+            </>}
+          </aside>
           </div>
 
           {/* Progress bar (Opt 6) */}
@@ -1294,7 +1292,7 @@ export default function ScreenerPage() {
                   </div>
                 ))}
               </div>
-              <p className="mt-2 text-[11px] font-mono" style={{ color: 'var(--text-muted)' }}>Δ {row.delta != null ? row.delta.toFixed(2) : '—'} · IV {row.iv != null ? `${row.iv.toFixed(1)}%` : '—'}</p>
+              <p className="mt-2 text-[11px] font-mono" style={{ color: 'var(--text-muted)' }}>Δ {formatScreenerDelta(row.delta)} · IV {row.iv != null ? `${row.iv.toFixed(1)}%` : '—'}</p>
               <p className="mt-1 text-[10px] font-mono" style={{ color: 'var(--text-dim)' }}>Last trade {formatOptionLastTradeDate(row.lastTradeDate)}</p>
               {showNominalYields && <p className="mt-1 text-[10px] font-mono" style={{ color: 'var(--text-secondary)' }}>NY Last {row.nomYieldLast != null ? `${row.nomYieldLast.toFixed(2)}%` : '—'} · Bid {row.nomYieldBid != null ? `${row.nomYieldBid.toFixed(2)}%` : '—'} · Ask {row.nomYieldAsk != null ? `${row.nomYieldAsk.toFixed(2)}%` : '—'}</p>}
               {showVolOI && <p className="mt-2 text-[11px] font-mono" style={{ color: 'var(--text-muted)' }}>Vol {formatNumber(row.volume)} · OI {formatNumber(row.openInterest)} · Vol/OI {row.volOI?.toFixed(2) ?? '—'}</p>}
@@ -1305,7 +1303,7 @@ export default function ScreenerPage() {
         {/* Table */}
         <div className="hidden rounded-xl overflow-hidden max-w-full md:block" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
           <div className="overflow-x-auto max-w-full overscroll-contain">
-            <table className="financial-table min-w-[560px] md:min-w-[1120px] xl:min-w-0 w-full text-xs">
+            <table className="screener-table financial-table min-w-[560px] md:min-w-[1120px] xl:min-w-0 w-full text-xs">
               <thead className="sticky top-0 z-10">
                 <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
                   {columns.map(col => (
@@ -1366,7 +1364,7 @@ export default function ScreenerPage() {
                   return (
                     <tr key={`${row.ticker}-${row.expDate}-${row.strike}`} className="transition-colors" style={{ borderBottom: '1px solid var(--border)', ...bgStyle }}>
                       <td className="screener-identity-cell px-2 py-1 text-left whitespace-nowrap sticky left-0 z-[2] border-r" style={{ borderColor: 'var(--border)', backgroundColor: bgStyle.backgroundColor || 'var(--surface)' }}>
-                        <div className="flex min-h-[44px] flex-col justify-center">
+                        <div className="flex min-h-[24px] items-center gap-1.5 whitespace-nowrap">
                           <Link
                             to={buildOptionsPath(row.ticker, row.expDate)}
                             state={optionsNavigationState}
@@ -1377,10 +1375,8 @@ export default function ScreenerPage() {
                             {row.ticker}
                           </Link>
                           {row.integrityStatus === 'invalid' && <span className="text-[9px] font-semibold" style={{ color: 'var(--yellow)' }} title={row.integrityReasonCodes?.join(', ')}>Quote inconsistent</span>}
-                          <span className="text-[9px]" style={{ color: 'var(--text-dim)' }}>{row.expLabel} · ${formatPrice(row.strike)} put</span>
                         </div>
                       </td>
-                      <td className="px-2 py-1 text-right font-mono hidden md:table-cell" style={{ color: 'var(--text)' }}>{formatPrice(row.currentPrice)}</td>
                       <td className="px-2 py-1 text-right font-mono whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{row.expLabel}</td>
                       <td className="px-2 py-1 text-right font-mono font-semibold">
                         <button
@@ -1400,11 +1396,12 @@ export default function ScreenerPage() {
                           {formatPrice(row.strike)}
                         </button>
                       </td>
+                      <td className="px-2 py-1 text-right font-mono hidden md:table-cell" style={{ color: 'var(--text)' }}>{formatPrice(row.currentPrice)}</td>
                       <td className="px-2 py-1 text-right font-mono hidden md:table-cell" style={{ color: row.moneynessColor }}>
                         {row.moneynessLabel}
                       </td>
                       <td className="px-2 py-1 text-right font-mono" style={{ color: deltaColor(row.delta) }} title={row.deltaSource === 'calculated' ? `Calculated Delta · ${CALCULATED_PUT_DELTA_MODEL.version}` : row.deltaSource === 'provider' ? 'Provider Delta' : 'Delta unavailable'}>
-                        {row.delta != null ? row.delta.toFixed(2) : '—'}
+                        {formatScreenerDelta(row.delta)}
                         <span className="sr-only"> {row.deltaSource === 'calculated' ? `Calculated Delta, ${CALCULATED_PUT_DELTA_MODEL.version}` : row.deltaSource === 'provider' ? 'Provider Delta' : 'Delta unavailable'}</span>
                       </td>
                       {OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => <td key={field} className={`px-2 py-1 text-right font-mono ${field === 'bid' ? '' : 'hidden md:table-cell'}`} style={{ color: 'var(--text)' }}>{formatOptionQuoteValue(field, row[field], formatPrice)}</td>)}

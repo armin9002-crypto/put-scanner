@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { formatOptionLastTradeDate } from '../src/lib/format.ts';
 import { formatScannerDailyChangePercent } from '../src/lib/scannerPresentation.ts';
+import { formatScreenerDelta } from '../src/lib/screenerPresentation.ts';
 import { getOptionLastTradeFreshness } from '../src/lib/optionLastTradeFreshness.ts';
 import { persistShowNominalYield, readShowNominalYield, SHOW_NOMINAL_YIELD_KEY } from '../src/lib/optionTablePreferences.ts';
 import { OPTION_QUOTE_DISPLAY_ORDER, OPTION_QUOTE_TABLE_DISPLAY_ORDER, OPTION_YIELD_DISPLAY_ORDER, orderedOptionQuoteEntries } from '../src/lib/optionQuoteDisplay.ts';
@@ -13,6 +14,25 @@ test('option last-trade dates use compact US dates with a safe fallback', () => 
   assert.equal(formatOptionLastTradeDate(null), '—');
   assert.equal(formatOptionLastTradeDate(Number.NaN), '—');
   assert.equal(formatOptionLastTradeDate(Date.parse('2026-10-16T15:45:00Z')), '—', 'future Last Trade evidence fails closed');
+});
+
+test('Screener Delta presentation uses three decimals without changing the numeric value', () => {
+  assert.equal(formatScreenerDelta(-0.1), '-0.100');
+  assert.equal(formatScreenerDelta(0.2567), '0.257');
+  assert.equal(formatScreenerDelta(null), '\u2014');
+});
+
+test('Screener identity columns and compact warning presentation stay deliberate', () => {
+  const source = readFileSync(new URL('../src/pages/ScreenerPage.tsx', import.meta.url), 'utf8');
+  const columns = source.slice(source.indexOf('const baseColumns'), source.indexOf('const volOIColumns'));
+  assert.deepEqual(
+    [...columns.matchAll(/field: '(ticker|expDate|strike|price|moneyness|delta)'/g)].map(match => match[1]),
+    ['ticker', 'expDate', 'strike', 'price', 'moneyness', 'delta'],
+  );
+  assert.match(source, /formatScreenerDelta\(row\.delta\)/);
+  assert.match(source, /deltaFormatter=\{formatScreenerDelta\}/);
+  assert.match(source, /className="flex min-h-\[24px\] items-center gap-1\.5 whitespace-nowrap"/);
+  assert.doesNotMatch(source, /\{row\.expLabel\} · \$\{formatPrice\(row\.strike\)\} put/);
 });
 
 test('desktop Scanner daily move presentation is percentage-only', () => {

@@ -118,7 +118,7 @@ function MarketChartCard({
       style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
       aria-label={`Open ${ticker} interactive price chart`}
     >
-      <div className="flex items-center justify-between gap-2 mb-1">
+      <div className="scanner-market-card__header flex items-center justify-between gap-2 mb-1">
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="text-[10px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>{ticker}</span>
           <span className="text-[9px] font-medium px-1 py-0.5 rounded" style={{ color: 'var(--text-dim)', backgroundColor: 'var(--surface-alt)' }}>1D</span>
@@ -135,30 +135,32 @@ function MarketChartCard({
           <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} style={{ color: 'var(--text-muted)' }} />
         </button>
       </div>
-      {loading && !data ? (
-        <div className="flex items-center justify-center h-[28px]">
-          <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--text-muted)' }} />
-        </div>
-      ) : data && data.sparkline.length >= 2 ? (
-        <>
+      <div className="scanner-market-card__plot">
+        {loading && !data ? (
+          <div className="flex h-full items-center justify-center">
+            <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--text-muted)' }} />
+          </div>
+        ) : data && data.sparkline.length >= 2 ? (
           <SparklineChart
             data={data.sparkline}
             color={color}
-            width={150}
-            height={48}
+            width={240}
+            height={74}
             referenceValue={chartReferenceClose(data)}
           />
-          <div className="flex items-center justify-between gap-2 mt-0.5">
-            <span className="text-xs font-mono font-semibold tabular-nums truncate" style={{ color: 'var(--text)' }}>
-              {prefix}{data.price.toFixed(2)}
-            </span>
-            <span className="text-[10px] font-mono tabular-nums whitespace-nowrap" style={{ color }}>
-              {changePct >= 0 ? '+' : ''}{changePct.toFixed(2)}%
-            </span>
-          </div>
-        </>
-      ) : (
-        <div className="flex items-center justify-center h-[28px] text-xs" style={{ color: 'var(--text-dim)' }}>Market data unavailable</div>
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-xs" style={{ color: 'var(--text-dim)' }}>Market data unavailable</div>
+        )}
+      </div>
+      {data && data.sparkline.length >= 2 && (
+        <div className="flex items-center justify-between gap-2 mt-0.5">
+          <span className="text-xs font-mono font-semibold tabular-nums truncate" style={{ color: 'var(--text)' }}>
+            {prefix}{data.price.toFixed(2)}
+          </span>
+          <span className="text-[10px] font-mono tabular-nums whitespace-nowrap" style={{ color }}>
+            {changePct >= 0 ? '+' : ''}{changePct.toFixed(2)}%
+          </span>
+        </div>
       )}
     </div>
   );
