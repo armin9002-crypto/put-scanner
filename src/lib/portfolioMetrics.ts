@@ -101,8 +101,8 @@ export function calculateOriginalDte(trade: PortfolioTrade): number | null {
   return Math.round((expiration - sold) / 86400000);
 }
 
-export function calculateRemainingDte(trade: PortfolioTrade): number | null {
-  const value = calculateDte(trade.expiration);
+export function calculateRemainingDte(trade: PortfolioTrade, asOf: number | string | Date = new Date()): number | null {
+  const value = calculateDte(trade.expiration, asOf);
   return value == null ? null : Math.max(0, value);
 }
 

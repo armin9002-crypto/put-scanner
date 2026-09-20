@@ -78,7 +78,11 @@ test('None mode contains every open trade once and reconciles unchanged overall 
     assert.equal(groups.reduce((sum, group) => sum + group.netCapitalAtRisk, 0), totals.totalNetCapitalAtRisk);
     assert.equal(groups.reduce((sum, group) => sum + group.currentValue, 0), markTotals.totalCurrentValue);
     assert.equal(groups.reduce((sum, group) => sum + group.totalGainLoss, 0), markTotals.totalGainLoss);
-    const blendedDelta = groups.reduce((sum, group) => sum + group.weightedAverageDelta * group.grossRisk, 0) / groups.reduce((sum, group) => sum + group.grossRisk, 0);
+    const deltaGroups = groups.filter(group => Number.isFinite(group.weightedAverageDelta) && group.grossRisk > 0);
+    const blendedDelta = deltaGroups.length === 0
+      ? null
+      : deltaGroups.reduce((sum, group) => sum + group.weightedAverageDelta * group.grossRisk, 0)
+        / deltaGroups.reduce((sum, group) => sum + group.grossRisk, 0);
     assert.equal(blendedDelta, markTotals.weightedAverageDelta);
   }
 });
