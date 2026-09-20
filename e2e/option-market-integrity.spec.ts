@@ -26,13 +26,13 @@ test('invalid option quotes remain auditable while executable yields fail closed
   await expect(page.locator('html')).toHaveAttribute('data-theme', display.theme);
   await expect(page.locator('html')).toHaveAttribute('data-text-size', display.textSize);
 
-  const compactRows = page.locator('.mobile-option-chain-row:not(.mobile-option-chain-row--skeleton)');
+  const compactRows = page.locator('.mobile-financial-table-row');
   const compactLayout = testInfo.project.name === 'portrait-390x844';
   if (compactLayout) {
     await expect(compactRows.first()).toBeVisible();
     const row = compactRows.filter({ hasText: '107.00' }).first();
-    await expect(row).toContainText('Quote inconsistent');
-    await expect(row.locator('[data-field="ay-bid"]')).toContainText('—');
+    await expect(row).toHaveAttribute('aria-label', /Invalid quote|Degraded quote/);
+    await expect(row.locator('th')).toHaveAttribute('title', /Invalid quote|Degraded quote/);
     await row.click();
   } else {
     const row = page.locator('.option-desktop-chain tbody tr').filter({ hasText: '107.00' }).first();

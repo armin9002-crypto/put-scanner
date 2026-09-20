@@ -19,8 +19,8 @@ import type { OptionDetail } from '../components/OptionDetailDrawer';
 import { Search, X, ChevronUp, ChevronDown, Loader2, AlertTriangle, RefreshCw, SlidersHorizontal } from 'lucide-react';
 import { useResponsiveMode } from '../lib/responsive';
 import MobileBottomSheet from '../components/mobile/MobileBottomSheet';
-import MobileOptionRow from '../components/mobile/MobileOptionRow';
-import { annualizedYieldFieldForNominal, OPTION_QUOTE_TABLE_DISPLAY_ORDER, OPTION_YIELD_DISPLAY_LABELS, formatOptionQuoteValue, isNominalYieldField, visibleOptionYieldFields, type OptionQuoteTableDisplayField, type OptionYieldDisplayField } from '../lib/optionQuoteDisplay';
+import MobileFinancialTable, { type MobileFinancialColumn } from '../components/mobile/MobileFinancialTable';
+import { annualizedYieldFieldForNominal, OPTION_QUOTE_TABLE_DISPLAY_ORDER, OPTION_YIELD_DISPLAY_LABELS, OPTION_YIELD_DISPLAY_ORDER, formatOptionQuoteValue, isNominalYieldField, visibleOptionYieldFields, type OptionQuoteTableDisplayField, type OptionYieldDisplayField } from '../lib/optionQuoteDisplay';
 import { compareNullableValue } from '../lib/metricValue';
 import { PageHeader } from '../components/ui/PageHeader';
 import { SCREENER_CHUNKS } from '../../shared/screenerUniverse.js';
@@ -278,7 +278,7 @@ function vixLabel(vix: number): { text: string; color: string } {
 // --- Component ---
 
 export default function ScreenerPage() {
-  const { isPhone } = useResponsiveMode();
+  const { isPhone, isPhoneLandscape } = useResponsiveMode();
   const location = useLocation();
 
   // Filters — default expiry to ≤30 DTE (Opt 3)
@@ -839,7 +839,27 @@ export default function ScreenerPage() {
     ? 'Some acquisition work is incomplete, so this is not proof that no qualifying contracts exist.'
     : `Loaded ${rawRowsRef.current.length.toLocaleString('en-US')} contracts before local filters.`;
 
-  if (isPhone) {
+  const mobileScreenerColumns: MobileFinancialColumn[] = [
+    { key: 'ticker', label: 'Ticker', width: 6.5 },
+    { key: 'expDate', label: 'Exp', width: 6.25 },
+    { key: 'strike', label: 'Strike', width: 6 },
+    { key: 'delta', label: 'Delta', width: 4.5 },
+    { key: 'annYieldLast', label: 'AY Last', width: 5 },
+    { key: 'annYieldBid', label: 'AY Bid', width: 5 },
+    { key: 'moneyness', label: 'Moneyness', width: 7 },
+    { key: 'last', label: 'Last', width: 4.5 },
+    { key: 'bid', label: 'Bid', width: 4.5 },
+    { key: 'ask', label: 'Ask', width: 4.5 },
+    { key: 'iv', label: 'IV', width: 4 },
+    { key: 'lastTradeDate', label: 'Last Trade', width: 7 },
+    { key: 'price', label: 'Price', width: 5.5 },
+    { key: 'annYieldAsk', label: 'AY Ask', width: 5 },
+    ...(showNominalYields ? OPTION_YIELD_DISPLAY_ORDER.filter(isNominalYieldField).map(field => ({ key: field, label: OPTION_YIELD_DISPLAY_LABELS[field].short, width: 5 })) : []),
+    { key: 'ivVsRealizedRange', label: 'IV vs 1Y RV', width: 7.5 },
+    ...(showVolOI ? [{ key: 'volume', label: 'Volume', width: 5 }, { key: 'openInterest', label: 'Open Int', width: 5 }, { key: 'volOI', label: 'Vol/OI', width: 4.5 }] : []),
+  ];
+
+  if (isPhone && !isPhoneLandscape) {
     const activeCriteria = [
       deltaFilter !== 'all' ? `Δ ${DELTA_OPTIONS.find(option => option.value === deltaFilter)?.label}` : null,
       moneynessFilter !== 'all' ? MONEYNESS_OPTIONS.find(option => option.value === moneynessFilter)?.label : null,
@@ -851,7 +871,7 @@ export default function ScreenerPage() {
     const resetFilters = () => clearFilters();
 
     return (
-      <div className="mobile-route-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
+      <div className="mobile-route-page mobile-financial-table-route min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
         <div className="screener-mobile-context border-b px-3.5 pb-3 pt-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0"><div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.07em]" style={{ color: 'var(--text-dim)' }}><span>Screening criteria</span>{loaded && <span className="status-badge" data-status={loadError ? 'failed' : hasIncompleteCoverage ? 'updating' : 'fresh'}>{loadError ? 'Needs retry' : hasIncompleteCoverage ? 'Partial coverage' : `${rawRowsRef.current.length} loaded`}</span>}</div><p className="truncate text-[13px]" style={{ color: 'var(--text)' }}>{activeCriteria}</p></div>
@@ -878,7 +898,41 @@ export default function ScreenerPage() {
         {hasStructuralCriteriaChanged && <div role="status" className="border-b px-3.5 py-2 text-[11px]" style={{ borderColor: 'var(--border)', color: 'var(--yellow)', backgroundColor: 'rgba(250,204,21,0.08)' }}>ETF or expiration changed since the last Load. Run Screener to refresh the dataset.</div>}
 
         {loadError && !loading && !loaded ? <div className="screener-mobile-state screener-mobile-state--error px-6 text-center"><AlertTriangle className="mx-auto mb-3 h-6 w-6" style={{ color: 'var(--red)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Screener load failed</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>{loadError}</p><button type="button" onClick={() => void handleLoad()} className="mobile-sheet-action secondary mt-4"><RefreshCw className="h-4 w-4" /> Retry</button></div> : !loaded && !loading ? <div className="screener-mobile-state screener-mobile-state--ready px-6 text-center"><Search className="mx-auto mb-3 h-6 w-6" style={{ color: 'var(--text-dim)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Ready to screen</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Choose criteria, then run the screener.</p></div> : loaded && sortedRows.length === 0 ? <div className="screener-mobile-state screener-mobile-state--empty px-6 text-center"><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>{noMatchTitle}</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>{noMatchDescription}</p><button type="button" onClick={() => setMobileFiltersOpen(true)} className="mobile-sheet-action secondary mt-4">Adjust filters</button></div> : (
-          <div className="mobile-financial-list">{sortedRows.map(row => <MobileOptionRow key={`${row.ticker}-${row.expDate}-${row.strike}`} ticker={row.ticker} tickerTo={buildOptionsPath(row.ticker, row.expDate)} tickerNavigationState={optionsNavigationState} onTickerNavigate={rememberScreenerNavigation} strike={row.strike} expirationLabel={row.expLabel} dte={row.dte} bid={row.bid} ask={row.ask} last={row.last} lastTradeDate={row.lastTradeDate} annualYield={row.annYieldBid} annYieldLast={row.annYieldLast} annYieldAsk={row.annYieldAsk} delta={row.delta} deltaSource={row.deltaSource} deltaModelVersion={row.deltaSource === 'calculated' ? CALCULATED_PUT_DELTA_MODEL.version : null} deltaFormatter={formatScreenerDelta} impliedVolatility={row.iv} openInterest={row.openInterest} moneynessLabel={row.moneynessLabel} moneynessColor={row.moneynessColor} moneynessState={row.moneynessState} integrityStatus={row.integrityStatus} denseQuoteView statusText={`Vol ${formatNumber(row.volume)} · OI ${formatNumber(row.openInterest)}`} onSelect={() => setSelectedOption({ option: optionDetailFromScreenerRow(row), ticker: row.ticker, expirationLabel: row.expLabel, dte: row.dte, underlyingPrice: row.currentPrice != null && row.currentPrice > 0 ? row.currentPrice : null })} />)}</div>
+          <MobileFinancialTable label="Screener results" columns={mobileScreenerColumns} busy={loading}>
+            {sortedRows.map(row => {
+              const openDetails = () => setSelectedOption({ option: optionDetailFromScreenerRow(row), ticker: row.ticker, expirationLabel: row.expLabel, dte: row.dte, underlyingPrice: row.currentPrice != null && row.currentPrice > 0 ? row.currentPrice : null });
+              const freshness = getOptionLastTradeFreshness(row.lastTradeDate);
+              const integrity = row.integrityStatus && row.integrityStatus !== 'clean' ? `${row.integrityStatus === 'invalid' ? 'Invalid quote' : 'Degraded quote'}${row.integrityReasonCodes?.length ? ` · ${row.integrityReasonCodes.join(', ')}` : ''}` : undefined;
+              return (
+                <tr key={`${row.ticker}-${row.expDate}-${row.strike}`} className="mobile-financial-table-row" tabIndex={0} aria-label={`Open ${row.ticker} ${row.expDate} ${formatPrice(row.strike)} put details${integrity ? `. ${integrity}` : ''}`} onClick={openDetails} onKeyDown={event => {
+                  if (event.target !== event.currentTarget) return;
+                  if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openDetails(); }
+                }}>
+                  <th scope="row" className="mobile-financial-table-identity" title={integrity}>
+                    <Link to={buildOptionsPath(row.ticker, row.expDate)} state={optionsNavigationState} onClick={event => { event.stopPropagation(); rememberScreenerNavigation(); }} className="font-mono font-semibold" style={{ color: 'var(--accent-light)' }}>{row.ticker}</Link>
+                  </th>
+                  <td title={`${row.dte} DTE`}>{row.expLabel}</td>
+                  <td>
+                    <button type="button" onClick={event => { event.stopPropagation(); openDetails(); }} className="font-mono font-semibold underline-offset-2 hover:underline" style={{ color: row.moneynessColor }} aria-label={`Open option details for ${row.ticker} ${formatPrice(row.strike)} put`}>{formatPrice(row.strike)}</button>
+                  </td>
+                  <td title={row.deltaSource === 'calculated' ? `Calculated Delta · ${CALCULATED_PUT_DELTA_MODEL.version}` : row.deltaSource === 'provider' ? 'Provider Delta' : 'Delta unavailable'} style={{ color: deltaColor(row.delta) }}>{formatScreenerDelta(row.delta)}</td>
+                  <td style={{ color: annYieldColor(row.annYieldLast) }}>{row.annYieldLast != null ? `${row.annYieldLast.toFixed(2)}%` : '—'}</td>
+                  <td style={{ color: annYieldColor(row.annYieldBid) }}>{row.annYieldBid != null ? `${row.annYieldBid.toFixed(2)}%` : '—'}</td>
+                  <td title={row.moneynessState ? shortPutMoneynessPresentation(row.moneynessState).accessibleLabel : undefined} style={{ color: row.moneynessColor }}>{row.moneynessLabel || '—'}</td>
+                  <td>{formatOptionQuoteValue('last', row.last, formatPrice)}</td>
+                  <td style={{ color: 'var(--green)' }}>{formatOptionQuoteValue('bid', row.bid, formatPrice)}</td>
+                  <td>{formatOptionQuoteValue('ask', row.ask, formatPrice)}</td>
+                  <td style={{ color: ivColor(row.iv) }}>{row.iv != null ? `${row.iv.toFixed(1)}%` : '—'}</td>
+                  <td title={freshness.label ?? 'Last trade age unavailable'} aria-label={formatOptionLastTradeDate(row.lastTradeDate)} style={{ color: freshness.color }}>{formatOptionLastTradeDate(row.lastTradeDate)}</td>
+                  <td>{formatPrice(row.currentPrice)}</td>
+                  <td style={{ color: annYieldColor(row.annYieldAsk) }}>{row.annYieldAsk != null ? `${row.annYieldAsk.toFixed(2)}%` : '—'}</td>
+                  {showNominalYields && OPTION_YIELD_DISPLAY_ORDER.filter(isNominalYieldField).map(field => <td key={field}>{row[field] != null ? `${row[field]!.toFixed(2)}%` : '—'}</td>)}
+                  <td title="Current ATM put IV positioned in the trailing 1-year range of 4-week realized volatility." style={{ color: row.ivVsRealizedRange != null ? ivVsRealizedRangeColor(row.ivVsRealizedRange) : 'var(--text-dim)' }}>{row.ivVsRealizedRange != null ? `${row.ivVsRealizedRange.toFixed(0)}%` : '—'}</td>
+                  {showVolOI && <><td>{formatNumber(row.volume)}</td><td>{formatNumber(row.openInterest)}</td><td>{row.volOI != null ? row.volOI.toFixed(2) : '—'}</td></>}
+                </tr>
+              );
+            })}
+          </MobileFinancialTable>
         )}
 
         {mobileFiltersOpen && <MobileBottomSheet title="Screener filters" description="Define the contracts you want to find" onClose={() => setMobileFiltersOpen(false)} footer={<div className="grid grid-cols-2 gap-2"><button type="button" onClick={resetFilters} className="mobile-sheet-action secondary">Reset</button><button type="button" onClick={() => setMobileFiltersOpen(false)} className="mobile-sheet-action primary">Done</button></div>}>

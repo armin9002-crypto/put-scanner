@@ -18,10 +18,11 @@ import { formatDate as formatDisplayDate, formatOptionLastTradeDate, formatOptio
 import { getOptionLastTradeFreshness } from '../lib/optionLastTradeFreshness';
 import ErrorBoundary from '../components/ErrorBoundary';
 import type { OptionDetail } from '../components/OptionDetailDrawer';
-import { Star, RefreshCw, Loader2, ChevronUp, ChevronDown, AlertTriangle } from 'lucide-react';
+import { Star, StickyNote, RefreshCw, Loader2, ChevronUp, ChevronDown, AlertTriangle } from 'lucide-react';
 import { useResponsiveMode } from '../lib/responsive';
-import MobileOptionRow from '../components/mobile/MobileOptionRow';
-import { annualizedYieldFieldForNominal, OPTION_QUOTE_DISPLAY_LABELS, OPTION_QUOTE_TABLE_DISPLAY_ORDER, OPTION_YIELD_DISPLAY_LABELS, executableOptionPrice, formatOptionQuoteValue, isNominalYieldField, visibleOptionYieldFields, type OptionQuoteTableDisplayField, type OptionYieldDisplayField } from '../lib/optionQuoteDisplay';
+import MobileBottomSheet from '../components/mobile/MobileBottomSheet';
+import MobileFinancialTable, { MobileFinancialTableDivider, type MobileFinancialColumn } from '../components/mobile/MobileFinancialTable';
+import { annualizedYieldFieldForNominal, OPTION_QUOTE_DISPLAY_LABELS, OPTION_QUOTE_TABLE_DISPLAY_ORDER, OPTION_YIELD_DISPLAY_LABELS, OPTION_YIELD_DISPLAY_ORDER, executableOptionPrice, formatOptionQuoteValue, isNominalYieldField, visibleOptionYieldFields, type OptionQuoteTableDisplayField, type OptionYieldDisplayField } from '../lib/optionQuoteDisplay';
 import { acquireOptionChains, canonicalOptionChainKey } from '../lib/optionChainRequests';
 import { buildWatchlistGroups, getWatchlistStatusPresentation, type WatchlistGroupMode, type WatchlistSortOverride, type WatchlistGroupableRow } from '../lib/watchlistPresentation';
 import { PageHeader } from '../components/ui/PageHeader';
@@ -197,7 +198,7 @@ function optionDetailFromWatchlistRow(row: LiveRow): OptionDetail {
 }
 
 export default function WatchlistPage() {
-  const { isPhone } = useResponsiveMode();
+  const { isPhone, isPhoneLandscape } = useResponsiveMode();
   const location = useLocation();
   const navigate = useNavigate();
   const [items, setItems] = useState<WatchlistItem[]>([]);
@@ -380,6 +381,7 @@ export default function WatchlistPage() {
 
   const groupedRows = useMemo(() => buildWatchlistGroups(rows as unknown as WatchlistGroupableRow[], groupMode, sortOverride), [rows, groupMode, sortOverride]);
   const sortedRows = useMemo(() => groupedRows.flatMap(group => group.rows as unknown as LiveRow[]), [groupedRows]);
+  const editingRow = editingNote ? rows.find(row => row.id === editingNote) ?? null : null;
 
   function handleSort(field: SortField) {
     const nextDirection = sortOverride?.field === field ? (sortOverride.direction === 'asc' ? 'desc' : 'asc') : 'asc';
@@ -444,12 +446,30 @@ export default function WatchlistPage() {
     ...visibleOptionYieldFields(showNominalYields).map(field => yieldColumns[field]),
     { field: 'added', label: 'Added', align: 'text-right' },
   ];
+  const mobileWatchlistColumns: MobileFinancialColumn[] = [
+    { key: 'ticker', label: 'Ticker', width: 8.25 },
+    { key: 'expiry', label: 'Exp', width: 6.25 },
+    { key: 'strike', label: 'Strike', width: 6 },
+    { key: 'last', label: 'Last', width: 4.5 },
+    { key: 'bid', label: 'Bid', width: 4.5 },
+    { key: 'ask', label: 'Ask', width: 4.5 },
+    { key: 'delta', label: 'Delta', width: 4.5 },
+    { key: 'moneyness', label: 'Moneyness', width: 7 },
+    { key: 'iv', label: 'IV', width: 4 },
+    { key: 'lastTradeDate', label: 'Last Trade', width: 7 },
+    { key: 'annYieldLast', label: 'AY Last', width: 5 },
+    { key: 'annYieldBid', label: 'AY Bid', width: 5 },
+    { key: 'annYieldAsk', label: 'AY Ask', width: 5 },
+    ...(showNominalYields ? OPTION_YIELD_DISPLAY_ORDER.filter(isNominalYieldField).map(field => ({ key: field, label: OPTION_YIELD_DISPLAY_LABELS[field].short, width: 5 })) : []),
+    { key: 'status', label: 'State', width: 6.5 },
+    { key: 'added', label: 'Added', width: 6 },
+  ];
   // Yield audit order: OPTION_YIELD_DISPLAY_ORDER.map(field => yieldColumns[field]); visibleYieldFields.map(field => {
   // Legacy sort-field audit: case 'nomYieldLast': aVal = a.nomYieldLast; bVal = b.nomYieldLast; break; case 'annYieldLast': aVal = a.annYieldLast; bVal = b.annYieldLast; break; case 'nomYieldBid': aVal = a.nomYieldBid; bVal = b.nomYieldBid; break; case 'annYieldBid': aVal = a.annYieldBid; bVal = b.annYieldBid; break; case 'nomYieldAsk': aVal = a.nomYieldAsk; bVal = b.nomYieldAsk; break; case 'annYieldAsk': aVal = a.annYieldAsk; bVal = b.annYieldAsk; break;
 
-  if (isPhone) {
+  if (isPhone && !isPhoneLandscape) {
     return (
-      <div className="mobile-route-page watchlist-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
+      <div className="mobile-route-page mobile-financial-table-route watchlist-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
         <div className="flex min-h-[52px] items-center gap-2 border-b px-3.5" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
           <div className="mr-auto min-w-0"><div className="truncate text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{items.length} saved {items.length === 1 ? 'contract' : 'contracts'}</div><div className="truncate text-[10px]" style={{ color: 'var(--text-dim)' }}>{lastRefreshed ? `Refresh completed ${lastRefreshed.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Saved snapshots'}</div></div>
           <span className="sr-only" aria-live="polite">Watchlist sorted by {sortField} {sortDir === 'asc' ? 'ascending' : 'descending'}</span>
@@ -463,43 +483,56 @@ export default function WatchlistPage() {
         </div>
         {refreshError && <div role="alert" className="flex items-start gap-2 border-b px-3.5 py-2 text-[11px]" style={{ borderColor: 'var(--border)', color: 'var(--red)', backgroundColor: 'rgba(239,68,68,0.08)' }}><AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-none" /><span>{refreshError} Tap refresh to retry.</span></div>}
         {items.length === 0 ? <div className="px-6 py-16 text-center"><Star className="mx-auto mb-3 h-7 w-7" style={{ color: 'var(--text-dim)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No saved puts</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Star a contract from an option chain to save it here.</p></div> : (
-          <div className="mobile-financial-list">{groupedRows.map(group => <section key={group.key} aria-label={groupMode === 'none' ? 'Watchlist' : `${groupMode === 'underlying' ? 'Underlying' : 'Expiry'} ${group.label}`}>{groupMode !== 'none' && <div className="sticky top-0 z-10 border-b px-3.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface-alt)', color: 'var(--text-muted)' }}>{groupMode === 'underlying' ? group.label : `${group.label} · ${group.rows.length} saved`}</div>}{(group.rows as unknown as LiveRow[]).map(row => (
-              <div key={row.id} className="mobile-watchlist-entry watchlist-mobile-row" style={{ opacity: row.expired || row.status === 'unavailable' ? 0.65 : 1 }}>
-          <MobileOptionRow
-            ticker={row.ticker}
-            tickerTo={buildOptionsPath(row.ticker, row.expiryTimestamp)}
-            tickerNavigationState={optionsNavigationState}
-            onTickerNavigate={event => handleOptionsNavigation(event, buildOptionsPath(row.ticker, row.expiryTimestamp))}
-            strike={row.strike}
-            expirationLabel={row.expiryFormatted}
-            dte={row.dte}
-            bid={row.bid}
-            ask={row.ask}
-            last={row.last}
-            lastTradeDate={row.lastTradeDate}
-            annYieldLast={row.annYieldLast}
-            annYieldBid={row.annYieldBid}
-            annYieldAsk={row.annYieldAsk}
-            delta={row.delta}
-            deltaSource={row.deltaSource}
-            deltaModelVersion={row.deltaModelVersion}
-            impliedVolatility={row.iv}
-            openInterest={row.openInterest}
-            moneynessLabel={row.moneynessLabel}
-            moneynessColor={row.moneynessColor}
-            moneynessState={row.moneynessState}
-            integrityStatus={row.snapshot?.integrityStatus}
-            denseQuoteView
-            statusText={row.statusLabel}
-            statusTextColor={row.statusColor}
-            watched
-            onToggleWatchlist={() => handleRemove(row.id)}
-            onSelect={() => setSelectedOption({ option: optionDetailFromWatchlistRow(row), ticker: row.ticker, expirationLabel: row.expiryFormatted, dte: row.dte, underlyingPrice: row.currentPrice })}
-          />
-              <div className="watchlist-mobile-note border-b px-3 pb-1" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>{editingNote === row.id ? <input type="text" value={noteText} onChange={event => setNoteText(event.target.value.slice(0, 60))} onBlur={() => handleNoteBlur(row.id)} onKeyDown={event => { if (event.key === 'Enter') { noteInputActionRef.current = row.id; handleNoteSave(row.id); } if (event.key === 'Escape') handleNoteCancel(row.id); }} autoFocus className="mobile-control-field w-full" maxLength={60} aria-label={`Note for ${row.ticker}`} /> : <button type="button" onClick={() => { noteInputActionRef.current = null; setEditingNote(row.id); setNoteText(row.note); }} aria-label={`${row.note ? 'Edit' : 'Add'} note for ${row.ticker}`} className="flex min-h-11 w-full items-center text-left text-[11px]" style={{ color: row.note ? 'var(--text-secondary)' : 'var(--text-dim)' }}>{row.note || 'Add a note'}</button>}</div>
-            </div>
-          ))}</section>)}</div>
+          <MobileFinancialTable label="Watchlist contracts" columns={mobileWatchlistColumns} busy={loading}>
+            {groupedRows.flatMap(group => [
+              groupMode !== 'none' ? <MobileFinancialTableDivider key={`${group.key}-divider`} columns={mobileWatchlistColumns.length}>{groupMode === 'underlying' ? group.label : `${group.label} · ${group.rows.length} saved`}</MobileFinancialTableDivider> : null,
+              ...(group.rows as unknown as LiveRow[]).map(row => {
+                const openDetails = () => setSelectedOption({ option: optionDetailFromWatchlistRow(row), ticker: row.ticker, expirationLabel: row.expiryFormatted, dte: row.dte, underlyingPrice: row.currentPrice });
+                const muted = row.expired || row.status === 'unavailable';
+                const freshness = getOptionLastTradeFreshness(row.lastTradeDate);
+                const path = buildOptionsPath(row.ticker, row.expiryTimestamp);
+                return (
+                  <tr key={row.id} className="mobile-financial-table-row" style={{ opacity: muted ? 0.65 : 1 }} tabIndex={0} aria-label={`Open ${row.ticker} ${row.expiry} ${formatMoney(row.strike)} put details`} onClick={openDetails} onKeyDown={event => {
+                    if (event.target !== event.currentTarget) return;
+                    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openDetails(); }
+                  }}>
+                    <th scope="row" className="mobile-financial-table-identity">
+                      <div className="flex items-center gap-0.5">
+                        <Link to={path} state={optionsNavigationState} onClick={event => { event.stopPropagation(); handleOptionsNavigation(event, path); }} className="font-mono font-semibold" style={{ color: 'var(--accent-light)' }}>{row.ticker}</Link>
+                        <button type="button" className="mobile-financial-table-action" aria-label={`Remove ${row.ticker} ${row.expiryFormatted} ${formatMoney(row.strike)} put from watchlist`} title="Remove from watchlist" onClick={event => { event.stopPropagation(); handleRemove(row.id); }}>
+                          <Star className="h-3.5 w-3.5 fill-current" style={{ color: 'var(--accent-light)' }} />
+                        </button>
+                        <button type="button" className="mobile-financial-table-action" aria-label={`${row.note ? 'Edit' : 'Add'} note for ${row.ticker}`} title={row.note ? row.note : 'Add note'} onClick={event => { event.stopPropagation(); noteInputActionRef.current = null; setEditingNote(row.id); setNoteText(row.note); }}>
+                          <StickyNote className={`h-3.5 w-3.5 ${row.note ? 'fill-current' : ''}`} style={{ color: row.note ? 'var(--accent-light)' : 'var(--text-dim)' }} />
+                        </button>
+                      </div>
+                    </th>
+                    <td title={row.dte != null ? `${row.dte} DTE` : undefined}>{row.expiryFormatted}</td>
+                    <td><button type="button" onClick={event => { event.stopPropagation(); openDetails(); }} className="font-mono font-semibold underline-offset-2 hover:underline" style={{ color: row.moneynessColor }} aria-label={`Open option details for ${row.ticker} ${formatMoney(row.strike)} put`}>{formatMoney(row.strike)}</button></td>
+                    <td>{formatOptionQuoteValue('last', row.last, formatMoney)}</td>
+                    <td style={{ color: 'var(--green)' }}>{formatOptionQuoteValue('bid', row.bid, formatMoney)}</td>
+                    <td>{formatOptionQuoteValue('ask', row.ask, formatMoney)}</td>
+                    <td title={row.deltaSource === 'calculated' && row.deltaModelVersion ? `Calculated Delta · ${row.deltaModelVersion}` : row.deltaSource === 'provider' ? 'Provider Delta' : 'Delta unavailable'} style={{ color: deltaColor(row.delta) }}>{isFiniteNumber(row.delta) ? row.delta.toFixed(2) : '—'}</td>
+                    <td style={{ color: row.moneynessColor }} title={row.moneynessState ? row.moneynessState : undefined}>{row.moneynessLabel || '—'}</td>
+                    <td style={{ color: ivColor(row.iv) }}>{isFiniteNumber(row.iv) ? `${row.iv.toFixed(1)}%` : '—'}</td>
+                    <td title={lastTradeStatusLabel(row.lastTradeDate)} aria-label={formatOptionLastTradeDate(row.lastTradeDate)} style={{ color: freshness.color }}>{formatOptionLastTradeDate(row.lastTradeDate)}</td>
+                    <td style={{ color: annYieldColor(row.annYieldLast) }}>{formatPercentValue(row.annYieldLast)}</td>
+                    <td style={{ color: annYieldColor(row.annYieldBid) }}>{formatPercentValue(row.annYieldBid)}</td>
+                    <td style={{ color: annYieldColor(row.annYieldAsk) }}>{formatPercentValue(row.annYieldAsk)}</td>
+                    {showNominalYields && OPTION_YIELD_DISPLAY_ORDER.filter(isNominalYieldField).map(field => <td key={field}>{formatPercentValue(row[field])}</td>)}
+                    <td title={row.statusDetail ? `${row.statusLabel} · ${row.statusDetail}` : row.statusLabel} style={{ color: row.statusColor }}>{row.statusLabel}</td>
+                    <td style={{ color: 'var(--text-dim)' }}>{formatDate(row.addedAt)}</td>
+                  </tr>
+                );
+              }),
+            ])}
+          </MobileFinancialTable>
         )}
+        {editingRow && <MobileBottomSheet title={`${editingRow.note ? 'Edit' : 'Add'} note for ${editingRow.ticker}`} description="Keep a short reminder with this saved contract." onClose={() => handleNoteCancel(editingRow.id)} footer={<div className="grid grid-cols-2 gap-2"><button type="button" onClick={() => handleNoteCancel(editingRow.id)} className="mobile-sheet-action secondary">Cancel</button><button type="button" onClick={() => handleNoteSave(editingRow.id)} className="mobile-sheet-action primary">Save note</button></div>}>
+          <label className="mobile-sheet-label" htmlFor="watchlist-mobile-note">Note</label>
+          <input id="watchlist-mobile-note" type="text" value={noteText} onChange={event => setNoteText(event.target.value.slice(0, 60))} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); handleNoteSave(editingRow.id); } if (event.key === 'Escape') handleNoteCancel(editingRow.id); }} autoFocus className="mobile-control-field w-full text-base" maxLength={60} aria-label={`Note for ${editingRow.ticker}`} />
+          <p className="mt-2 text-[11px]" style={{ color: 'var(--text-dim)' }}>{noteText.length}/60</p>
+        </MobileBottomSheet>}
         {selectedOption && <ErrorBoundary title="Option sheet unavailable" message="Close it and try again."><Suspense fallback={null}><OptionDetailDrawer option={selectedOption.option} ticker={selectedOption.ticker} expirationLabel={selectedOption.expirationLabel} dte={selectedOption.dte} underlyingPrice={selectedOption.underlyingPrice} onClose={() => setSelectedOption(null)} /></Suspense></ErrorBoundary>}
       </div>
     );

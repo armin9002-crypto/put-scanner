@@ -174,7 +174,7 @@ test.describe('UI-5 complete deterministic visual review', () => {
       await captureCoreRoutes(page, testInfo);
       if (project === 'portrait-390x844' || project === 'landscape-844x390') {
         await openDetail(page, 'TQQQ');
-        const option = page.locator('article.mobile-option-chain-row').first();
+        const option = page.locator('.mobile-financial-table-row').first();
         if (await option.count()) { await option.click({ force: true }); await expect(page.getByRole('dialog')).toBeVisible(); await capture(page, testInfo, 'option-drawer'); }
         await page.goto('/?account-ui-fixture=synced'); await expect(page.getByRole('dialog')).toBeVisible(); await capture(page, testInfo, 'account');
       }
@@ -247,7 +247,7 @@ test.describe('UI-5 complete deterministic visual review', () => {
     await capture(page, testInfo, 'portfolio-empty-refresh-disabled');
 
     await openDetail(page, 'TQQQ');
-    await page.locator('article.mobile-option-chain-row').first().click();
+    await page.locator('.mobile-financial-table-row').first().click();
     const drawer = page.getByRole('dialog', { name: /TQQQ.*put details/i });
     await expect(drawer).toBeVisible();
     await expect(drawer.getByRole('button', { name: 'Bid', exact: true })).toBeDisabled();
@@ -260,14 +260,14 @@ test.describe('UI-5 complete deterministic visual review', () => {
     await drawer.getByRole('button', { name: 'Close option details' }).click();
 
     await page.goto('/watchlist');
-    await expect(page.locator('article.mobile-option-chain-row').first()).toBeVisible({ timeout: 20_000 });
-    await page.locator('article.mobile-option-chain-row').first().click();
+    await expect(page.locator('.mobile-financial-table-row').first()).toBeVisible({ timeout: 20_000 });
+    await page.locator('.mobile-financial-table-row').first().click();
     await expect(page.getByRole('dialog', { name: /put details/i })).toBeVisible();
     await page.getByRole('dialog', { name: /put details/i }).getByRole('button', { name: 'Close option details' }).click();
 
     await page.goto('/screener');
     await loadScreener(page);
-    await page.locator('article.mobile-option-chain-row').first().click();
+    await page.locator('.mobile-financial-table-row').first().click();
     await expect(page.getByRole('dialog', { name: /put details/i })).toBeVisible();
     await page.getByRole('dialog', { name: /put details/i }).getByRole('button', { name: 'Close option details' }).click();
 
@@ -278,7 +278,7 @@ test.describe('UI-5 complete deterministic visual review', () => {
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
       await capture(page, testInfo, `theme-${theme}-portfolio-mobile`);
       await openDetail(page, 'TQQQ');
-      await page.locator('article.mobile-option-chain-row').first().click();
+      await page.locator('.mobile-financial-table-row').first().click();
       await expect(page.getByRole('dialog', { name: /put details/i })).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)).toBe(false);
       await capture(page, testInfo, `theme-${theme}-option-drawer-mobile`);

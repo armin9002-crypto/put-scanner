@@ -31,7 +31,7 @@ test.describe('UI density cleanup', () => {
       expect(await row.evaluate(el => getComputedStyle(el).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
       await page.screenshot({ path: 'e2e-artifacts/ui-density-option-chain-desktop.png', fullPage: false });
     } else {
-      const row = page.locator('.mobile-option-chain-row[data-variant="options"]').filter({ hasText: '107.00' }).first();
+      const row = page.locator('.mobile-financial-table-row').filter({ hasText: '107.00' }).first();
       await expect(row).toBeVisible();
       await expect(row).toContainText('08/29/26');
       await expect(row).not.toContainText('Calculated');
@@ -49,7 +49,7 @@ test.describe('UI density cleanup', () => {
       await expect(row).not.toContainText('sessions ago');
       await page.screenshot({ path: 'e2e-artifacts/ui-density-watchlist-desktop.png', fullPage: false });
     } else {
-      await expect(page.locator('.mobile-financial-list')).toBeVisible({ timeout: 20_000 });
+      await expect(page.locator('.mobile-financial-table')).toBeVisible({ timeout: 20_000 });
     }
   });
 });

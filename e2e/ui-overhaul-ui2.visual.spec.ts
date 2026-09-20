@@ -51,8 +51,8 @@ async function measureOptionTable(page: Page, testInfo: TestInfo, name: string) 
     });
     const heights = (selector: string) => visible(selector).map(element => element.getBoundingClientRect().height);
     return {
-      rowHeights: heights('.mobile-option-chain-row:not(.mobile-option-chain-row--skeleton)'),
-      headerHeight: visible('.mobile-option-chain-header')[0]?.getBoundingClientRect().height ?? null,
+      rowHeights: heights('.mobile-financial-table-row'),
+      headerHeight: visible('.mobile-financial-table thead')[0]?.getBoundingClientRect().height ?? null,
       desktopRows: heights('.option-desktop-chain tbody tr'),
       pageOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
     };
@@ -153,10 +153,10 @@ test.describe('UI-2 discovery workflow visual matrix', () => {
       await openDetail(page);
       await capture(page, testInfo, 'detail-mobile');
       await measureOptionTable(page, testInfo, 'detail-mobile');
-      for (const label of ['Strike', 'Last Trade', 'OTM/ITM', 'AY Last', 'AY Bid', 'AY Ask']) await expect(page.locator('.mobile-option-chain-header')).toContainText(label);
-      await expect(page.locator('.mobile-option-chain-row')).toHaveCount(2);
-      await expect(page.locator('.mobile-option-chain-row').first()).toHaveCSS('min-height', '48px');
-      await page.locator('.mobile-option-chain-row').first().click();
+      for (const label of ['Strike', 'Last Trade', 'Moneyness', 'AY Last', 'AY Bid', 'AY Ask']) await expect(page.locator('.mobile-financial-table thead')).toContainText(label);
+      await expect(page.locator('.mobile-financial-table-row')).toHaveCount(2);
+      await expect(page.locator('.mobile-financial-table-row').first()).toHaveCSS('height', '34px');
+      await page.locator('.mobile-financial-table-row').first().click();
       await expect(page.getByRole('dialog')).toBeVisible();
       await capture(page, testInfo, 'option-drawer-mobile');
     } else if (project === 'landscape-844x390') {

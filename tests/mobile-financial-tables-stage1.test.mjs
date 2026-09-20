@@ -8,19 +8,16 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = relative => readFile(path.join(root, relative), 'utf8');
 
 test('portrait financial surfaces use compact primary fields and preserve drawer details', async () => {
-  const [options, optionRow, positionRow, portfolio] = await Promise.all([
+  const [options, positionRow, portfolio] = await Promise.all([
     read('src/pages/OptionsPage.tsx'),
-    read('src/components/mobile/MobileOptionRow.tsx'),
     read('src/components/mobile/MobilePositionRow.tsx'),
     read('src/pages/PortfolioPage.tsx'),
   ]);
   assert.match(options, /if \(isPhone && !isPhoneLandscape\)/);
   for (const label of ['Strike', 'Last Trade', 'OTM\/ITM', 'AY Last', 'AY Bid', 'AY Ask']) assert.match(options, new RegExp(label));
-  for (const field of ['ay-last', 'ay-bid', 'ay-ask']) assert.match(optionRow, new RegExp(`data-field="${field}"`));
-  assert.match(optionRow, /formatOptionLastTradeDate\(props\.lastTradeDate/);
-  assert.doesNotMatch(optionRow, /data-field="last"[\s\S]*money\(props\.last\)/);
-  assert.match(optionRow, /onClick=\{props\.onSelect\}/);
-  assert.match(optionRow, /onToggleWatchlist/);
+  assert.match(options, /data-option-strike/);
+  assert.match(options, /formatOptionLastTradeDate\(put\.lastTradeDate/);
+  assert.match(options, /event\.stopPropagation\(\); toggleWatchlist\(put\)/);
   assert.match(positionRow, /data-expanded=\{expanded \? 'true' : 'false'\}/);
   assert.match(positionRow, /Gain\/Loss/);
   assert.match(positionRow, /% Captured/);
@@ -28,19 +25,29 @@ test('portrait financial surfaces use compact primary fields and preserve drawer
 });
 
 test('portrait Option Chain uses a native table below the actual route controls', async () => {
-  const [options, styles, table] = await Promise.all([
-    read('src/pages/OptionsPage.tsx'), read('src/index.css'), read('src/components/mobile/MobileFinancialTable.tsx'),
+  const [options, screener, watchlist, styles, table] = await Promise.all([
+    read('src/pages/OptionsPage.tsx'), read('src/pages/ScreenerPage.tsx'), read('src/pages/WatchlistPage.tsx'), read('src/index.css'), read('src/components/mobile/MobileFinancialTable.tsx'),
   ]);
   assert.match(options, /<MobileFinancialTable /);
   assert.doesNotMatch(options, /MobileOptionCard|MobileOptionRow|ResizeObserver/);
+  for (const source of [screener, watchlist]) {
+    assert.match(source, /<MobileFinancialTable /);
+    assert.doesNotMatch(source, /MobileOptionRow|mobile-option-chain-row/);
+    assert.match(source, /mobile-financial-table-route/);
+    assert.match(source, /event\.target !== event\.currentTarget/);
+    assert.match(source, /event\.stopPropagation\(\)/);
+  }
+  for (const label of ['Ticker', 'Exp', 'Strike', 'Delta', 'AY Last', 'AY Bid', 'Moneyness', 'Last Trade', 'AY Ask', 'IV vs 1Y RV']) assert.match(screener, new RegExp(`label: '${label}'`));
+  for (const label of ['Ticker', 'Exp', 'Strike', 'Last', 'Bid', 'Ask', 'Delta', 'Moneyness', 'IV', 'Last Trade', 'AY Last', 'AY Bid', 'AY Ask', 'State', 'Added']) assert.match(watchlist, new RegExp(`label: '${label}'`));
+  assert.match(watchlist, /MobileFinancialTableDivider/);
+  assert.match(watchlist, /StickyNote/);
+  assert.doesNotMatch(watchlist, /watchlist-mobile-note border/);
   assert.match(table, /<table/);
   assert.match(table, /scope="col"/);
   assert.match(table, /<tbody>/);
   assert.match(styles, /\.mobile-financial-table-scroll \{[^}]*overflow: auto/);
   assert.match(styles, /\.mobile-financial-table thead th \{[^}]*position: sticky;[^}]*top: 0/);
   assert.match(styles, /tbody th\.mobile-financial-table-identity \{[^}]*left: 0/);
-  assert.match(options, /event.target !== event.currentTarget/);
-  assert.match(options, /event.stopPropagation\(\); toggleWatchlist\(put\)/);
   assert.match(options, /<MobileFinancialTableDivider/);
 });
 

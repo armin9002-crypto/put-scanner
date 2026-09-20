@@ -651,5 +651,6 @@ test('Screener UI exposes coverage, provenance, accessible sort state, and retry
   assert.match(source, /aria-sort=/);
   assert.match(source, /vixEvidenceLabel/);
   assert.match(source, /Calculated Delta/);
-  assert.match(source, /denseQuoteView statusText=/);
+  assert.match(source, /<MobileFinancialTable/);
+  assert.match(source, /mobile-financial-table-row/);
 });

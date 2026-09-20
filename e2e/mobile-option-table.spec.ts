@@ -21,7 +21,7 @@ test('portrait table density, alignment and sticky layers across widths and text
       await page.goto('/options/TQQQ?expiry=2027-01-01');
       const rows = page.locator('.mobile-financial-table-row');
       await expect(rows).toHaveCount(72);
-      await expect(page.locator('.mobile-option-card, .mobile-option-chain-row')).toHaveCount(0);
+      await expect(page.locator('.mobile-option-card')).toHaveCount(0);
       await expect(rows.first().locator('td').nth(1)).toHaveText('No Bid');
       const owner = page.locator('.mobile-financial-table-scroll');
       const initial = await owner.evaluate(element => {

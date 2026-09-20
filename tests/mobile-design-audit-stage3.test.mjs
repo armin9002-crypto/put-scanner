@@ -7,22 +7,25 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = relative => readFile(path.join(root, relative), 'utf8');
 
-test('Stage 3 option rows preserve identity hierarchy at phone widths', async () => {
-  const [row, styles, watchlist, screener] = await Promise.all([
-    read('src/components/mobile/MobileOptionRow.tsx'),
+test('portrait Screener and Watchlist reuse the compact financial table architecture', async () => {
+  const [table, styles, watchlist, screener] = await Promise.all([
+    read('src/components/mobile/MobileFinancialTable.tsx'),
     read('src/index.css'),
     read('src/pages/WatchlistPage.tsx'),
     read('src/pages/ScreenerPage.tsx'),
   ]);
 
-  assert.match(row, /mobile-option-chain-cell__identity/);
-  assert.match(row, /mobile-option-chain-cell__ticker/);
-  assert.match(row, /mobile-option-chain-cell__strike-value/);
-  assert.match(row, /mobile-option-chain-cell__expiry/);
-  assert.match(styles, /\.mobile-option-chain-cell--strike \{[\s\S]*grid-template-columns: minmax\(0, 1fr\) auto/);
-  assert.match(styles, /grid-template-columns: minmax\(7rem, 1\.45fr\)/);
-  assert.match(watchlist, /<MobileOptionRow/);
-  assert.match(screener, /<MobileOptionRow/);
+  assert.match(table, /<table/);
+  assert.match(table, /scope="col"/);
+  for (const source of [watchlist, screener]) {
+    assert.match(source, /<MobileFinancialTable /);
+    assert.match(source, /mobile-financial-table-identity/);
+    assert.doesNotMatch(source, /MobileOptionRow|mobile-option-chain-row/);
+  }
+  assert.match(watchlist, /StickyNote/);
+  assert.match(watchlist, /MobileBottomSheet/);
+  assert.match(styles, /\.mobile-financial-table-route \{/);
+  assert.match(styles, /\.mobile-financial-table-scroll \{[\s\S]*overflow: auto/);
 });
 
 test('Stage 3 Screener states and Portfolio landscape chrome use local density rules', async () => {

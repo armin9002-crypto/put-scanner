@@ -94,7 +94,7 @@ test('text size route and overlay matrix', async ({ page }, info) => {
       if (name === 'options') {
         const row = page.getByRole('row').filter({ hasText: '90.00' }).last();
         if (await row.count()) await row.click();
-        else await page.locator('.mobile-option-chain-row').first().click();
+        else await page.locator('.mobile-financial-table-row').first().click();
         await expect(page.locator('aside, .option-drawer-mobile').last()).toBeVisible();
         await capture(page, directory, 'option-drawer');
       }

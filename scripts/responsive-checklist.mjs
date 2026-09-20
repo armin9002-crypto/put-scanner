@@ -59,7 +59,6 @@ const sources = {
   mobileSheet: read('src/components/mobile/MobileBottomSheet.tsx'),
   blockingOverlay: read('src/lib/blockingOverlay.ts'),
   mobileEtfRow: read('src/components/mobile/MobileEtfRow.tsx'),
-  mobileOptionRow: read('src/components/mobile/MobileOptionRow.tsx'),
   mobilePositionRow: read('src/components/mobile/MobilePositionRow.tsx'),
 };
 const portfolioScheduleStart = sources.portfolio.indexOf('Schedule of Positions');
@@ -89,16 +88,16 @@ const guardrails = [
   ['Options use a purpose-built phone tree and compact financial table', sources.options.includes('if (isPhone && !isPhoneLandscape)') && sources.options.includes('<MobileFinancialTable') && sources.css.includes('.mobile-financial-table thead th')],
   ['Options keep Last Trade immediately after Strike without changing dense table sizing', sources.options.indexOf("{ field: 'lastTradeDate'") > sources.options.indexOf("{ field: 'strike'") && sources.options.includes('formatOptionLastTradeDate') && sources.options.includes('table-fixed text-xs')],
   ['Portrait Option Chain uses a native scroll table with one frozen identity and CSS sticky header', sources.options.includes('<MobileFinancialTable') && sources.css.includes('.mobile-financial-table-scroll') && sources.css.includes('overflow: auto') && sources.css.includes('.mobile-financial-table thead th') && sources.css.includes('left: 0')],
-  ['Options hide Nominal Yield by default and expose it without changing row density', sources.options.includes('useState(readShowNominalYield)') && sources.options.includes('visibleYieldFields.map') && sources.optionQuoteDisplay.includes("'nomYieldLast'") && sources.optionQuoteDisplay.includes("'annYieldAsk'") && !sources.mobileOptionRow.includes('props.showNominalYield') && sources.css.includes('mobile-option-chain-row')],
-  ['Screener uses the shared option language and a filter sheet', sources.screener.includes('if (isPhone)') && sources.screener.includes('<MobileOptionRow') && sources.screener.includes('<MobileBottomSheet')],
+  ['Options hide Nominal Yield by default and expose it without changing row density', sources.options.includes('useState(readShowNominalYield)') && sources.options.includes('visibleYieldFields.map') && sources.optionQuoteDisplay.includes("'nomYieldLast'") && sources.optionQuoteDisplay.includes("'annYieldAsk'") && sources.options.includes('<MobileFinancialTable') && sources.css.includes('.mobile-financial-table-row')],
+  ['Screener uses the shared option language and a filter sheet', sources.screener.includes('if (isPhone && !isPhoneLandscape)') && sources.screener.includes('<MobileFinancialTable') && sources.screener.includes('<MobileBottomSheet')],
   ['Recommendations remains a sixth top-level destination with the compact Recs phone label', sources.app.includes("to: '/recommendations'") && sources.app.includes("label: 'Recs'") && (sources.app.match(/const mobileTabs = \[/g) ?? []).length === 1],
   ['Recommendations page load is request-silent and only the explicit refresh handler invokes acquisition', sources.recommendations.includes('getInMemoryRecommendationRun()') && sources.recommendations.includes('onClick={() => void handleRefresh()}') && !/useEffect\(\(\)\s*=>\s*\{?\s*void\s+handleRefresh/.test(sources.recommendations)],
   ['Recommendations board, sorting, expansion, near misses, evidence, and export are in-memory interactions', sources.recommendations.includes('buildRecommendationBoardRows(run, boardSort)') && sources.recommendations.includes('setExpanded') && sources.recommendations.includes('run.nearMisses') && sources.recommendations.includes('JSON.stringify(run') && !/fetch\s*\(/.test(sources.recommendations) && !/fetch\s*\(/.test(sources.recommendationEvidence)],
   ['Recommendations evidence uses the shared mobile sheet and existing Option Detail drawer', sources.recommendationEvidence.includes('<MobileBottomSheet') && sources.recommendations.includes('<OptionDetailDrawer')],
   ['Screener phone state exposes structural scope drift and fatal retry feedback', sources.screener.includes('ETF or expiration changed since the last Load') && sources.screener.includes('loadError') && sources.screener.includes('Retry')],
   ['Screener phone states use a compact, explicit state surface', sources.screener.includes('screener-mobile-state--ready') && sources.screener.includes('screener-mobile-state--error') && sources.css.includes('.screener-mobile-state')],
-  ['Watchlist uses the same shared option row language', sources.watchlist.includes('if (isPhone)') && sources.watchlist.includes('<MobileOptionRow')],
-  ['Shared option identity keeps ticker, strike, expiry, and watch control legible in phone landscape', sources.mobileOptionRow.includes('mobile-option-chain-cell__identity') && sources.mobileOptionRow.includes('mobile-option-chain-cell__ticker') && sources.css.includes('grid-template-columns: minmax(7rem, 1.45fr)')],
+  ['Watchlist uses the same shared option table language', sources.watchlist.includes('if (isPhone && !isPhoneLandscape)') && sources.watchlist.includes('<MobileFinancialTable') && sources.watchlist.includes('<MobileFinancialTableDivider')],
+  ['Shared option identity keeps ticker, strike, expiry, and watch control legible in the compact table', sources.options.includes('mobile-financial-table-identity') && sources.screener.includes('mobile-financial-table-identity') && sources.watchlist.includes('mobile-financial-table-identity') && sources.css.includes('left: 0')],
   ['Watchlist phone refresh failure preserves a visible retry path', sources.watchlist.includes('refreshError') && sources.watchlist.includes('Tap refresh to retry')],
   ['Portfolio puts grouped position rows before one-at-a-time analytics', sources.portfolio.includes('if (isPhone && !isPhoneLandscape)') && sources.portfolio.indexOf('<MobilePositionRow') < sources.portfolio.indexOf('Portfolio analytics')],
   ['Portfolio Analytics is collapsed by default with touch-safe controls in both layouts', sources.portfolio.includes('useState(false)') && (sources.portfolio.match(/aria-controls="portfolio-analytics-content"/g) ?? []).length === 2 && (sources.portfolio.match(/aria-expanded=\{analyticsExpanded\}/g) ?? []).length === 2 && sources.portfolio.includes('min-h-11')],
@@ -120,7 +119,7 @@ const guardrails = [
   ['option detail shows canonical yield/risk metrics without removed return rows', sources.optionDetail.includes('Nominal Yield') && sources.optionDetail.includes('Annualized Yield') && !sources.optionDetail.includes('Net-Risk Return')],
   ['phone chart prioritizes canvas and keeps vertical page panning available', sources.chart.includes('is-phone-chart') && sources.chart.includes('touch-pan-y select-none') && !sources.chart.includes('touch-none')],
   ['holdings modal replaces the phone-width table with compact rows', sources.holdings.includes('sm:hidden') && sources.holdings.includes('hidden overflow-x-auto rounded-xl sm:block')],
-  ['shared financial rows meet requested density and touch sizing', sources.css.includes('.mobile-option-chain-row {') && sources.css.includes('min-height: 48px') && sources.css.includes('.mobile-position-row {') && sources.css.includes('min-height: 54px')],
+  ['shared financial rows meet requested density and touch sizing', sources.css.includes('.mobile-financial-table-row') && sources.css.includes('height: calc(34px') && sources.css.includes('.mobile-position-row {') && sources.css.includes('min-height: 54px')],
 ];
 
 const failedGuardrails = guardrails.filter(([, passed]) => !passed);

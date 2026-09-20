@@ -30,18 +30,7 @@
   y: min(var(--pulse-tooltip-y), 72px);
 }
 
-/* At larger sizes the narrow phone identity column needs its own watch action
-   line. Let dates/status wrap instead of losing strike digits to ellipses. */
 @media (max-width: 767px) {
-  :root:is([data-text-size="medium"], [data-text-size="large"]) .mobile-option-chain-cell--strike {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  :root:is([data-text-size="medium"], [data-text-size="large"]) :is(.mobile-option-chain-cell, .mobile-option-chain-cell__context, .mobile-option-chain-cell__expiry) {
-    white-space: normal;
-    overflow-wrap: anywhere;
-  }
-
   :root:is([data-text-size="medium"], [data-text-size="large"]) .mobile-position-row__identity {
     flex-wrap: wrap;
   }
@@ -759,8 +748,7 @@ table,
   border-right: 0;
 }
 
-.mobile-etf-row,
-.mobile-option-row {
+.mobile-etf-row {
   position: relative;
   display: block;
   min-width: 0;
@@ -2003,185 +1991,6 @@ table,
   }
 }
 
-/* Legacy shared rows remain for Screener and Watchlist until their migration. */
-.mobile-option-chain-row {
-  display: grid;
-  grid-template-columns: minmax(4.6rem, 1.15fr) minmax(3.5rem, 1fr) minmax(3.8rem, 1.12fr) repeat(3, minmax(3.05rem, 1fr));
-  min-width: 0;
-  align-items: center;
-}
-
-.mobile-option-chain-row > :first-child {
-  text-align: left;
-}
-
-.mobile-option-chain-row {
-  position: relative;
-  min-height: 48px;
-  padding: 0.2rem 0.35rem;
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--surface);
-  color: var(--text-primary);
-  cursor: pointer;
-  text-align: right;
-}
-
-.mobile-option-chain-row:nth-child(odd) {
-  background: var(--bg-secondary);
-}
-
-.mobile-option-chain-row:focus-visible {
-  z-index: 1;
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-
-.mobile-option-chain-cell {
-  min-width: 0;
-  overflow: hidden;
-  padding-inline: 0.18rem;
-  font-size: calc(0.62rem * var(--ui-text-scale));
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.mobile-option-chain-cell--strike {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  min-width: 0;
-  align-items: center;
-  gap: 0.1rem;
-  overflow: visible;
-  font-size: calc(0.73rem * var(--ui-text-scale));
-}
-
-.mobile-option-chain-cell__identity {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: minmax(0, 1fr);
-  align-items: baseline;
-  gap: 0.04rem;
-}
-
-.mobile-option-chain-cell__ticker {
-  grid-column: 1 / -1;
-  min-width: 0;
-  color: var(--accent-light);
-  font-size: calc(0.58rem * var(--ui-text-scale));
-  line-height: 1.05;
-}
-
-.mobile-option-chain-cell__strike-value {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.mobile-option-chain-cell__expiry {
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.mobile-option-chain-cell__context {
-  display: block;
-  max-width: 100%;
-  overflow: hidden;
-  color: var(--text-tertiary);
-  font-family: var(--font-data);
-  font-size: calc(0.55rem * var(--ui-text-scale));
-  font-weight: 650;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.mobile-option-chain-cell__status {
-  display: block;
-  overflow: hidden;
-  color: var(--yellow);
-  font-family: var(--font-data);
-  font-size: calc(0.54rem * var(--ui-text-scale));
-  font-weight: 650;
-  line-height: 1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.mobile-option-chain-cell--strike > button {
-  position: relative;
-}
-
-.mobile-option-chain-cell--strike > button::after {
-  position: absolute;
-  inset: -0.375rem;
-  content: '';
-}
-
-.mobile-option-chain-row--skeleton {
-  cursor: default;
-}
-
-/* Legacy denseQuoteView still serves Screener and Watchlist. The historical
-   options variant name remains until those surfaces migrate to the shared table. */
-.mobile-option-chain-row[data-variant="options"] {
-  display: block;
-  min-height: 48px;
-  padding: 0.45rem 0.5rem;
-  text-align: left;
-}
-
-.mobile-option-chain-row[data-variant="options"] > .mobile-option-chain-cell:not(.mobile-option-chain-cell--strike) {
-  display: none;
-}
-
-.mobile-option-chain-row__option-details {
-  display: grid;
-  gap: 0.35rem;
-  min-width: 0;
-  margin-top: 0.35rem;
-  padding-top: 0.35rem;
-  border-top: 1px solid var(--border-subtle);
-}
-
-.mobile-option-chain-row__quote-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(5.2rem, 1.4fr);
-  min-width: 0;
-}
-
-.mobile-option-chain-row__metric-grid {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  min-width: 0;
-}
-
-.mobile-option-chain-row[data-variant="options"] .mobile-option-chain-cell {
-  padding: 0.12rem 0.25rem;
-  border-left: 1px solid var(--border-subtle);
-  text-align: left;
-}
-
-.mobile-option-chain-row[data-variant="options"] .mobile-option-chain-cell:first-child {
-  border-left: 0;
-}
-
-.mobile-option-chain-row[data-variant="options"] .mobile-option-chain-cell > .mobile-option-chain-cell__context,
-.mobile-option-chain-row[data-variant="options"] .mobile-option-chain-cell > .mobile-option-chain-cell__status {
-  line-height: 1.05;
-}
-
-.mobile-option-chain-row__status {
-  padding-inline: 0.25rem;
-}
-
-.mobile-option-chain-row--skeleton span {
-  height: 0.7rem;
-  margin-inline: 0.18rem;
-  border-radius: 0.2rem;
-  background: var(--border);
-}
-
 .mobile-position-row {
   position: relative;
   min-height: 54px;
@@ -2430,13 +2239,7 @@ table,
   padding: 0.625rem 0.875rem;
 }
 
-.mobile-option-row {
-  min-height: 104px;
-  padding: 0.5rem 0.75rem;
-}
-
-.mobile-etf-row:active,
-.mobile-option-row:active {
+.mobile-etf-row:active {
   background: var(--surface-alt);
 }
 
@@ -2874,27 +2677,6 @@ td {
   .watchlist-page > div:first-child button {
     min-height: 36px;
     height: 36px;
-  }
-
-  .watchlist-page .mobile-option-row {
-    min-height: 92px;
-    padding-block: 0.35rem;
-  }
-
-  .watchlist-mobile-note {
-    padding-bottom: 0;
-  }
-
-  .watchlist-mobile-note button,
-  .watchlist-mobile-note input {
-    min-height: 34px;
-    height: 34px;
-  }
-
-  .watchlist-mobile-note button {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .is-phone-landscape-chart .chart-modal-header {
@@ -3559,6 +3341,24 @@ td {
   }
 
   .mobile-option-route-page .mobile-financial-table-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .mobile-financial-table-route {
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    overflow: hidden;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .mobile-financial-table-route > :not(.mobile-financial-table-scroll) {
+    flex-shrink: 0;
+  }
+
+  .mobile-financial-table-route > .mobile-financial-table-scroll {
     flex: 1 1 auto;
     min-height: 0;
   }
@@ -6441,26 +6241,6 @@ input[type="number"] {
 }
 
 @media (orientation: landscape) and (max-height: 520px) and (max-width: 950px) {
-  .mobile-option-chain-row {
-    grid-template-columns: minmax(7rem, 1.45fr) minmax(3.5rem, 1fr) minmax(3.8rem, 1.12fr) repeat(3, minmax(3rem, 1fr));
-  }
-
-  .mobile-option-chain-cell__identity {
-    display: flex;
-    align-items: baseline;
-    gap: 0.22rem;
-  }
-
-  .mobile-option-chain-cell__ticker {
-    flex: none;
-    width: auto;
-    font-size: calc(0.56rem * var(--ui-text-scale));
-  }
-
-  .mobile-option-chain-cell__expiry {
-    max-width: 4.25rem;
-  }
-
   .screener-mobile-state {
     padding-block: 1rem;
   }
@@ -6530,10 +6310,10 @@ input[type="number"] {
 
 /* Shared microinteractions: individual translate/scale preserve layout transforms.
    Rows, tab indicators, sticky headers and static analytical surfaces stay still. */
-:is(.button-primary, .button-secondary, .button-ghost, .icon-button, button.pressable, a.pressable, .mobile-sheet-action):not([role="tab"]):not([role="row"]):not(.mobile-etf-row, .mobile-option-row, .mobile-option-card, .mobile-segmented__item, .mobile-pulse-list-item, .scanner-filter-control, .drawer-quote-selector > button):not(th *) {
+:is(.button-primary, .button-secondary, .button-ghost, .icon-button, button.pressable, a.pressable, .mobile-sheet-action):not([role="tab"]):not([role="row"]):not(.mobile-etf-row, .mobile-segmented__item, .mobile-pulse-list-item, .scanner-filter-control, .drawer-quote-selector > button):not(th *) {
   transition: color var(--transition-ui), background-color var(--transition-ui), border-color var(--transition-ui), opacity var(--transition-ui), translate var(--motion-fast) var(--ease-emphasized), scale var(--motion-instant) var(--ease-emphasized);
 }
-:is(.app-nav-item, .app-utility-button, [role="tab"], .mobile-segmented__item, .mobile-pulse-list-item, .drawer-quote-selector > button, .recommendation-card__summary, .mobile-option-card, .mobile-option-row, .mobile-etf-row, .portfolio-priority-item, th button) {
+:is(.app-nav-item, .app-utility-button, [role="tab"], .mobile-segmented__item, .mobile-pulse-list-item, .drawer-quote-selector > button, .recommendation-card__summary, .mobile-etf-row, .portfolio-priority-item, th button) {
   transition: color var(--transition-ui), background-color var(--transition-ui), border-color var(--transition-ui), opacity var(--transition-ui);
 }
 :is(.instrument-card, .scanner-market-card) {
@@ -6552,7 +6332,7 @@ input[type="number"] {
   .scanner-results-count__value { animation: scanner-result-count-ack var(--motion-fast) var(--ease-ui); }
   .scanner-results-grid > .instrument-card { animation: scanner-card-enter var(--motion-fast) var(--ease-ui); }
   @media (hover: hover) and (pointer: fine) {
-    :is(.button-primary, .button-secondary, .button-ghost, .icon-button, button.pressable, a.pressable, .mobile-sheet-action):not([role="tab"]):not([role="row"]):not(.mobile-etf-row, .mobile-option-row, .mobile-option-card, .mobile-segmented__item, .mobile-pulse-list-item, .scanner-filter-control, .drawer-quote-selector > button):not(th *):not(:disabled):not([aria-disabled="true"]):hover {
+    :is(.button-primary, .button-secondary, .button-ghost, .icon-button, button.pressable, a.pressable, .mobile-sheet-action):not([role="tab"]):not([role="row"]):not(.mobile-etf-row, .mobile-segmented__item, .mobile-pulse-list-item, .scanner-filter-control, .drawer-quote-selector > button):not(th *):not(:disabled):not([aria-disabled="true"]):hover {
       translate: 0 -2px;
     }
     :is(.instrument-card, .scanner-market-card, .pulse-heatmap-tile):hover {
@@ -6561,7 +6341,7 @@ input[type="number"] {
       box-shadow: 0 6px 16px color-mix(in srgb, var(--bg) 28%, transparent);
     }
   }
-  :is(.button-primary, .button-secondary, .button-ghost, .icon-button, button.pressable, a.pressable, .mobile-sheet-action):not([role="tab"]):not([role="row"]):not(.mobile-etf-row, .mobile-option-row, .mobile-option-card, .mobile-segmented__item, .mobile-pulse-list-item, .scanner-filter-control, .drawer-quote-selector > button):not(th *):not(:disabled):not([aria-disabled="true"]):active {
+  :is(.button-primary, .button-secondary, .button-ghost, .icon-button, button.pressable, a.pressable, .mobile-sheet-action):not([role="tab"]):not([role="row"]):not(.mobile-etf-row, .mobile-segmented__item, .mobile-pulse-list-item, .scanner-filter-control, .drawer-quote-selector > button):not(th *):not(:disabled):not([aria-disabled="true"]):active {
     translate: 0 0;
     scale: .985;
     /* A short touch must reach the pressed state; release uses motion-instant. */
@@ -6677,7 +6457,7 @@ details[open] > summary > .lucide-chevron-down { transform: rotate(180deg); }
   outline-offset: 2px;
 }
 /* A pressed row gets a contact edge, never geometric movement. */
-:is(.mobile-etf-row, .mobile-option-chain-row, .mobile-option-row, .mobile-pulse-list-item,
+:is(.mobile-etf-row, .mobile-pulse-list-item,
     .recommendation-card__summary, .portfolio-history-mobile-row__summary):active {
   box-shadow: inset 3px 0 var(--accent);
 }

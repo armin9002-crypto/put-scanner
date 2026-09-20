@@ -30,7 +30,8 @@ test('Screener identity columns and compact warning presentation stay deliberate
     ['ticker', 'expDate', 'strike', 'price', 'moneyness', 'delta'],
   );
   assert.match(source, /formatScreenerDelta\(row\.delta\)/);
-  assert.match(source, /deltaFormatter=\{formatScreenerDelta\}/);
+  assert.match(source, /<MobileFinancialTable /);
+  assert.match(source, /mobile-financial-table-identity/);
   assert.match(source, /className="flex min-h-\[24px\] items-center gap-1\.5 whitespace-nowrap"/);
   assert.doesNotMatch(source, /\{row\.expLabel\} · \$\{formatPrice\(row\.strike\)\} put/);
 });
@@ -68,7 +69,7 @@ test('all quote views share deterministic LAST, BID, MID, ASK display order', ()
   const drawerSource = readFileSync(new URL('../src/components/OptionDetailDrawer.tsx', import.meta.url), 'utf8');
   const portfolioSource = readFileSync(new URL('../src/pages/PortfolioPage.tsx', import.meta.url), 'utf8');
   const scannerEvidenceSource = readFileSync(new URL('../src/components/ScannerSnapshotEvidence.tsx', import.meta.url), 'utf8');
-  const mobileSource = readFileSync(new URL('../src/components/mobile/MobileOptionRow.tsx', import.meta.url), 'utf8');
+  const mobileTableSource = readFileSync(new URL('../src/components/mobile/MobileFinancialTable.tsx', import.meta.url), 'utf8');
   assert.deepEqual(OPTION_QUOTE_DISPLAY_ORDER, ['last', 'bid', 'mid', 'ask']);
   assert.deepEqual(OPTION_QUOTE_TABLE_DISPLAY_ORDER, ['last', 'bid', 'ask']);
   assert.deepEqual(orderedOptionQuoteEntries({ last: 4, bid: 3, mid: 2, ask: 1 }).map(entry => [entry.field, entry.value]), [
@@ -78,10 +79,11 @@ test('all quote views share deterministic LAST, BID, MID, ASK display order', ()
     assert.match(source, /OPTION_QUOTE_TABLE_DISPLAY_ORDER\.map\(field => quoteColumns\[field\]\)/);
     assert.match(source, /OPTION_QUOTE_TABLE_DISPLAY_ORDER\.map\(field => <td/);
   }
-  assert.match(mobileSource, /data-field="last"/);
-  assert.match(mobileSource, /data-field="ay-last"/);
-  assert.match(mobileSource, /data-field="ay-bid"/);
-  assert.match(mobileSource, /data-field="ay-ask"/);
+  assert.match(optionsSource, /key: 'last'/);
+  assert.match(optionsSource, /key: 'annYieldLast'/);
+  assert.match(optionsSource, /key: 'annYieldBid'/);
+  assert.match(optionsSource, /key: 'annYieldAsk'/);
+  assert.match(mobileTableSource, /<table/);
   assert.match(drawerSource, /orderedOptionQuoteEntries\(\{ last: usableLast, bid: executableBid, mid, ask: executableAsk \}\)/);
   assert.match(portfolioSource, /orderedOptionQuoteEntries\(\{[\s\S]*?last: trade\.latestMarketData\?\.optionLast,[\s\S]*?bid: trade\.latestMarketData\?\.optionBid,[\s\S]*?mid: getPortfolioMidMark\(trade\),[\s\S]*?ask: trade\.latestMarketData\?\.optionAsk/);
   assert.match(scannerEvidenceSource, /orderedOptionQuoteEntries\(\{ last: snapshot\?\.last, bid: snapshot\?\.bid, mid: snapshot\?\.midpoint, ask: snapshot\?\.ask \}\)/);

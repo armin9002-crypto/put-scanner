@@ -27,8 +27,8 @@ test('kinetic workstation interaction walkthrough', async ({ page }, info) => {
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.goto('/options/TQQQ');
-  await expect(page.locator('.mobile-option-chain-row, tbody tr').first()).toBeVisible();
-  await page.locator('.mobile-option-chain-row:visible, tbody tr:visible').first().click();
+  await expect(page.locator('.mobile-financial-table-row:visible, .option-desktop-chain tbody tr:visible').first()).toBeVisible();
+  await page.locator('.mobile-financial-table-row:visible, .option-desktop-chain tbody tr:visible').first().click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.screenshot({ path: `e2e-artifacts/kinetic/${process.env.KINETIC_CAPTURE || 'final'}-${info.project.name}-drawer.png` });
   await page.keyboard.press('Escape');

@@ -95,7 +95,7 @@ test('current UI surfaces contain canonical labels and no retired metric copy', 
     read('src/pages/WatchlistPage.tsx'),
     read('src/pages/PortfolioPage.tsx'),
     read('src/components/OptionDetailDrawer.tsx'),
-    read('src/components/mobile/MobileOptionRow.tsx'),
+    read('src/components/mobile/MobileFinancialTable.tsx'),
   ]);
   const currentUi = sources.join('\n');
   assert.match(currentUi, /Show Nominal Yield/);

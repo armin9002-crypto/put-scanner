@@ -94,18 +94,18 @@ test('Scanner links use one shared expiry-aware path and detail load requests th
 });
 
 test('Options page and generic drawer keep the shared interaction contract visible', async () => {
-  const [options, row, drawer] = await Promise.all([
+  const [options, table, drawer] = await Promise.all([
     read('src/pages/OptionsPage.tsx'),
-    read('src/components/mobile/MobileOptionRow.tsx'),
+    read('src/components/mobile/MobileFinancialTable.tsx'),
     read('src/components/OptionDetailDrawer.tsx'),
   ]);
   assert.equal((options.match(/onAddToPortfolio=\{addSelectedToPortfolio\}/g) ?? []).length, 2);
   assert.match(options, /aria-sort=\{sortField === col\.field/);
   assert.match(options, /focus-visible:ring-2/);
   assert.match(options, /Invalid quote · economics unavailable/);
-  assert.match(row, /data-field="last-quote"/);
-  assert.match(row, /data-field="last-trade"/);
-  assert.match(row, /deltaSourceText\(props\.deltaSource\)/);
+  assert.match(options, /data-option-strike/);
+  assert.match(options, /lastTradeDate/);
+  assert.match(table, /<tbody>/);
   assert.match(drawer, /positive whole number of contracts/);
   assert.match(drawer, /sold price greater than 0/);
   for (const label of ['Premium', 'Breakeven', 'Downside Cushion', 'Gross Risk', 'Net Risk', 'NY', 'AY']) {
