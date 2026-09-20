@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { installDeterministicMarketApi } from './fixtures/marketApi';
 import { installDeterministicCloudAccount } from './fixtures/cloudAccount';
+import { SCREENER_CHUNKS } from '../shared/screenerUniverse.js';
 
 const NOW = new Date('2026-09-14T17:00:00Z');
 const FUTURE = Date.parse('2026-11-20T00:00:00Z') / 1000;
@@ -26,7 +27,7 @@ async function setup(page: Page, delayDiscovery = false) {
   return { market, release, makePositive: () => { qqUpPositive = true; } };
 }
 
-test('cold load hides unconfirmed cards; all and exact scopes show confirmed membership; positive refresh reappears', async ({ page }, testInfo) => {
+test('cold load hides unconfirmed cards; all and exact scopes show confirmed membership; closed hours stay request-quiet', async ({ page }, testInfo) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   const fixture = await setup(page, true);
@@ -47,12 +48,15 @@ test('cold load hides unconfirmed cards; all and exact scopes show confirmed mem
   expect(fixture.market.counts.get('options') ?? 0).toBe(0);
   await select.selectOption('all');
   fixture.makePositive();
-  await page.evaluate(() => sessionStorage.removeItem('screener_expirations_v4'));
+  await page.evaluate(() => {
+    sessionStorage.removeItem('screener_expirations_v4');
+    localStorage.removeItem('screener_expirations_v4');
+  });
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(page.locator('a[href^="/options/QQUP"]')).toBeVisible();
   const requestsBeforeExpiry = fixture.market.counts.get('options') ?? 0;
   await page.clock.fastForward(8 * 60 * 60 * 1000 + 1000);
-  await expect(opportunityLinks(page)).toHaveCount(0);
+  await expect(opportunityLinks(page)).toHaveCount(3);
   expect(fixture.market.counts.get('options') ?? 0).toBe(requestsBeforeExpiry);
   expect(errors).toEqual([]);
 });
@@ -65,6 +69,36 @@ test('explicit manual ticker investigation still navigates when ticker has no co
   await expect(page.locator('a[href^="/options/QQUP"]')).toHaveCount(0);
   await page.getByRole('button', { name: 'Go to Option Chain', exact: true }).click();
   await expect(page).toHaveURL(/\/options\/QQUP/);
+});
+
+test('empty browser storage bootstraps a retained Friday dataset on a closed Sunday', async ({ page }) => {
+  const friday = new Date('2026-09-18T20:00:00Z');
+  const sunday = new Date('2026-09-20T18:00:00Z');
+  const pastExpiration = Date.parse('2026-09-18T00:00:00Z') / 1000;
+  const futureExpiration = Date.parse('2026-10-16T00:00:00Z') / 1000;
+  let expirationRequests = 0;
+  await page.clock.install({ time: sunday });
+  await page.addInitScript(() => localStorage.clear());
+  await installDeterministicMarketApi(page);
+  await installDeterministicCloudAccount(page, { portfolio: [], watchlist: [], preferences: {} });
+  await page.route('**/api/screener-expirations**', async route => {
+    expirationRequests += 1;
+    await route.fulfill({ json: {
+      datasetVersion: 4,
+      fetchedAt: friday.getTime(),
+      complete: true,
+      expirationsByTicker: Object.fromEntries(SCREENER_CHUNKS.flatMap(chunk => chunk.tickers).map(ticker => [ticker, [pastExpiration, futureExpiration]])),
+      errors: [],
+      retainedFromLastKnownGood: true,
+      retentionReason: `Using last-known-good optionability observed at ${friday.toISOString()}.`,
+      diagnostics: { upstreamRequests: 0, maxObservedConcurrency: 0, circuitBreakerRejections: 0 },
+    } });
+  });
+
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('a[href^="/options/TQQQ"]')).toBeVisible();
+  await expect(page.getByText(/84 confirmed .*0 temporarily unverified/).first()).toBeVisible();
+  expect(expirationRequests).toBe(1);
 });
 
 test('continuously open Scanner reacquires once at the next regular session and stays quiet after focus rerenders', async ({ page }) => {

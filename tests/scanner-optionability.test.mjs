@@ -4,6 +4,7 @@ import { normalizeScreenerExpirationAvailability, retainScreenerExpirationEviden
 import { buildExpirationState, nextScannerExpirationSessionCheckAt, retainScannerPositiveEvidenceAfterFailure, scannerExpirationStateNeedsRevalidation, tickerMatchesScannerExpiration } from '../src/lib/scannerUpdateState.ts';
 import { primeMarketDataCache, clearMarketDataCache } from '../src/lib/marketDataRequest.ts';
 import { SCREENER_TICKERS } from '../shared/screenerUniverse.js';
+import { resolveScreenerExpirationDataset, SCREENER_EXPIRATION_EVIDENCE_CACHE_KEY } from '../api/_lib/screenerExpirationEvidence.js';
 
 const now = Date.parse('2026-09-14T17:00:00Z');
 const future = Date.parse('2026-10-16T00:00:00Z') / 1000;
@@ -13,6 +14,26 @@ const payload = (entries, extra = {}) => ({ datasetVersion: 4, fetchedAt: now, c
 function eligible(result, ticker, filter = 'all') {
   const state = buildExpirationState(result.expirationsByTicker, result.complete ? 'complete' : 'partial', result.errors);
   return tickerMatchesScannerExpiration(ticker, filter, state.availability, true, new Date(now), state.coverage);
+}
+
+function runtimeCache(initial = null) {
+  const values = new Map(initial ? [[SCREENER_EXPIRATION_EVIDENCE_CACHE_KEY, initial]] : []);
+  return {
+    values,
+    async get(key) { return values.get(key); },
+    async set(key, value) { values.set(key, value); },
+  };
+}
+
+function completeBackendDataset(fetchedAt, dates = [past, future]) {
+  return {
+    datasetVersion: 4,
+    fetchedAt,
+    complete: true,
+    expirationsByTicker: Object.fromEntries(SCREENER_TICKERS.map(ticker => [ticker, dates])),
+    errors: [],
+    diagnostics: { upstreamRequests: 84, maxObservedConcurrency: 3, circuitBreakerRejections: 0 },
+  };
 }
 
 test('partial ticker positives and authoritative negatives stay distinct from unknown/global errors', () => {
@@ -77,6 +98,96 @@ test('real shared request cache retains positive evidence after a failed next-se
     assert.equal(result.fetchedAt, observed);
     assert.equal(result.complete, false);
   } finally { globalThis.fetch = originalFetch; clearMarketDataCache(key, 'local'); }
+});
+
+test('closed-market cold bootstrap serves backend last-known-good evidence to an empty client without provider traffic', async () => {
+  const friday = Date.parse('2026-09-18T20:00:00Z');
+  const sunday = Date.parse('2026-09-20T18:00:00Z');
+  const backend = completeBackendDataset(friday);
+  const cache = runtimeCache(backend);
+  let acquisitionCalls = 0;
+  const resolved = await resolveScreenerExpirationDataset({
+    cache,
+    nowMs: sunday,
+    acquire: async () => { acquisitionCalls += 1; throw new Error('must not acquire on a retained closed-market bootstrap'); },
+  });
+  assert.equal(acquisitionCalls, 0);
+  assert.equal(resolved.source, 'last-known-good');
+  assert.equal(resolved.dataset.fetchedAt, friday);
+  assert.equal(resolved.dataset.retainedFromLastKnownGood, true);
+  assert.equal(resolved.dataset.expirationsByTicker.TQQQ.includes(past / 1), false);
+  assert.deepEqual(resolved.dataset.expirationsByTicker.TQQQ, [future]);
+
+  const originalFetch = globalThis.fetch;
+  const key = 'screener_expirations_v4';
+  clearMarketDataCache(key, 'local');
+  globalThis.fetch = async () => Response.json(resolved.dataset);
+  try {
+    const client = await fetchScreenerExpirationAvailability({ nowMs: sunday });
+    assert.equal(client.complete, true);
+    assert.equal(client.fetchedAt, friday);
+    assert.equal(client.observedAtByTicker.TQQQ, friday);
+    assert.equal(client.retainedFromLastKnownGood, true);
+    assert.deepEqual(client.expirationsByTicker.TQQQ, [future]);
+    assert.equal(eligible(client, 'TQQQ'), true);
+  } finally {
+    globalThis.fetch = originalFetch;
+    clearMarketDataCache(key, 'local');
+  }
+});
+
+test('last-known-good expiration evidence is replaced only by newer complete data', async () => {
+  const friday = Date.parse('2026-09-18T20:00:00Z');
+  const monday = Date.parse('2026-09-21T14:00:00Z');
+  const cache = runtimeCache(completeBackendDataset(friday));
+  const partial = {
+    ...completeBackendDataset(monday),
+    complete: false,
+    expirationsByTicker: { QQUP: [] },
+    errors: [{ ticker: 'TQQQ', message: 'Yahoo incomplete off-hours response' }],
+  };
+  const retainedAfterPartial = await resolveScreenerExpirationDataset({
+    cache,
+    freshRequested: true,
+    nowMs: monday,
+    acquire: async () => partial,
+  });
+  assert.equal(retainedAfterPartial.source, 'last-known-good');
+  assert.equal(retainedAfterPartial.dataset.fetchedAt, monday);
+  assert.deepEqual(retainedAfterPartial.dataset.expirationsByTicker.QQUP, []);
+  const mergedClient = normalizeScreenerExpirationAvailability(retainedAfterPartial.dataset, false, monday);
+  assert.deepEqual(mergedClient.expirationsByTicker.QQUP, []);
+  assert.deepEqual(mergedClient.expirationsByTicker.TQQQ, [future]);
+  assert.equal(mergedClient.observedAtByTicker.TQQQ, friday);
+  assert.equal(cache.values.get(SCREENER_EXPIRATION_EVIDENCE_CACHE_KEY).fetchedAt, friday);
+
+  const newer = await resolveScreenerExpirationDataset({
+    cache,
+    freshRequested: true,
+    nowMs: monday,
+    acquire: async () => completeBackendDataset(monday, [future]),
+  });
+  assert.equal(newer.source, 'network-complete');
+  assert.equal(cache.values.get(SCREENER_EXPIRATION_EVIDENCE_CACHE_KEY).fetchedAt, monday);
+});
+
+test('without any trusted backend snapshot, a closed-market partial bootstrap stays incomplete and fail-closed', async () => {
+  const sunday = Date.parse('2026-09-20T18:00:00Z');
+  const cache = runtimeCache();
+  const partial = {
+    ...completeBackendDataset(sunday),
+    complete: false,
+    expirationsByTicker: {},
+    errors: [{ message: 'Yahoo incomplete off-hours response' }],
+  };
+  const resolved = await resolveScreenerExpirationDataset({ cache, nowMs: sunday, acquire: async () => partial });
+  assert.equal(resolved.source, 'network-partial');
+  assert.equal(resolved.dataset.complete, false);
+  assert.equal(cache.values.has(SCREENER_EXPIRATION_EVIDENCE_CACHE_KEY), false);
+  const client = normalizeScreenerExpirationAvailability(resolved.dataset, false, sunday);
+  assert.equal(client.complete, false);
+  assert.deepEqual(client.expirationsByTicker, {});
+  assert.equal(eligible(client, 'TQQQ'), false);
 });
 
 test('QQUP stays in the registry while authoritative discovery drives absence, unknown, and reappearance', async () => {

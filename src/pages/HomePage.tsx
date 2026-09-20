@@ -77,6 +77,16 @@ function marketChangeColor(changePercent: number): string {
   return changePercent >= 0 ? 'var(--green)' : 'var(--red)';
 }
 
+function availabilityObservationLabel(state: CachedExpirationState): string | null {
+  const observations = Object.values(state.observedAtByTicker ?? {}).filter(value => Number.isFinite(value));
+  const dates = new Set(observations.map(value => usMarketDateIso(value)));
+  dates.delete('');
+  if (dates.size === 0) return null;
+  if (dates.size > 1) return `availability observed across ${dates.size} market sessions`;
+  const observedAt = Math.max(...observations);
+  return `availability observed ${new Date(observedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+}
+
 function chartReferenceClose(data: SparklineData): number | null {
   if (data.previousClose != null && Number.isFinite(data.previousClose)) return data.previousClose;
   // Yahoo can omit chartPreviousClose on thin intraday responses; first print is a graceful visual fallback.
@@ -226,6 +236,7 @@ export default function HomePage() {
   activeEvidenceRef.current = activeEvidence;
   const { expirations: availableExps, availability: expiryAvailability } = expirationState;
   const expirationAvailabilityReady = expirationState.coverage !== 'cached';
+  const expirationObservation = availabilityObservationLabel(expirationState);
 
   useEffect(() => () => {
     const currentRun = snapshotRunRef.current;
@@ -756,7 +767,7 @@ export default function HomePage() {
         <div className="mobile-scanner-results-header flex items-center justify-between gap-3 border-y px-3.5 py-2" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
           <div className="min-w-0">
             <h2 className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>ETF opportunities</h2>
-            {expirationScope && <p className="text-[10px]" style={{ color: expirationScope.unverified > 0 || expirationState.coverage !== 'complete' ? 'var(--yellow)' : 'var(--text-muted)' }}>{expirationScope.confirmed} confirmed · {expirationScope.unverified} temporarily unverified{expirationState.coverage !== 'complete' ? ' · availability incomplete' : ''}</p>}
+            {expirationScope && <p className="text-[10px]" style={{ color: expirationScope.unverified > 0 || expirationState.coverage !== 'complete' ? 'var(--yellow)' : 'var(--text-muted)' }}>{expirationScope.confirmed} confirmed · {expirationScope.unverified} temporarily unverified{expirationState.coverage !== 'complete' ? ' · availability incomplete' : ''}{expirationObservation ? ` · ${expirationObservation}` : ''}</p>}
             <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}><ScannerResultCount count={filtered.length} /> · {expDropdownOptions.find(option => option.value === expFilter)?.label ?? 'All dates'}</p>
           </div>
           {(pricesLoading || marketLoading) && <span className="flex items-center gap-1 text-[11px]" style={{ color: 'var(--text-muted)' }}><Loader2 className="h-3 w-3 animate-spin" /> Updating</span>}
@@ -887,7 +898,7 @@ export default function HomePage() {
         </section>
 
         <section aria-label="ETF opportunities">
-          <SectionHeader title="ETF opportunities" actions={<div className="scanner-results-meta"><DataFreshness updatedAt={pricesUpdatedAt} status={pricesFreshness} label="Scanner prices" />{pricesError && <span className="scanner-status-line__error">{pricesError}</span>}{expirationScope && <span className="scanner-expiration-coverage">{expirationScope.confirmed} confirmed · {expirationScope.unverified} temporarily unverified{expirationState.coverage !== 'complete' ? ' · incomplete' : ''}</span>}<ScannerResultCount count={filtered.length} /></div>} />
+          <SectionHeader title="ETF opportunities" actions={<div className="scanner-results-meta"><DataFreshness updatedAt={pricesUpdatedAt} status={pricesFreshness} label="Scanner prices" />{pricesError && <span className="scanner-status-line__error">{pricesError}</span>}{expirationScope && <span className="scanner-expiration-coverage">{expirationScope.confirmed} confirmed · {expirationScope.unverified} temporarily unverified{expirationState.coverage !== 'complete' ? ' · incomplete' : ''}{expirationObservation ? ` · ${expirationObservation}` : ''}</span>}<ScannerResultCount count={filtered.length} /></div>} />
           {expirationDatesLoading && filtered.length === 0 && <div className="scanner-incomplete-availability" role="status"><Loader2 className="inline h-3 w-3 animate-spin" /> Checking option availability...</div>}
           <div className="scanner-results-grid">
           {filtered.map(etf => (

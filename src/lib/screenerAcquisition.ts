@@ -69,6 +69,9 @@ interface ScreenerExpirationPayload {
   complete: boolean;
   expirationsByTicker: Record<string, number[]>;
   errors: Array<{ ticker?: string; message: string }>;
+  refreshErrors?: Array<{ ticker?: string; message: string }>;
+  retainedFromLastKnownGood?: boolean;
+  retentionReason?: string | null;
   retainedExpirationsByTicker?: Record<string, { dates: number[]; fetchedAt: number }>;
   diagnostics: {
     upstreamRequests: number;
@@ -85,6 +88,7 @@ export interface ScreenerExpirationAvailability {
   retentionReason?: string | null;
   observedAtByTicker?: Record<string, number>;
   refreshErrors?: Array<{ ticker?: string; message: string }>;
+  retainedFromLastKnownGood?: boolean;
 }
 
 export type ScreenerExpirationEvidence = 'present' | 'absent' | 'unknown';
@@ -626,11 +630,12 @@ export function normalizeScreenerExpirationAvailability(
     complete: payload.complete && !staleFallbackUsed && !expired,
     // Acquisition failures remain available separately; retained positives have their own trusted observation.
     errors: payload.errors.filter(error => error.ticker == null ? retainedTickers.size === 0 : !retainedTickers.has(error.ticker.trim().toUpperCase())),
-    refreshErrors: payload.errors,
+    refreshErrors: payload.refreshErrors ?? payload.errors,
     observedAtByTicker,
     fetchedAt: payload.fetchedAt,
-    retentionReason: expired ? 'Expiration availability evidence exceeded the market-session retention bound.'
-      : staleFallbackUsed || retainedTickers.size > 0 ? 'Availability refresh failed; recent confirmed expirations retained.' : null,
+    retainedFromLastKnownGood: payload.retainedFromLastKnownGood === true,
+    retentionReason: payload.retentionReason ?? (expired ? 'Expiration availability evidence exceeded the market-session retention bound.'
+      : staleFallbackUsed || retainedTickers.size > 0 ? 'Availability refresh failed; recent confirmed expirations retained.' : null),
   };
 }
 
