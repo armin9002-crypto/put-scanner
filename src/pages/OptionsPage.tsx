@@ -33,7 +33,7 @@ import {
 import { isOptionContractIntegrityInvalid, parseYahooOptionSymbol, trustedOptionPrice } from '../lib/optionMarketIntegrity';
 import SparklineChart from '../components/SparklineChart';
 import ErrorBoundary from '../components/ErrorBoundary';
-import MobileOptionRow from '../components/mobile/MobileOptionRow';
+import MobileFinancialTable, { MobileFinancialTableDivider, type MobileFinancialColumn } from '../components/mobile/MobileFinancialTable';
 import AccountControl from '../components/AccountControl';
 import { useResponsiveMode } from '../lib/responsive';
 import type { AddToPortfolioDraft } from '../components/OptionDetailDrawer';
@@ -249,113 +249,11 @@ function lastTradeStatusLabel(value: number | null | undefined): string {
   return `${freshness.label ?? 'Recent'} · ${age}`;
 }
 
-function MobileStat({ label, value, color }: { label: string; value: string; color?: string }) {
-  return (
-    <div className="min-w-0">
-      <div className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>{label}</div>
-      <div className="text-xs font-mono font-semibold tabular-nums truncate" style={{ color: color ?? 'var(--text)' }}>{value}</div>
-    </div>
-  );
-}
-
-function MobileOptionCard({
-  put,
-  moneyness,
-  watched,
-  showVolOI,
-  showNominalYield,
-  onToggleWatchlist,
-  onSelect,
-  focused = false,
-}: {
-  put: EnrichedPut;
-  moneyness: ShortPutMoneynessState;
-  watched: boolean;
-  showVolOI: boolean;
-  showNominalYield: boolean;
-  onToggleWatchlist: () => void;
-  onSelect: () => void;
-  focused?: boolean;
-}) {
-  const presentation = shortPutMoneynessPresentation(moneyness);
-  const statusLabel = presentation.label;
-
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      data-option-strike={put.strike}
-      onClick={onSelect}
-      onKeyDown={event => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          onSelect();
-        }
-      }}
-      className="mobile-option-card w-full rounded-xl p-3 text-left"
-      style={{ backgroundColor: focused ? 'var(--accent-bg)' : 'var(--surface)', border: `1px solid ${focused ? 'var(--accent)' : 'var(--border)'}`, boxShadow: focused ? '0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent)' : undefined }}
-    >
-      <div className="flex items-start justify-between gap-2 min-w-0">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="text-base font-mono font-bold tabular-nums" style={{ color: 'var(--text)' }}>
-              ${formatPrice(put.strike)} Put
-            </span>
-            <span
-              className="rounded px-1.5 py-0.5 text-[10px] font-bold"
-              title={presentation.accessibleLabel}
-              style={{ backgroundColor: presentation.backgroundColor ?? 'var(--surface-alt)', color: presentation.color, border: `1px solid ${presentation.borderColor}` }}
-            >
-              {statusLabel}
-            </span>
-          </div>
-          {put.otmItmLabel && (
-            <div className="mt-0.5 text-xs font-mono tabular-nums" style={{ color: put.otmItmColor }}>
-              {put.otmItmLabel}
-            </div>
-          )}
-          {put.integrityStatus === 'invalid' && <div className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold" style={{ color: 'var(--yellow)' }} title={put.integrityReasonCodes.join(', ')}><AlertTriangle className="h-3 w-3" />Quote inconsistent</div>}
-        </div>
-        <button
-          type="button"
-          onClick={event => {
-            event.stopPropagation();
-            onToggleWatchlist();
-          }}
-          aria-label={watched ? 'Remove from watchlist' : 'Add to watchlist'}
-          className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg"
-          style={{ color: watched ? 'var(--accent-light)' : 'var(--text-dim)' }}
-        >
-          <Star className={`h-4 w-4 ${watched ? 'fill-current' : ''}`} />
-        </button>
-      </div>
-
-      <div className="mobile-option-card-grid mt-3 grid grid-cols-3 gap-2">
-        {OPTION_QUOTE_TABLE_DISPLAY_ORDER.map(field => <MobileStat key={field} label={OPTION_QUOTE_DISPLAY_LABELS[field]} value={formatOptionQuoteValue(field, put[field], formatPrice)} color={field === 'bid' ? 'var(--green)' : undefined} />)}
-      </div>
-      <div className={`mobile-secondary-grid mt-2 grid gap-2 ${showNominalYield ? 'grid-cols-4' : 'grid-cols-3'}`}>
-        <MobileStat label="Delta" value={put.delta != null ? put.delta.toFixed(2) : '—'} color={deltaColor(put.delta)} />
-        <MobileStat label="IV" value={put.impliedVolatility != null ? `${put.impliedVolatility.toFixed(1)}%` : '—'} color={ivColor(put.impliedVolatility)} />
-        <MobileStat label="AY Bid" value={put.annYieldBid != null ? formatYield(put.annYieldBid) : '—'} color={put.annYieldBid != null ? yieldColor(put.annYieldBid) : 'var(--text-dim)'} />
-        {showNominalYield && <MobileStat label="NY Bid" value={put.nomYieldBid != null ? formatYield(put.nomYieldBid) : '—'} />}
-      </div>
-      {showVolOI && (
-        <div className="mobile-secondary-grid mt-2 grid grid-cols-3 gap-2 border-t pt-2" style={{ borderColor: 'var(--border)' }}>
-          <MobileStat label="Volume" value={formatNumber(put.volume)} />
-          <MobileStat label="OI" value={formatNumber(put.openInterest)} />
-          <MobileStat label="Vol/OI" value={put.volOI != null ? put.volOI.toFixed(2) : '—'} />
-        </div>
-      )}
-    </div>
-  );
-}
-
 const PRICE_HEADER_TOP = 56;
 const EXPIRY_ROW_TOP = 144;
 
 export default function OptionsPage() {
   const { isPhone, isPhoneLandscape } = useResponsiveMode();
-  const mobileOptionHeaderRef = useRef<HTMLElement | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
   const { ticker: routeTicker } = useParams<{ ticker: string }>();
@@ -982,22 +880,6 @@ export default function OptionsPage() {
   const sparklineData = extendedPrice?.sparkline ?? [];
   const sparklineColor = changePositive ? 'var(--green)' : 'var(--red)';
 
-  useEffect(() => {
-    const header = mobileOptionHeaderRef.current;
-    const route = header?.parentElement;
-    if (!header || !route) return undefined;
-    const updateStickyOffset = () => {
-      route.style.setProperty('--mobile-option-chain-sticky-top', `${Math.ceil(header.getBoundingClientRect().height)}px`);
-    };
-    updateStickyOffset();
-    if (typeof ResizeObserver === 'undefined') return undefined;
-    const observer = new ResizeObserver(updateStickyOffset);
-    observer.observe(header);
-    return () => {
-      observer.disconnect();
-      route.style.removeProperty('--mobile-option-chain-sticky-top');
-    };
-  }, [isPhone, isPhoneLandscape]);
 
   if (!ticker || !instrument) {
     return (
@@ -1012,16 +894,30 @@ export default function OptionsPage() {
   }
 
   if (isPhone && !isPhoneLandscape) {
-    const mobileStaleText = (value: number | null | undefined) => {
-      const freshness = getOptionLastTradeFreshness(value);
-      return freshness.freshness === 'stale' || freshness.freshness === 'very_stale'
-        ? freshness.ageSessions === 0 ? 'Last 0 sessions' : `Last ${freshness.ageSessions} session${freshness.ageSessions === 1 ? '' : 's'} ago`
-        : null;
-    };
+    const mobileColumns: MobileFinancialColumn[] = [
+      { key: 'strike', label: 'Strike', width: 6 },
+      { key: 'last', label: 'Last', width: 3.75 },
+      { key: 'bid', label: 'Bid', width: 3.75 },
+      { key: 'ask', label: 'Ask', width: 3.75 },
+      { key: 'delta', label: 'Delta', width: 3.75 },
+      { key: 'iv', label: 'IV', width: 4 },
+      { key: 'otmItm', label: 'Moneyness', width: 7 },
+      { key: 'annYieldLast', label: 'AY Last', width: 5 },
+      { key: 'annYieldBid', label: 'AY Bid', width: 5 },
+      { key: 'annYieldAsk', label: 'AY Ask', width: 5 },
+      { key: 'lastTradeDate', label: 'Last Trade', width: 6.5 },
+      ...(showNominalYield ? OPTION_YIELD_DISPLAY_ORDER.filter(isNominalYieldField).map(field => ({ key: field, label: OPTION_YIELD_DISPLAY_LABELS[field].short, width: 5 })) : []),
+      ...(showVolOI ? [{ key: 'volume', label: 'Volume', width: 5 }, { key: 'openInterest', label: 'OI', width: 5 }, { key: 'volOI', label: 'Vol/OI', width: 4.5 }] : []),
+    ];
+    const expiryIso = selectedExp ? new Date(selectedExp * 1000).toISOString().split('T')[0] : '';
+    const dividerIndex = sortField === 'strike' && currentPrice > 0 && sortedPuts.length > 0
+      ? sortedPuts.findIndex(put => sortDir === 'asc' ? put.strike >= currentPrice : put.strike <= currentPrice)
+      : null;
+    const currentPriceDivider = <MobileFinancialTableDivider key="current-price" columns={mobileColumns.length}>Current price: ${currentPrice.toFixed(2)}</MobileFinancialTableDivider>;
 
     return (
-      <div className="mobile-route-page mobile-option-route-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
-        <header ref={mobileOptionHeaderRef} className="mobile-option-header sticky top-0 z-40" style={{ backgroundColor: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
+      <div className="mobile-route-page mobile-option-route-page mobile-option-table-route min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
+        <header className="mobile-option-header sticky top-0 z-40" style={{ backgroundColor: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
           <div className="grid min-h-[58px] grid-cols-[78px_minmax(0,1fr)_132px] items-center px-1.5">
             <button type="button" onClick={handleBackToOrigin} className="pressable flex min-h-11 items-center gap-0.5 rounded-lg px-1 text-[13px] font-semibold" style={{ color: 'var(--accent-light)' }} aria-label={returnLabel}><ArrowLeft className="h-5 w-5" /> {origin.kind === 'scanner' ? 'Scanner' : origin.kind === 'pulse' ? 'Pulse' : origin.kind === 'recommendations' ? 'Recs' : returnLabel.replace('Back to ', '')}</button>
             <button type="button" onClick={() => setShowPriceChart(true)} className="pressable min-w-0 text-center" aria-label={`Open ${ticker} price chart`}>
@@ -1043,6 +939,13 @@ export default function OptionsPage() {
 
         <div className="flex min-h-[46px] items-center gap-2 border-b px-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
           <span className="mr-auto text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Puts <span className="font-mono font-normal" style={{ color: 'var(--text-muted)' }}>{sortedPuts.length}</span></span>
+          <details className="relative">
+            <summary className="flex min-h-11 cursor-pointer items-center px-1 text-[11px]" aria-label="Option table columns" style={{ color: 'var(--text-muted)' }}>Columns</summary>
+            <div className="absolute right-0 top-full z-50 min-w-[170px] rounded-lg border p-2 shadow-lg" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
+              <label className="flex min-h-11 items-center gap-2 text-[12px]"><input type="checkbox" checked={showVolOI} onChange={event => setShowVolOI(event.target.checked)} />Volume / OI</label>
+              <label className="flex min-h-11 items-center gap-2 text-[12px]"><input type="checkbox" checked={showNominalYield} onChange={event => handleShowNominalYieldChange(event.target.checked)} />Nominal Yield</label>
+            </div>
+          </details>
           <span className="sr-only" aria-live="polite">Sorted by {mobileSortOptions.find(option => option.field === sortField)?.label ?? sortField} {sortDir === 'asc' ? 'ascending' : 'descending'}</span>
           <select value={sortField} onChange={event => { const field = event.target.value as SortField; setSortField(field); setSortDir(defaultSortDirection(field)); }} className="min-h-11 rounded-lg px-2 text-[12px] outline-none" aria-label="Sort option chain" style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>{mobileSortOptions.map(option => <option key={option.field} value={option.field}>{option.label}</option>)}</select>
           <button type="button" onClick={() => setSortDir(current => current === 'asc' ? 'desc' : 'asc')} className="pressable flex h-11 min-w-11 items-center justify-center rounded-lg text-[11px] font-semibold" aria-label={`Sort ${sortDir === 'asc' ? 'descending' : 'ascending'}`} style={{ color: 'var(--accent-light)' }}>{sortDir === 'asc' ? '↑' : '↓'}</button>
@@ -1054,16 +957,42 @@ export default function OptionsPage() {
         {instrument.showLeveragedProductWarning && <div className="border-b px-3 py-2 text-[11px] leading-4" style={{ borderColor: 'var(--border)', color: 'var(--yellow)', backgroundColor: 'var(--surface)' }}>Leveraged ETF · daily reset and compounding make longer-period returns path dependent.</div>}
 
         {error && !hasUsablePriorChain ? <OptionsEmptyState type="error" onRefresh={handleRefresh} onBack={handleBackToOrigin} backLabel={returnLabel} loading={loading} title={detailErrorCode === 'INVALID_SYMBOL' ? `We couldn't find ${ticker}.` : `We couldn't load options for ${ticker}.`} subtitle={detailErrorCode === 'INVALID_SYMBOL' ? 'Check the ticker and try again.' : 'Market data may be temporarily unavailable. Try again without changing or saving anything.'} /> : hasEmptyOptions ? <OptionsEmptyState type="empty" onRefresh={handleRefresh} onBack={handleBackToOrigin} backLabel={returnLabel} loading={loading} title={`No listed puts found for ${ticker}`} subtitle="This ticker may not have listed puts, or its option chain may currently be unavailable." /> : hasSuspiciousEmptyChain ? <OptionsEmptyState type="error" onRefresh={handleRefresh} onBack={handleBackToOrigin} backLabel={returnLabel} loading={loading} title={`Put chain unavailable for ${ticker}`} subtitle={visibleChainWarning ?? 'Put-chain evidence is incomplete. Try again before treating this as an absence of puts.'} /> : (
-          <div className="mobile-financial-list mobile-option-chain-table" role="table" aria-label={`${ticker} put option chain`}>
-            <div role="row" className="mobile-option-chain-header mobile-option-chain-header--options">
-              {['Strike', 'Last / Bid / Ask', 'Delta / IV', 'Moneyness (OTM/ITM)', 'AY Last', 'AY Bid', 'AY Ask', 'Last Trade'].map(label => <span key={label} role="columnheader">{label}</span>)}
-            </div>
-            {loading && enrichedPuts.length === 0 ? Array.from({ length: 6 }).map((_, index) => <div role="row" key={index} className="mobile-option-chain-row mobile-option-chain-row--skeleton animate-pulse"><span /><span /><span /><span /><span /><span /></div>) : sortedPuts.map(put => {
-              const expirationIso = selectedExp ? new Date(selectedExp * 1000).toISOString().split('T')[0] : '';
-              const watchlistId = makeWatchlistId(ticker ?? '', expirationIso, put.strike);
-              return <MobileOptionRow key={put.strike} strike={put.strike} last={put.last} lastTradeDate={put.lastTradeDate} bid={put.bid} ask={put.ask} annYieldLast={put.annYieldLast} annYieldBid={put.annYieldBid} annYieldAsk={put.annYieldAsk} delta={put.delta} deltaSource={put.deltaSource} deltaModelVersion={put.deltaModelVersion} impliedVolatility={put.impliedVolatility} moneynessLabel={put.otmItmLabel} moneynessColor={put.otmItmColor} moneynessState={put.moneynessState} staleText={mobileStaleText(put.lastTradeDate)} integrityStatus={put.integrityStatus} denseQuoteView watched={watchlistIds.has(watchlistId)} onToggleWatchlist={() => toggleWatchlist(put)} onSelect={() => setSelectedOption(put)} />;
+          <MobileFinancialTable label={`${ticker} put option chain`} columns={mobileColumns} busy={loading}>
+            {loading && enrichedPuts.length === 0 ? Array.from({ length: 6 }).map((_, index) => <SkeletonRow key={index} colCount={mobileColumns.length} />) : sortedPuts.flatMap((put, index) => {
+              const watched = watchlistIds.has(makeWatchlistId(ticker, expiryIso, put.strike));
+              const integrity = put.integrityStatus === 'clean' ? '' : `${put.integrityStatus === 'invalid' ? 'Invalid quote, trusted economics unavailable' : 'Degraded quote, use with caution'}: ${put.integrityReasonCodes.join(', ')}`;
+              const freshness = lastTradeStatusLabel(put.lastTradeDate);
+              const row = (
+                <tr key={put.contractSymbol ?? `${expiryIso}:${put.strike}`} className="mobile-financial-table-row"
+                  data-option-strike={put.strike} data-selected={selectedOption?.strike === put.strike || focusedStrike === put.strike ? 'true' : undefined}
+                  tabIndex={0} aria-label={`Open ${ticker} ${expiryIso} ${formatPrice(put.strike)} put details${integrity ? `. ${integrity}` : ''}`}
+                  onClick={() => setSelectedOption(put)} onKeyDown={event => {
+                    if (event.target !== event.currentTarget) return;
+                    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedOption(put); }
+                  }}>
+                  <th scope="row" className="mobile-financial-table-identity" title={integrity || undefined}>
+                    <div className="mobile-financial-table-strike">
+                      <span style={{ color: integrity ? 'var(--yellow)' : undefined }}>{formatPrice(put.strike)}</span>
+                      <button type="button" className="mobile-financial-table-action" aria-label={watched ? 'Remove from watchlist' : 'Add to watchlist'} aria-pressed={watched}
+                        onClick={event => { event.stopPropagation(); toggleWatchlist(put); }}>
+                        <Star className={`h-3.5 w-3.5 ${watched ? 'fill-current' : ''}`} style={{ color: watched ? 'var(--accent-light)' : 'var(--text-dim)' }} />
+                      </button>
+                    </div>
+                  </th>
+                  {(['last', 'bid', 'ask'] as const).map(field => <td key={field} title={field === 'last' ? freshness : undefined} style={{ color: field === 'last' ? getOptionLastTradeFreshness(put.lastTradeDate).color : undefined }}>{formatOptionQuoteValue(field, put[field], formatPrice)}</td>)}
+                  <td title={put.deltaSource === 'calculated' ? `Calculated Delta | ${put.deltaModelVersion ?? ''}` : undefined} style={{ color: deltaColor(put.delta) }}>{put.delta == null ? '\u2014' : put.delta.toFixed(2)}</td>
+                  <td style={{ color: ivColor(put.impliedVolatility) }}>{put.impliedVolatility == null ? '\u2014' : `${put.impliedVolatility.toFixed(1)}%`}</td>
+                  <td title={shortPutMoneynessPresentation(put.moneynessState).accessibleLabel} style={{ color: put.otmItmColor }}>{put.otmItmLabel || '\u2014'}</td>
+                  {(['annYieldLast', 'annYieldBid', 'annYieldAsk'] as const).map(field => <td key={field} style={{ color: put[field] == null ? 'var(--text-dim)' : yieldColor(put[field]) }}>{put[field] == null ? '\u2014' : formatYield(put[field])}</td>)}
+                  <td title={freshness} aria-label={freshness} style={{ color: getOptionLastTradeFreshness(put.lastTradeDate).color }}>{formatOptionLastTradeDate(put.lastTradeDate)}</td>
+                  {showNominalYield && OPTION_YIELD_DISPLAY_ORDER.filter(isNominalYieldField).map(field => <td key={field}>{put[field] == null ? '\u2014' : formatYield(put[field])}</td>)}
+                  {showVolOI && <><td>{formatNumber(put.volume)}</td><td>{formatNumber(put.openInterest)}</td><td>{put.volOI == null ? '\u2014' : put.volOI.toFixed(2)}</td></>}
+                </tr>
+              );
+              return index === dividerIndex ? [currentPriceDivider, row] : [row];
             })}
-          </div>
+            {dividerIndex === -1 && currentPriceDivider}
+          </MobileFinancialTable>
         )}
 
         {selectedOption && <ErrorBoundary title="Option sheet unavailable" message="Close it and try again."><Suspense fallback={<OverlayPendingState label="Opening contract..." />}><OptionDetailDrawer option={selectedOption} ticker={ticker ?? ''} expirationLabel={selectedExpiration?.label ?? ''} dte={selectedExpiration ? calculateDte(selectedExpiration.date) : null} underlyingPrice={currentPrice > 0 ? currentPrice : null} onAddToPortfolio={addSelectedToPortfolio} onClose={() => setSelectedOption(null)} /></Suspense></ErrorBoundary>}
@@ -1391,118 +1320,6 @@ export default function OptionsPage() {
           />
         ) : (
           <>
-          <div className="option-mobile-chain space-y-3">
-            <div
-              className="option-chain-sort rounded-xl p-3"
-              style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
-            >
-              <div className="flex items-center justify-between gap-2 mb-2">
-                <div className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
-                  Option Chain
-                </div>
-                <div className="text-xs font-mono tabular-nums" style={{ color: 'var(--text-dim)' }}>
-                  {sortedPuts.length} puts
-                </div>
-              </div>
-              <div className="grid grid-cols-[1fr_auto] gap-2">
-                <label className="min-w-0">
-                  <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-dim)' }}>Sort by</span>
-                  <select
-                    value={sortField}
-                    onChange={event => { const field = event.target.value as SortField; setSortField(field); setSortDir(defaultSortDirection(field)); }}
-                    className="w-full rounded-lg px-3 py-2 text-base font-medium outline-none min-h-[44px]"
-                    style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
-                  >
-                    {mobileSortOptions.map(option => (
-                      <option key={option.field} value={option.field}>{option.label}</option>
-                    ))}
-                  </select>
-                </label>
-                <label className="min-w-[104px]">
-                  <span className="block text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-dim)' }}>Direction</span>
-                  <select
-                    value={sortDir}
-                    onChange={event => setSortDir(event.target.value as SortDirection)}
-                    className="w-full rounded-lg px-3 py-2 text-base font-medium outline-none min-h-[44px]"
-                    style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
-                  >
-                    <option value="asc">Asc</option>
-                    <option value="desc">Desc</option>
-                  </select>
-                </label>
-              </div>
-              <div className="mt-2 text-[10px]" style={{ color: 'var(--text-dim)' }} aria-live="polite">
-                Sorted by {mobileSortOptions.find(option => option.field === sortField)?.label ?? sortField} · {sortDir === 'asc' ? 'ascending' : 'descending'}
-              </div>
-            </div>
-                 {loading && enrichedPuts.length === 0 ? (
-              Array.from({ length: 5 }).map((_, index) => (
-                <div
-                  key={index}
-                  className="h-28 rounded-xl animate-pulse"
-                  style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
-                />
-              ))
-            ) : (
-              (() => {
-                const cards: JSX.Element[] = [];
-                let dividerInserted = false;
-                const showCurrentPriceDivider = sortField === 'strike' && currentPrice > 0;
-
-                sortedPuts.forEach(put => {
-                  const shouldInsertDivider = showCurrentPriceDivider && !dividerInserted && (
-                    sortDir === 'asc'
-                      ? put.strike >= currentPrice
-                      : put.strike <= currentPrice
-                  );
-                  if (shouldInsertDivider) {
-                    cards.push(
-                      <div
-                        key="mobile-current-price-divider"
-                        className="rounded-lg px-3 py-2 text-xs font-medium"
-                        style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)', border: '1px solid var(--accent-border)' }}
-                      >
-                        Current price: ${currentPrice.toFixed(2)}
-                      </div>
-                    );
-                    dividerInserted = true;
-                  }
-
-                  const expForId = optionsData?.expirations.find(e => e.date === selectedExp);
-                  const expiryIso = expForId ? new Date(expForId.date * 1000).toISOString().split('T')[0] : '';
-                  const wlId = makeWatchlistId(ticker ?? '', expiryIso, put.strike);
-                  cards.push(
-                    <MobileOptionCard
-                      key={put.strike}
-                      put={put}
-                      moneyness={put.moneynessState}
-                      watched={watchlistIds.has(wlId)}
-                      showVolOI={showVolOI}
-                      showNominalYield={showNominalYield}
-                      onToggleWatchlist={() => toggleWatchlist(put)}
-                      onSelect={() => setSelectedOption(put)}
-                      focused={focusedStrike === put.strike}
-                    />
-                  );
-                });
-
-                if (showCurrentPriceDivider && !dividerInserted && sortedPuts.length > 0) {
-                  cards.push(
-                    <div
-                      key="mobile-current-price-divider-end"
-                      className="rounded-lg px-3 py-2 text-xs font-medium"
-                      style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent-light)', border: '1px solid var(--accent-border)' }}
-                    >
-                      Current price: ${currentPrice.toFixed(2)}
-                    </div>
-                  );
-                }
-
-                return cards;
-              })()
-            )}
-          </div>
-
           <div className="option-desktop-chain option-chain-surface rounded-xl max-w-full overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
             <div className="option-chain-header">
               <div>

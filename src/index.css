@@ -2003,15 +2003,7 @@ table,
   }
 }
 
-/* Portrait option chains use a six-column comparison grid; the drawer owns secondary detail. */
-.mobile-option-chain-table {
-  min-width: 0;
-  overflow: visible;
-  border-top: 1px solid var(--border-subtle);
-  background: var(--surface);
-}
-
-.mobile-option-chain-header,
+/* Legacy shared rows remain for Screener and Watchlist until their migration. */
 .mobile-option-chain-row {
   display: grid;
   grid-template-columns: minmax(4.6rem, 1.15fr) minmax(3.5rem, 1fr) minmax(3.8rem, 1.12fr) repeat(3, minmax(3.05rem, 1fr));
@@ -2019,28 +2011,6 @@ table,
   align-items: center;
 }
 
-.mobile-option-chain-header {
-  position: -webkit-sticky;
-  position: sticky;
-  top: var(--mobile-option-chain-sticky-top, calc(58px + env(safe-area-inset-top)));
-  z-index: 25;
-  min-height: 30px;
-  padding: 0 0.35rem;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-inset);
-  color: var(--text-tertiary);
-  font-family: var(--font-data);
-  font-size: calc(0.56rem * var(--ui-text-scale));
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  line-height: 1;
-  text-align: right;
-  text-transform: uppercase;
-  white-space: nowrap;
-  box-shadow: 0 1px 0 var(--border-default), 0 3px 8px color-mix(in srgb, var(--bg-primary) 22%, transparent);
-}
-
-.mobile-option-chain-header > :first-child,
 .mobile-option-chain-row > :first-child {
   text-align: left;
 }
@@ -2152,22 +2122,8 @@ table,
   cursor: default;
 }
 
-/* Options portrait rows keep the compact surface but expose the quote and evidence
-   values directly; the generic six-column row remains unchanged for Screener and Watchlist. */
-.mobile-option-chain-header--options {
-  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-  min-height: 2.5rem;
-  align-items: center;
-  line-height: 1.15;
-  white-space: normal;
-}
-
-.mobile-option-chain-header--options > span {
-  padding-inline: 0.2rem;
-  text-align: left;
-  white-space: normal;
-}
-
+/* Legacy denseQuoteView still serves Screener and Watchlist. The historical
+   options variant name remains until those surfaces migrate to the shared table. */
 .mobile-option-chain-row[data-variant="options"] {
   display: block;
   min-height: 48px;
@@ -2678,10 +2634,6 @@ table {
 th,
 td {
   min-width: 0;
-}
-
-.option-mobile-chain {
-  display: none;
 }
 
 .option-desktop-chain {
@@ -3594,10 +3546,21 @@ td {
 
 @media (max-width: 767px) {
   .mobile-option-route-page {
+    display: flex;
+    flex-direction: column;
     height: 100dvh;
-    overflow-y: auto;
+    overflow: hidden;
     overscroll-behavior-y: contain;
     -webkit-overflow-scrolling: touch;
+  }
+
+  .mobile-option-route-page > :not(.mobile-financial-table-scroll) {
+    flex-shrink: 0;
+  }
+
+  .mobile-option-route-page .mobile-financial-table-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
   }
 
   .option-drawer-mobile .mobile-trade-sheet {
@@ -5476,6 +5439,120 @@ td {
   align-items: flex-start !important;
 }
 
+/* Compact financial tables: the scroll container owns horizontal and vertical
+   overflow so the page header and controls remain fixed in the route flex flow. */
+.mobile-financial-table-scroll {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mobile-financial-table-scroll:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.mobile-financial-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  color: var(--text-primary);
+  font-family: var(--font-data);
+  font-size: calc(12px * var(--ui-text-scale));
+  table-layout: fixed;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.mobile-financial-table :is(th, td) {
+  height: calc(34px * var(--ui-text-scale));
+  padding: 0 0.55rem;
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: right;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.mobile-financial-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  height: calc(30px * var(--ui-text-scale));
+  background: var(--bg-inset);
+  color: var(--text-tertiary);
+  font-size: calc(11px * var(--ui-text-scale));
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.mobile-financial-table .mobile-financial-table-identity {
+  text-align: left;
+}
+
+.mobile-financial-table thead th.mobile-financial-table-identity,
+.mobile-financial-table tbody th.mobile-financial-table-identity {
+  position: sticky;
+  left: 0;
+  background: var(--surface);
+}
+
+.mobile-financial-table thead th.mobile-financial-table-identity {
+  z-index: 5;
+  background: var(--bg-inset);
+}
+
+.mobile-financial-table tbody th.mobile-financial-table-identity {
+  z-index: 2;
+}
+
+.mobile-financial-table-row[data-selected="true"] > * {
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+}
+
+.mobile-financial-table-row[data-selected="true"] > .mobile-financial-table-identity {
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+}
+
+.mobile-financial-table-divider td {
+  height: calc(28px * var(--ui-text-scale));
+  padding: 0;
+  background: var(--bg-secondary);
+  text-align: left;
+}
+
+.mobile-financial-table-divider td > span {
+  position: sticky;
+  left: 0;
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  padding: 0 0.55rem;
+  color: var(--text-tertiary);
+  font-size: calc(11px * var(--ui-text-scale));
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.mobile-financial-table-strike {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.mobile-financial-table-action {
+  width: 28px;
+  min-width: 28px;
+  height: calc(34px * var(--ui-text-scale) - 1px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
 .screener-filter-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(240px, 0.56fr);
@@ -6364,7 +6441,6 @@ input[type="number"] {
 }
 
 @media (orientation: landscape) and (max-height: 520px) and (max-width: 950px) {
-  .mobile-option-chain-header,
   .mobile-option-chain-row {
     grid-template-columns: minmax(7rem, 1.45fr) minmax(3.5rem, 1fr) minmax(3.8rem, 1.12fr) repeat(3, minmax(3rem, 1fr));
   }
@@ -6677,3 +6753,10 @@ details[open] > summary > .lucide-chevron-down { transform: rotate(180deg); }
     background-color: var(--surface) !important;
   }
 }
+
+.mobile-financial-table-row { cursor: pointer; }
+.mobile-financial-table-row:focus-visible > * { outline: 2px solid var(--accent); outline-offset: -2px; }
+.mobile-financial-table-action:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.mobile-financial-table-identity { box-shadow: 1px 0 0 var(--border-default); }
+.mobile-financial-table-row:hover > *, .mobile-financial-table-row:active > * { background: var(--bg-secondary); }
+.mobile-option-table-route:not(:has(.mobile-financial-table-scroll)) { overflow-y: auto; }

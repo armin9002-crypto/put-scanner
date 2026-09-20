@@ -27,20 +27,21 @@ test('portrait financial surfaces use compact primary fields and preserve drawer
   assert.match(portfolio, /const visibleFreshness = .*'Stale Last' : freshness\.state === 'stale' \|\| freshness\.state === 'unavailable'/);
 });
 
-test('portrait Option Chain uses the real header with a measured sticky offset', async () => {
-  const [options, styles] = await Promise.all([
-    read('src/pages/OptionsPage.tsx'),
-    read('src/index.css'),
+test('portrait Option Chain uses a native table below the actual route controls', async () => {
+  const [options, styles, table] = await Promise.all([
+    read('src/pages/OptionsPage.tsx'), read('src/index.css'), read('src/components/mobile/MobileFinancialTable.tsx'),
   ]);
-  assert.match(options, /mobileOptionHeaderRef/);
-  assert.match(options, /ResizeObserver/);
-  assert.match(options, /--mobile-option-chain-sticky-top/);
-  assert.match(styles, /\.mobile-option-chain-table \{[\s\S]*overflow: visible/);
-  assert.match(styles, /\.mobile-option-chain-header \{[\s\S]*position: -webkit-sticky/);
-  assert.match(styles, /top: var\(--mobile-option-chain-sticky-top/);
-  assert.match(styles, /background: var\(--bg-inset\)/);
-  assert.match(styles, /box-shadow: 0 1px 0 var\(--border-default\)/);
-  assert.match(styles, /\.mobile-option-route-page \{[\s\S]*height: 100dvh[\s\S]*overflow-y: auto/);
+  assert.match(options, /<MobileFinancialTable /);
+  assert.doesNotMatch(options, /MobileOptionCard|MobileOptionRow|ResizeObserver/);
+  assert.match(table, /<table/);
+  assert.match(table, /scope="col"/);
+  assert.match(table, /<tbody>/);
+  assert.match(styles, /\.mobile-financial-table-scroll \{[^}]*overflow: auto/);
+  assert.match(styles, /\.mobile-financial-table thead th \{[^}]*position: sticky;[^}]*top: 0/);
+  assert.match(styles, /tbody th\.mobile-financial-table-identity \{[^}]*left: 0/);
+  assert.match(options, /event.target !== event.currentTarget/);
+  assert.match(options, /event.stopPropagation\(\); toggleWatchlist\(put\)/);
+  assert.match(options, /<MobileFinancialTableDivider/);
 });
 
 test('landscape tables freeze only the Ticker identity and portrait hides priority rail', async () => {
