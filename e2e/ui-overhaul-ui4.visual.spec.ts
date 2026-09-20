@@ -39,8 +39,8 @@ async function measurePulseDensity(page: Page): Promise<PulseDensityMetrics> {
       const rect = element.getBoundingClientRect();
       return rect.height > 0 && rect.top < window.innerHeight && rect.bottom > 0;
     };
-    const rows = Array.from(document.querySelectorAll<HTMLElement>('.mobile-pulse-list-item'));
-    const skeletons = Array.from(document.querySelectorAll<HTMLElement>('.pulse-mobile-skeleton'));
+    const rows = Array.from(document.querySelectorAll<HTMLElement>('.mobile-financial-table-row:not(.mobile-pulse-loading-row)'));
+    const skeletons = Array.from(document.querySelectorAll<HTMLElement>('.mobile-pulse-loading-row'));
     const firstRow = rows.find(row => row.getBoundingClientRect().height > 0)?.getBoundingClientRect() ?? null;
     const firstSkeleton = skeletons.find(skeleton => skeleton.getBoundingClientRect().height > 0)?.getBoundingClientRect() ?? null;
     return {
@@ -220,7 +220,7 @@ async function capturePhone(page: Page, testInfo: TestInfo) {
       }
       expect(pulseLoadingMetrics.pageOverflow, `${testInfo.project.name} ETF Pulse loading should not overflow horizontally`).toBe(false);
       harness.delays.delete('etf-pulse');
-      await expect(page.locator('.mobile-pulse-list-item').first()).toBeVisible({ timeout: 30_000 });
+      await expect(page.locator('.mobile-financial-table-row:not(.mobile-pulse-loading-row)').first()).toBeVisible({ timeout: 30_000 });
       await page.waitForTimeout(250);
       await capture(page, testInfo, 'mobile-pulse');
       const pulseMetrics = await measurePulseDensity(page);

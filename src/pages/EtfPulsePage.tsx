@@ -18,6 +18,7 @@ import { useBlockingOverlayBehavior } from '../lib/blockingOverlay';
 import { useOverlayDismiss } from '../lib/overlayMotion';
 import MobileBottomSheet from '../components/mobile/MobileBottomSheet';
 import MobileSegmentedControl from '../components/mobile/MobileSegmentedControl';
+import MobileFinancialTable, { type MobileFinancialColumn } from '../components/mobile/MobileFinancialTable';
 import { presentUnderlyingTechnicalAssessment, underlyingTechnicalEvidencePresentation, underlyingTechnicalStatePresentation } from '../lib/underlyingTechnicalPresentation';
 import type { UnderlyingTechnicalState } from '../lib/underlyingTechnical';
 import { buildOptionsPath, createOptionsNavigationState, resolveOptionsReturnOrigin, type OptionsNavigationState, type PulseOriginPresentation } from '../lib/optionsNavigation';
@@ -45,6 +46,7 @@ interface PulseColumn {
 }
 
 const VISUAL_PERIODS: VisualPeriod[] = ['1D', '5D', '30D', '3M', '6M', 'YTD', '1Y'];
+const PULSE_PERFORMANCE_COLUMNS = new Set(['oneDay', 'fiveDay', 'thirtyDay', 'threeMonth', 'sixMonth', 'yearToDate', 'oneYear']);
 
 function trendOptionLabel(option: string): string {
   return option === 'All' ? option : underlyingTechnicalStatePresentation(option as UnderlyingTechnicalState).label;
@@ -758,7 +760,6 @@ export default function EtfPulsePage() {
   const pulseFilterCount = [search.trim() !== '', leverageFilter !== 'All', typeFilter !== 'All', trendFilter !== 'All'].filter(Boolean).length;
   const sortLabel = sort.field === 'ticker' ? 'Ticker' : sort.field === 'oneDay' ? '1D return' : sort.field === 'thirtyDay' ? '30D return' : sort.field === 'threeMonth' ? '3M return' : sort.field === 'rsi14' ? 'RSI' : sort.field === 'realizedVolatility20' ? '20D volatility' : sort.field === 'drawdown52Week' ? '52W drawdown' : 'Trend';
   const selectedPerformanceColumn = ({ '1D': 'oneDay', '5D': 'fiveDay', '30D': 'thirtyDay', '3M': 'threeMonth', '6M': 'sixMonth', YTD: 'yearToDate', '1Y': 'oneYear' } as const)[selectedVisualPeriod];
-  const performanceColumns = new Set(['oneDay', 'fiveDay', 'thirtyDay', 'threeMonth', 'sixMonth', 'yearToDate', 'oneYear']);
   const optionsNavigationState = useMemo<OptionsNavigationState>(() => createOptionsNavigationState('pulse', {
     presentation: {
       search,
@@ -913,10 +914,41 @@ export default function EtfPulsePage() {
 
   const tableMinWidth = useMemo(() => columns.reduce((sum, column) => sum + column.width, 0), [columns]);
 
+  const mobilePulseColumns = useMemo<MobileFinancialColumn[]>(() => {
+    const performanceClass = (key: string) => PULSE_PERFORMANCE_COLUMNS.has(key)
+      ? `pulse-performance-column ${key === selectedPerformanceColumn ? 'is-selected' : 'is-muted'}`
+      : undefined;
+    return [
+      { key: 'ticker', label: 'Ticker', width: 5.4 },
+      { key: 'price', label: 'Price', width: 5.25 },
+      { key: 'oneDay', label: '1D', width: 4.4, className: performanceClass('oneDay') },
+      { key: 'fiveDay', label: '5D', width: 4.4, className: performanceClass('fiveDay') },
+      { key: 'thirtyDay', label: '30D', width: 4.8, className: performanceClass('thirtyDay') },
+      { key: 'threeMonth', label: '3M', width: 4.6, className: performanceClass('threeMonth') },
+      { key: 'sixMonth', label: '6M', width: 4.6, className: performanceClass('sixMonth') },
+      { key: 'yearToDate', label: 'YTD', width: 4.8, className: performanceClass('yearToDate') },
+      { key: 'oneYear', label: '1Y', width: 4.6, className: performanceClass('oneYear') },
+      { key: 'recentDrawdown30', label: 'Recent DD', width: 6.3 },
+      { key: 'rsi14', label: 'RSI', width: 4.2 },
+      { key: 'realizedVolatility20', label: '20D RV', width: 5.4 },
+      { key: 'distance20', label: 'vs 20D', width: 5.3 },
+      { key: 'distance50', label: 'vs 50D', width: 5.3 },
+      { key: 'distance200', label: 'vs 200D', width: 5.5 },
+      { key: 'high52Week', label: '52W High', width: 6.4 },
+      { key: 'percentOf52WeekHigh', label: '% 52W High', width: 6.8 },
+      { key: 'position52Week', label: '52W Pos', width: 5.8 },
+      { key: 'drawdown52Week', label: '52W DD', width: 5.4 },
+      { key: 'trend', label: 'Trend', width: 8.5 },
+    ];
+  }, [selectedPerformanceColumn]);
+  const mobilePulsePerformanceClass = (key: string) => PULSE_PERFORMANCE_COLUMNS.has(key)
+    ? `pulse-performance-column ${key === selectedPerformanceColumn ? 'is-selected' : 'is-muted'}`
+    : undefined;
+
   const headerCell = (column: PulseColumn) => {
     const alignClass = column.align === 'left' ? 'text-left' : column.align === 'center' ? 'text-center' : 'text-right';
     const sorted = column.sortField && sort.field === column.sortField;
-    const performanceClass = performanceColumns.has(column.key) ? `pulse-performance-column ${column.key === selectedPerformanceColumn ? 'is-selected' : 'is-muted'}` : '';
+    const performanceClass = PULSE_PERFORMANCE_COLUMNS.has(column.key) ? `pulse-performance-column ${column.key === selectedPerformanceColumn ? 'is-selected' : 'is-muted'}` : '';
     const content = `${column.label}${sorted ? sort.direction === 'asc' ? ' ^' : ' v' : ''}`;
     const sortField = column.sortField;
     return (
@@ -948,7 +980,7 @@ export default function EtfPulsePage() {
   const bodyCell = (column: PulseColumn, row: EtfPulseRow, rowIndex: number) => {
     const alignClass = column.align === 'left' ? 'text-left' : column.align === 'center' ? 'text-center' : 'text-right';
     const stickyBg = rowIndex % 2 ? 'var(--row-alt)' : 'var(--surface)';
-    const performanceClass = performanceColumns.has(column.key) ? `pulse-performance-column ${column.key === selectedPerformanceColumn ? 'is-selected' : 'is-muted'}` : '';
+    const performanceClass = PULSE_PERFORMANCE_COLUMNS.has(column.key) ? `pulse-performance-column ${column.key === selectedPerformanceColumn ? 'is-selected' : 'is-muted'}` : '';
     return (
       <td
         key={column.key}
@@ -967,7 +999,7 @@ export default function EtfPulsePage() {
 
   if (isPhone) {
     return (
-      <div data-refreshing={loading} className="motion-refresh-region mobile-route-page pulse-mobile-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
+      <div data-refreshing={loading} className="motion-refresh-region mobile-route-page mobile-financial-table-route pulse-mobile-page min-h-[100dvh]" style={{ backgroundColor: 'var(--bg)' }}>
         <section className="pulse-mobile-read border-b px-3.5 py-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
           <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: 'var(--text-dim)' }}>Market Read</div>
           {regime && posture ? <><div className="flex flex-wrap items-center gap-1.5"><MarketBadge label={regime.label} /><MarketBadge label={posture.label} tone="posture" /><MarketBadge label={regimePresentation(regime).confidenceLabel} tone="confidence" /></div><p className="mt-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>{regimePresentation(regime).coverageLabel}</p><p className="mt-1 line-clamp-2 text-[12px] leading-5" style={{ color: 'var(--text-secondary)' }}>{regime.marketRead}</p><button type="button" onClick={() => setShowMarketRead(true)} className="pressable mt-1 inline-flex min-h-11 items-center text-[12px] font-semibold" style={{ color: 'var(--accent-light)' }}>Details</button></> : <div className="flex min-h-[64px] items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>{loading ? <><Loader2 className="h-4 w-4 animate-spin" /> Acquiring aggregate market data…</> : 'Market Read unavailable'}</div>}
@@ -980,23 +1012,54 @@ export default function EtfPulsePage() {
 
         {error && <div className="mx-3.5 mt-3 flex items-center gap-2 rounded-lg px-3 py-2 text-xs" style={{ backgroundColor: 'rgba(239,68,68,0.1)', color: 'var(--red)', border: '1px solid rgba(239,68,68,0.24)' }}><AlertTriangle className="h-4 w-4" /> ETF Pulse could not update. Existing data remains visible.</div>}
 
-         {mobileVisual === 'list' ? <div className="mobile-financial-list">{loading && rows.length === 0 ? <div role="status" aria-label="ETF Pulse loading" className="pulse-mobile-loading">{Array.from({ length: 6 }).map((_, index) => <div key={index} className="mobile-pulse-row pulse-mobile-skeleton animate-pulse"><div className="h-4 w-24 rounded" style={{ backgroundColor: 'var(--border)' }} /><div className="mt-5 h-3 w-full rounded" style={{ backgroundColor: 'var(--border)' }} /></div>)}</div> : filteredRows.length === 0 ? <div className="pulse-mobile-empty-state px-6 py-14 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No ETFs match these filters.</div> : filteredRows.map(row => {
-          const trend = trendStyle(row);
-            return (
-              <div key={row.ticker} className="pulse-mobile-item-with-explanation mobile-pulse-row mobile-pulse-list-item">
-                <div className="mobile-pulse-list-item__main mobile-pulse-list-item__main--interactive">
-                  <Link to={buildOptionsPath(row.ticker)} state={optionsNavigationState} className="mobile-pulse-list-item__identity-link">
-                    <div className="min-w-0"><div className="mobile-pulse-list-item__identity font-mono text-[16px] font-bold" style={{ color: 'var(--accent-light)' }}>{row.ticker}</div><div className="mobile-pulse-list-item__name text-[11px]" style={{ color: 'var(--text-muted)' }} title={row.name}>{row.name}</div></div>
-                  </Link>
-                  <div className="mobile-pulse-list-item__quote text-right"><div className="font-mono text-[15px] font-semibold" style={{ color: 'var(--text)' }}>{formatPrice(row.price)}</div><div className="flex items-center justify-end gap-1 text-[10px] font-semibold" style={{ color: trend.color }} title={`Evidence ${underlyingTechnicalEvidencePresentation(row.technicalAssessment.evidenceQuality).label}`}><span>{trend.label}</span><TechnicalStateExplanation row={row} compact /></div></div>
-                </div>
-                <Link to={buildOptionsPath(row.ticker)} state={optionsNavigationState} className="mobile-pulse-list-item__metrics-link">
-                  <div className="pulse-mobile-performance mobile-pulse-list-item__performance mt-2 grid grid-cols-3 gap-2 border-y py-1.5" style={{ borderColor: 'var(--border)' }}>{([['1M', row.returns.thirtyDay], ['3M', row.returns.threeMonth], ['YTD', row.returns.yearToDate]] as const).map(([label, value]) => <span key={label} className="text-[11px]"><span style={{ color: 'var(--text-dim)' }}>{label} </span><b className="font-mono" style={{ color: valueColor(value) }}>{formatPct(value)}</b></span>)}</div>
-                  <div className="pulse-mobile-support mobile-pulse-list-item__footer mt-1.5 grid grid-cols-3 gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}><span>RSI <b className="font-mono" style={{ color: rsiColor(row.rsi14) }}>{isFiniteNumber(row.rsi14) ? row.rsi14.toFixed(0) : DASH}</b></span><span>vs 50D <b className="font-mono" style={{ color: valueColor(row.distance50) }}>{formatPct(row.distance50)}</b></span><span className="text-right">DD <b className="font-mono" style={{ color: drawdownColor(row.drawdown52Week) }}>{formatPct(row.drawdown52Week)}</b></span></div>
-                </Link>
-              </div>
-            );
-         })}</div> : <section className="px-3.5 py-3"><div className="pulse-mobile-visual-period"><span className="pulse-control-label">Performance window</span><VisualPeriodSelector value={selectedVisualPeriod} onChange={setSelectedVisualPeriod} /></div>{mobileVisual === 'heatmap' ? <UniverseHeatmap rows={filteredRows} period={selectedVisualPeriod} navigationState={optionsNavigationState} /> : <MomentumQuadrant rows={filteredRows} period={selectedVisualPeriod} navigationState={optionsNavigationState} />}</section>}
+         {mobileVisual === 'list' ? loading && rows.length === 0 ? (
+           <MobileFinancialTable label="ETF Pulse results" columns={mobilePulseColumns} busy>
+             {Array.from({ length: 8 }).map((_, index) => (
+               <tr key={`pulse-loading-${index}`} className="mobile-financial-table-row mobile-pulse-loading-row" aria-hidden="true">
+                 <th scope="row" className="mobile-financial-table-identity"><span role={index === 0 ? 'status' : undefined} aria-label={index === 0 ? 'ETF Pulse loading' : undefined} className="inline-block h-3 w-12 animate-pulse rounded" style={{ backgroundColor: 'var(--border)' }} /></th>
+                 {mobilePulseColumns.slice(1).map(column => <td key={column.key}><span className="inline-block h-3 w-10 animate-pulse rounded" style={{ backgroundColor: 'var(--border)' }} /></td>)}
+               </tr>
+             ))}
+           </MobileFinancialTable>
+         ) : filteredRows.length === 0 ? <div className="mobile-financial-empty-state px-6 py-10 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No ETFs match these filters.</div> : (
+           <MobileFinancialTable label="ETF Pulse results" columns={mobilePulseColumns} busy={loading}>
+             {filteredRows.map((row, index) => {
+               const trend = trendStyle(row);
+               const tickerTitle = `${row.name} · ${row.underlying} · ${row.type} · ${row.leverage}`;
+               return (
+                 <tr key={row.ticker} className="mobile-financial-table-row" style={{ backgroundColor: index % 2 ? 'var(--row-alt)' : 'transparent' }}>
+                   <th scope="row" className="mobile-financial-table-identity" title={tickerTitle}>
+                     <Link to={buildOptionsPath(row.ticker)} state={optionsNavigationState} title={tickerTitle} className="font-mono font-semibold" style={{ color: 'var(--accent-light)' }}>{row.ticker}</Link>
+                   </th>
+                   <td className="font-mono font-semibold" style={{ color: 'var(--text)' }}>{formatPrice(row.price)}</td>
+                   <td className={mobilePulsePerformanceClass('oneDay')} style={{ color: valueColor(row.returns.oneDay) }}>{formatPct(row.returns.oneDay)}</td>
+                   <td className={mobilePulsePerformanceClass('fiveDay')} style={{ color: valueColor(row.returns.fiveDay) }}>{formatPct(row.returns.fiveDay)}</td>
+                   <td className={mobilePulsePerformanceClass('thirtyDay')} style={{ color: valueColor(row.returns.thirtyDay) }}>{formatPct(row.returns.thirtyDay)}</td>
+                   <td className={mobilePulsePerformanceClass('threeMonth')} style={{ color: valueColor(row.returns.threeMonth) }}>{formatPct(row.returns.threeMonth)}</td>
+                   <td className={mobilePulsePerformanceClass('sixMonth')} style={{ color: valueColor(row.returns.sixMonth) }}>{formatPct(row.returns.sixMonth)}</td>
+                   <td className={mobilePulsePerformanceClass('yearToDate')} style={{ color: valueColor(row.returns.yearToDate) }}>{formatPct(row.returns.yearToDate)}</td>
+                   <td className={mobilePulsePerformanceClass('oneYear')} style={{ color: valueColor(row.returns.oneYear) }}>{formatPct(row.returns.oneYear)}</td>
+                   <td style={{ color: recentDrawdownColor(row.recentDrawdown30) }}>{formatPct(row.recentDrawdown30)}</td>
+                   <td style={{ color: rsiColor(row.rsi14) }}>{isFiniteNumber(row.rsi14) ? row.rsi14.toFixed(1) : DASH}</td>
+                   <td style={{ color: volatilityColor(row.realizedVolatility20) }}>{formatPct(row.realizedVolatility20)}</td>
+                   <td style={{ color: valueColor(row.distance20) }}>{formatPct(row.distance20)}</td>
+                   <td style={{ color: valueColor(row.distance50) }}>{formatPct(row.distance50)}</td>
+                   <td style={{ color: valueColor(row.distance200) }}>{formatPct(row.distance200)}</td>
+                   <td>{formatPrice(row.high52Week)}</td>
+                   <td style={{ color: highPctColor(row.percentOf52WeekHigh) }}>{formatPct(row.percentOf52WeekHigh)}</td>
+                   <td style={{ color: rangePositionColor(row.position52Week) }}>{formatPct(row.position52Week)}</td>
+                   <td style={{ color: drawdownColor(row.drawdown52Week) }}>{formatPct(row.drawdown52Week)}</td>
+                   <td className="relative overflow-visible text-left">
+                     <div className="pulse-technical-cell">
+                       <TechnicalStateExplanation row={row} compact />
+                       <span className="inline-flex max-w-[7rem] truncate rounded px-1.5 py-0.5 text-[10px] font-semibold" data-technical-tone={underlyingTechnicalStatePresentation(row.technicalAssessment.state).tone} title={`RSI ${isFiniteNumber(row.rsi14) ? row.rsi14.toFixed(1) : DASH} · Evidence ${underlyingTechnicalEvidencePresentation(row.technicalAssessment.evidenceQuality).label}`} style={{ color: trend.color, backgroundColor: trend.bg, border: `1px solid ${trend.border}` }}>{trend.label}</span>
+                     </div>
+                   </td>
+                 </tr>
+               );
+             })}
+           </MobileFinancialTable>
+         ) : <section className="px-3.5 py-3"><div className="pulse-mobile-visual-period"><span className="pulse-control-label">Performance window</span><VisualPeriodSelector value={selectedVisualPeriod} onChange={setSelectedVisualPeriod} /></div>{mobileVisual === 'heatmap' ? <UniverseHeatmap rows={filteredRows} period={selectedVisualPeriod} navigationState={optionsNavigationState} /> : <MomentumQuadrant rows={filteredRows} period={selectedVisualPeriod} navigationState={optionsNavigationState} />}</section>}
 
         {mobileFiltersOpen && <MobileBottomSheet title="ETF Pulse filters" description="Filter and sort loaded market intelligence" onClose={() => setMobileFiltersOpen(false)} footer={<div className="grid grid-cols-2 gap-2"><button type="button" onClick={() => { setSearch(''); setLeverageFilter('All'); setTypeFilter('All'); setTrendFilter('All'); }} className="mobile-sheet-action secondary">Reset</button><button type="button" onClick={() => setMobileFiltersOpen(false)} className="mobile-sheet-action primary">Done</button></div>}><div className="space-y-4"><label><span className="mobile-sheet-label">Search</span><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Ticker, name, or theme" className="mobile-control-field w-full" /></label><Select label="Leverage" value={leverageFilter} options={leverageOptions} onChange={setLeverageFilter} /><Select label="Type" value={typeFilter} options={typeOptions} onChange={setTypeFilter} /><Select label="Trend" value={trendFilter} options={trendOptions} formatOption={trendOptionLabel} onChange={value => setTrendFilter(value as TrendFilter)} /><label className="block"><span className="mobile-sheet-label">Sort list</span><select value={sort.field} onChange={event => setSort(current => ({ ...current, field: event.target.value as PulseSortField }))} className="mobile-control-field w-full"><option value="ticker">Ticker</option><option value="oneDay">1D return</option><option value="thirtyDay">30D return</option><option value="threeMonth">3M return</option><option value="rsi14">RSI</option><option value="realizedVolatility20">20D volatility</option><option value="drawdown52Week">52W drawdown</option><option value="trend">Trend</option></select></label><button type="button" onClick={() => void loadRows(true)} disabled={loading} className="mobile-sheet-action secondary w-full"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh data</button></div></MobileBottomSheet>}
         {showMarketRead && regime && posture && <MarketReadModal regime={regime} posture={posture} onClose={() => setShowMarketRead(false)} />}

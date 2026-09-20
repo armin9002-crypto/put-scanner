@@ -40,9 +40,9 @@ test('XAPP-020 removes geometric Screener progress animation', async () => {
 
 test('XAPP-020 keeps dense Pulse rows and Drawer quote controls spatially still', async () => {
   const styles = await read('src/index.css');
-  assert.match(styles, /:not\([^)]*\.mobile-pulse-list-item/);
+  assert.match(styles, /:not\([^)]*\.mobile-etf-row/);
   assert.match(styles, /:not\([^)]*\.drawer-quote-selector > button/);
-  assert.match(styles, /:is\([^)]*\.mobile-pulse-list-item, \.drawer-quote-selector > button/);
+  assert.match(styles, /:is\([^)]*\.mobile-financial-table-row,\s+\.recommendation-card__summary/);
 
   const drawer = await read('src/components/OptionDetailDrawer.tsx');
   assert.match(drawer, /className="grid grid-cols-4 gap-1 mb-3 rounded-xl p-1 drawer-quote-selector"/);

@@ -26,15 +26,15 @@ test('Scanner mobile discovery rows keep only essential opportunity information 
   assert.doesNotMatch(row, /IV60|scannerLiquidityCompactText|formatFundAssets/);
   assert.doesNotMatch(row, /onEvidenceOpen|Show .*options evidence/);
   assert.match(row, /title=\{etf\.name\}/);
-  assert.match(styles, /\.mobile-etf-row__main,[\s\S]*grid-template-columns: minmax\(0, 1fr\) auto/);
+  assert.match(styles, /\.mobile-etf-row__main \{[\s\S]*grid-template-columns: minmax\(0, 1fr\) auto/);
   assert.match(styles, /\.mobile-etf-row \{[\s\S]*min-height: 44px;[\s\S]*padding: 0\.3rem 0\.75rem/);
-  assert.match(styles, /\.mobile-scanner-empty-state,[\s\S]*padding-block: 2rem/);
+  assert.match(styles, /\.mobile-scanner-empty-state \{[\s\S]*padding-block: 2rem/);
   assert.match(browser, /phase === 'final'/);
   assert.match(browser, /cardHeight[\s\S]*toBeLessThanOrEqual\(90\)/);
   assert.match(browser, /pageOverflow[\s\S]*toBe\(false\)/);
 });
 
-test('ETF Pulse mobile List is compact without changing Heatmap or Momentum view ownership', async () => {
+test('ETF Pulse mobile List adopts the shared compact table without changing Heatmap or Momentum ownership', async () => {
   const [source, styles, browser] = await Promise.all([
     read('src/pages/EtfPulsePage.tsx'),
     read('src/index.css'),
@@ -43,16 +43,19 @@ test('ETF Pulse mobile List is compact without changing Heatmap or Momentum view
 
   assert.match(source, /if \(isPhone\)/);
   assert.match(source, /mobileVisual === 'list'/);
-  assert.match(source, /mobile-pulse-list-item/);
-  assert.match(source, /pulse-mobile-skeleton/);
-  assert.match(source, /pulse-mobile-empty-state/);
-  assert.match(source, /title=\{row\.name\}/);
+  assert.match(source, /<MobileFinancialTable label="ETF Pulse results"/);
+  assert.match(source, /mobile-financial-table-route/);
+  assert.match(source, /mobilePulseColumns/);
+  assert.match(source, /mobile-pulse-loading-row/);
+  assert.match(source, /title=\{tickerTitle\}/);
+  for (const label of ['Ticker', 'Price', '1D', '5D', '30D', '3M', '6M', 'YTD', '1Y', 'Recent DD', 'RSI', '20D RV', 'vs 20D', 'vs 50D', 'vs 200D', '52W High', '% 52W High', '52W Pos', '52W DD', 'Trend']) assert.match(source, new RegExp(`label: '${label}'`));
+  assert.doesNotMatch(source, /mobile-pulse-list-item|pulse-mobile-performance|pulse-mobile-support/);
   assert.match(source, /mobileVisual === 'heatmap'/);
   assert.match(source, /mobileVisual === 'momentum'/);
   assert.match(source, /<UniverseHeatmap rows=\{filteredRows\}/);
   assert.match(source, /<MomentumQuadrant rows=\{filteredRows\}/);
-  assert.match(styles, /\.mobile-pulse-list-item \{[\s\S]*min-height: 0;[\s\S]*padding: 0\.3rem 0\.75rem !important/);
-  assert.match(styles, /\.mobile-pulse-list-item__performance \{[\s\S]*padding-block: 0\.25rem !important/);
+  assert.match(styles, /\.mobile-financial-table \.pulse-performance-column\.is-selected/);
+  assert.match(styles, /\.mobile-financial-table \.pulse-technical-cell/);
   assert.match(styles, /@media \(orientation: landscape\) and \(max-height: 520px\) and \(max-width: 950px\)/);
   assert.match(browser, /measurePulseDensity/);
   assert.match(browser, /mobile-pulse-loading/);

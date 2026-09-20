@@ -5,6 +5,7 @@ export interface MobileFinancialColumn {
   label: string;
   /** Width in rem at Small text size; scales with the existing text preference. */
   width: number;
+  className?: string;
 }
 
 /** One native scroll owner keeps header/body aligned without scroll synchronization.
@@ -21,7 +22,7 @@ export default function MobileFinancialTable({ label, columns, children, busy = 
       <table className="mobile-financial-table" aria-label={label} aria-busy={busy}
         style={{ width: `calc(${columns.reduce((total, column) => total + column.width, 0)}rem * var(--ui-text-scale))` }}>
         <colgroup>{columns.map(column => <col key={column.key} style={{ width: `calc(${column.width}rem * var(--ui-text-scale))` }} />)}</colgroup>
-        <thead><tr>{columns.map((column, index) => <th key={column.key} scope="col" className={index === 0 ? 'mobile-financial-table-identity' : undefined}>{column.label}</th>)}</tr></thead>
+        <thead><tr>{columns.map((column, index) => <th key={column.key} scope="col" className={[index === 0 ? 'mobile-financial-table-identity' : '', column.className ?? ''].filter(Boolean).join(' ')}>{column.label}</th>)}</tr></thead>
         <tbody>{children}</tbody>
       </table>
     </div>
