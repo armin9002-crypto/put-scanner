@@ -2963,9 +2963,9 @@ td {
 .scanner-control-plane__toolbar {
   display: flex;
   min-height: 0;
-  flex: 1;
+  flex: 0 0 auto;
   flex-direction: column;
-  align-items: end;
+  align-items: stretch;
   gap: 0.45rem;
 }
 
@@ -2988,7 +2988,7 @@ td {
 }
 
 .scanner-control-plane__types {
-  margin-top: auto;
+  margin-top: 0;
 }
 
 .scanner-control-plane__criteria > .grid {
@@ -3442,12 +3442,12 @@ td {
   }
 
   .mobile-scanner-controls {
-    padding: 0.5rem 0.75rem 0.65rem;
+    padding: 0.45rem 0.75rem 0.55rem;
   }
 
   .mobile-scanner-analyze {
-    margin-bottom: 0.5rem !important;
-    padding: 0.6rem 0.7rem !important;
+    margin-bottom: 0.45rem !important;
+    padding: 0.55rem 0.65rem !important;
   }
 
   .mobile-scanner-analyze > div:first-child {
@@ -3456,6 +3456,12 @@ td {
 
   .mobile-scanner-analyze .control-field {
     font-size: calc(16px * var(--ui-text-scale));
+  }
+
+  .mobile-scanner-analyze .button-primary {
+    gap: 0.25rem;
+    padding-inline: 0.6rem;
+    font-size: calc(0.75rem * var(--ui-text-scale));
   }
 
   .mobile-scanner-results-header {
@@ -3468,16 +3474,15 @@ td {
   }
 
   .mobile-etf-row {
-    min-height: 98px;
-    padding: 0.5rem 0.75rem;
+    min-height: 44px;
+    padding: 0.3rem 0.75rem;
   }
 
   .mobile-etf-row__name {
-    display: -webkit-box;
-    max-height: 2.3em;
+    max-height: 1.1em;
     overflow: hidden;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .scanner-results-grid {
@@ -3593,16 +3598,6 @@ td {
 
 .watchlist-table-surface .financial-table tbody tr:hover {
   background: color-mix(in srgb, var(--accent) 6%, transparent) !important;
-}
-
-@media (max-width: 450px) {
-  .mobile-scanner-analyze form > .grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .mobile-scanner-analyze form > .grid > button {
-    width: 100%;
-  }
 }
 
 .watchlist-table-scroll {
@@ -6100,8 +6095,8 @@ input[type="number"] {
 /* Stage 2 discovery density: keep Scanner cards and Pulse List rows readable, but let content flow. */
 @media (max-width: 767px) {
   .mobile-etf-row {
-    min-height: 0;
-    padding: 0.15rem 0.75rem;
+    min-height: 44px;
+    padding: 0.3rem 0.75rem;
   }
 
   .mobile-etf-row__main,
@@ -6122,34 +6117,12 @@ input[type="number"] {
   }
 
   .mobile-etf-row__name {
-    max-height: 2.15em;
+    max-height: 1.1em;
     margin-top: 0.1rem;
     line-height: 1.05;
-    white-space: normal;
-  }
-
-  .mobile-etf-row__quote {
-    padding-top: 0.05rem;
-  }
-
-  .mobile-etf-row__performance {
-    column-gap: 0.35rem !important;
-    line-height: 1.05;
-    margin-top: 0.1rem !important;
-  }
-
-  .mobile-etf-row__performance > span {
     overflow: hidden;
-    font-size: calc(0.62rem * var(--ui-text-scale)) !important;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  .mobile-etf-row__footer {
-    margin-top: 0.15rem !important;
-    padding-top: 0.15rem !important;
-    font-size: calc(0.61rem * var(--ui-text-scale)) !important;
-    line-height: 1.05;
   }
 
   .mobile-etf-row--skeleton {
@@ -6272,15 +6245,6 @@ input[type="number"] {
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
-  }
-
-  .mobile-etf-row__performance {
-    margin-top: 0.1rem !important;
-  }
-
-  .mobile-etf-row__footer {
-    margin-top: 0.1rem !important;
-    padding-top: 0.15rem !important;
   }
 
   .mobile-pulse-list-item {

@@ -96,7 +96,7 @@ test('Scanner A refresh acknowledgement uses the actual settled run denominator'
   assert.match(source, /SnapshotIssueDisclosure/);
 });
 
-test('Scanner A evidence has one controlled owner and preserves mobile navigation', () => {
+test('Scanner A evidence has one controlled desktop owner while mobile rows remain navigable', () => {
   const home = read('src/pages/HomePage.tsx');
   const card = read('src/components/ETFCard.tsx');
   const mobile = read('src/components/mobile/MobileEtfRow.tsx');
@@ -105,7 +105,7 @@ test('Scanner A evidence has one controlled owner and preserves mobile navigatio
   assert.match(home, /<ScannerEvidencePopover/);
   assert.doesNotMatch(card, /ScannerSnapshotTooltip|group-hover\/snapshot:opacity-100/);
   assert.match(card, /onEvidenceOpen/);
-  assert.match(mobile, /event\.stopPropagation\(\)/);
+  assert.doesNotMatch(mobile, /event\.stopPropagation\(\)/);
   assert.match(mobile, /<Link/);
   assert.match(evidence, /window\.addEventListener\('resize'/);
   assert.match(evidence, /window\.addEventListener\('scroll'/);

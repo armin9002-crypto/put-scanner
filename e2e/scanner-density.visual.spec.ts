@@ -53,8 +53,9 @@ async function measure(page: Page): Promise<DensityMetrics> {
 }
 
 async function waitForPopulatedScanner(page: Page) {
+  await page.clock.install({ time: '2027-01-02T12:00:00Z' });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByPlaceholder(/Filter \/ Search by Ticker/i).first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByPlaceholder(/Filter \/ Search by Ticker|Search ticker/i).first()).toBeVisible({ timeout: 20_000 });
   await expect(page.locator('.instrument-card, .mobile-etf-row').first()).toBeVisible({ timeout: 30_000 });
   await page.waitForTimeout(250);
 }
@@ -63,7 +64,7 @@ test.describe('Scanner density visual review', () => {
   test('capture populated, selected, filtered, loading, partial, and empty Scanner states', async ({ page }, testInfo) => {
     test.skip(!(phase === 'baseline' || phase === 'final'), 'Run with UI_SCANNER_DENSITY_CAPTURE=baseline|final.');
     test.setTimeout(120_000);
-    const harness = await installDeterministicMarketApi(page);
+    const harness = await installDeterministicMarketApi(page, { expirationFetchedAt: Date.parse('2027-01-02T12:00:00Z') });
     await waitForPopulatedScanner(page);
     const metrics = await measure(page);
     if (phase === 'final') {
@@ -82,12 +83,12 @@ test.describe('Scanner density visual review', () => {
     await capture(page, testInfo, 'scanner-selected-expiration');
 
     await page.goto('/?leverage=3x&type=Sector&liquidity=mediumPlus&sort=fiveDay', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByPlaceholder(/Filter \/ Search by Ticker/i).first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByPlaceholder(/Filter \/ Search by Ticker|Search ticker/i).first()).toBeVisible({ timeout: 20_000 });
     await page.waitForTimeout(250);
     await capture(page, testInfo, 'scanner-filters-active');
 
     await page.goto('/?q=TQQQ', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByPlaceholder(/Filter \/ Search by Ticker/i).first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByPlaceholder(/Filter \/ Search by Ticker|Search ticker/i).first()).toBeVisible({ timeout: 20_000 });
     await page.waitForTimeout(250);
     await capture(page, testInfo, 'scanner-search-active');
 

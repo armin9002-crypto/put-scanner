@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = relative => readFile(path.join(root, relative), 'utf8');
 
-test('Scanner mobile discovery rows keep the full opportunity hierarchy while using compact layout hooks', async () => {
+test('Scanner mobile discovery rows keep only essential opportunity information while using compact layout hooks', async () => {
   const [row, scanner, styles, browser] = await Promise.all([
     read('src/components/mobile/MobileEtfRow.tsx'),
     read('src/pages/HomePage.tsx'),
@@ -20,15 +20,14 @@ test('Scanner mobile discovery rows keep the full opportunity hierarchy while us
   assert.match(scanner, /mobile-etf-row--skeleton/);
   assert.match(row, /className="pressable mobile-etf-row"/);
   assert.match(row, /mobile-etf-row__main/);
-  assert.match(row, /mobile-etf-row__performance/);
-  assert.match(row, /mobile-etf-row__footer/);
-  for (const label of ['5D', '1M', '3M', '52W']) assert.ok(row.includes(`['${label}',`), `${label} metric should remain in the Scanner row`);
-  assert.match(row, /IV60/);
-  assert.match(row, /scannerLiquidityCompactText/);
-  assert.match(row, /formatFundAssets/);
+  assert.doesNotMatch(row, /mobile-etf-row__performance/);
+  assert.doesNotMatch(row, /mobile-etf-row__footer/);
+  for (const label of ['5D', '1M', '3M', '52W']) assert.doesNotMatch(row, new RegExp(`\\['${label}',`), `${label} metric should stay out of the Scanner row`);
+  assert.doesNotMatch(row, /IV60|scannerLiquidityCompactText|formatFundAssets/);
+  assert.doesNotMatch(row, /onEvidenceOpen|Show .*options evidence/);
   assert.match(row, /title=\{etf\.name\}/);
   assert.match(styles, /\.mobile-etf-row__main,[\s\S]*grid-template-columns: minmax\(0, 1fr\) auto/);
-  assert.match(styles, /\.mobile-etf-row \{[\s\S]*min-height: 0;[\s\S]*padding: 0\.15rem 0\.75rem/);
+  assert.match(styles, /\.mobile-etf-row \{[\s\S]*min-height: 44px;[\s\S]*padding: 0\.3rem 0\.75rem/);
   assert.match(styles, /\.mobile-scanner-empty-state,[\s\S]*padding-block: 2rem/);
   assert.match(browser, /phase === 'final'/);
   assert.match(browser, /cardHeight[\s\S]*toBeLessThanOrEqual\(90\)/);

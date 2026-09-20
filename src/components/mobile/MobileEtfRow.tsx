@@ -1,15 +1,9 @@
 import { Link } from 'react-router-dom';
 import type { ETFInfo } from '../../lib/types';
-import { formatFundAssets } from '../../lib/fundAssets';
-import { scannerLiquidityCompactText, type ScannerOptionSnapshot, type ScannerSnapshotDiagnostic } from '../../lib/scannerOptionSnapshot';
 
 export interface MobileEtfPriceData {
   price: number | null;
   changePct: number | null;
-  fiveDay: number | null;
-  oneMonth: number | null;
-  threeMonth: number | null;
-  fiftyTwoWeekHighPct: number | null;
 }
 
 function signedPercent(value: number | null | undefined, decimals = 1): string {
@@ -20,44 +14,24 @@ function valueColor(value: number | null | undefined): string {
   return value == null ? 'var(--text-dim)' : value >= 0 ? 'var(--green)' : 'var(--red)';
 }
 
-function ivText(snapshot: ScannerOptionSnapshot | null | undefined): string {
-  return snapshot?.atmPutIv != null && Number.isFinite(snapshot.atmPutIv) ? `${snapshot.atmPutIv.toFixed(1)}%` : '—';
-}
-
 export default function MobileEtfRow({
   etf,
   to,
   navigationState,
   priceData,
-  optionSnapshot,
-  optionDiagnostic,
-  isEvidenceOpen = false,
-  onEvidenceOpen,
-  onEvidenceClose,
-  netAssets,
 }: {
   etf: ETFInfo;
   to: string;
   navigationState?: unknown;
   priceData?: MobileEtfPriceData | null;
-  optionSnapshot?: ScannerOptionSnapshot | null;
-  optionDiagnostic?: ScannerSnapshotDiagnostic | null;
-  isEvidenceOpen?: boolean;
-  onEvidenceOpen?: (anchor: HTMLButtonElement) => void;
-  onEvidenceClose?: (restoreFocus?: boolean) => void;
-  netAssets?: number | null;
 }) {
-  const liquidity = scannerLiquidityCompactText(optionSnapshot?.liquidityLabel ?? 'unavailable');
-  const evidenceId = `scanner-option-snapshot-${etf.ticker}`;
   return (
     <div className="pressable mobile-etf-row">
-      <div className="relative">
       <Link
         to={to}
         state={navigationState}
         className="block"
-        aria-label={`Open ${etf.ticker} options. Price ${priceData?.price?.toFixed(2) ?? 'unavailable'}, IV60 ${ivText(optionSnapshot)}, liquidity ${liquidity}`}
-        title={optionDiagnostic?.reason}
+        aria-label={`Open ${etf.ticker} options. Price ${priceData?.price?.toFixed(2) ?? 'unavailable'}, daily move ${signedPercent(priceData?.changePct, 2)}`}
       >
         <div className="mobile-etf-row__main">
           <div className="mobile-etf-row__identity">
@@ -72,40 +46,7 @@ export default function MobileEtfRow({
             <div className="font-mono text-[12px] font-semibold tabular-nums" style={{ color: valueColor(priceData?.changePct) }}>{signedPercent(priceData?.changePct, 2)}</div>
           </div>
         </div>
-        <div className="mobile-etf-row__performance mt-1 grid grid-cols-4 gap-x-2 gap-y-0">
-          {([['5D', priceData?.fiveDay], ['1M', priceData?.oneMonth], ['3M', priceData?.threeMonth], ['52W', priceData?.fiftyTwoWeekHighPct]] as const).map(([label, value]) => (
-            <span key={label} className="min-w-0 text-[11px]"><span style={{ color: 'var(--text-dim)' }}>{label} </span><span className="font-mono tabular-nums" style={{ color: valueColor(value) }}>{signedPercent(value)}</span></span>
-          ))}
-        </div>
-        <div className="mobile-etf-row__footer mt-1 truncate border-t pt-1 text-[11px] font-medium" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-          <span style={{ color: 'var(--text-secondary)' }}>IV60 {ivText(optionSnapshot)}</span><span aria-hidden="true"> · </span><span>{liquidity}</span><span aria-hidden="true"> · </span><span>Assets {formatFundAssets(netAssets)}</span>
-        </div>
       </Link>
-        <button
-        type="button"
-        className="tap-target absolute bottom-1 right-1 z-10 inline-flex h-9 w-9 items-center justify-center rounded-md"
-        style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)', border: '1px solid var(--accent-border)' }}
-        aria-label={`Show ${etf.ticker} options evidence`}
-        aria-expanded={isEvidenceOpen}
-        aria-controls={isEvidenceOpen ? evidenceId : undefined}
-        onMouseEnter={event => onEvidenceOpen?.(event.currentTarget)}
-        onFocus={event => onEvidenceOpen?.(event.currentTarget)}
-        onClick={event => {
-          event.preventDefault();
-          event.stopPropagation();
-          if (isEvidenceOpen) onEvidenceClose?.(false);
-          else onEvidenceOpen?.(event.currentTarget);
-        }}
-        onKeyDown={event => {
-          if (event.key === 'Escape') {
-            event.preventDefault();
-            onEvidenceClose?.(true);
-          }
-        }}
-      >
-        <span aria-hidden="true">ⓘ</span>
-        </button>
-      </div>
     </div>
   );
 }

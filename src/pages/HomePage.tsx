@@ -731,8 +731,8 @@ export default function HomePage() {
               compact
               value={search}
               onValueChange={handleSearchChange}
-              placeholder="Filter / Search by Ticker"
-              submitLabel="Go to Option Chain"
+              placeholder="Search ticker"
+              submitLabel="Option Chain"
               ariaLabel="Filter Scanner or go to option chain"
             />
           </div>
@@ -747,8 +747,6 @@ export default function HomePage() {
               <SlidersHorizontal className="h-4 w-4" /> Filters{activeControlCount > 0 ? ` ${activeControlCount}` : ''}
             </button>
           </div>
-
-          <p className="mt-2 text-[10px] leading-4" style={{ color: 'var(--text-dim)' }}>Selected expiration confirms exact listed availability; IV60 and liquidity use a bounded ~60 DTE benchmark.</p>
 
         </div>
 
@@ -783,12 +781,6 @@ export default function HomePage() {
               to={buildScannerOptionsPath(etf.ticker, expFilter)}
               navigationState={createOptionsNavigationState('scanner', { path: serializedScannerState ? `/?${serializedScannerState}` : '/' })}
               priceData={prices[etf.ticker] ?? null}
-              optionSnapshot={optionSnapshots[etf.ticker] ?? null}
-              optionDiagnostic={snapshotDiagnostics[etf.ticker] ?? null}
-              isEvidenceOpen={activeEvidence?.ticker === etf.ticker}
-              onEvidenceOpen={anchor => openEvidence(etf.ticker, anchor)}
-              onEvidenceClose={closeEvidence}
-              netAssets={fundAssets[etf.ticker] ?? null}
             />
           ))}
         </div>

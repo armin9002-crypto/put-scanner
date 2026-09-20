@@ -32,7 +32,7 @@ test('cold load hides unconfirmed cards; all and exact scopes show confirmed mem
   page.on('pageerror', error => errors.push(error.message));
   const fixture = await setup(page, true);
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByPlaceholder('Filter / Search by Ticker')).toBeVisible();
+  await expect(page.getByPlaceholder(/Filter \/ Search by Ticker|Search ticker/)).toBeVisible();
   await expect(opportunityLinks(page)).toHaveCount(0);
   fixture.release();
   await expect(page.locator('a[href^="/options/TQQQ"]')).toBeVisible();
@@ -65,9 +65,9 @@ test('explicit manual ticker investigation still navigates when ticker has no co
   await setup(page);
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('a[href^="/options/TQQQ"]')).toBeVisible();
-  await page.getByPlaceholder('Filter / Search by Ticker').fill('QQUP');
+  await page.getByPlaceholder(/Filter \/ Search by Ticker|Search ticker/).fill('QQUP');
   await expect(page.locator('a[href^="/options/QQUP"]')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Go to Option Chain', exact: true }).click();
+  await page.getByRole('button', { name: /^(Go to Option Chain|Option Chain)$/ }).click();
   await expect(page).toHaveURL(/\/options\/QQUP/);
 });
 
@@ -141,8 +141,8 @@ test('continuously open Scanner reacquires once at the next regular session and 
   await expect(page.locator('a[href^="/options/UPRO"]')).toBeVisible();
 
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await page.getByPlaceholder('Filter / Search by Ticker').fill('UPRO');
-  await page.getByPlaceholder('Filter / Search by Ticker').fill('');
+  await page.getByPlaceholder(/Filter \/ Search by Ticker|Search ticker/).fill('UPRO');
+  await page.getByPlaceholder(/Filter \/ Search by Ticker|Search ticker/).fill('');
   await page.clock.fastForward(1000);
   expect(expirationRequests).toBe(2);
 });
