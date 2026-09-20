@@ -30,6 +30,8 @@ const routes = [
 const root = process.cwd();
 const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
 const sources = {
+  index: read('index.html'),
+  manifest: read('public/manifest.webmanifest'),
   app: read('src/App.tsx'),
   account: read('src/components/AccountControl.tsx'),
   mobileAccount: read('src/components/MobileAccountSheet.tsx'),
@@ -67,6 +69,7 @@ const portfolioSchedule = sources.portfolio.slice(
 );
 
 const guardrails = [
+  ['installed web app metadata enables standalone launch with effective iOS safe areas', sources.manifest.includes('"start_url": "/"') && sources.manifest.includes('"scope": "/"') && sources.manifest.includes('"display": "standalone"') && sources.index.includes('viewport-fit=cover') && sources.index.includes('apple-mobile-web-app-capable') && sources.index.includes('apple-mobile-web-app-title') && sources.index.includes('apple-mobile-web-app-status-bar-style') && sources.index.includes('apple-touch-icon')],
   ['phone navigation uses contextual headers and real links', sources.app.includes('<MobilePageHeader') && sources.app.includes('<NavLink')],
   ['Account stays in utility controls with a 44px mobile target and no Account route', sources.app.includes('<AccountControl />') && sources.account.includes('h-11 w-11 min-h-11 min-w-11') && sources.account.includes('aria-haspopup="dialog"') && !sources.app.includes("to: '/account'")],
   ['mobile Account uses a body portal above header and bottom navigation stacking contexts', sources.account.includes('<MobileAccountSheet') && sources.mobileAccount.includes('createPortal(sheet, document.body)') && sources.mobileAccount.includes('z-[110]')],
@@ -77,7 +80,7 @@ const guardrails = [
   ['mobile ETF option header keeps the shared Account trigger available', sources.options.includes("import AccountControl from '../components/AccountControl'") && sources.options.includes('<AccountControl />')],
   ['safe areas, dynamic viewport units, and native phone font are present', sources.css.includes('safe-area-inset-bottom') && sources.css.includes('100dvh') && sources.css.includes('-apple-system')],
   ['phone-landscape semantic breakpoint remains explicit', sources.responsive.includes('viewportHeight <= 520') && sources.responsive.includes('viewportWidth <= 950')],
-  ['shared bottom sheet locks scroll and restores focus', sources.mobileSheet.includes('useBlockingOverlayBehavior') && sources.blockingOverlay.includes("document.body.style.overflow = 'hidden'") && sources.blockingOverlay.includes('previousFocus')],
+  ['shared bottom sheet locks scroll, restores focus, and owns bottom safe-area padding once', sources.mobileSheet.includes('useBlockingOverlayBehavior') && sources.mobileSheet.includes('mobile-sheet-content') && sources.mobileSheet.includes("footer ? 'has-footer' : ''") && sources.blockingOverlay.includes("document.body.style.overflow = 'hidden'") && sources.blockingOverlay.includes('previousFocus') && sources.css.includes('.mobile-sheet-panel:not(.has-footer) .mobile-sheet-content') && sources.css.includes('.mobile-sheet-footer')],
   ['Scanner uses a purpose-built phone tree and dense shared ETF rows', sources.scanner.includes('if (isPhone)') && sources.scanner.includes('<MobileMarketStrip') && sources.scanner.includes('<MobileEtfRow')],
   ['Scanner mobile discovery rows preserve identity, four-period performance, IV60, liquidity, and assets', sources.mobileEtfRow.includes('mobile-etf-row__main') && sources.mobileEtfRow.includes("['5D'") && sources.mobileEtfRow.includes("['52W'") && sources.mobileEtfRow.includes('IV60') && sources.mobileEtfRow.includes('formatFundAssets') && sources.css.includes('.mobile-etf-row__performance')],
   ['Analyze Ticker is present in both Scanner layouts with touch-safe, no-zoom controls', (sources.scanner.match(/<AnalyzeTickerForm/g) ?? []).length === 2 && sources.analyzeTicker.includes('min-h-11') && sources.analyzeTicker.includes('text-base') && sources.analyzeTicker.includes('grid-cols-[minmax(0,1fr)_auto]')],

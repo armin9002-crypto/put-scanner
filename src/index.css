@@ -646,8 +646,11 @@ table,
 
 .mobile-sheet-panel {
   max-height: min(88dvh, 760px);
-  padding-bottom: env(safe-area-inset-bottom);
   box-shadow: var(--shadow-overlay);
+}
+
+.mobile-sheet-panel:not(.has-footer) .mobile-sheet-content {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
 }
 
 .mobile-sheet-footer {
@@ -6124,6 +6127,12 @@ input[type="number"] {
 .mobile-route-page {
   min-width: 0;
   overflow-x: clip;
+}
+
+@media (max-width: 767px), (orientation: landscape) and (max-height: 520px) and (max-width: 950px) {
+  .app-content-shell.is-option-route {
+    padding-bottom: 0;
+  }
 }
 
 @media (max-width: 767px) {

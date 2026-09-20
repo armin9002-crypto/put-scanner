@@ -2,7 +2,8 @@
   "name": "Put Scanner — Leveraged ETF Put Opportunities",
   "short_name": "Put Scanner",
   "start_url": "/",
-  "display": "browser",
+  "scope": "/",
+  "display": "standalone",
   "theme_color": "#081019",
   "background_color": "#081019",
   "icons": [

@@ -43,7 +43,7 @@ export default function MobileBottomSheet({
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
         tabIndex={-1}
-        className={`mobile-sheet-panel overlay-panel relative z-10 flex w-full max-w-xl flex-col overflow-hidden rounded-t-[18px] rounded-b-none outline-none ${className}`}
+        className={`mobile-sheet-panel ${footer ? 'has-footer' : ''} overlay-panel relative z-10 flex w-full max-w-xl flex-col overflow-hidden rounded-t-[18px] rounded-b-none outline-none ${className}`}
         style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}
       >
         <div className="flex-none px-4 pt-2">
@@ -58,7 +58,7 @@ export default function MobileBottomSheet({
             </button>
           </div>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">{children}</div>
+        <div className="mobile-sheet-content min-h-0 flex-1 overflow-y-auto px-4 py-4">{children}</div>
         {footer && <div className="mobile-sheet-footer flex-none border-t px-4 pt-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg)' }}>{footer}</div>}
       </div>
     </div>

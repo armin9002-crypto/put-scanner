@@ -209,12 +209,22 @@ function MobileBottomNav() {
 }
 
 function AppContent() {
-  const { isPhone, isPhoneLandscape } = useResponsiveMode();
   return (
     <BrowserRouter>
+      <AppShell />
+    </BrowserRouter>
+  );
+}
+
+function AppShell() {
+  const { isPhone, isPhoneLandscape } = useResponsiveMode();
+  const location = useLocation();
+  const isOptionsRoute = location.pathname.startsWith('/options/');
+  return (
+    <>
       <NavBar />
       <ErrorBoundary title="Page unavailable" message="This page could not render. Refresh and try again.">
-        <main className={`app-content-shell ${isPhone ? 'is-phone' : ''} ${isPhoneLandscape ? 'is-phone-landscape' : ''}`}>
+        <main className={`app-content-shell ${isPhone ? 'is-phone' : ''} ${isPhoneLandscape ? 'is-phone-landscape' : ''} ${isOptionsRoute ? 'is-option-route' : ''}`}>
           <Suspense fallback={<RouteLoadingFallback />}>
           <Routes>
             <Route path="/" element={<HomePage />} />
@@ -233,7 +243,7 @@ function AppContent() {
       {import.meta.env.DEV && <NetworkDiagnosticsPanel />}
       <LayoutDiagnosticsPanel />
       <StorageFailureNotice />
-    </BrowserRouter>
+    </>
   );
 }
 
