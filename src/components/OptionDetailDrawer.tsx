@@ -205,7 +205,7 @@ export default function OptionDetailDrawer({
 
   useEffect(() => {
     setContracts('1');
-    setSoldPrice(defaultPrice != null ? defaultPrice.value.toFixed(2) : '');
+    setSoldPrice(defaultPrice != null ? String(defaultPrice.value) : '');
     setSoldPriceBasis(defaultPrice?.basis ?? null);
   }, [defaultPrice, option?.strike]);
 
@@ -265,7 +265,7 @@ export default function OptionDetailDrawer({
     if (quoteIntegrityInvalid) return;
     const executable = executableOptionPrice(value);
     if (executable == null) return;
-    setSoldPrice(executable.toFixed(2));
+    setSoldPrice(String(executable));
     setSoldPriceBasis(basis);
   };
 
@@ -555,17 +555,20 @@ export default function OptionDetailDrawer({
               </label>
             </div>
             <div className="grid grid-cols-4 gap-1 mb-3 rounded-xl p-1 drawer-quote-selector" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }} role="group" aria-label="Use market quote as sold price">
-              {orderedOptionQuoteEntries({ last: usableLast, bid: executableBid, mid, ask: executableAsk }).map(({ field, label, value }) => (
-                <button
+              {orderedOptionQuoteEntries({ last: usableLast, bid: executableBid, mid, ask: executableAsk }).map(({ field, label, value }) => {
+                const selected = field === soldPriceBasis && isFiniteNumber(value) && activeSoldPrice === value;
+                return <button
                   key={field}
                   onClick={() => setSoldPriceFromQuote(field, value)}
                   disabled={!isFiniteNumber(value)}
+                  aria-pressed={selected}
+                  data-selected={selected ? 'true' : 'false'}
                   className="pressable min-h-[44px] rounded-lg px-2 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-[40px]"
-                  style={{ backgroundColor: soldPriceBasis === field && activeSoldPrice === value ? 'var(--accent)' : 'transparent', color: soldPriceBasis === field && activeSoldPrice === value ? 'white' : 'var(--accent-light)' }}
+                  style={{ backgroundColor: selected ? 'var(--accent)' : 'transparent', color: selected ? 'white' : 'var(--accent-light)' }}
                 >
                   {label}
-                </button>
-              ))}
+                </button>;
+              })}
             </div>
             {selectedBasisWarning && <p className="mb-3 text-[11px] leading-4" style={{ color: selectedBasisWarningColor }}>{selectedBasisWarning}</p>}
             {onAddToPortfolio && (

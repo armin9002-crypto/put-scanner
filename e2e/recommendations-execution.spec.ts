@@ -52,6 +52,9 @@ test('Recommendation execution context and nested overlays fit required viewport
     await expect(page.locator('[role="dialog"]')).toHaveCount(2);
     await expect(dialog).toBeVisible();
     await expect(optionDialog).toHaveAttribute('aria-modal', 'true');
+    await expect(optionDialog.getByRole('button', { name: 'Last', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(optionDialog.getByRole('textbox', { name: 'Sold Price' })).toHaveValue('3');
+    await expect(optionDialog).toContainText('$300.00');
     await expect(page.locator('.page-frame')).toHaveAttribute('inert', '');
     expect(await page.evaluate(() => document.body.style.overflow)).toBe('hidden');
 

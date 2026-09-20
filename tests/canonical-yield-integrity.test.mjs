@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import {
   calculateAnnualizedYield,
   calculateNominalYield,
+  calculatePositionMetrics,
   calculateYieldPercent,
 } from '../src/lib/optionMetrics.ts';
 import {
@@ -75,6 +76,21 @@ test('zero is a valid NY/AY input while invalid strike and non-positive annualiz
   assert.equal(calculateNominalYield(1, 0), null);
   assert.equal(calculateAnnualizedYield(1, 50, 0), null);
   assert.equal(calculateAnnualizedYield(1, 50, -1), null);
+});
+
+test('Option Drawer calculator contract keeps gross secured cash yield separate from net risk', () => {
+  const strike = 10;
+  const soldPrice = 0.02;
+  const dte = 5;
+  const metrics = calculatePositionMetrics({ strike, soldPrice, contracts: 1, dte });
+
+  assert.equal(metrics.totalPremium, 2);
+  assert.equal(metrics.equityAtRisk, 1_000);
+  assert.equal(metrics.netCapitalAtRisk, 998);
+  assert.equal(metrics.breakeven, 9.98);
+  assert.equal(calculateNominalYield(soldPrice, strike), 0.02 / 10);
+  assert.equal(calculateAnnualizedYield(soldPrice, strike, dte), (0.02 / 10) * 365 / 5);
+  assert.notEqual(metrics.returnOnRisk, calculateNominalYield(soldPrice, strike));
 });
 
 test('Entry NY is invariant to contract count and reconciles Premium to Gross Risk', () => {

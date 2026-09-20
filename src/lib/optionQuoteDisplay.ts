@@ -115,22 +115,21 @@ export function calculateExecutableMidPrice({
 }
 
 /**
- * Select the canonical automatic sold-price basis. Last is automatic only when
- * its exact trade is recent; stale, future-invalid, and undated Last remain
- * available as explicit reference evidence but never become the default.
+ * Select the canonical automatic sold-price basis. A trusted provider Last is
+ * the preferred default regardless of age; Bid and then Mid are fallbacks.
+ * Last-trade age remains presentation evidence and is not relabeled as fresh.
  */
 export function selectDefaultSoldPrice(
   quote: Pick<Record<OptionQuoteDisplayField, number | null | undefined>, 'last' | 'bid' | 'ask'> & Pick<OptionDrawerQuoteInput, 'lastTradeDate' | 'integrityStatus' | 'lastFallbackOnly'>,
-  now: MarketDateInput = new Date(),
 ): OptionSoldPriceSelection | null {
-  if (quote.integrityStatus === 'invalid' || quote.lastFallbackOnly) return null;
+  if (quote.integrityStatus === 'invalid') return null;
+  const last = quote.lastFallbackOnly ? null : executableOptionPrice(quote.last);
+  if (last != null) return { basis: 'last', value: last };
   const bid = executableOptionPrice(quote.bid);
   if (bid != null) return { basis: 'bid', value: bid };
   const mid = calculateExecutableMidPrice(quote);
   if (mid != null) return { basis: 'mid', value: mid };
-  const last = executableOptionPrice(quote.last);
-  const freshness = getOptionLastTradeFreshness(quote.lastTradeDate, now);
-  return last != null && freshness.freshness === 'recent' ? { basis: 'last', value: last } : null;
+  return null;
 }
 
 /** Build the small source-neutral quote contract consumed by OptionDetailDrawer. */
@@ -151,7 +150,7 @@ export function buildOptionDrawerQuoteState(
     lastTradeDate: input.lastTradeDate,
     integrityStatus: input.integrityStatus,
     lastFallbackOnly: input.lastFallbackOnly,
-  }, now);
+  });
 
   return {
     rawLast: input.last,

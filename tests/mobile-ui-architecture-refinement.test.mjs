@@ -17,11 +17,11 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 test('zero bid is non-executable while positive and fallback quotes retain their honest basis', () => {
   assert.equal(executableOptionPrice(0), null);
   assert.equal(formatOptionQuoteValue('bid', 0, value => `$${value.toFixed(2)}`), 'No Bid');
-  assert.deepEqual(selectDefaultSoldPrice({ bid: 1.25, ask: 1.4, last: 1.3 }), { basis: 'bid', value: 1.25 });
+  assert.deepEqual(selectDefaultSoldPrice({ bid: 1.25, ask: 1.4, last: 1.3 }), { basis: 'last', value: 1.3 });
   const recentLast = { lastTradeDate: '2026-09-04T15:00:00Z' };
-  assert.deepEqual(selectDefaultSoldPrice({ bid: null, ask: 1.4, last: 1.3, ...recentLast }, '2026-09-08T16:00:00Z'), { basis: 'last', value: 1.3 });
-  assert.deepEqual(selectDefaultSoldPrice({ bid: 0, ask: 1.4, last: 1.3, ...recentLast }, '2026-09-08T16:00:00Z'), { basis: 'last', value: 1.3 });
-  assert.equal(selectDefaultSoldPrice({ bid: 0, ask: null, last: 0, lastTradeDate: null }, '2026-09-08T16:00:00Z'), null);
+  assert.deepEqual(selectDefaultSoldPrice({ bid: null, ask: 1.4, last: 1.3, ...recentLast }), { basis: 'last', value: 1.3 });
+  assert.deepEqual(selectDefaultSoldPrice({ bid: 0, ask: 1.4, last: 1.3, ...recentLast }), { basis: 'last', value: 1.3 });
+  assert.equal(selectDefaultSoldPrice({ bid: 0, ask: null, last: 0, lastTradeDate: null }), null);
 });
 
 test('missing executable prices fail dependent yield closed without changing legitimate non-price zero display', () => {

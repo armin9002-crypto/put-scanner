@@ -12,6 +12,7 @@ type MarketFixtureOptions = {
   firstOptionBid?: number | null;
   firstOptionAsk?: number | null;
   firstOptionLast?: number | null;
+  firstOptionLastTradeDate?: number | null;
   firstOptionVolume?: number | null;
   firstOptionOpenInterest?: number | null;
   expirationsByTicker?: Record<string, number[]>;
@@ -28,7 +29,7 @@ function optionChain(ticker: string, expiration = EXPIRATION, putCount = 2, over
     [108, [8.10, 10.40]], [109, [8.20, 10.50]], [110, [2.90, 3.50]],
   ]);
   const puts = [
-    { contractSymbol: `${ticker}${contractDate}P00090000`, strike: 90, lastPrice: overrides.firstOptionLast === undefined ? 2.1 : overrides.firstOptionLast, lastTradeDate: 1_788_000_000, bid: overrides.firstOptionBid === undefined ? 2 : overrides.firstOptionBid, ask: overrides.firstOptionAsk === undefined ? 2.2 : overrides.firstOptionAsk, change: 0.1, percentChange: 5, impliedVolatility: 0.48, volume: overrides.firstOptionVolume === undefined ? 120 : overrides.firstOptionVolume, openInterest: overrides.firstOptionOpenInterest === undefined ? 900 : overrides.firstOptionOpenInterest, delta: -0.2 },
+    { contractSymbol: `${ticker}${contractDate}P00090000`, strike: 90, lastPrice: overrides.firstOptionLast === undefined ? 2.1 : overrides.firstOptionLast, lastTradeDate: overrides.firstOptionLastTradeDate === undefined ? 1_788_000_000 : overrides.firstOptionLastTradeDate, bid: overrides.firstOptionBid === undefined ? 2 : overrides.firstOptionBid, ask: overrides.firstOptionAsk === undefined ? 2.2 : overrides.firstOptionAsk, change: 0.1, percentChange: 5, impliedVolatility: 0.48, volume: overrides.firstOptionVolume === undefined ? 120 : overrides.firstOptionVolume, openInterest: overrides.firstOptionOpenInterest === undefined ? 900 : overrides.firstOptionOpenInterest, delta: -0.2 },
     { contractSymbol: `${ticker}${contractDate}P00095000`, strike: 95, lastPrice: 3.4, lastTradeDate: 1_788_000_000, bid: 3.2, ask: 3.6, change: 0.2, percentChange: 6, impliedVolatility: 0.52, volume: 80, openInterest: 700, delta: -0.32 },
     ...Array.from({ length: Math.max(0, count - 2) }, (_, index) => {
       const strike = 96 + index;
