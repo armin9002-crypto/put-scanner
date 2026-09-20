@@ -428,6 +428,34 @@ test('Portfolio mount automatically sweeps expired lifecycle while refresh remai
   assert.match(page, /handleResolveEntryVixMaintenance/);
 });
 
+test('Portfolio route entry performs one guarded refresh without rerender or presentation triggers', async () => {
+  const [page, rolling, importModal] = await Promise.all([
+    read('src/pages/PortfolioPage.tsx'),
+    read('src/components/RollingHistoricalAnalyticsChart.tsx'),
+    read('src/components/PortfolioHistoricalExcelImportModal.tsx'),
+  ]);
+  const autoRefresh = page.slice(page.indexOf('useEffect(() => {\n    if (autoRefreshStartedRef.current'), page.indexOf('const handleRetryResolve'));
+  const refresh = page.slice(page.indexOf('const handleRefreshOpenTrades'), page.indexOf('const handleRetryResolve'));
+  assert.match(page, /const autoRefreshStartedRef = useRef\(false\)/);
+  assert.match(autoRefresh, /if \(autoRefreshStartedRef\.current\) return/);
+  assert.match(autoRefresh, /autoRefreshStartedRef\.current = true/);
+  assert.match(autoRefresh, /void handleRefreshOpenTrades\(\)/);
+  assert.match(autoRefresh, /\}, \[account\.phase, handleRefreshOpenTrades\]\);/);
+  assert.doesNotMatch(autoRefresh, /renderVersion|groupMode|markBasis|analytics|focus|resize|setInterval/);
+  assert.match(refresh, /if \(quoteRefreshInFlightRef\.current\) return/);
+  assert.match(refresh, /const open = sweepTrades\.filter\(trade => trade\.status === 'open' && !isExpiredUnresolvedOpenTrade\(trade\)\)/);
+  assert.ok(refresh.indexOf('if (open.length === 0)') < refresh.indexOf('fetchBatchPricesResult'), 'empty and expired-only portfolios return before market requests');
+  assert.match(page, /void handleRefreshOpenTrades\(\)/);
+  assert.match(page, /void archiveExpiredOpenTrades\(inspected\)/);
+  assert.match(page, /mergePortfolioLifecycleResults/);
+  assert.match(page, /mergePortfolioMarketRefresh/);
+  assert.match(page, /setLastRefreshed\(new Date\(\)\)/);
+  assert.match(page, /return value\.toFixed\(3\)/);
+  assert.doesNotMatch(page, /absDelta\.toFixed\(2\)/);
+  assert.match(rolling, /category === 'signed_delta'.*value\.toFixed\(3\)/s);
+  assert.match(importModal, /row\.source\.entryDelta, 3/);
+});
+
 test('Add Trade exposes manual Entry Delta and percentage-point IV only for historical entry while Edit retains explicit overrides', async () => {
   const page = await read('src/pages/PortfolioPage.tsx');
   const modal = page.slice(page.indexOf('function TradeModal'), page.indexOf('function PortfolioPage'));

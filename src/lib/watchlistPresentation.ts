@@ -1,5 +1,5 @@
 import { compareNullableValue, type MetricSortDirection } from './metricValue.ts';
-import type { WatchlistSnapshot, WatchlistStatus } from './watchlist.ts';
+import { formatWatchlistExpiry, type WatchlistSnapshot, type WatchlistStatus } from './watchlist.ts';
 
 export type WatchlistGroupMode = 'none' | 'underlying' | 'expiry';
 
@@ -11,6 +11,7 @@ export interface WatchlistSortOverride {
 export interface WatchlistGroupableRow {
   id: string;
   ticker: string;
+  expiry?: string;
   expiryTimestamp: number;
   expiryFormatted: string;
   strike: number;
@@ -125,7 +126,11 @@ export function buildWatchlistGroups<T extends WatchlistGroupableRow>(
       : compareNullableValue(aRows[0]?.expiryTimestamp, bRows[0]?.expiryTimestamp, 'asc'))
     .map(([key, groupRows]) => ({
       key,
-      label: mode === 'underlying' ? groupRows[0]?.ticker ?? key : groupRows[0]?.expiryFormatted ?? key,
+      label: mode === 'underlying'
+        ? groupRows[0]?.ticker ?? key
+        : groupRows[0]?.expiry
+          ? formatWatchlistExpiry(groupRows[0].expiry)
+          : groupRows[0]?.expiryFormatted ?? key,
       rows: [...groupRows].sort((a, b) => rowCompare(a, b, mode, sortOverride)),
     }));
 }

@@ -131,6 +131,24 @@ test('passive Portfolio lifecycle reconciliation never resurrects a deletion or 
   assert.deepEqual(merged, [editedCurrent]);
 });
 
+test('lifecycle archival and current quote refresh merge without resurrecting an expired trade', () => {
+  const expired = portfolioTrade({ id: 'expired', expiration: isoDaysFromNow(-1) });
+  const current = portfolioTrade({ id: 'current' });
+  const inspected = [expired, current];
+  const resolvedExpired = { ...expired, status: 'expired', updatedAt: '2026-08-27T12:00:00.000Z' };
+  const lifecycleResolved = [resolvedExpired, current];
+  const quoteRefreshed = [
+    { ...expired, latestMarketData: { ...expired.latestMarketData, optionBid: 0.8, refreshedAt: '2027-01-01T13:00:00.000Z' } },
+    { ...current, latestMarketData: { ...current.latestMarketData, optionBid: 0.7, refreshedAt: '2027-01-01T13:00:00.000Z' } },
+  ];
+
+  const quoteAfterLifecycle = mergePortfolioMarketRefresh(lifecycleResolved, quoteRefreshed);
+  const merged = mergePortfolioLifecycleResults(quoteAfterLifecycle, inspected, lifecycleResolved);
+  assert.equal(merged.find(trade => trade.id === 'expired').status, 'expired');
+  assert.equal(merged.find(trade => trade.id === 'expired').latestMarketData.optionBid, 1);
+  assert.equal(merged.find(trade => trade.id === 'current').latestMarketData.optionBid, 0.7);
+});
+
 test('centralized Portfolio policies preserve exact Close Candidate thresholds and deterministic attention ranking', () => {
   assert.deepEqual(PORTFOLIO_CLOSE_POLICY, {
     highCapture: 0.75,

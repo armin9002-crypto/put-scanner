@@ -62,7 +62,7 @@ function formatMetricValue(value: number | null, category: HistoricalFormatterCa
   if (!isFiniteValue(value)) return '—';
   if (category === 'ratio_percent') return metric === 'realizedIrr' ? formatSignedPercent(value * 100, 1) : formatPercent(value, 1);
   if (category === 'percentage_points') return formatPercentPoints(value, 1);
-  if (category === 'signed_delta') return `${value >= 0 ? '+' : ''}${value.toFixed(2)}`;
+  if (category === 'signed_delta') return `${value >= 0 ? '+' : ''}${value.toFixed(3)}`;
   if (category === 'days') return axis ? `${Math.round(value)}` : `${Math.round(value)} DTE`;
   return axis ? formatCompactCurrency(value) : formatCurrency(value, 0);
 }

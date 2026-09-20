@@ -512,7 +512,7 @@ function formatPctValue(value: number | null | undefined): string {
 
 function formatDelta(value: number | null | undefined): string {
   if (!isFiniteNumber(value)) return DASH;
-  return value.toFixed(2);
+  return value.toFixed(3);
 }
 
 function formatSignedNumber(value: number | null | undefined): string {
@@ -557,7 +557,7 @@ function getPositionHealth(trade: PortfolioTrade, basis: MarkBasis = 'last'): Po
   const absDelta = isFiniteNumber(delta) ? Math.abs(delta) : null;
   const triggerContext = [
     isFiniteNumber(distanceToStrike) ? `${formatPctValue(distanceToStrike)} above strike` : null,
-    isFiniteNumber(absDelta) ? `${absDelta.toFixed(2)} abs delta` : null,
+    isFiniteNumber(absDelta) ? `${formatDelta(absDelta)} abs delta` : null,
     isFiniteNumber(dte) ? formatDteValue(dte) : null,
   ].filter(Boolean).join(', ');
   const context = [
@@ -1559,6 +1559,7 @@ export default function PortfolioPage() {
   const quoteRefreshInFlightRef = useRef(false);
   const quoteRefreshGenerationRef = useRef(0);
   const quoteRefreshAbortRef = useRef<AbortController | null>(null);
+  const autoRefreshStartedRef = useRef(false);
   const lifecycleSweepInFlightRef = useRef(false);
 
   useEffect(() => {
@@ -2157,6 +2158,13 @@ export default function PortfolioPage() {
       }
     }
   }, [persistTrades, markBasis]);
+
+  useEffect(() => {
+    if (autoRefreshStartedRef.current) return;
+    if (account.phase !== 'ready' && account.phase !== 'anonymous') return;
+    autoRefreshStartedRef.current = true;
+    void handleRefreshOpenTrades();
+  }, [account.phase, handleRefreshOpenTrades]);
 
   const handleRetryResolve = useCallback(async (trade: PortfolioTrade) => {
     setResolvingArchiveIds(previous => new Set(previous).add(trade.id));

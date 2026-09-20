@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   annualizedYieldFieldForNominal,
   OPTION_YIELD_DISPLAY_ORDER,
@@ -98,4 +99,29 @@ test('watchlist groups preserve canonical group order and only sort inside group
   const lastTradeSorted = buildWatchlistGroups(rows, 'underlying', { field: 'lastTradeDate', direction: 'desc' });
   assert.deepEqual(lastTradeSorted[0].rows.map(item => item.id), ['A-high', 'A-low']);
   assert.equal(lastTradeSorted[0].rows.at(-1).lastTradeDate, 1);
+});
+
+test('watchlist default grouping orders expiry/ticker first and ignores legacy labels for expiry headers', () => {
+  const rows = [
+    { id: 'TQQQ-late', ticker: 'TQQQ', expiry: '2027-02-19', expiryTimestamp: 2, expiryFormatted: '02/19/27', strike: 80 },
+    { id: 'TQQQ-early-high', ticker: 'TQQQ', expiry: '2027-01-15', expiryTimestamp: 1, expiryFormatted: 'Jan 15', strike: 55 },
+    { id: 'TQQQ-early-low', ticker: 'TQQQ', expiry: '2027-01-15', expiryTimestamp: 1, expiryFormatted: "Jan 15 '27", strike: 50 },
+    { id: 'A-early', ticker: 'A', expiry: '2027-01-15', expiryTimestamp: 1, expiryFormatted: '01/15/27', strike: 40 },
+  ];
+
+  assert.deepEqual(buildWatchlistGroups(rows, 'underlying').find(group => group.label === 'TQQQ').rows.map(row => row.id), [
+    'TQQQ-early-low', 'TQQQ-early-high', 'TQQQ-late',
+  ]);
+  assert.deepEqual(buildWatchlistGroups(rows, 'expiry').find(group => group.key === '1').rows.map(row => row.id), [
+    'A-early', 'TQQQ-early-low', 'TQQQ-early-high',
+  ]);
+  assert.equal(buildWatchlistGroups(rows, 'expiry').find(group => group.key === '1').label, "Jan 15 '27");
+});
+
+test('changing Watchlist Group By clears explicit sort overrides for canonical grouped ordering', () => {
+  const source = readFileSync(new URL('../src/pages/WatchlistPage.tsx', import.meta.url), 'utf8');
+  const handler = source.slice(source.indexOf('function handleGroupModeChange'), source.indexOf('function handleSortSelection'));
+  assert.match(handler, /setSortOverride\(mode === 'none' \? \{ field: 'dte', direction: 'asc' \} : null\)/);
+  assert.match(handler, /setSortField\('dte'\)/);
+  assert.match(handler, /setSortDir\('asc'\)/);
 });

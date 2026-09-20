@@ -40,6 +40,7 @@ test('Stage 3 Screener states and Portfolio landscape chrome use local density r
   assert.match(styles, /\.screener-mobile-state \{[\s\S]*padding-block: 1rem/);
   assert.match(styles, /\.portfolio-page \.page-header__title,[\s\S]*display: none/);
   assert.match(portfolio, /<PageHeader[\s\S]*title="Portfolio"/);
-  assert.match(portfolio, /Import Screenshot/);
+  assert.match(portfolio, /Data Tools/);
+  assert.doesNotMatch(portfolio, /Import Screenshot/);
   assert.match(portfolio, /Maintenance/);
 });

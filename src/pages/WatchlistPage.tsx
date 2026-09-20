@@ -5,11 +5,15 @@ import {
   markWatchlistItems,
   removeFromWatchlist,
   pruneExpiredWatchlist,
+  formatWatchlistExpiry,
   updateWatchlistNote,
   type WatchlistItem,
   type WatchlistSnapshot,
   type WatchlistStatus,
 } from '../lib/watchlist';
+import { loadPortfolioTrades } from '../lib/portfolioStorage';
+import { subscribeToDurableMutations } from '../lib/cloudState/syncEvents';
+import { buildOpenPortfolioContractKeys, isWatchlistContractInOpenPortfolio } from '../lib/watchlistPortfolioMembership';
 import { fetchOptions, fetchBatchPricesResult } from '../lib/api';
 import type { OptionsChainData } from '../lib/types';
 import { calculateDte, calculateMoneyness, calculateVolumeOpenInterestRatio, calculateYieldPercent, isFiniteNumber, sanitizePositive } from '../lib/optionMetrics';
@@ -62,6 +66,11 @@ interface LiveRow extends WatchlistItem {
   statusColor: string;
   evidenceFreshness?: 'current' | 'cached-current' | 'retained-stale' | 'unavailable';
   observedAt?: number | null;
+}
+
+function PortfolioMembershipDot({ inOpenPortfolio }: { inOpenPortfolio: boolean }) {
+  const label = inOpenPortfolio ? 'In open Portfolio' : 'Not in open Portfolio';
+  return <span role="img" aria-label={label} title={label} className="watchlist-portfolio-dot inline-block h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: inOpenPortfolio ? 'var(--green)' : 'var(--yellow)' }} />;
 }
 
 type SortField = 'ticker' | 'strike' | 'expiry' | 'dte' | 'moneyness' | 'bid' | 'ask' | 'last' | 'lastTradeDate' | 'delta' | 'iv' | 'nomYieldBid' | 'annYieldBid' | 'nomYieldAsk' | 'annYieldAsk' | 'nomYieldLast' | 'annYieldLast' | 'added';
@@ -161,6 +170,7 @@ function buildRow(item: WatchlistItem): LiveRow {
     annYieldAsk: askYield.annualized,
     nomYieldLast: lastYield.nominal,
     annYieldLast: lastYield.annualized,
+    expiryFormatted: formatWatchlistExpiry(item.expiry),
     status,
     statusLabel: statusPresentation.label,
     statusDetail: statusPresentation.detail,
@@ -202,6 +212,7 @@ export default function WatchlistPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const [items, setItems] = useState<WatchlistItem[]>([]);
+  const [openPortfolioContractKeys, setOpenPortfolioContractKeys] = useState<ReadonlySet<string>>(() => new Set());
   const [loading, setLoading] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
@@ -218,6 +229,10 @@ export default function WatchlistPage() {
   const refreshGenerationRef = useRef(0);
   const refreshAbortRef = useRef<AbortController | null>(null);
   const noteInputActionRef = useRef<string | null>(null);
+
+  const refreshPortfolioMembership = useCallback(() => {
+    setOpenPortfolioContractKeys(buildOpenPortfolioContractKeys(loadPortfolioTrades()));
+  }, []);
 
   const watchlistOriginPresentation = useMemo<WatchlistOriginPresentation>(() => ({
     sortField,
@@ -259,6 +274,13 @@ export default function WatchlistPage() {
     setItems(stored);
     setLastRefreshed(null);
   }, []);
+
+  useEffect(() => {
+    refreshPortfolioMembership();
+    return subscribeToDurableMutations(event => {
+      if (event.namespace === 'portfolio') refreshPortfolioMembership();
+    });
+  }, [refreshPortfolioMembership]);
 
   useEffect(() => {
     const prune = () => { if (document.visibilityState === 'visible') setItems(pruneExpiredWatchlist()); };
@@ -488,6 +510,7 @@ export default function WatchlistPage() {
               groupMode !== 'none' ? <MobileFinancialTableDivider key={`${group.key}-divider`} columns={mobileWatchlistColumns.length}>{groupMode === 'underlying' ? group.label : `${group.label} · ${group.rows.length} saved`}</MobileFinancialTableDivider> : null,
               ...(group.rows as unknown as LiveRow[]).map(row => {
                 const openDetails = () => setSelectedOption({ option: optionDetailFromWatchlistRow(row), ticker: row.ticker, expirationLabel: row.expiryFormatted, dte: row.dte, underlyingPrice: row.currentPrice });
+                const inOpenPortfolio = isWatchlistContractInOpenPortfolio(row, openPortfolioContractKeys);
                 const muted = row.expired || row.status === 'unavailable';
                 const freshness = getOptionLastTradeFreshness(row.lastTradeDate);
                 const path = buildOptionsPath(row.ticker, row.expiryTimestamp);
@@ -502,6 +525,7 @@ export default function WatchlistPage() {
                         <button type="button" className="mobile-financial-table-action" aria-label={`Remove ${row.ticker} ${row.expiryFormatted} ${formatMoney(row.strike)} put from watchlist`} title="Remove from watchlist" onClick={event => { event.stopPropagation(); handleRemove(row.id); }}>
                           <Star className="h-3.5 w-3.5 fill-current" style={{ color: 'var(--accent-light)' }} />
                         </button>
+                        <PortfolioMembershipDot inOpenPortfolio={inOpenPortfolio} />
                         <button type="button" className="mobile-financial-table-action" aria-label={`${row.note ? 'Edit' : 'Add'} note for ${row.ticker}`} title={row.note ? row.note : 'Add note'} onClick={event => { event.stopPropagation(); noteInputActionRef.current = null; setEditingNote(row.id); setNoteText(row.note); }}>
                           <StickyNote className={`h-3.5 w-3.5 ${row.note ? 'fill-current' : ''}`} style={{ color: row.note ? 'var(--accent-light)' : 'var(--text-dim)' }} />
                         </button>
@@ -583,6 +607,7 @@ export default function WatchlistPage() {
             <div className="md:hidden space-y-2">
               {sortedRows.map(row => {
                 const mutedStyle = row.expired || row.status === 'unavailable' ? { opacity: 0.65 } : {};
+                const inOpenPortfolio = isWatchlistContractInOpenPortfolio(row, openPortfolioContractKeys);
                 return (
                   <div
                     key={row.id}
@@ -622,6 +647,7 @@ export default function WatchlistPage() {
                         >
                           <Star className="w-4 h-4 fill-current" style={{ color: 'var(--accent-light)' }} />
                         </button>
+                        <PortfolioMembershipDot inOpenPortfolio={inOpenPortfolio} />
                       </div>
                     </div>
 
@@ -743,6 +769,7 @@ export default function WatchlistPage() {
                   {sortedRows.map((row, idx) => {
                     const bgStyle = idx % 2 !== 0 ? { backgroundColor: 'var(--row-alt)' } : {};
                     const mutedStyle = row.expired || row.status === 'unavailable' ? { opacity: 0.65 } : {};
+                    const inOpenPortfolio = isWatchlistContractInOpenPortfolio(row, openPortfolioContractKeys);
                     const group = groupedRows.find(candidate => candidate.rows.some(candidateRow => candidateRow.id === row.id));
                     const groupStart = group?.rows[0]?.id === row.id;
 
@@ -763,6 +790,7 @@ export default function WatchlistPage() {
                           >
                             <Star className="w-3.5 h-3.5 fill-current" style={{ color: 'var(--accent-light)' }} />
                           </button>
+                          <PortfolioMembershipDot inOpenPortfolio={inOpenPortfolio} />
                         </td>
                         <td className="watchlist-ticker-cell px-1.5 py-0.5 text-left whitespace-nowrap" style={mutedStyle}>
                           <Link

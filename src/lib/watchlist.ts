@@ -192,7 +192,7 @@ function normalizeExpiration(value: unknown, fallbackTimestamp?: unknown): { iso
   return null;
 }
 
-function formatExpiryLabel(iso: string): string {
+export function formatWatchlistExpiry(iso: string): string {
   const [year, month, day] = iso.split('-').map(Number);
   const date = new Date(Date.UTC(year, month - 1, day));
   const monthDay = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
@@ -305,7 +305,7 @@ export function normalizeWatchlistItem(
     expiryTimestamp: expiration.timestamp,
     expiryFormatted: typeof value.expiryFormatted === 'string' && value.expiryFormatted
       ? value.expiryFormatted
-      : formatExpiryLabel(expiration.iso),
+      : formatWatchlistExpiry(expiration.iso),
     strike,
     optionType,
     addedAt,
