@@ -242,6 +242,14 @@ export function buildOpenContractPositions(trades: readonly PortfolioTrade[], ma
   return buildPositions(trades.filter(trade => trade.status === 'open'), markBasis);
 }
 
+/** Read-only lot projections: preserve entry weights while sharing the row's current contract observation. */
+export function buildPortfolioValuationLots(positions: readonly PortfolioContractPosition[]): PortfolioTrade[] {
+  return positions.flatMap(position => position.lots.map(lot => ({
+    ...lot,
+    latestMarketData: position.latestMarketData,
+  })));
+}
+
 /** Caller must filter canonical lots by outcome before invoking this builder. */
 export function buildHistoricalContractPositions(filteredLots: readonly PortfolioTrade[]): PortfolioContractPosition[] {
   return buildPositions(filteredLots, null);

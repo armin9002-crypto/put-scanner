@@ -95,6 +95,8 @@ function watchlistItem(candidate: RecommendationCandidate): WatchlistItem {
       last: row.last,
       lastTradeDate: row.lastTradeDate,
       delta: row.delta,
+      deltaSource: row.deltaSource,
+      deltaModelVersion: row.deltaSource === 'calculated' ? CALCULATED_PUT_DELTA_MODEL.version : null,
       iv: row.iv,
       dte: row.dte,
       volume: row.volume,

@@ -152,6 +152,7 @@ import {
   buildAddToPositionSeed,
   buildHistoricalContractPositions,
   buildOpenContractPositions,
+  buildPortfolioValuationLots,
   isPortfolioContractPosition,
   type PortfolioContractPosition,
 } from '../lib/portfolioContractPositions';
@@ -1606,13 +1607,14 @@ export default function PortfolioPage() {
   const summary = useMemo(() => calculatePortfolioSummary(trades), [trades]);
   const openTrades = useMemo(() => trades.filter(trade => trade.status === 'open'), [trades]);
   const openPositions = useMemo(() => buildOpenContractPositions(openTrades, markBasis), [markBasis, openTrades]);
+  const valuationLots = useMemo(() => buildPortfolioValuationLots(openPositions), [openPositions]);
   const allArchivedTrades = useMemo(() => trades.filter(isArchivedTrade).sort((a, b) => b.expiration.localeCompare(a.expiration)), [trades]);
   const historyInstrumentScope = useMemo(() => buildHistoryInstrumentScope(allArchivedTrades, onlyShowEtfs), [allArchivedTrades, onlyShowEtfs]);
   const scopedArchivedTrades = historyInstrumentScope.trades;
   const scopedHistoryTrades = useMemo(() => buildHistoryInstrumentScope(trades, onlyShowEtfs).trades, [onlyShowEtfs, trades]);
   const archiveSummary = useMemo(() => buildArchiveSummary(scopedArchivedTrades), [scopedArchivedTrades]);
-  const markSummary = useMemo(() => calculatePortfolioMarkSummary(openTrades, markBasis), [openTrades, markBasis]);
-  const currentAyCoverage = useMemo(() => calculatePortfolioCurrentAyCoverage(openTrades, markBasis), [openTrades, markBasis]);
+  const markSummary = useMemo(() => calculatePortfolioMarkSummary(valuationLots, markBasis), [valuationLots, markBasis]);
+  const currentAyCoverage = useMemo(() => calculatePortfolioCurrentAyCoverage(valuationLots, markBasis), [valuationLots, markBasis]);
   const maintenanceAssessment = useMemo(() => assessPortfolioMaintenance(trades), [trades]);
   const lastFallbackCount = openPositions.filter(trade => resolvePortfolioMark(trade, markBasis).source === 'last_fallback').length;
   const unavailableMarkCount = openPositions.filter(trade => resolvePortfolioMark(trade, markBasis).value == null).length;
@@ -1628,7 +1630,7 @@ export default function PortfolioPage() {
   </p>;
   const historicalExcelImportAvailable = account.phase === 'ready' && account.cloud !== null && account.userId !== null;
 
-  const scheduleTotals = useMemo(() => buildScheduleTotals(openTrades, markBasis), [openTrades, markBasis]);
+  const scheduleTotals = useMemo(() => buildScheduleTotals(valuationLots, markBasis), [valuationLots, markBasis]);
 
   useEffect(() => {
     persistPortfolioMarkBasis(markBasis);

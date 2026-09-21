@@ -814,7 +814,7 @@ function parseTableRowBlock(block: TableRowBlock): ParsedBrokerageOptionRow | nu
   const contracts = quantity != null ? Math.abs(quantity) : null;
   const side: OptionSide = quantity == null ? inferSideFromCells(cells) : quantity < 0 ? 'short' : 'long';
   const costBasisTotal = cells.costBasisTotal != null ? Math.abs(cells.costBasisTotal) : undefined;
-  const calculatedAverageCost = contracts != null && costBasisTotal != null && contracts > 0 ? roundMoney(costBasisTotal / contracts / 100) : undefined;
+  const calculatedAverageCost = contracts != null && costBasisTotal != null && contracts > 0 ? costBasisTotal / contracts / 100 : undefined;
   let averageCostBasis = cells.averageCostBasis ?? calculatedAverageCost;
   const warnings: string[] = [];
 
@@ -1003,13 +1003,13 @@ function findBestCostBasisTotal(afterQuantity: ColumnToken[], quantity?: number)
 function findBestAverageCost(afterQuantity: ColumnToken[], quantity?: number, costBasisTotal?: number): number | undefined {
   const direct = afterQuantity.find(token => token.value >= 0 && token.value <= 100)?.value;
   if (quantity != null && costBasisTotal != null) return reconcileAverageCost(direct, costBasisTotal, Math.abs(quantity));
-  return direct == null ? undefined : roundMoney(direct);
+  return direct;
 }
 
 function reconcileAverageCost(direct: number | undefined, costBasisTotal: number, contracts: number): number {
-  const derived = roundMoney(costBasisTotal / contracts / 100);
+  const derived = costBasisTotal / contracts / 100;
   if (direct == null) return derived;
-  return roughlyEqual(direct, derived, Math.max(0.03, derived * 0.05)) ? roundMoney(direct) : derived;
+  return roughlyEqual(direct, derived, Math.max(0.03, derived * 0.05)) ? direct : derived;
 }
 
 function findTotalGainLossToken(beforeQuantity: ColumnToken[], currentValue?: number, costBasisTotal?: number): ColumnToken | undefined {
@@ -1085,7 +1085,7 @@ function parseRowBlock(block: RowBlock): ParsedBrokerageOptionRow | null {
   const costBasisTotal = findCostBasisTotal(tokens, quantityInfo.tokenIndex, contracts);
   const directAverageCost = findAverageCost(tokens, quantityInfo.tokenIndex, contracts);
   const calculatedAverageCost = contracts != null && costBasisTotal != null && contracts > 0
-    ? roundMoney(Math.abs(costBasisTotal) / contracts / 100)
+    ? Math.abs(costBasisTotal) / contracts / 100
     : undefined;
   let averageCostBasis = directAverageCost ?? calculatedAverageCost;
   if (calculatedAverageCost != null && directAverageCost != null && Math.abs(calculatedAverageCost - directAverageCost) > Math.max(0.05, calculatedAverageCost * 0.08)) {
@@ -1199,7 +1199,7 @@ function findLastPrice(tokens: NumericToken[], strike: number): number | undefin
 function findAverageCost(tokens: NumericToken[], quantityTokenIndex: number | undefined, contracts: number | null): number | undefined {
   if (quantityTokenIndex == null) return undefined;
   const afterQuantity = tokens.slice(quantityTokenIndex + 1).filter(token => !token.isPercent && token.value >= 0 && token.value <= 100);
-  if (afterQuantity.length > 0) return roundMoney(afterQuantity[0].value);
+  if (afterQuantity.length > 0) return afterQuantity[0].value;
   if (contracts == null) return undefined;
   const candidates = tokens.filter(token => !token.isPercent && token.value >= 0 && token.value <= 100);
   return candidates[candidates.length - 1]?.value;

@@ -4,6 +4,32 @@ import { installDeterministicMarketApi } from './fixtures/marketApi';
 
 const drawerProjects = new Set(['desktop-1440x900', 'portrait-390x844', 'landscape-844x390']);
 
+test('full precision provider quotes survive Drawer selection without acquisition or writes', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop-1440x900', 'one focused financial boundary check');
+  await page.clock.setFixedTime(new Date('2026-09-21T16:00:00Z'));
+  const quotes = { Last: 2.13456789, Bid: 2.01234567, Mid: (2.01234567 + 2.25678912) / 2, Ask: 2.25678912 };
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await installDeterministicMarketApi(page, { optionCount: 8, firstOptionLast: quotes.Last, firstOptionBid: quotes.Bid, firstOptionAsk: quotes.Ask });
+  const cloud = await installDeterministicCloudAccount(page, { portfolio: [], watchlist: [], preferences: {} });
+  const drawer = await openOptionDrawer(page, testInfo.project.name);
+  const dteText = await drawer.locator('p').filter({ hasText: /DTE/ }).first().textContent();
+  const dte = Number(dteText?.match(/(\d+) DTE/)?.[1]);
+  expect(dte).toBe(102);
+  const requests: string[] = [];
+  page.on('request', request => { if (request.url().includes('/api/')) requests.push(request.url()); });
+  const cloudRequests = [...cloud.requests];
+  for (const [basis, price] of Object.entries(quotes)) {
+    await drawer.getByRole('button', { name: basis, exact: true }).click();
+    await expect(drawer.getByRole('textbox', { name: 'Sold Price' })).toHaveValue(String(price));
+    await expect(drawer.getByText(`$${(price * 100).toFixed(2)}`, { exact: true }).first()).toBeVisible();
+    await expect(drawer.getByText(`${(price / 90 * 365 / dte * 100).toFixed(2)}%`, { exact: true }).first()).toBeVisible();
+  }
+  expect(requests).toEqual([]);
+  expect(cloud.requests).toEqual(cloudRequests);
+  expect(errors).toEqual([]);
+});
+
 function isPhone(projectName: string): boolean {
   return projectName !== 'desktop-1440x900';
 }

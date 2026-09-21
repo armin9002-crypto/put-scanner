@@ -363,13 +363,20 @@ export function calculateHistoryWeightedEntryIv(trades: PortfolioTrade[]): Histo
  * the formulas: exposure and yield metrics use Gross Risk,
  * and captured premium uses Premium so its weighted value reconciles to group P&L.
  */
-export function buildHistoryGroupAggregates(trades: PortfolioTrade[]): HistoryGroupAggregates {
+export function buildHistoryGroupAggregates(rows: PortfolioTrade[]): HistoryGroupAggregates {
+  // Contract rows contain weighted projections with metric-specific missing
+  // coverage. Reweight the original lots, never those partial averages by the
+  // entire contract's Gross Risk or Premium. Keep the displayed row count.
+  const trades = rows.flatMap(row => {
+    const lots = (row as PortfolioTrade & { lots?: PortfolioTrade[] }).lots;
+    return Array.isArray(lots) ? lots : [row];
+  });
   const realizedPnlValues = trades.map(historyRealizedPnl).filter(isFiniteNumber);
   const entryVix = calculateGrossRiskWeightedHistoryMetric(trades, historyEntryVix);
   const entryDelta = calculateHistoryWeightedEntryDelta(trades);
   const entryIv = calculateHistoryWeightedEntryIv(trades);
   return {
-    tradeCount: trades.length,
+    tradeCount: rows.length,
     contractCount: trades.reduce((sum, trade) => sum + trade.contracts, 0),
     grossRisk: trades.map(historyGrossRisk).filter(isFiniteNumber).reduce((sum, value) => sum + value, 0),
     premium: trades.map(historyPremium).filter(isFiniteNumber).reduce((sum, value) => sum + value, 0),

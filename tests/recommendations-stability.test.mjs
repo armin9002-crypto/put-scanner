@@ -42,10 +42,18 @@ test('production-scale Recommendation path is deterministic and structurally bou
   assert.equal(snapshot.screenerRows.length, 3_996);
   const firstProjection = financialProjection(first);
   assert.deepEqual(firstProjection, financialProjection(second));
-  // Presentation-only update: canonical short-put moneyness colors now use OTM=favorable and ITM=adverse.
+  // Canonical moneyness labels now retain the shared one-decimal presentation.
   assert.equal(createHash('sha256').update(JSON.stringify(firstProjection)).digest('hex'),
-    '8a5bce52cdab1c641cebe2418fd3dc21b274e5ae50613fa954760980047bd14e',
+    '61354cd58f897b2316d5caefb4b12d78a64f314a2ba9432b62166c63827003a3',
     'the production-scale financial golden changed');
+  // Restoring only the old label must reproduce the prior full golden: no
+  // economics, verdict, policy, ranking, evidence, or identity changed.
+  const legacyLabels = JSON.parse(JSON.stringify(firstProjection), (key, value) =>
+    key === 'moneynessLabel' && typeof value === 'string'
+      ? value.replace(/(\d+\.\d)%/, match => `${Number.parseFloat(match).toFixed(2)}%`)
+      : value);
+  assert.equal(createHash('sha256').update(JSON.stringify(legacyLabels)).digest('hex'),
+    '8a5bce52cdab1c641cebe2418fd3dc21b274e5ae50613fa954760980047bd14e');
   assert.equal(firstDiagnostics.rankFactorComputations, first.candidates.length);
   assert.equal(firstDiagnostics.dominancePairVisits, firstDiagnostics.relativeHurdlePairVisits);
   assert.ok(firstDiagnostics.dominancePairVisits < first.candidates.length ** 2 / 50, 'dominance must stay inside ticker/DTE windows');

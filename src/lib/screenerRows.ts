@@ -269,7 +269,7 @@ export function buildScreenerRows(
 
         const moneyness = calculateMoneyness(price, put.strike);
         const moneynessPct = moneyness.pct;
-        const moneynessLabel = moneyness.label === '—' ? '—' : moneyness.label.replace(/(\d+\.\d)%/, match => `${Number.parseFloat(match).toFixed(2)}%`);
+        const moneynessLabel = moneyness.label;
         const bidYield = calculateYieldPercent(trustedOptionPrice(put, 'bid'), put.strike, dte);
         const askYield = calculateYieldPercent(trustedOptionPrice(put, 'ask'), put.strike, dte);
         const lastYield = calculateYieldPercent(trustedOptionPrice(put, 'last'), put.strike, dte);

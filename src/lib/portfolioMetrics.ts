@@ -21,7 +21,6 @@ export interface PortfolioSummaryMetrics {
   weightedAverageRemainingDte: number | null;
   totalOpenTrades: number;
   totalClosedTrades: number;
-  realizedPnl: number | null;
 }
 
 export interface PortfolioMarkSummaryMetrics {
@@ -257,16 +256,6 @@ export function calculateDistanceToBreakeven(trade: PortfolioTrade): number | nu
   return underlying != null && breakeven != null ? (underlying - breakeven) / underlying : null;
 }
 
-export function calculateRealizedPnl(trade: PortfolioTrade): number | null {
-  if (isFiniteNumber(trade.realizedPnl)) return trade.realizedPnl;
-  if (trade.status === 'assigned') return null;
-  const premium = positive(trade.soldPrice, true);
-  const contracts = validContracts(trade);
-  const closePrice = trade.status === 'expired' ? 0 : positive(trade.closePrice, true);
-  if (premium == null || contracts == null || closePrice == null) return null;
-  return (premium - closePrice) * 100 * contracts;
-}
-
 export function calculatePortfolioSummary(trades: PortfolioTrade[]): PortfolioSummaryMetrics {
   const openTrades = trades.filter(isOpenTrade);
   const closedTrades = trades.filter(trade => trade.status !== 'open');
@@ -279,7 +268,6 @@ export function calculatePortfolioSummary(trades: PortfolioTrade[]): PortfolioSu
   const totalUnrealizedPnlAsk = nullableSum(openTrades.map(trade => calculateUnrealizedPnl(trade, 'ask')));
   const totalUnrealizedPnlMid = nullableSum(openTrades.map(trade => calculateUnrealizedPnl(trade, 'mid')));
   const totalUnrealizedPnlPreferred = nullableSum(openTrades.map(calculatePreferredUnrealizedPnl));
-  const realizedPnl = nullableSum(trades.map(calculateRealizedPnl));
 
   return {
     totalOpenContracts: openTrades.reduce((total, trade) => total + trade.contracts, 0),
@@ -312,7 +300,6 @@ export function calculatePortfolioSummary(trades: PortfolioTrade[]): PortfolioSu
     weightedAverageRemainingDte: calculateGrossRiskWeightedRemainingDte(openTrades),
     totalOpenTrades: openTrades.length,
     totalClosedTrades: closedTrades.length,
-    realizedPnl,
   };
 }
 

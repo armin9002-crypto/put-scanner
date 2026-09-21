@@ -52,9 +52,10 @@ export function buildWatchlistRow(item: WatchlistItem): WatchlistLiveRow {
   const bid = snapshot.bid ?? null;
   const ask = snapshot.ask ?? null;
   const last = snapshot.last ?? null;
-  const bidYield = calculateYieldPercent(executableOptionPrice(bid), item.strike, dte);
-  const askYield = calculateYieldPercent(executableOptionPrice(ask), item.strike, dte);
-  const lastYield = calculateYieldPercent(executableOptionPrice(last), item.strike, dte);
+  const integrityInvalid = snapshot.integrityStatus === 'invalid';
+  const bidYield = calculateYieldPercent(integrityInvalid ? null : executableOptionPrice(bid), item.strike, dte);
+  const askYield = calculateYieldPercent(integrityInvalid ? null : executableOptionPrice(ask), item.strike, dte);
+  const lastYield = calculateYieldPercent(integrityInvalid ? null : executableOptionPrice(last), item.strike, dte);
   const moneyness = calculateMoneyness(currentPrice, item.strike);
   const status = expired ? 'expired' : item.status ?? 'saved';
   const statusPresentation = getWatchlistStatusPresentation(status, expired, snapshot);
@@ -72,10 +73,10 @@ export function buildWatchlistRow(item: WatchlistItem): WatchlistLiveRow {
     ask,
     last,
     lastTradeDate: snapshot.lastTradeDate ?? null,
-    delta: snapshot.delta ?? null,
-    deltaSource: snapshot.deltaSource ?? null,
-    deltaModelVersion: snapshot.deltaModelVersion ?? null,
-    iv: snapshot.iv ?? null,
+    delta: integrityInvalid ? null : snapshot.delta ?? null,
+    deltaSource: integrityInvalid ? null : snapshot.deltaSource ?? null,
+    deltaModelVersion: integrityInvalid ? null : snapshot.deltaModelVersion ?? null,
+    iv: integrityInvalid ? null : snapshot.iv ?? null,
     volume: snapshot.volume ?? null,
     openInterest: snapshot.openInterest ?? null,
     volOI: calculateVolumeOpenInterestRatio(snapshot.volume, snapshot.openInterest),

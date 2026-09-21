@@ -103,6 +103,8 @@ function optionDetailFromWatchlistRow(row: LiveRow): OptionDetail {
     bid: row.bid,
     ask: row.ask,
     delta: row.delta,
+    deltaSource: row.deltaSource,
+    deltaModelVersion: row.deltaModelVersion,
     impliedVolatility: row.iv,
     volume: row.volume,
     openInterest: row.openInterest,
