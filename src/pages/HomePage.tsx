@@ -159,7 +159,7 @@ function MarketChartCard({
             color={color}
             width={240}
             height={74}
-            preserveAspectRatio="none"
+            responsive
             referenceValue={chartReferenceClose(data)}
           />
         ) : (

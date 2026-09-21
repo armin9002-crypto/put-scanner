@@ -16,7 +16,17 @@ type ScannerLayoutMetrics = {
   resultsTop: number;
   hasMarketCopy: boolean;
   overflow: boolean;
-  chartPathWidths: Array<{ plotWidth: number; pathWidth: number; referenceWidth: number; leftInset: number; rightInset: number }>;
+  chartPathWidths: Array<{
+    plotWidth: number;
+    plotHeight: number;
+    pathWidth: number;
+    pathHeight: number;
+    referenceWidth: number;
+    leftInset: number;
+    rightInset: number;
+    viewBoxAspectRatio: number;
+    renderedAspectRatio: number;
+  }>;
 };
 
 async function measure(page: Page): Promise<ScannerLayoutMetrics> {
@@ -36,10 +46,14 @@ async function measure(page: Page): Promise<ScannerLayoutMetrics> {
       const reference = svg.querySelector('line')?.getBoundingClientRect();
       return {
         plotWidth: plot?.width ?? 0,
+        plotHeight: plot?.height ?? 0,
         pathWidth: path?.width ?? 0,
+        pathHeight: path?.height ?? 0,
         referenceWidth: reference?.width ?? 0,
         leftInset: path && plot ? path.left - plot.left : 0,
         rightInset: path && plot ? plot.right - path.right : 0,
+        viewBoxAspectRatio: svg.viewBox.baseVal.height > 0 ? svg.viewBox.baseVal.width / svg.viewBox.baseVal.height : 0,
+        renderedAspectRatio: svg.getBoundingClientRect().height > 0 ? svg.getBoundingClientRect().width / svg.getBoundingClientRect().height : 0,
       };
     });
     return {
@@ -72,6 +86,10 @@ test('desktop Scanner market rail fits the compact control plane', async ({ page
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('.scanner-market-card').first()).toBeVisible({ timeout: 30_000 });
+    await page.waitForFunction(() => [...document.querySelectorAll<SVGSVGElement>('.scanner-market-card__plot > svg')].every(svg => {
+      const rendered = svg.getBoundingClientRect();
+      return rendered.height > 0 && Math.abs((svg.viewBox.baseVal.width / svg.viewBox.baseVal.height) - (rendered.width / rendered.height)) < 0.05;
+    }));
     const widthMetrics = await measure(page);
     measurements.push(widthMetrics);
     await page.screenshot({ path: testInfo.outputPath(`scanner-${width}.png`), animations: 'disabled', fullPage: false });
@@ -80,7 +98,10 @@ test('desktop Scanner market rail fits the compact control plane', async ({ page
   for (const size of ['small', 'medium', 'large']) {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.evaluate(value => document.documentElement.setAttribute('data-text-size', value), size);
-    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
+    await page.waitForFunction(() => [...document.querySelectorAll<SVGSVGElement>('.scanner-market-card__plot > svg')].every(svg => {
+      const rendered = svg.getBoundingClientRect();
+      return rendered.height > 0 && Math.abs((svg.viewBox.baseVal.width / svg.viewBox.baseVal.height) - (rendered.width / rendered.height)) < 0.05;
+    }));
     const metrics = await measure(page);
     measurements.push(metrics);
     await page.screenshot({ path: testInfo.outputPath(`scanner-${size}.png`), animations: 'disabled', fullPage: false });
@@ -100,6 +121,8 @@ test('desktop Scanner market rail fits the compact control plane', async ({ page
       expect(chart.referenceWidth, `${metrics.width} reference line should use the available plot width`).toBeGreaterThan(chart.plotWidth * 0.8);
       expect(chart.leftInset, `${metrics.width} chart path should not be centered by intrinsic aspect ratio`).toBeLessThan(chart.plotWidth * 0.1);
       expect(chart.rightInset, `${metrics.width} chart path should reach the right plot edge`).toBeLessThan(chart.plotWidth * 0.1);
+      expect(Math.abs(chart.viewBoxAspectRatio - chart.renderedAspectRatio), `${metrics.width} responsive viewBox should match its rendered plot ratio`).toBeLessThan(0.05);
+      expect(chart.pathHeight, `${metrics.width} chart path should use the available vertical plot range`).toBeGreaterThan(chart.plotHeight * 0.5);
     }
   }
 });

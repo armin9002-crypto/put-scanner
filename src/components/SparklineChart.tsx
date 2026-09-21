@@ -1,4 +1,5 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { buildSparklineGeometry } from '../lib/sparklineGeometry';
 
 interface SparklineChartProps {
   data: number[];
@@ -8,38 +9,55 @@ interface SparklineChartProps {
   fillGradient?: boolean;
   referenceValue?: number | null;
   preserveAspectRatio?: 'xMidYMid meet' | 'none';
+  responsive?: boolean;
 }
 
-export default function SparklineChart({ data, color, width = 160, height = 60, fillGradient = false, referenceValue = null, preserveAspectRatio = 'xMidYMid meet' }: SparklineChartProps) {
-  const { path, areaPath, referenceY } = useMemo(() => {
-    if (data.length < 2) return { path: '', areaPath: '', referenceY: null };
-    const values = referenceValue != null && Number.isFinite(referenceValue) ? [...data, referenceValue] : data;
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-    const range = max - min || 1;
-    const padding = 2;
-    const w = width - padding * 2;
-    const h = height - padding * 2;
+export default function SparklineChart({ data, color, width = 160, height = 60, fillGradient = false, referenceValue = null, preserveAspectRatio = 'xMidYMid meet', responsive = false }: SparklineChartProps) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [responsiveSize, setResponsiveSize] = useState<{ width: number; height: number } | null>(null);
 
-    const points = data.map((v, i) => {
-      const x = padding + (i / (data.length - 1)) * w;
-      const y = padding + h - ((v - min) / range) * h;
-      return { x, y };
+  useEffect(() => {
+    if (!responsive) {
+      setResponsiveSize(null);
+      return;
+    }
+
+    const plot = svgRef.current?.parentElement;
+    if (!plot || typeof ResizeObserver === 'undefined') return;
+
+    const updateSize = (nextWidth: number, nextHeight: number) => {
+      if (nextWidth <= 0 || nextHeight <= 0) return;
+      setResponsiveSize(previous => (
+        previous && Math.abs(previous.width - nextWidth) < 0.1 && Math.abs(previous.height - nextHeight) < 0.1
+          ? previous
+          : { width: nextWidth, height: nextHeight }
+      ));
+    };
+
+    const initialRect = plot.getBoundingClientRect();
+    updateSize(initialRect.width, initialRect.height);
+
+    const observer = new ResizeObserver(([entry]) => {
+      updateSize(entry.contentRect.width, entry.contentRect.height);
     });
+    observer.observe(plot);
+    return () => observer.disconnect();
+  }, [responsive]);
 
-    const linePath = `M${points.map(p => `${p.x},${p.y}`).join(' L')}`;
-    const areaPath = `${linePath} L${points[points.length - 1].x},${padding + h} L${points[0].x},${padding + h} Z`;
-    const referenceY = referenceValue != null && Number.isFinite(referenceValue)
-      ? padding + h - ((referenceValue - min) / range) * h
-      : null;
-
-    return { path: linePath, areaPath, referenceY };
-  }, [data, width, height, referenceValue]);
+  const chartWidth = responsive ? responsiveSize?.width ?? width : width;
+  const chartHeight = responsive ? responsiveSize?.height ?? height : height;
+  const { path, areaPath, referenceY } = useMemo(
+    () => buildSparklineGeometry(data, chartWidth, chartHeight, referenceValue),
+    [data, chartHeight, chartWidth, referenceValue],
+  );
+  const svgWidth = responsive ? '100%' : width;
+  const svgHeight = responsive ? '100%' : height;
+  const renderedPreserveAspectRatio = responsive ? 'xMidYMid meet' : preserveAspectRatio;
 
   if (data.length < 2) {
     return (
-      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio={preserveAspectRatio} className="opacity-30 max-w-full">
-        <line x1="0" y1={height / 2} x2={width} y2={height / 2} stroke={color} strokeWidth="1" strokeDasharray="3,3" />
+      <svg ref={svgRef} width={svgWidth} height={svgHeight} viewBox={`0 0 ${chartWidth} ${chartHeight}`} preserveAspectRatio={renderedPreserveAspectRatio} className="opacity-30 max-w-full">
+        <line x1="0" y1={chartHeight / 2} x2={chartWidth} y2={chartHeight / 2} stroke={color} strokeWidth="1" strokeDasharray="3,3" />
       </svg>
     );
   }
@@ -47,7 +65,7 @@ export default function SparklineChart({ data, color, width = 160, height = 60, 
   const gradientId = `sparkline-grad-${color.replace(/[^a-zA-Z0-9]/g, '')}`;
 
   return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio={preserveAspectRatio} className="overflow-visible max-w-full">
+    <svg ref={svgRef} width={svgWidth} height={svgHeight} viewBox={`0 0 ${chartWidth} ${chartHeight}`} preserveAspectRatio={renderedPreserveAspectRatio} className="overflow-visible max-w-full">
       {fillGradient && (
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
@@ -61,7 +79,7 @@ export default function SparklineChart({ data, color, width = 160, height = 60, 
         <line
           x1="0"
           y1={referenceY}
-          x2={width}
+          x2={chartWidth}
           y2={referenceY}
           stroke="currentColor"
           strokeWidth="1"
