@@ -2957,7 +2957,7 @@ td {
 .scanner-market-card {
   display: flex;
   min-height: 0;
-  height: 100%;
+  height: auto;
   flex-direction: column;
   border-color: var(--border-subtle) !important;
   background: color-mix(in srgb, var(--bg-inset) 74%, var(--bg-secondary)) !important;
@@ -3042,6 +3042,11 @@ td {
   align-items: center;
   justify-content: flex-end;
   gap: 0.35rem;
+}
+
+.scanner-control-plane__market-freshness {
+  display: none;
+  flex: 0 0 auto;
 }
 
 .scanner-control-plane__criteria,
@@ -6136,6 +6141,47 @@ input[type="number"] {
 
   .mobile-scanner-empty-state {
     padding-block: 2rem;
+  }
+}
+
+@media (min-width: 1101px) {
+  .scanner-workspace {
+    align-items: start;
+  }
+
+  .scanner-workspace > .scanner-control-plane {
+    align-self: start;
+  }
+
+  .scanner-workspace > .scanner-market-rail {
+    align-self: stretch;
+    padding-bottom: 0;
+  }
+
+  .scanner-market-rail__header {
+    display: none;
+  }
+
+  .scanner-control-plane__market-freshness {
+    display: inline-flex;
+  }
+
+  .scanner-market-rail__grid {
+    flex: 1 1 auto;
+  }
+
+  .scanner-market-card__plot {
+    min-height: 2.75rem;
+    height: 2.75rem;
+    flex: 1 1 2.75rem;
+  }
+}
+
+@media (min-width: 1600px) {
+  .scanner-market-card__plot {
+    min-height: 1.75rem;
+    height: 1.75rem;
+    flex-basis: 1.75rem;
   }
 }
 

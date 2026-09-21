@@ -838,6 +838,7 @@ export default function HomePage() {
               <div className="scanner-control-plane__title">Set expiry and criteria</div>
             </div>
             <div className="scanner-control-plane__utilities">
+              <DataFreshness className="scanner-control-plane__market-freshness" updatedAt={marketSummary.observedAt} status={marketFreshnessStatus} evidenceFreshness={marketSummary.freshness} source={`Yahoo Finance (${marketSummary.source})`} label="Market" />
               <div className="scanner-control-plane__summary">{activeControlCount} active controls</div>
               <button type="button" onClick={() => void updateVisibleOptionSnapshots()} disabled={snapshotUpdateRunningRef.current} className="scanner-control-plane__update inline-flex h-8 flex-none items-center gap-1 rounded-md px-2 text-[10px] font-medium whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-60" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)', color: 'var(--text-muted)' }} title={snapshotDetails ?? 'Update missing or stale IV60 and liquidity snapshots for visible ETFs'}>{snapshotProgress && !snapshotProgress.complete ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}{snapshotProgressLabel(snapshotProgress)}</button>
               <SnapshotIssueDisclosure issue={snapshotIssue} details={snapshotDetails} rows={snapshotIssueRows} />
@@ -872,7 +873,7 @@ export default function HomePage() {
               <div className="scanner-control-plane__types min-w-0"><span className="mb-1 block text-[9px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Type</span><div className="grid min-w-0 grid-cols-6 gap-1">{TYPE_OPTIONS.map(opt => <button key={opt} title={opt} onClick={() => handleTypeChange(opt)} className="scanner-filter-control pressable h-8 min-w-0 truncate rounded-md px-1 text-[10px] font-medium" style={{ backgroundColor: typeFilter === opt ? 'var(--accent)' : 'var(--surface-alt)', color: typeFilter === opt ? 'white' : 'var(--text-muted)', border: `1px solid ${typeFilter === opt ? 'var(--accent)' : 'var(--border)'}` }}>{opt === 'Broad Index' ? 'Broad' : opt}</button>)}</div></div>
             </div>
           </section>
-          <section className="scanner-market-rail motion-refresh-region" data-refreshing={marketLoading} aria-label="Market context">
+          <section className="scanner-market-rail motion-refresh-region" data-refreshing={marketLoading} aria-label="Market charts">
             <div className="scanner-market-rail__header">
               <div>
                 <div className="scanner-market-rail__eyebrow">Market context</div>
