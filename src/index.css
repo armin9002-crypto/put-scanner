@@ -2957,7 +2957,7 @@ td {
 .scanner-market-card {
   display: flex;
   min-height: 0;
-  height: auto;
+  height: 100%;
   flex-direction: column;
   border-color: var(--border-subtle) !important;
   background: color-mix(in srgb, var(--bg-inset) 74%, var(--bg-secondary)) !important;
@@ -6174,6 +6174,10 @@ input[type="number"] {
     min-height: 2.75rem;
     height: 2.75rem;
     flex: 1 1 2.75rem;
+  }
+
+  .scanner-market-card {
+    height: auto;
   }
 }
 
