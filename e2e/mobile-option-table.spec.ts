@@ -36,8 +36,9 @@ test('portrait table density, alignment and sticky layers across widths and text
       expect(initial.overflow).toBe(true);
       expect(initial.pageOverflow).toBe(false);
       expect(initial.bottomPadding).toBe('0px');
-      expect(initial.height).toBeGreaterThanOrEqual(32);
-      expect(initial.height).toBeLessThanOrEqual(40);
+      // Rows already track the text scale; Large intentionally grows to 44.88px.
+      const scale = size === 'large' ? 1.32 : size === 'medium' ? 1.16 : 1;
+      expect(Math.abs(initial.height - 34 * scale)).toBeLessThan(0.02);
       expect(initial.widths).toEqual(initial.headers);
       await page.screenshot({ path: info.outputPath(`${width}-${size}-top.png`) });
       await owner.evaluate(element => { element.scrollLeft = 300; element.scrollTop = 650; });

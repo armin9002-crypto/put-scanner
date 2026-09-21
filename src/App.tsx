@@ -85,7 +85,7 @@ function NavBar() {
           <span className="app-brand__wordmark" aria-hidden="true" style={{ '--wordmark-image': `url(${wordmarkUrl})` } as CSSProperties} />
           <span className="sr-only">Put Scanner</span>
         </NavLink>
-        <div className="flex items-center gap-1 min-w-max md:min-w-0 flex-1 md:flex-none">
+        <div className="app-nav-destinations flex items-center gap-1 min-w-max md:min-w-0 flex-1 md:flex-none">
           <NavLink
             to="/"
             end

@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { normalizeUiTextSize, nextUiTextSize, readUiTextSize, uiTextCssPx, UI_TEXT_SIZE_STORAGE_KEY } from '../src/lib/uiTextSizePreference.ts';
 
 test('text size defaults safely and cycles Small → Medium → Large → Small', () => {
-  for (const value of [null, '', 'Small', 'huge', '1.16']) assert.equal(normalizeUiTextSize(value), 'small');
+  for (const value of [null, '', 'Small', 'huge', '1.16', 'extra-large']) assert.equal(normalizeUiTextSize(value), 'small');
   for (const size of ['small', 'medium', 'large']) assert.equal(normalizeUiTextSize(size), size);
   assert.deepEqual(['small', nextUiTextSize('small'), nextUiTextSize('medium'), nextUiTextSize('large')], ['small', 'medium', 'large', 'small']);
 });
@@ -30,6 +30,10 @@ test('computed chart labels use the shared CSS scale without chart subscriptions
   assert.equal(uiTextCssPx(8.5), 'calc(8.5px * var(--ui-text-scale, 1))');
 });
 
+test('the three stored values retain their identity', () => {
+  for (const value of ['small', 'medium', 'large']) assert.equal(normalizeUiTextSize(value), value);
+});
+
 test('text preference stays outside account persistence and precedes Theme in both navs', () => {
   const source = file => readFileSync(new URL(file, import.meta.url), 'utf8');
   const provider = source('../src/lib/uiTextSize.tsx');
@@ -39,7 +43,23 @@ test('text preference stays outside account persistence and precedes Theme in bo
   assert.doesNotMatch(provider, /cloud|supabase|fetch\(|portfolio|watchlist/i);
   assert.equal([...source('../src/App.tsx').matchAll(/<TextSizeControl\s*\/>\s*<ThemeToggle\s*\/>/g)].length, 2);
   const styles = source('../src/index.css');
-  assert.match(styles, /data-text-size="medium"\] \{ --ui-text-scale: 1\.08/);
-  assert.match(styles, /data-text-size="large"\] \{ --ui-text-scale: 1\.16/);
+  assert.match(styles, /:root\[data-text-size="medium"\] \{ --ui-text-scale: 1\.16; \}/);
+  assert.match(styles, /:root\[data-text-size="large"\] \{ --ui-text-scale: 1\.32; \}/);
+  assert.deepEqual([...styles.matchAll(/:root\[data-text-size="([^"]+)"\] \{ --ui-text-scale:/g)].map(match => match[1]), ['medium', 'large']);
   assert.match(styles, /font-size: calc\(16px \* var\(--ui-text-scale\)\)/);
+});
+
+test('financial routes do not consume the text-size React context', () => {
+  const pages = ['PortfolioPage.tsx', 'EtfPulsePage.tsx', 'OptionsPage.tsx', 'HomePage.tsx', 'WatchlistPage.tsx', 'ScreenerPage.tsx', 'RecommendationsPage.tsx'];
+  for (const page of pages) {
+    const source = readFileSync(new URL(`../src/pages/${page}`, import.meta.url), 'utf8');
+    assert.doesNotMatch(source, /useUiTextSize|UiTextSizeContext/);
+  }
+});
+
+test('CSS font sizes use scaled values or shared typography tokens', () => {
+  const styles = readFileSync(new URL('../src/index.css', import.meta.url), 'utf8');
+  const declarations = [...styles.matchAll(/font-size\s*:\s*([^;}]+)[;}]/g)].map(match => match[1].trim());
+  assert.ok(declarations.length > 0);
+  for (const declaration of declarations) assert.match(declaration, /var\(--font-|var\(--ui-text-scale\)/, `unscaled font-size: ${declaration}`);
 });

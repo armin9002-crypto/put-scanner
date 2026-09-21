@@ -13,8 +13,70 @@
   --font-title: calc(clamp(1.25rem, 1.7vw, 1.5rem) * var(--ui-text-scale));
   --font-hero: calc(1.55rem * var(--ui-text-scale));
 }
-:root[data-text-size="medium"] { --ui-text-scale: 1.08; }
-:root[data-text-size="large"] { --ui-text-scale: 1.16; }
+:root[data-text-size="medium"] { --ui-text-scale: 1.16; }
+:root[data-text-size="large"] { --ui-text-scale: 1.32; }
+
+/* Keep utilities reachable while the primary destinations scroll when needed. */
+:root[data-text-size="large"] .app-nav-destinations {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+/* Long attention reasons must not squeeze the position identity to zero width. */
+:root[data-text-size="large"] .portfolio-priority-item {
+  flex-wrap: wrap;
+}
+:root[data-text-size="large"] .portfolio-priority-item__identity {
+  flex: 1 0 12rem;
+  max-width: 100%;
+}
+:root[data-text-size="large"] .portfolio-priority-item__value {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Give mobile financial labels and values room instead of ellipsizing them. */
+:root[data-text-size="large"] :is(.portfolio-mobile-metrics,
+  .option-detail-mobile-metric-grid--risk, .option-detail-mobile-metric-grid--market) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+:root[data-text-size="large"] :is(.portfolio-mobile-metric-label, .portfolio-mobile-metric-value,
+  .option-detail-mobile-metric > span, .option-detail-mobile-metric > b) {
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
+}
+:root[data-text-size="large"] .portfolio-mobile-metric:nth-child(2n + 1) {
+  border-left: 0;
+}
+:root[data-text-size="large"] .portfolio-mobile-metric:nth-child(n + 3) {
+  border-top: 1px solid var(--border-subtle);
+}
+
+:root[data-text-size="large"] .instrument-card__name {
+  max-height: none;
+}
+
+@media (max-width: 767px) {
+  :root[data-text-size="large"] .pulse-mobile-controls > .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  :root[data-text-size="large"] .pulse-mobile-controls .mobile-segmented {
+    grid-auto-columns: auto;
+  }
+  :root[data-text-size="large"] .pulse-mobile-controls > .grid > button {
+    justify-self: end;
+  }
+}
+
+/* Unequal label lengths need unequal tracks on the narrowest phones. */
+@media (max-width: 359px) and (orientation: portrait) {
+  :root[data-text-size="large"] .mobile-bottom-nav {
+    grid-template-columns: repeat(6, auto);
+    column-gap: 2px;
+  }
+}
 
 :root:is([data-text-size="medium"], [data-text-size="large"]) .instrument-card__quote-line {
   flex-wrap: wrap;
