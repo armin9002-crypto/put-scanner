@@ -6040,6 +6040,31 @@ input[type="number"] {
 
 }
 
+.watchlist-actions-column {
+  width: calc(3.25rem * var(--ui-text-scale));
+  min-width: calc(3.25rem * var(--ui-text-scale));
+}
+
+.watchlist-actions-cell__content {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: nowrap;
+  gap: 0.18rem;
+  white-space: nowrap;
+}
+
+@media (min-width: 768px) {
+  .watchlist-table-scroll tbody td {
+    padding-block: 0.1rem;
+  }
+
+  .watchlist-table-scroll .watchlist-remove {
+    min-height: calc(28px * var(--ui-text-scale));
+    min-width: calc(28px * var(--ui-text-scale));
+  }
+}
+
 .etf-pulse-table-card .pulse-performance-column {
   transition: opacity var(--transition-ui), background-color var(--transition-ui);
 }

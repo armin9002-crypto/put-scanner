@@ -742,7 +742,7 @@ export default function WatchlistPage() {
               <table className="financial-table min-w-max w-full text-[11px]">
                 <thead className="sticky top-0 z-10">
                   <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
-                    <th className="px-1.5 py-1 text-[9px] uppercase tracking-wider font-medium w-7" style={{ color: 'var(--text-muted)' }}></th>
+                    <th className="watchlist-actions-column px-1.5 py-1 text-[9px] uppercase tracking-wider font-medium" style={{ color: 'var(--text-muted)' }}></th>
                     {columns.map(col => (
                       <th
                         key={col.field}
@@ -777,7 +777,8 @@ export default function WatchlistPage() {
                       <Fragment key={row.id}>
                       {groupMode !== 'none' && groupStart && <tr className="watchlist-group-header" style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}><th colSpan={columns.length + 3} className="px-2 py-1 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>{groupMode === 'underlying' ? group?.label : `${group?.label} · ${group?.rows.length} saved`}</th></tr>}
                       <tr className="transition-colors" style={{ borderBottom: '1px solid var(--border)', ...bgStyle }}>
-                        <td className="px-1.5 py-0.5 text-center" style={mutedStyle}>
+                        <td className="watchlist-actions-column px-1.5 py-0.5 text-center" style={mutedStyle}>
+                          <div className="watchlist-actions-cell__content">
                           <button
                             type="button"
                             onClick={event => {
@@ -785,19 +786,20 @@ export default function WatchlistPage() {
                               handleRemove(row.id);
                             }}
                             aria-label={`Remove ${row.ticker} ${row.expiryFormatted} ${formatMoney(row.strike)} put from watchlist`}
-                            className="watchlist-remove transition-opacity hover:opacity-75 pressable min-h-[34px] min-w-[32px] flex items-center justify-center rounded"
+                            className="watchlist-remove transition-opacity hover:opacity-75 pressable min-h-[28px] min-w-[28px] flex items-center justify-center rounded"
                             title="Remove from watchlist"
                           >
                             <Star className="w-3.5 h-3.5 fill-current" style={{ color: 'var(--accent-light)' }} />
                           </button>
                           <PortfolioMembershipDot inOpenPortfolio={inOpenPortfolio} />
+                          </div>
                         </td>
                         <td className="watchlist-ticker-cell px-1.5 py-0.5 text-left whitespace-nowrap" style={mutedStyle}>
                           <Link
                           to={buildOptionsPath(row.ticker, row.expiryTimestamp)}
                           state={optionsNavigationState}
                           onClick={event => handleOptionsNavigation(event, buildOptionsPath(row.ticker, row.expiryTimestamp))}
-                            className="inline-flex items-center font-mono font-bold hover:opacity-80 transition-opacity min-h-[34px]"
+                            className="inline-flex items-center font-mono font-bold hover:opacity-80 transition-opacity min-h-[28px]"
                             style={{ color: 'var(--accent-light)' }}
                           >
                             {row.ticker}

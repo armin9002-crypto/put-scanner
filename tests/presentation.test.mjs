@@ -42,6 +42,14 @@ test('desktop Scanner daily move presentation is percentage-only', () => {
   assert.equal(formatScannerDailyChangePercent(null), '—');
 });
 
+test('Scanner opts only its market sparklines into responsive SVG stretching', () => {
+  const home = readFileSync(new URL('../src/pages/HomePage.tsx', import.meta.url), 'utf8');
+  const chart = readFileSync(new URL('../src/components/SparklineChart.tsx', import.meta.url), 'utf8');
+  assert.match(home, /<SparklineChart[\s\S]*?preserveAspectRatio="none"/);
+  assert.match(chart, /preserveAspectRatio\?: 'xMidYMid meet' \| 'none'/);
+  assert.match(chart, /preserveAspectRatio=\{preserveAspectRatio\}/);
+});
+
 test('Nominal Yield account preference defaults off and roundtrips its storage adapter', () => {
   const values = new Map();
   const storage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };

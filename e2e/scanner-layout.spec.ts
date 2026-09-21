@@ -16,6 +16,7 @@ type ScannerLayoutMetrics = {
   resultsTop: number;
   hasMarketCopy: boolean;
   overflow: boolean;
+  chartPathWidths: Array<{ plotWidth: number; pathWidth: number; referenceWidth: number; leftInset: number; rightInset: number }>;
 };
 
 async function measure(page: Page): Promise<ScannerLayoutMetrics> {
@@ -29,6 +30,18 @@ async function measure(page: Page): Promise<ScannerLayoutMetrics> {
     const svg = rect('.scanner-market-card__plot > svg');
     const types = rect('.scanner-control-plane__types');
     const results = rect('section[aria-label="ETF opportunities"]');
+    const chartPathWidths = [...document.querySelectorAll<SVGSVGElement>('.scanner-market-card__plot > svg')].map(svg => {
+      const plot = svg.parentElement?.getBoundingClientRect();
+      const path = svg.querySelector('path')?.getBoundingClientRect();
+      const reference = svg.querySelector('line')?.getBoundingClientRect();
+      return {
+        plotWidth: plot?.width ?? 0,
+        pathWidth: path?.width ?? 0,
+        referenceWidth: reference?.width ?? 0,
+        leftInset: path && plot ? path.left - plot.left : 0,
+        rightInset: path && plot ? plot.right - path.right : 0,
+      };
+    });
     return {
       width: innerWidth,
       workspaceHeight: workspace?.height ?? 0,
@@ -44,6 +57,7 @@ async function measure(page: Page): Promise<ScannerLayoutMetrics> {
       resultsTop: results?.top ?? 0,
       hasMarketCopy: /market context|index pulse/i.test(document.body.innerText),
       overflow: document.documentElement.scrollWidth > innerWidth + 1,
+      chartPathWidths,
     };
   });
 }
@@ -80,5 +94,12 @@ test('desktop Scanner market rail fits the compact control plane', async ({ page
     expect(Math.abs(metrics.controlsBottom - metrics.gridBottom), `${metrics.width} controls and market grid should share a baseline`).toBeLessThanOrEqual(4);
     expect(metrics.resultsTop - metrics.typeBottom, `${metrics.width} ETF Opportunities should follow the compact top section`).toBeLessThan(36);
     expect(metrics.cardHeight, `${metrics.width} market cards should remain shallow`).toBeLessThan(140);
+    expect(metrics.chartPathWidths, `${metrics.width} Scanner should render four market paths`).toHaveLength(4);
+    for (const chart of metrics.chartPathWidths) {
+      expect(chart.pathWidth, `${metrics.width} chart path should use the available plot width`).toBeGreaterThan(chart.plotWidth * 0.8);
+      expect(chart.referenceWidth, `${metrics.width} reference line should use the available plot width`).toBeGreaterThan(chart.plotWidth * 0.8);
+      expect(chart.leftInset, `${metrics.width} chart path should not be centered by intrinsic aspect ratio`).toBeLessThan(chart.plotWidth * 0.1);
+      expect(chart.rightInset, `${metrics.width} chart path should reach the right plot edge`).toBeLessThan(chart.plotWidth * 0.1);
+    }
   }
 });

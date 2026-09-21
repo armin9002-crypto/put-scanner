@@ -7,9 +7,10 @@ interface SparklineChartProps {
   height?: number;
   fillGradient?: boolean;
   referenceValue?: number | null;
+  preserveAspectRatio?: 'xMidYMid meet' | 'none';
 }
 
-export default function SparklineChart({ data, color, width = 160, height = 60, fillGradient = false, referenceValue = null }: SparklineChartProps) {
+export default function SparklineChart({ data, color, width = 160, height = 60, fillGradient = false, referenceValue = null, preserveAspectRatio = 'xMidYMid meet' }: SparklineChartProps) {
   const { path, areaPath, referenceY } = useMemo(() => {
     if (data.length < 2) return { path: '', areaPath: '', referenceY: null };
     const values = referenceValue != null && Number.isFinite(referenceValue) ? [...data, referenceValue] : data;
@@ -37,7 +38,7 @@ export default function SparklineChart({ data, color, width = 160, height = 60, 
 
   if (data.length < 2) {
     return (
-      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="opacity-30 max-w-full">
+      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio={preserveAspectRatio} className="opacity-30 max-w-full">
         <line x1="0" y1={height / 2} x2={width} y2={height / 2} stroke={color} strokeWidth="1" strokeDasharray="3,3" />
       </svg>
     );
@@ -46,7 +47,7 @@ export default function SparklineChart({ data, color, width = 160, height = 60, 
   const gradientId = `sparkline-grad-${color.replace(/[^a-zA-Z0-9]/g, '')}`;
 
   return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="overflow-visible max-w-full">
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio={preserveAspectRatio} className="overflow-visible max-w-full">
       {fillGradient && (
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
