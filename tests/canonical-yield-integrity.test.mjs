@@ -58,7 +58,7 @@ const historyTrade = (overrides = {}) => ({
   ...overrides,
 });
 
-test('owner screenshot fixtures use sold price or mark divided by strike at full precision', () => {
+test('full-precision portfolio fixtures use sold price or mark divided by strike', () => {
   const soxl = portfolioTrade({ strike: 30, soldPrice: 0.73326 });
   const tqqq = portfolioTrade({ strike: 40.5, soldPrice: 1.25325 });
   close(calculateOriginalNominalYield(soxl), 0.73326 / 30, 'SOXL Entry NY');

@@ -24,12 +24,6 @@ import {
   updatePortfolioTrade,
   writePortfolioTrades,
 } from '../src/lib/portfolioStorage.ts';
-import {
-  applyPortfolioImportPlan,
-  buildPortfolioImportPlan,
-  getPortfolioReconciliationWarnings,
-  hasPortfolioImportMutations,
-} from '../src/lib/portfolioScreenshotImport.ts';
 
 const lot = (overrides = {}) => ({
   id: 'lot-a',
@@ -57,25 +51,6 @@ const lot = (overrides = {}) => ({
     refreshedAt: '2026-08-01T15:00:00Z',
     availabilityStatus: 'live',
   },
-  ...overrides,
-});
-
-const screenshotRow = (overrides = {}) => ({
-  rawText: 'TQQQ 40 Put',
-  ticker: 'TQQQ',
-  optionType: 'put',
-  strike: 40,
-  expiration: '2027-01-15',
-  quantity: -15,
-  side: 'short',
-  contracts: 15,
-  averageCostBasis: 1.35,
-  costBasisTotal: 2_025,
-  currentValue: -750,
-  selected: true,
-  importAction: 'keep',
-  confidence: 0.99,
-  warnings: [],
   ...overrides,
 });
 
@@ -184,45 +159,4 @@ test('History filters lots before grouping and preserves event analytics', () =>
   assert.deepEqual(expiredOnly[0].lots.map(item => item.id), ['lot-a']);
   assert.deepEqual(closedOnly[0].lots.map(item => item.id), ['lot-b']);
   assert.equal(buildHistoryAnalytics(allLots).resolvedTrades, 2, 'historical activity remains lot/event based');
-});
-
-test('screenshot reconciliation protects all tracked lots for matching and discrepant aggregates', () => {
-  const existing = [
-    lot({ importedSnapshot: { source: 'brokerage_screenshot', importedAt: '2026-07-01T15:00:00Z', currentValue: -400, costBasisTotal: 1_200 } }),
-    lot({ id: 'lot-b', contracts: 5, soldPrice: 1.65, soldDate: '2026-05-20' }),
-  ];
-  const matching = screenshotRow();
-  const matchingPlan = buildPortfolioImportPlan([matching], existing);
-  assert.equal(matchingPlan.keeps.length, 1);
-  assert.equal(matchingPlan.updates.length, 0);
-  assert.equal(hasPortfolioImportMutations(matchingPlan), false, 'reconciliation-only review must not invoke a durable write');
-  assert.deepEqual(matchingPlan.keeps[0].existingTrades.map(item => item.id), ['lot-a', 'lot-b']);
-  assert.deepEqual(applyPortfolioImportPlan(matchingPlan, existing, '2026-09-03'), existing);
-
-  const more = screenshotRow({ contracts: 20, quantity: -20, averageCostBasis: 1.35, costBasisTotal: 2_700 });
-  assert.match(getPortfolioReconciliationWarnings(existing, more).join(' '), /5 additional contracts/);
-  assert.deepEqual(applyPortfolioImportPlan(buildPortfolioImportPlan([more], existing), existing, '2026-09-03'), existing);
-
-  const fewer = screenshotRow({ contracts: 10, quantity: -10, averageCostBasis: 1.35, costBasisTotal: 1_350 });
-  assert.match(getPortfolioReconciliationWarnings(existing, fewer).join(' '), /5 fewer contracts/);
-  assert.deepEqual(applyPortfolioImportPlan(buildPortfolioImportPlan([fewer], existing), existing, '2026-09-03'), existing);
-
-  const basisMismatch = screenshotRow({ averageCostBasis: 1.5, costBasisTotal: 2_250 });
-  assert.match(getPortfolioReconciliationWarnings(existing, basisMismatch).join(' '), /aggregate cost basis differs/);
-  const protectedResult = applyPortfolioImportPlan(buildPortfolioImportPlan([basisMismatch], existing), existing, '2026-09-03');
-  assert.deepEqual(protectedResult, existing);
-  assert.equal(protectedResult[0].importedSnapshot.currentValue, -400, 'the lot-owned snapshot remains unchanged');
-  assert.equal(protectedResult.some(item => item.importedSnapshot?.currentValue === -750), false, 'aggregate snapshot is not copied onto constituent lots');
-});
-
-test('a completely new screenshot contract retains supported one-lot creation behavior', () => {
-  const row = screenshotRow({ ticker: 'SOXL', strike: 25, rawText: 'SOXL 25 Put', contracts: 2, quantity: -2, averageCostBasis: 1.1, costBasisTotal: 220, importAction: 'add' });
-  const plan = buildPortfolioImportPlan([row], []);
-  assert.equal(plan.adds.length, 1);
-  assert.equal(hasPortfolioImportMutations(plan), true);
-  const applied = applyPortfolioImportPlan(plan, [], '2026-09-03', '2026-09-03T15:00:00Z');
-  assert.equal(applied.length, 1);
-  assert.equal(applied[0].contracts, 2);
-  assert.ok(Math.abs(calculatePremiumCollected(applied[0]) - 220) < 1e-9);
-  assert.equal(applied[0].importedSnapshot.currentValue, -750);
 });

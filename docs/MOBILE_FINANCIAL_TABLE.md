@@ -69,6 +69,5 @@ not modified.
 
 Implementation verification passed the focused browser checks, Options/mobile
 and integrity Node tests, responsive guardrails, typecheck, targeted lint,
-production build, and build report. An additional pre-existing Stage 3 mobile
-test fails on Portfolio's removed `Import Screenshot` label; the baseline
-Portfolio source already lacks that text and was not changed here.
+production build, and build report. The Stage 3 mobile source guard confirms
+that Portfolio contains no retired `Import Screenshot` label.

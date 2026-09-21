@@ -22,11 +22,7 @@ test('XAPP-020 preserves the canonical Motion V2 tokens and reduced-motion contr
   assert.match(styles, /\.motion-modal[\s\S]*animation: ui-modal var\(--motion-reveal\) var\(--ease-emphasized\);/);
 });
 
-test('XAPP-020 normalizes both Portfolio import modal overlays', async () => {
-  const screenshot = await read('src/components/PortfolioScreenshotImportModal.tsx');
-  assert.match(screenshot, /className="motion-backdrop absolute inset-0 bg-black\/55"/);
-  assert.match(screenshot, /className="motion-modal portfolio-import-sheet/);
-
+test('XAPP-020 normalizes the active Portfolio Historical Excel import modal overlay', async () => {
   const historicalExcel = await read('src/components/PortfolioHistoricalExcelImportModal.tsx');
   assert.match(historicalExcel, /className="motion-backdrop-surface fixed inset-0/);
   assert.match(historicalExcel, /className="motion-modal flex max-h-\[96dvh\]/);

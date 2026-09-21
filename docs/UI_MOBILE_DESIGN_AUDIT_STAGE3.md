@@ -1,5 +1,7 @@
 # Put Scanner mobile design-director audit — Stage 3
 
+> **Historical audit note.** Portfolio Screenshot Import/OCR was subsequently retired. The screenshot-import row below records the former Stage 3 surface and is not supported current behavior.
+
 Stage 3 is the final whole-app mobile density pass after the Stage 1 financial-table and Stage 2 discovery-density work. The objective was to remove clear mobile waste and clipping while preserving the existing data model, canonical NY/AY/Realized AY calculations, request boundaries, durable cloud state, and overlay architecture.
 
 ## Design principles

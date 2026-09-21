@@ -123,7 +123,6 @@ import {
   buildEntryDeltaEditPatch,
   buildEntryIvEditPatch,
   enrichCurrentTradeEntrySnapshot,
-  isContemporaneousPortfolioEntry,
   isValidEntryDelta,
   isValidEntryIv,
   normalizeManualHistoricalEntryDelta,
@@ -131,7 +130,6 @@ import {
 } from '../lib/portfolioEntryDelta';
 import { assessPortfolioMaintenance } from '../lib/portfolioMaintenance';
 import { getPortfolioQuoteFreshness, isPortfolioQuoteDecisionEligible } from '../lib/portfolioQuoteFreshness';
-import { makePortfolioContractKey } from '../lib/portfolioContractIdentity';
 import { resolvePortfolioEntryVix } from '../lib/portfolioEntryVix';
 import { confirmPortfolioTradeExpiredWorthless, isManualWorthlessConfirmationEligible } from '../lib/portfolioRealizedEconomics';
 import RollingHistoricalAnalyticsChart from '../components/RollingHistoricalAnalyticsChart';
@@ -160,7 +158,6 @@ import { useAccountState } from '../lib/cloudState/accountStateContext';
 import { useBlockingOverlayBehavior } from '../lib/blockingOverlay';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
-const PortfolioScreenshotImportModal = lazy(() => import('../components/PortfolioScreenshotImportModal'));
 const PortfolioHistoricalExcelImportModal = lazy(() => import('../components/PortfolioHistoricalExcelImportModal'));
 const DataBackupModal = lazy(() => import('../components/DataBackupModal'));
 const PortfolioMaintenanceModal = lazy(() => import('../components/PortfolioMaintenanceModal'));
@@ -1496,7 +1493,6 @@ export default function PortfolioPage() {
   const [editingPosition, setEditingPosition] = useState<PortfolioContractPosition | null>(null);
   const [addPositionSeed, setAddPositionSeed] = useState<PortfolioTradeInput | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [showImportModal, setShowImportModal] = useState(false);
   const [showHistoricalExcelImport, setShowHistoricalExcelImport] = useState(false);
   const [showDataBackup, setShowDataBackup] = useState(false);
   const [showMaintenance, setShowMaintenance] = useState(false);
@@ -1801,37 +1797,6 @@ export default function PortfolioPage() {
     persistShowNominalYield(value);
   }, []);
 
-  const captureEntrySnapshotForImportedTrade = useCallback(async (inspected: PortfolioTrade) => {
-    if ((isValidEntryDelta(inspected.entryDelta) && isValidEntryIv(inspected.entryIv)) || !isContemporaneousPortfolioEntry(inspected)) return;
-    const result = await enrichCurrentTradeEntrySnapshot(
-      inspected,
-      (ticker, expirationTimestamp) => fetchOptions(ticker, expirationTimestamp, {
-        source: 'Portfolio:entrySnapshotCapture',
-        refreshMode: 'cache-first',
-      }),
-    );
-    if (result.status !== 'captured') return;
-    const latest = loadPortfolioTrades();
-    let applied = false;
-    const next = latest.map(current => {
-      if (current.id !== inspected.id
-        || current.updatedAt !== inspected.updatedAt
-        || makePortfolioContractKey(current) !== makePortfolioContractKey(inspected)) return current;
-      const addDelta = !isValidEntryDelta(current.entryDelta) && isValidEntryDelta(result.trade.entryDelta);
-      const addIv = !isValidEntryIv(current.entryIv) && isValidEntryIv(result.trade.entryIv);
-      if (!addDelta && !addIv) return current;
-      applied = true;
-      return {
-        ...current,
-        entrySnapshot: result.trade.entrySnapshot,
-        ...(addDelta ? { entryDelta: result.trade.entryDelta, entryDeltaSource: result.trade.entryDeltaSource, entryDeltaCapturedAt: result.trade.entryDeltaCapturedAt } : {}),
-        ...(addIv ? { entryIv: result.trade.entryIv, entryIvSource: result.trade.entryIvSource, entryIvCapturedAt: result.trade.entryIvCapturedAt } : {}),
-        updatedAt: new Date().toISOString(),
-      };
-    });
-    if (applied && persistTrades(next)) setDurableActivityNotice('Entry snapshot captured from contemporaneous exact-contract data.');
-  }, [persistTrades]);
-
   const handleSaveTrade = useCallback(async (input: PortfolioTradeInput, intent: ManualTradeSaveIntent, id?: string, options?: { keepOpen?: boolean }): Promise<boolean> => {
     const before = loadPortfolioTrades();
     const existing = id ? before.find(trade => trade.id === id) ?? null : null;
@@ -1965,14 +1930,6 @@ export default function PortfolioPage() {
       setMaintenanceBusy(null);
     }
   }, [persistTrades]);
-
-  const handleScreenshotImported = useCallback((nextTrades: PortfolioTrade[]) => {
-    const previousIds = new Set(loadPortfolioTrades().map(trade => trade.id));
-    if (!persistTrades(nextTrades)) return;
-    setShowImportModal(false);
-    const newlyImported = nextTrades.filter(trade => !previousIds.has(trade.id) && isContemporaneousPortfolioEntry(trade));
-    if (newlyImported.length > 0) void Promise.allSettled(newlyImported.map(captureEntrySnapshotForImportedTrade));
-  }, [captureEntrySnapshotForImportedTrade, persistTrades]);
 
   const executeDeleteTrade = useCallback((id: string) => {
     const before = loadPortfolioTrades();
@@ -2363,7 +2320,6 @@ export default function PortfolioPage() {
         {(showAddModal || editingTrade) && <TradeModal trade={editingTrade} seed={addPositionSeed} onClose={() => { setShowAddModal(false); setEditingTrade(null); setAddPositionSeed(null); }} onSave={handleSaveTrade} onDelete={requestDeleteTrade} />}
         {editingPosition && <ContractPositionEditor position={editingPosition} onClose={() => setEditingPosition(null)} onEditLot={lot => { setEditingPosition(null); setEditingTrade(lot); }} onAddToPosition={addToContractPosition} />}
         {drawerSelection && <ErrorBoundary title="Option sheet unavailable" message="Close it and try again."><Suspense fallback={null}><OptionDetailDrawer option={drawerSelection.option} ticker={drawerSelection.ticker} expirationLabel={drawerSelection.expirationLabel} dte={drawerSelection.dte} underlyingPrice={drawerSelection.underlyingPrice} onClose={() => setDrawerSelection(null)} /></Suspense></ErrorBoundary>}
-        {showImportModal && <Suspense fallback={null}><PortfolioScreenshotImportModal trades={trades} onClose={() => setShowImportModal(false)} onApply={handleScreenshotImported} /></Suspense>}
         {showHistoricalExcelImport && <Suspense fallback={null}><PortfolioHistoricalExcelImportModal trades={trades} markBasis={markBasis} onClose={() => setShowHistoricalExcelImport(false)} onImported={handleHistoricalExcelImported} /></Suspense>}
         {showDataBackup && <Suspense fallback={null}><DataBackupModal onClose={() => setShowDataBackup(false)} onImported={handleBackupImported} /></Suspense>}
         {showMaintenance && <Suspense fallback={null}><PortfolioMaintenanceModal assessment={maintenanceAssessment} busy={maintenanceBusy} message={maintenanceMessage} onResolveLifecycle={() => { void handleResolveLifecycleMaintenance(); }} onResolveEntryVix={() => { void handleResolveEntryVixMaintenance(); }} onRecoverEntrySnapshots={handleRecoverStoredEntrySnapshots} onClose={() => setShowMaintenance(false)} /></Suspense>}
@@ -2859,15 +2815,6 @@ export default function PortfolioPage() {
         </ErrorBoundary>
       )}
 
-      {showImportModal && (
-        <Suspense fallback={<div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.72)' }}><div className="rounded-lg border px-4 py-3 text-sm" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', color: 'var(--text)' }}>Loading import tools...</div></div>}>
-          <PortfolioScreenshotImportModal
-            trades={trades}
-            onClose={() => setShowImportModal(false)}
-            onApply={handleScreenshotImported}
-          />
-        </Suspense>
-      )}
       {showDataBackup && (
         <Suspense fallback={<div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.72)' }}><div className="rounded-lg border px-4 py-3 text-sm" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', color: 'var(--text)' }}>Loading backup tools...</div></div>}>
           <DataBackupModal onClose={() => setShowDataBackup(false)} onImported={handleBackupImported} />

@@ -2,6 +2,8 @@
 
 Implementation date: 2026-08-30
 
+> **Retirement note.** Portfolio Screenshot Import/OCR was subsequently retired. References to brokerage screenshot imports in this historical refinement describe the former implementation and are not supported current behavior.
+
 This refinement changes Portfolio financial semantics and the minimum History controls needed to expose them. It does not change the durable schema, add market-data retention, or redesign the Portfolio surface.
 
 ## Entry Delta and Entry IV lifecycle
@@ -12,7 +14,6 @@ The audited creation paths are:
 
 - Options/detail creation reuses its already-loaded exact chain and captures Delta plus IV synchronously with no extra request.
 - Manual **Add Sold Put** exposes no current-entry snapshot fields. It performs at most one cache-first exact-contract lookup before the initial durable add, uses one exact row for both Delta and IV, and then writes the final trade once. Failure leaves both values unavailable but never prevents the valid trade from saving.
-- Same-day brokerage screenshot imports perform the same bounded capture for each newly created durable trade; historical imports remain ineligible.
 - JSON restore preserves a supplied valid snapshot but performs no lookup.
 
 Automatic capture requires an open position entered on the current New York market date, a valid exact ticker/expiry/strike, and a contemporaneous non-stale chain. Provider Delta is preferred with the established calculated fallback; IV comes from the same row's normalized `impliedVolatility`. Current data is never used to repair an old position. Zero-request historical recovery is limited to actual stored `entrySnapshot.delta` and `entrySnapshot.iv` values.

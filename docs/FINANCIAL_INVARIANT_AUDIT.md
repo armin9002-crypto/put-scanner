@@ -3,6 +3,10 @@
 Audited 2026-09-21 against fetched `main`, starting at `8d7883e05a388d10263a3490a7d7240fbf9a88c8`.
 Scope: discovery, Option Drawer, Watchlist, Portfolio, History and Recommendations financial boundaries. ETF Pulse technical indicators are excluded.
 
+## Post-audit retirement
+
+The Screenshot Import/OCR path covered by the audit's former precision fixture was subsequently retired after independent review of commit `56ccf3a`. Its precision boundary is no longer active production behavior. The remaining invariant suite below preserves the active quote, yield, Portfolio, History, Watchlist, DTE, expiration, and assignment economics without importing or testing the retired parser.
+
 ## Authoritative contract and units
 
 The opening contract in [PUT_METRIC_DEFINITIONS.md](PUT_METRIC_DEFINITIONS.md) supersedes its retained Stage 6A text. NY is `price / strike`; AY is `NY * 365 / calendar days`. Neither uses Net Risk. The older net-risk NY wording in `PORTFOLIO_HISTORY_SEMANTICS_REFINEMENT.md` is also superseded by that explicitly authoritative contract. No denominator or policy threshold was redesigned.
@@ -52,7 +56,7 @@ The three `tests/financial-*.test.mjs` files use fabricated data, fixed clocks a
 | J ITM expiry | Positive intrinsic and a losing realized outcome; History agrees with expiration resolver and ignores stale redundant stored P&L. |
 | K early buyback | High-precision close credit/cost, actual five-day holding period, winner and loser; same-day annualization unavailable. |
 | L multiple exact lots | Unequal prices, quantities and entry dates; shared current contract observation; raw-lot Entry AY; grouped History totals and missing Delta/IV coverage reconcile to raw lots. |
-| Additional boundaries | Open losing/near-zero marks, zero entry premium, unavailable aggregate liability, partial AY coverage, confirmed assignment with/without economics, invalid quote snapshots, screenshot sold-price precision and preserved exact-total precedence. |
+| Additional boundaries | Open losing/near-zero marks, zero entry premium, unavailable aggregate liability, partial AY coverage, confirmed assignment with/without economics, and invalid quote snapshots. |
 
 Agreement is required only for identical evidence and basis. Entry/current prices and periods, reference Last/executable Bid, raw negative DTE/expired display clamps, and net-risk remaining AY/gross-risk Current AY deliberately differ. Portfolio and Watchlist clamp displayed expired DTE to zero; discovery excludes past expirations. All have unavailable AY for non-positive time. Watchlist's clamp predates this audit and is preserved.
 
@@ -64,7 +68,6 @@ Agreement is required only for identical evidence and basis. Entry/current price
 | D aggregation | History headers reweighted a contract's partial Entry Delta/IV (and other partial metrics) using the whole contract's risk, unlike raw-lot headline/footer totals. A fixture produced Delta `-0.0968989` instead of `-0.0477097`. | `buildHistoryGroupAggregates` expands contract rows back to their lots for financial aggregation, preserving the displayed position count. |
 | D trust boundary | Options → Watchlist omitted integrity metadata; Watchlist row calculations accepted an invalid snapshot's raw quotes. | Preserve integrity on save and suppress invalid yield/Delta/IV calculations. Raw provider quotes remain auditable. Prior trusted retained/degraded snapshots keep their existing policy. |
 | B provenance | Options/Recommendations → Watchlist and Watchlist → Drawer omitted provider/calculated Delta source/model. | Forward existing metadata through all three boundaries. No recalculation from current facts is substituted for a saved observation. |
-| D precision | Screenshot parser rounded explicit or derived per-share average credit to cents before downstream use. Example `0.943267` became `0.94`. | Retain raw per-share precision. The existing exact total cost basis remains authoritative when present; OCR heuristics/tolerances are unchanged. |
 | B presentation | Screener took the canonical one-decimal moneyness label and added a second decimal to that rounded string. | Use the shared canonical label. The production-scale Recommendation golden matches the old hash exactly after restoring only this old label. |
 | C stale duplicate | Unused `calculateRealizedPnl` / unused summary field preferred redundant stored P&L and assumed every expired contract was worthless. | Removed the unused calculation/field. Active History economics already use canonical lifecycle helpers. No active historical formula changed. |
 | A correct | Secured-cash denominators; full-precision live quote/Drawer path; calendar DTE; liability/P&L signs; unclamped capture; entry/current distinctions; intrinsic payoff; explicit assignment; simple realized AY; raw historical aggregation. | Regression protection added; established formulas retained. |

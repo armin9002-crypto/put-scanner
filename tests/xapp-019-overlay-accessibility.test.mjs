@@ -56,7 +56,6 @@ test('high-risk workflow adoption stays behavior-only at the overlay boundary', 
   const files = [
     'src/components/DataBackupModal.tsx',
     'src/components/PortfolioMaintenanceModal.tsx',
-    'src/components/PortfolioScreenshotImportModal.tsx',
     'src/components/PortfolioHistoricalExcelImportModal.tsx',
     'src/pages/RecommendationsPage.tsx',
   ];

@@ -1,5 +1,7 @@
 # Put Scanner QA Checklist
 
+Select scenarios for the affected behavior using [AGENTS.md](AGENTS.md#verification-and-completion). This is a scenario catalog, not a requirement to exercise every route and viewport for each edit. Use synthetic fixtures/test accounts for mutations; this checklist does not authorize production or personal-data changes.
+
 ## Network / Usage
 
 - Opening Scanner, Portfolio, and ETF Pulse does not create request loops.
@@ -36,8 +38,8 @@
 
 ## Option Chain Freshness
 
-- Open `/options/HIBL`, select Aug 21, 2026 (`1787270400`), and click Refresh.
-- Network shows `/api/options?ticker=HIBL&date=1787270400&fresh=1` or equivalent.
+- Open `/options/HIBL`, select an expiration currently offered by the provider, record its timestamp, and click Refresh. Use a fixed expiration only with a deterministic fixture.
+- Network shows `/api/options?ticker=HIBL&date=<selected timestamp>&fresh=1` or equivalent.
 - Chain diagnostics are hidden by default in normal UI.
 - Enable debug mode with `localStorage.setItem('put_scanner_debug_options', 'true')`, reload, and refresh again.
 - Debug diagnostics show source Fresh, requested expiration, returned expiration, put strike count, and put strike range.
@@ -71,13 +73,6 @@
 - Notes persist and sorting does not discard refreshed values.
 - Duplicate watchlist entries are not created for the same contract.
 
-## OCR Import
-
-- Tesseract/OCR code loads only when the screenshot import flow is opened or used.
-- Fidelity rows parse core fields: ticker, put, expiry, strike, contracts, average cost, and cost basis.
-- Price/current-value screenshot fields are informational and do not block import when core fields are valid.
-- Existing positions match by ticker | put | expiry | strike and preserve notes/date unless edited.
-
 ## Mobile / Tablet
 
 - Navigation works at mobile widths.
@@ -91,7 +86,7 @@
 
 ## Responsive / Orientation QA
 
-Use these viewports when touching layout: iPhone SE portrait `375 x 667`, iPhone SE landscape `667 x 375`, iPhone 14 portrait `390 x 844`, iPhone 14 landscape `844 x 390`, iPhone Pro Max portrait `430 x 932`, iPhone Pro Max landscape `932 x 430`, iPad portrait `768 x 1024`, iPad landscape `1024 x 768`, desktop `1440 x 900`.
+Choose representative viewports for local layout edits; use the full relevant matrix for site-wide responsive changes: iPhone SE portrait `375 x 667`, iPhone SE landscape `667 x 375`, iPhone 14 portrait `390 x 844`, iPhone 14 landscape `844 x 390`, iPhone Pro Max portrait `430 x 932`, iPhone Pro Max landscape `932 x 430`, iPad portrait `768 x 1024`, iPad landscape `1024 x 768`, desktop `1440 x 900`.
 
 Debug helpers:
 
@@ -116,8 +111,8 @@ Portfolio:
 - Summary cards wrap cleanly.
 - Analytics cards stack or grid without clipping.
 - Schedule table/cards remain usable.
-- Add Trade, Import Screenshot, and Refresh buttons remain accessible.
-- Add/edit/import modals fit portrait and landscape.
+- Add Trade and Refresh buttons remain accessible.
+- Add/edit/data-tool modals fit portrait and landscape.
 
 ETF Pulse:
 

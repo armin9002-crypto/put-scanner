@@ -5,7 +5,6 @@ import ts from 'typescript';
 import { buildOpenContractPositions, buildPortfolioValuationLots } from '../src/lib/portfolioContractPositions.ts';
 import { calculatePortfolioMarkSummary, calculatePortfolioCurrentAyCoverage, calculateOriginalAnnualizedYield, calculatePremiumCollected } from '../src/lib/portfolioMetrics.ts';
 import { getPortfolioTotals, buildExpirationScheduleGroups, buildUnderlyingScheduleGroups } from '../src/lib/portfolioAnalytics.ts';
-import { parseBrokerageScreenshotText, parsedBrokerageRowToPortfolioTrade } from '../src/lib/portfolioScreenshotImport.ts';
 import { buildWatchlistRow } from '../src/lib/watchlistRows.ts';
 import { normalizeWatchlistItem } from '../src/lib/watchlist.ts';
 import { calculateDte } from '../src/lib/optionMetrics.ts';
@@ -86,19 +85,4 @@ test('contract observation reconciles rows, headline, schedule and lot-weighted 
   }
   const page = read('src/pages/PortfolioPage.tsx');
   for (const call of ['calculatePortfolioMarkSummary', 'calculatePortfolioCurrentAyCoverage', 'buildScheduleTotals']) assert.ok(page.includes(`${call}(valuationLots, markBasis)`), `${call} must share contract observations`);
-});
-
-test('screenshot sold-price parsing retains explicit and derived precision through financial calculations', () => {
-  for (const [input, expected] of [['0.943267', 0.943267], ['9.99', 282.98 / 300]]) {
-    const row = parseBrokerageScreenshotText(`TQQQ 45 Put\nJul-17-2026\n0.50 0.00 0.00 0.00% +132.98 +46.99% -150.00 -0.03% -3 ${input} 282.98`)[0];
-    near(row.averageCostBasis, expected);
-    // Without a total the explicit average remains the authoritative credit.
-    const entry = parsedBrokerageRowToPortfolioTrade({ ...row, selected: true, costBasisTotal: undefined }, '2026-07-01', '2026-07-01T16:00Z');
-    assert.ok(entry);
-    near(entry.soldPrice, expected);
-    near(calculatePremiumCollected(entry), expected * 300);
-    // A supplied exact total continues to take precedence over a rounded broker average.
-    const exact = parsedBrokerageRowToPortfolioTrade({ ...row, selected: true }, '2026-07-01', '2026-07-01T16:00Z');
-    near(calculatePremiumCollected(exact), 282.98);
-  }
 });

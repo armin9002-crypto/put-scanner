@@ -4,6 +4,8 @@
 >
 > **Entry lifecycle refinement.** Current-trade creation captures Entry Delta and Entry IV together before the initial durable save. Historical Add and Edit accept optional manual values. History weighting is defined in [Portfolio History Semantics and Entry Delta Lifecycle](./PORTFOLIO_HISTORY_SEMANTICS_REFINEMENT.md).
 
+> **Retirement note.** Portfolio Screenshot Import/OCR was subsequently retired. Screenshot-import references below describe this stage's historical implementation and are not supported current behavior.
+
 Implementation date: 2026-08-28
 
 This stage remains within the current Put Scanner product. It adds explicit durable Portfolio maintenance, truthful quote-freshness policy, and a historical Entry Delta snapshot. It does not add a historical Greeks service, polling, scheduled work, rolling, alerts, or new cloud architecture.

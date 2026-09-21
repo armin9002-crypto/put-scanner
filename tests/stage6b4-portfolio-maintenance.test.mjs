@@ -34,7 +34,6 @@ import {
 } from '../src/lib/portfolioStorage.ts';
 import { resolveExpiredTradeWithClose } from '../src/lib/portfolioExpirationArchive.ts';
 import { buildHistoryGroups, historyEntryVix, historyPremium, historyRealizedPnl } from '../src/lib/portfolioHistoryAnalytics.ts';
-import { parsedBrokerageRowToPortfolioTrade } from '../src/lib/portfolioScreenshotImport.ts';
 import { REQUEST_BUDGET_LEDGER } from '../src/lib/requestBudgets.ts';
 import { createPutScannerBackup, applyPutScannerBackup } from '../src/lib/userDataBackup.ts';
 import { canonicalJsonEqual } from '../src/lib/cloudState/stateComparison.ts';
@@ -353,18 +352,6 @@ test('backup and canonical cloud documents retain Entry Delta and Entry IV while
   );
 });
 
-test('OCR imports never manufacture Entry Delta or Entry IV from screenshot market values', () => {
-  const imported = parsedBrokerageRowToPortfolioTrade({
-    rawText: 'TQQQ PUT', ticker: 'TQQQ', optionType: 'put', expiration: '2026-10-16', strike: 50, quantity: -1, contracts: 1,
-    averageCostBasis: 2, costBasisTotal: 200, lastPrice: 1, selected: true, importAction: 'add', warnings: [],
-  }, '2026-08-20', '2026-08-28T15:00:00.000Z');
-  assert.ok(imported);
-  assert.equal(imported.entryDelta, undefined);
-  assert.equal(imported.entryDeltaSource, undefined);
-  assert.equal(imported.entryIv, undefined);
-  assert.equal(imported.entryIvSource, undefined);
-});
-
 test('quote freshness counts trading sessions, keeps weekends quiet, and separates last-trade age', () => {
   const friday = new Date('2026-08-28T20:00:00Z');
   assert.equal(elapsedMarketSessions(friday, new Date('2026-08-30T18:00:00Z')), 0);
@@ -414,7 +401,6 @@ test('Portfolio mount automatically sweeps expired lifecycle while refresh remai
   const lifecycle = page.slice(page.indexOf('useEffect(() => {\n    if ((account.phase'), page.indexOf('const handleShowNominalYieldChange'));
   const save = page.slice(page.indexOf('const handleSaveTrade'), page.indexOf('const handleBackupImported'));
   const refresh = page.slice(page.indexOf('const handleRefreshOpenTrades'), page.indexOf('const handleRetryResolve'));
-  const screenshot = page.slice(page.indexOf('const handleScreenshotImported'), page.indexOf('const handleDeleteTrade'));
   assert.doesNotMatch(mount, /archiveExpiredOpenTrades|resolvePortfolioEntryVix|savePortfolioTrades/);
   assert.match(lifecycle, /archiveExpiredOpenTrades\(inspected\)/);
   assert.match(lifecycle, /mergePortfolioLifecycleResults/);
@@ -422,7 +408,6 @@ test('Portfolio mount automatically sweeps expired lifecycle while refresh remai
   assert.doesNotMatch(save, /archiveExpiredOpenTrades|resolvePortfolioEntryVix/);
   assert.match(refresh, /!isExpiredUnresolvedOpenTrade\(trade\)/);
   assert.doesNotMatch(refresh, /archiveExpiredOpenTrades|resolvePortfolioEntryVix|entryVixClose|entryDelta:|entryIv:/);
-  assert.doesNotMatch(screenshot, /archiveExpiredOpenTrades|resolvePortfolioEntryVix/);
   assert.match(page, /Portfolio Maintenance/);
   assert.match(page, /handleResolveLifecycleMaintenance/);
   assert.match(page, /handleResolveEntryVixMaintenance/);
