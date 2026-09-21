@@ -5,68 +5,35 @@ import {
   markWatchlistItems,
   removeFromWatchlist,
   pruneExpiredWatchlist,
-  formatWatchlistExpiry,
   updateWatchlistNote,
   type WatchlistItem,
-  type WatchlistSnapshot,
-  type WatchlistStatus,
 } from '../lib/watchlist';
 import { loadPortfolioTrades } from '../lib/portfolioStorage';
 import { subscribeToDurableMutations } from '../lib/cloudState/syncEvents';
 import { buildOpenPortfolioContractKeys, isWatchlistContractInOpenPortfolio } from '../lib/watchlistPortfolioMembership';
 import { fetchOptions, fetchBatchPricesResult } from '../lib/api';
 import type { OptionsChainData } from '../lib/types';
-import { calculateDte, calculateMoneyness, calculateVolumeOpenInterestRatio, calculateYieldPercent, isFiniteNumber, sanitizePositive } from '../lib/optionMetrics';
-import type { ShortPutMoneynessState } from '../lib/moneynessPresentation';
+import { calculateDte, isFiniteNumber } from '../lib/optionMetrics';
 import { formatDate as formatDisplayDate, formatOptionLastTradeDate, formatOptionPrice, formatPercentPoints } from '../lib/format';
 import { getOptionLastTradeFreshness } from '../lib/optionLastTradeFreshness';
 import ErrorBoundary from '../components/ErrorBoundary';
 import type { OptionDetail } from '../components/OptionDetailDrawer';
-import { Star, StickyNote, RefreshCw, Loader2, ChevronUp, ChevronDown, AlertTriangle } from 'lucide-react';
+import { Star, StickyNote, RefreshCw, Download, Loader2, ChevronUp, ChevronDown, AlertTriangle } from 'lucide-react';
 import { useResponsiveMode } from '../lib/responsive';
 import MobileBottomSheet from '../components/mobile/MobileBottomSheet';
 import MobileFinancialTable, { MobileFinancialTableDivider, type MobileFinancialColumn } from '../components/mobile/MobileFinancialTable';
-import { annualizedYieldFieldForNominal, OPTION_QUOTE_DISPLAY_LABELS, OPTION_QUOTE_TABLE_DISPLAY_ORDER, OPTION_YIELD_DISPLAY_LABELS, OPTION_YIELD_DISPLAY_ORDER, executableOptionPrice, formatOptionQuoteValue, isNominalYieldField, visibleOptionYieldFields, type OptionQuoteTableDisplayField, type OptionYieldDisplayField } from '../lib/optionQuoteDisplay';
+import { annualizedYieldFieldForNominal, OPTION_QUOTE_DISPLAY_LABELS, OPTION_QUOTE_TABLE_DISPLAY_ORDER, OPTION_YIELD_DISPLAY_LABELS, OPTION_YIELD_DISPLAY_ORDER, formatOptionQuoteValue, isNominalYieldField, visibleOptionYieldFields, type OptionQuoteTableDisplayField, type OptionYieldDisplayField } from '../lib/optionQuoteDisplay';
 import { acquireOptionChains, canonicalOptionChainKey } from '../lib/optionChainRequests';
-import { buildWatchlistGroups, getWatchlistStatusPresentation, type WatchlistGroupMode, type WatchlistSortOverride, type WatchlistGroupableRow } from '../lib/watchlistPresentation';
+import { buildWatchlistGroups, type WatchlistGroupMode, type WatchlistSortOverride, type WatchlistGroupableRow } from '../lib/watchlistPresentation';
 import { PageHeader } from '../components/ui/PageHeader';
 import { buildOptionsPath, createOptionsNavigationState, resolveOptionsReturnOrigin, type OptionsNavigationState, type WatchlistOriginPresentation } from '../lib/optionsNavigation';
 import { isWatchlistRefreshCurrent, mergeWatchlistRefreshItem } from '../lib/watchlistRefresh';
+import { buildWatchlistRow, type WatchlistLiveRow } from '../lib/watchlistRows';
+import { buildWatchlistExcelExport, downloadWatchlistExcelExport } from '../lib/watchlistExcelExport';
 
 const OptionDetailDrawer = lazy(() => import('../components/OptionDetailDrawer'));
 
-interface LiveRow extends WatchlistItem {
-  dte: number | null;
-  expired: boolean;
-  currentPrice: number | null;
-  moneynessPct: number | null;
-  moneynessLabel: string;
-  moneynessColor: string;
-  moneynessState: ShortPutMoneynessState;
-  bid: number | null;
-  ask: number | null;
-  last: number | null;
-  lastTradeDate: number | null;
-  delta: number | null;
-  deltaSource: WatchlistSnapshot['deltaSource'];
-  deltaModelVersion: string | null;
-  iv: number | null;
-  volume: number | null;
-  openInterest: number | null;
-  volOI: number | null;
-  nomYieldBid: number | null;
-  annYieldBid: number | null;
-  nomYieldAsk: number | null;
-  annYieldAsk: number | null;
-  nomYieldLast: number | null;
-  annYieldLast: number | null;
-  status: WatchlistStatus;
-  statusLabel: string;
-  statusDetail: string | null;
-  statusColor: string;
-  evidenceFreshness?: 'current' | 'cached-current' | 'retained-stale' | 'unavailable';
-  observedAt?: number | null;
-}
+type LiveRow = WatchlistLiveRow;
 
 function PortfolioMembershipDot({ inOpenPortfolio }: { inOpenPortfolio: boolean }) {
   const label = inOpenPortfolio ? 'In open Portfolio' : 'Not in open Portfolio';
@@ -126,58 +93,6 @@ function lastTradeStatusLabel(value: number | null | undefined): string {
   if (freshness.ageSessions == null) return 'Unavailable';
   const age = freshness.ageSessions === 0 ? '0 sessions' : `${freshness.ageSessions} session${freshness.ageSessions === 1 ? '' : 's'} ago`;
   return `${freshness.label ?? 'Recent'} · ${age}`;
-}
-
-function buildRow(item: WatchlistItem): LiveRow {
-  const snapshot: WatchlistSnapshot = item.snapshot ?? {};
-  const rawDte = calculateDte(item.expiry);
-  const dte = isFiniteNumber(rawDte) ? Math.max(0, rawDte) : null;
-  const expired = isPastWatchlistExpirationDte(rawDte);
-  const currentPrice = sanitizePositive(snapshot.underlyingPrice);
-  const bid = snapshot.bid ?? null;
-  const ask = snapshot.ask ?? null;
-  const last = snapshot.last ?? null;
-  const bidYield = calculateYieldPercent(executableOptionPrice(bid), item.strike, dte);
-  const askYield = calculateYieldPercent(executableOptionPrice(ask), item.strike, dte);
-  const lastYield = calculateYieldPercent(executableOptionPrice(last), item.strike, dte);
-  const moneyness = calculateMoneyness(currentPrice, item.strike);
-  const status = expired ? 'expired' : item.status ?? 'saved';
-  const statusPresentation = getWatchlistStatusPresentation(status, expired, snapshot);
-
-  return {
-    ...item,
-    dte,
-    expired,
-    currentPrice,
-    moneynessPct: moneyness.pct,
-    moneynessLabel: moneyness.label,
-    moneynessColor: moneyness.color,
-    moneynessState: moneyness.state,
-    bid,
-    ask,
-    last,
-    lastTradeDate: snapshot.lastTradeDate ?? null,
-    delta: snapshot.delta ?? null,
-    deltaSource: snapshot.deltaSource ?? null,
-    deltaModelVersion: snapshot.deltaModelVersion ?? null,
-    iv: snapshot.iv ?? null,
-    volume: snapshot.volume ?? null,
-    openInterest: snapshot.openInterest ?? null,
-    volOI: calculateVolumeOpenInterestRatio(snapshot.volume, snapshot.openInterest),
-    nomYieldBid: bidYield.nominal,
-    annYieldBid: bidYield.annualized,
-    nomYieldAsk: askYield.nominal,
-    annYieldAsk: askYield.annualized,
-    nomYieldLast: lastYield.nominal,
-    annYieldLast: lastYield.annualized,
-    expiryFormatted: formatWatchlistExpiry(item.expiry),
-    status,
-    statusLabel: statusPresentation.label,
-    statusDetail: statusPresentation.detail,
-    statusColor: statusPresentation.color,
-    evidenceFreshness: snapshot.evidenceFreshness,
-    observedAt: snapshot.observedAt ?? item.updatedAt ?? null,
-  };
 }
 
 function optionDetailFromWatchlistRow(row: LiveRow): OptionDetail {
@@ -289,7 +204,7 @@ export default function WatchlistPage() {
     return () => { window.removeEventListener('focus', prune); document.removeEventListener('visibilitychange', prune); };
   }, []);
 
-  const rows = useMemo(() => items.map(buildRow), [items]);
+  const rows = useMemo(() => items.map(buildWatchlistRow), [items]);
 
   const handleRefresh = useCallback(async (explicit = true) => {
     if (refreshInFlightRef.current) return;
@@ -404,6 +319,22 @@ export default function WatchlistPage() {
   const groupedRows = useMemo(() => buildWatchlistGroups(rows as unknown as WatchlistGroupableRow[], groupMode, sortOverride), [rows, groupMode, sortOverride]);
   const sortedRows = useMemo(() => groupedRows.flatMap(group => group.rows as unknown as LiveRow[]), [groupedRows]);
   const editingRow = editingNote ? rows.find(row => row.id === editingNote) ?? null : null;
+  const [exportLoading, setExportLoading] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  const handleExport = useCallback(async () => {
+    if (items.length === 0 || exportLoading) return;
+    setExportLoading(true);
+    setExportError(null);
+    try {
+      const exportData = buildWatchlistExcelExport(sortedRows, openPortfolioContractKeys);
+      await downloadWatchlistExcelExport(exportData);
+    } catch {
+      setExportError('Watchlist export could not be created. Please try again.');
+    } finally {
+      setExportLoading(false);
+    }
+  }, [exportLoading, items.length, openPortfolioContractKeys, sortedRows]);
 
   function handleSort(field: SortField) {
     const nextDirection = sortOverride?.field === field ? (sortOverride.direction === 'asc' ? 'desc' : 'asc') : 'asc';
@@ -502,8 +433,13 @@ export default function WatchlistPage() {
         <div className="flex items-center gap-2 border-b px-3.5 py-2" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
           <label className="flex min-w-0 flex-1 items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>Group by <select value={groupMode} onChange={event => handleGroupModeChange(event.target.value as WatchlistGroupMode)} aria-label="Group watchlist by" className="mobile-control-field min-h-9 min-w-0 flex-1 text-xs"><option value="none">None</option><option value="underlying">Underlying</option><option value="expiry">Expiry</option></select></label>
           <label className="flex min-h-9 items-center gap-1.5 whitespace-nowrap text-[11px]" style={{ color: 'var(--text-muted)' }}><input type="checkbox" checked={showNominalYields} onChange={event => handleNominalYieldToggle(event.target.checked)} aria-label="Show nominal yields" className="rounded" /> NY</label>
+          <button type="button" onClick={() => void handleExport()} disabled={exportLoading || items.length === 0} className="pressable inline-flex min-h-9 flex-none items-center gap-1 rounded-lg px-2 text-[11px] disabled:cursor-not-allowed disabled:opacity-40" aria-label="Export watchlist to Excel" aria-busy={exportLoading} data-testid="watchlist-export-excel" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)', color: 'var(--accent-light)' }}>
+            {exportLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+            Export
+          </button>
         </div>
         {refreshError && <div role="alert" className="flex items-start gap-2 border-b px-3.5 py-2 text-[11px]" style={{ borderColor: 'var(--border)', color: 'var(--red)', backgroundColor: 'rgba(239,68,68,0.08)' }}><AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-none" /><span>{refreshError} Tap refresh to retry.</span></div>}
+        {exportError && <div role="alert" className="flex items-start gap-2 border-b px-3.5 py-2 text-[11px]" style={{ borderColor: 'var(--border)', color: 'var(--red)', backgroundColor: 'rgba(239,68,68,0.08)' }}><AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-none" /><span>{exportError}</span></div>}
         {items.length === 0 ? <div className="px-6 py-16 text-center"><Star className="mx-auto mb-3 h-7 w-7" style={{ color: 'var(--text-dim)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>No saved puts</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Star a contract from an option chain to save it here.</p></div> : (
           <MobileFinancialTable label="Watchlist contracts" columns={mobileWatchlistColumns} busy={loading}>
             {groupedRows.flatMap(group => [
@@ -570,18 +506,34 @@ export default function WatchlistPage() {
           description="Saved puts with durable notes and quote snapshots."
           meta={<span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>{lastRefreshed ? `Last refreshed ${lastRefreshed.toLocaleString()}` : 'Showing saved snapshots'}</span>}
           actions={(
-          <button
-            onClick={() => void handleRefresh(true)}
-            disabled={loading || items.length === 0}
-            className="pressable button-primary flex flex-none items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-50 min-h-9"
-            style={{ backgroundColor: 'var(--accent)' }}
-          >
-            {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-            Refresh All
-          </button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => void handleExport()}
+              disabled={exportLoading || items.length === 0}
+              className="pressable button-ghost flex flex-none items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-50 min-h-9"
+              aria-label="Export watchlist to Excel"
+              aria-busy={exportLoading}
+              data-testid="watchlist-export-excel"
+            >
+              {exportLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+              {exportLoading ? 'Exporting…' : 'Export Excel'}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleRefresh(true)}
+              disabled={loading || items.length === 0}
+              className="pressable button-primary flex flex-none items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-50 min-h-9"
+              style={{ backgroundColor: 'var(--accent)' }}
+            >
+              {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+              Refresh All
+            </button>
+          </div>
           )}
         />
         {refreshError && <div role="alert" className="mb-3 flex items-center gap-2 rounded-lg px-3 py-2 text-xs" style={{ backgroundColor: 'rgba(239,68,68,0.08)', color: 'var(--red)', border: '1px solid rgba(239,68,68,0.24)' }}><AlertTriangle className="h-4 w-4 flex-none" /> <span>{refreshError} Click Refresh All to retry.</span></div>}
+        {exportError && <div role="alert" className="mb-3 flex items-center gap-2 rounded-lg px-3 py-2 text-xs" style={{ backgroundColor: 'rgba(239,68,68,0.08)', color: 'var(--red)', border: '1px solid rgba(239,68,68,0.24)' }}><AlertTriangle className="h-4 w-4 flex-none" /> <span>{exportError}</span></div>}
 
         {items.length > 0 && <div className="mb-3 flex flex-wrap items-center justify-end gap-2" data-testid="watchlist-presentation-controls">
           <label className="flex min-h-9 items-center gap-2 rounded-lg px-2 text-xs" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Group by <select value={groupMode} onChange={event => handleGroupModeChange(event.target.value as WatchlistGroupMode)} aria-label="Group watchlist by" className="rounded px-1.5 py-1 text-xs outline-none" style={{ backgroundColor: 'var(--input-bg)', color: 'var(--text)' }}><option value="none">None</option><option value="underlying">Underlying</option><option value="expiry">Expiry</option></select></label>

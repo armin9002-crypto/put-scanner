@@ -194,14 +194,15 @@ test('Screener display and filter reuse the same canonical Bid/Ask/Last NY/AY ro
 });
 
 test('Scanner, ticker detail, Option Drawer, Watchlist, Screener, and Portfolio route yield values through canonical helpers', async () => {
-  const [options, drawer, watchlist, screener, portfolioMetrics] = await Promise.all([
+  const [options, drawer, watchlist, watchlistRows, screener, portfolioMetrics] = await Promise.all([
     read('src/pages/OptionsPage.tsx'),
     read('src/components/OptionDetailDrawer.tsx'),
     read('src/pages/WatchlistPage.tsx'),
+    read('src/lib/watchlistRows.ts'),
     read('src/lib/screenerRows.ts'),
     read('src/lib/portfolioMetrics.ts'),
   ]);
-  for (const source of [options, watchlist, screener]) {
+  for (const source of [options, watchlistRows, screener]) {
     assert.match(source, /calculateYieldPercent\([^\n]*bid/);
     assert.match(source, /calculateYieldPercent\([^\n]*ask/);
     assert.match(source, /calculateYieldPercent\([^\n]*last/);
