@@ -1557,6 +1557,7 @@ export default function PortfolioPage() {
   const quoteRefreshGenerationRef = useRef(0);
   const quoteRefreshAbortRef = useRef<AbortController | null>(null);
   const autoRefreshStartedRef = useRef(false);
+  const autoRefreshStartTimerRef = useRef<number | null>(null);
   const lifecycleSweepInFlightRef = useRef(false);
 
   useEffect(() => {
@@ -2122,7 +2123,18 @@ export default function PortfolioPage() {
     if (autoRefreshStartedRef.current) return;
     if (account.phase !== 'ready' && account.phase !== 'anonymous') return;
     autoRefreshStartedRef.current = true;
-    void handleRefreshOpenTrades();
+    const timer = window.setTimeout(() => {
+      if (autoRefreshStartTimerRef.current === timer) autoRefreshStartTimerRef.current = null;
+      void handleRefreshOpenTrades();
+    }, 0);
+    autoRefreshStartTimerRef.current = timer;
+
+    return () => {
+      if (autoRefreshStartTimerRef.current !== timer) return;
+      window.clearTimeout(timer);
+      autoRefreshStartTimerRef.current = null;
+      autoRefreshStartedRef.current = false;
+    };
   }, [account.phase, handleRefreshOpenTrades]);
 
   const handleRetryResolve = useCallback(async (trade: PortfolioTrade) => {

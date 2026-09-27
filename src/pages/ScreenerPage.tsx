@@ -326,6 +326,7 @@ export default function ScreenerPage() {
   // Raw rows support network-free changes to non-structural filters.
   const rawRowsRef = useRef<ScreenerRow[]>([]);
   const scanGateRef = useRef(createLatestScreenerScanGate());
+  const scanInFlightRef = useRef(false);
   const confirmOverlayRef = useRef<HTMLDivElement | null>(null);
   const confirmPanelRef = useRef<HTMLDivElement | null>(null);
 
@@ -547,6 +548,8 @@ export default function ScreenerPage() {
 
   // Load data
   const executeLoad = useCallback(async (criteria: ScreenerCriteria) => {
+    if (scanInFlightRef.current) return;
+    scanInFlightRef.current = true;
     latestScreenerReturnSnapshot = null;
     const scan = scanGateRef.current.begin();
     const hadPriorDataset = rawRowsRef.current.length > 0;
@@ -622,12 +625,16 @@ export default function ScreenerPage() {
       }
     } finally {
       clearInterval(slowCheck);
-      if (scan.isCurrent()) setLoading(false);
+      if (scan.isCurrent()) {
+        scanInFlightRef.current = false;
+        setLoading(false);
+      }
     }
   }, []);
 
   const handleRetryFailedResults = useCallback(async () => {
-    if (!retryState) return;
+    if (!retryState || scanInFlightRef.current) return;
+    scanInFlightRef.current = true;
     const scan = scanGateRef.current.begin();
     const { criteria, acquired: previous } = retryState;
     setLoading(true);
@@ -673,7 +680,10 @@ export default function ScreenerPage() {
         setLoadError('The failed Screener batches could not be retried.');
       }
     } finally {
-      if (scan.isCurrent()) setLoading(false);
+      if (scan.isCurrent()) {
+        scanInFlightRef.current = false;
+        setLoading(false);
+      }
     }
   }, [retryState]);
 

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { installDeterministicCloudAccount } from './fixtures/cloudAccount';
 import { installDeterministicMarketApi } from './fixtures/marketApi';
 import { SCREENER_CHUNKS } from '../shared/screenerUniverse.js';
 
@@ -22,6 +23,7 @@ test.beforeEach(async ({ page }) => {
     }));
   }, { nearExpiration: NEAR_EXPIRATION, exactExpiration: EXACT_EXPIRATION });
   marketHarness = await installDeterministicMarketApi(page);
+  await installDeterministicCloudAccount(page, { portfolio: [], watchlist: [], preferences: {} });
 });
 
 test.afterEach(async ({ page }, testInfo) => {
@@ -34,7 +36,7 @@ test.afterEach(async ({ page }, testInfo) => {
 test('viewport workflow is deterministic, cloud-authoritative, and usable', async ({ page }) => {
   test.setTimeout(180_000);
   await page.goto('/');
-  await expect(page.getByPlaceholder(/Filter \/ Search by Ticker/i).first()).toBeVisible();
+  await expect(page.getByPlaceholder(/Filter \/ Search by Ticker|Search ticker/i).first()).toBeVisible();
 
   await page.goto('/options/TQQQ');
   await expect(page.getByText('TQQQ', { exact: true }).first()).toBeVisible();
@@ -140,7 +142,7 @@ test('Scanner snapshot maintenance stops queued work when the route is abandoned
   test.skip(testInfo.project.name !== 'desktop-1440x900', 'one deterministic Scanner cancellation scenario');
   marketHarness.delays.set('options', 250);
   await page.goto('/');
-  await expect(page.getByPlaceholder(/Filter \/ Search by Ticker/i).first()).toBeVisible();
+  await expect(page.getByPlaceholder(/Filter \/ Search by Ticker|Search ticker/i).first()).toBeVisible();
 
   const update = page.locator('.scanner-control-plane__update');
   await expect(update).toBeVisible();
@@ -262,7 +264,7 @@ test('Scanner filtering and exact-expiry navigation remain request-bounded', asy
   test.skip(testInfo.project.name !== 'desktop-1440x900', 'one deterministic desktop request-graph scenario');
   test.setTimeout(120_000);
   await page.goto('/');
-  const filter = page.getByPlaceholder(/Filter \/ Search by Ticker/i);
+  const filter = page.getByPlaceholder(/Filter \/ Search by Ticker|Search ticker/i);
   await expect(filter).toBeVisible();
   const beforeFilter = [...marketHarness.counts.values()].reduce((sum, count) => sum + count, 0);
   await filter.fill('TQQQ');
@@ -282,7 +284,7 @@ test('Scanner reset clears local criteria and option rows use drawer-only detail
   test.skip(testInfo.project.name !== 'desktop-1440x900', 'one deterministic desktop interaction scenario');
   test.setTimeout(120_000);
   await page.goto('/?q=TQQQ&leverage=3x&type=Sector&expiry=2027-01-01&sort=fiveDay&liquidity=mediumPlus');
-  const filter = page.getByPlaceholder(/Filter \/ Search by Ticker/i).first();
+  const filter = page.getByPlaceholder(/Filter \/ Search by Ticker|Search ticker/i).first();
   await expect(filter).toHaveValue('TQQQ');
   await expect(page.getByText('6 active controls', { exact: true })).toBeVisible();
   await page.locator('.scanner-reset-filters').click();
@@ -307,12 +309,15 @@ test('Scanner reset clears local criteria and option rows use drawer-only detail
 test('mobile Scanner keeps Reset Filters in the existing filter sheet', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'portrait-390x844', 'one deterministic phone interaction scenario');
   await page.goto('/?q=TQQQ&leverage=3x&type=Sector&expiry=2027-01-01&sort=fiveDay&liquidity=mediumPlus');
-  const filter = page.getByPlaceholder(/Filter \/ Search by Ticker/i).first();
+  const filter = page.getByPlaceholder(/Filter \/ Search by Ticker|Search ticker/i).first();
   await expect(filter).toHaveValue('TQQQ');
   await page.locator('.mobile-control-button').click();
-  await expect(page.getByText('Scanner filters', { exact: true })).toBeVisible();
-  await page.getByRole('dialog', { name: 'Scanner filters' }).getByRole('button', { name: 'Reset Filters', exact: true }).click();
+  const filterSheet = page.getByRole('dialog', { name: 'Scanner filters' });
+  await expect(filterSheet).toBeVisible();
+  await filterSheet.getByRole('button', { name: 'Reset Filters', exact: true }).click();
   await expect(filter).toHaveValue('');
+  await expect(filterSheet).toBeVisible();
+  await filterSheet.getByRole('button', { name: 'Apply', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Filters', exact: true })).toBeVisible();
   expect(new URL(page.url()).pathname).toBe('/');
   expect(new URL(page.url()).search).toBe('');
