@@ -496,6 +496,8 @@ function finalCalendarDay(year: number, monthIndex: number): number {
   return new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
 }
 
+const MONTH_LABEL_FORMATTER = new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'UTC' });
+
 function expirationPeriodIdentity(expiration: string, period: RealizedPnlPeriod) {
   const year = Number(expiration.slice(0, 4));
   const monthIndex = Number(expiration.slice(5, 7)) - 1;
@@ -520,7 +522,7 @@ function expirationPeriodIdentity(expiration: string, period: RealizedPnlPeriod)
   const date = new Date(Date.UTC(year, monthIndex, 1));
   return {
     periodKey: `${year}-${month}`,
-    label: `${date.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' })} '${String(year).slice(2)}`,
+    label: `${MONTH_LABEL_FORMATTER.format(date)} '${String(year).slice(2)}`,
     startDate: `${year}-${month}-01`,
     endDate: `${year}-${month}-${String(finalCalendarDay(year, monthIndex)).padStart(2, '0')}`,
   };

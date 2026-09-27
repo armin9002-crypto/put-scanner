@@ -1,4 +1,10 @@
 const DAY_MS = 86_400_000;
+const US_MARKET_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
 
 function timestampMs(value) {
   if (value instanceof Date) {
@@ -39,12 +45,7 @@ export function usMarketDateIso(value = new Date()) {
   }
   const timestamp = timestampMs(value);
   if (timestamp == null) return null;
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date(timestamp));
+  const parts = US_MARKET_DATE_FORMATTER.formatToParts(new Date(timestamp));
   const field = type => parts.find(part => part.type === type)?.value ?? '';
   const date = `${field('year')}-${field('month')}-${field('day')}`;
   return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null;
