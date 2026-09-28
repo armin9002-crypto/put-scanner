@@ -60,7 +60,10 @@ test('portrait Screener table keeps aligned sticky and frozen layers across phon
   const firstRow = rows.first();
   await firstRow.locator('td').first().click();
   await expect(page.locator('.option-drawer-mobile [role="dialog"]')).toBeVisible();
+  await expect(firstRow).toHaveAttribute('data-overlay-active', 'true');
   await page.getByRole('button', { name: 'Close option details' }).click();
+  await expect(firstRow).not.toHaveAttribute('data-overlay-active');
+  await page.screenshot({ path: testInfo.outputPath('screener-loaded.png') });
   await firstRow.getByRole('link').click();
   await expect(page).toHaveURL(/\/options\//);
   await expect(page.getByRole('dialog')).toHaveCount(0);

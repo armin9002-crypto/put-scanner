@@ -1,3 +1,4 @@
+import { updateFinancialTableScroll } from '../lib/financialTableScroll';
 import { lazy, Suspense, useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { ETF_LIST } from '../lib/etfs';
@@ -49,6 +50,7 @@ interface ScreenerCriteria {
 }
 
 interface DrawerSelection {
+  sourceRowKey: string;
   option: OptionDetail;
   ticker: string;
   expirationLabel: string;
@@ -910,11 +912,11 @@ export default function ScreenerPage() {
         {loadError && !loading && !loaded ? <div className="screener-mobile-state screener-mobile-state--error px-6 text-center"><AlertTriangle className="mx-auto mb-3 h-6 w-6" style={{ color: 'var(--red)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Screener load failed</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>{loadError}</p><button type="button" onClick={() => void handleLoad()} className="mobile-sheet-action secondary mt-4"><RefreshCw className="h-4 w-4" /> Retry</button></div> : !loaded && !loading ? <div className="screener-mobile-state screener-mobile-state--ready px-6 text-center"><Search className="mx-auto mb-3 h-6 w-6" style={{ color: 'var(--text-dim)' }} /><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Ready to screen</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Choose criteria, then run the screener.</p></div> : loaded && sortedRows.length === 0 ? <div className="screener-mobile-state screener-mobile-state--empty px-6 text-center"><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>{noMatchTitle}</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>{noMatchDescription}</p><button type="button" onClick={() => setMobileFiltersOpen(true)} className="mobile-sheet-action secondary mt-4">Adjust filters</button></div> : (
           <MobileFinancialTable label="Screener results" columns={mobileScreenerColumns} busy={loading}>
             {sortedRows.map(row => {
-              const openDetails = () => setSelectedOption({ option: optionDetailFromScreenerRow(row), ticker: row.ticker, expirationLabel: row.expLabel, dte: row.dte, underlyingPrice: row.currentPrice != null && row.currentPrice > 0 ? row.currentPrice : null });
+              const openDetails = () => setSelectedOption({ sourceRowKey: `${row.ticker}-${row.expDate}-${row.strike}`, option: optionDetailFromScreenerRow(row), ticker: row.ticker, expirationLabel: row.expLabel, dte: row.dte, underlyingPrice: row.currentPrice != null && row.currentPrice > 0 ? row.currentPrice : null });
               const freshness = getOptionLastTradeFreshness(row.lastTradeDate);
               const integrity = row.integrityStatus && row.integrityStatus !== 'clean' ? `${row.integrityStatus === 'invalid' ? 'Invalid quote' : 'Degraded quote'}${row.integrityReasonCodes?.length ? ` · ${row.integrityReasonCodes.join(', ')}` : ''}` : undefined;
               return (
-                <tr key={`${row.ticker}-${row.expDate}-${row.strike}`} className="mobile-financial-table-row" tabIndex={0} aria-label={`Open ${row.ticker} ${row.expDate} ${formatPrice(row.strike)} put details${integrity ? `. ${integrity}` : ''}`} onClick={openDetails} onKeyDown={event => {
+                <tr key={`${row.ticker}-${row.expDate}-${row.strike}`} className="mobile-financial-table-row" data-overlay-active={selectedOption?.sourceRowKey === `${row.ticker}-${row.expDate}-${row.strike}` || undefined} tabIndex={0} aria-label={`Open ${row.ticker} ${row.expDate} ${formatPrice(row.strike)} put details${integrity ? `. ${integrity}` : ''}`} onClick={openDetails} onKeyDown={event => {
                   if (event.target !== event.currentTarget) return;
                   if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openDetails(); }
                 }}>
@@ -1334,7 +1336,7 @@ export default function ScreenerPage() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => setSelectedOption({ option: optionDetailFromScreenerRow(row), ticker: row.ticker, expirationLabel: row.expLabel, dte: row.dte, underlyingPrice: row.currentPrice != null && row.currentPrice > 0 ? row.currentPrice : null })}
+                  onClick={() => setSelectedOption({ sourceRowKey: `${row.ticker}-${row.expDate}-${row.strike}`, option: optionDetailFromScreenerRow(row), ticker: row.ticker, expirationLabel: row.expLabel, dte: row.dte, underlyingPrice: row.currentPrice != null && row.currentPrice > 0 ? row.currentPrice : null })}
                   className="pressable tap-target rounded-lg px-3 text-right"
                   style={{ backgroundColor: 'var(--accent-bg)', border: '1px solid var(--accent-border)' }}
                   aria-label={`Open option details for ${row.ticker} ${formatPrice(row.strike)} put`}
@@ -1366,7 +1368,7 @@ export default function ScreenerPage() {
 
         {/* Table */}
         <div className="hidden rounded-xl overflow-hidden max-w-full md:block" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-          <div className="overflow-x-auto max-w-full overscroll-contain">
+          <div onScroll={updateFinancialTableScroll} className="financial-table-scroll overflow-x-auto max-w-full overscroll-contain">
             <table className="screener-table financial-table min-w-[560px] md:min-w-[1120px] xl:min-w-0 w-full text-xs">
               <thead className="sticky top-0 z-10">
                 <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
@@ -1426,7 +1428,7 @@ export default function ScreenerPage() {
                   const bgStyle = idx % 2 !== 0 ? { backgroundColor: 'var(--row-alt)' } : {};
 
                   return (
-                    <tr key={`${row.ticker}-${row.expDate}-${row.strike}`} className="transition-colors" style={{ borderBottom: '1px solid var(--border)', ...bgStyle }}>
+                    <tr key={`${row.ticker}-${row.expDate}-${row.strike}`} data-overlay-active={selectedOption?.sourceRowKey === `${row.ticker}-${row.expDate}-${row.strike}` || undefined} className="transition-colors" style={{ borderBottom: '1px solid var(--border)', ...bgStyle }}>
                       <td className="screener-identity-cell px-2 py-1 text-left whitespace-nowrap sticky left-0 z-[2] border-r" style={{ borderColor: 'var(--border)', backgroundColor: bgStyle.backgroundColor || 'var(--surface)' }}>
                         <div className="flex min-h-[24px] items-center gap-1.5 whitespace-nowrap">
                           <Link
@@ -1445,7 +1447,7 @@ export default function ScreenerPage() {
                       <td className="px-2 py-1 text-right font-mono font-semibold">
                         <button
                           type="button"
-                          onClick={() => setSelectedOption({
+                          onClick={() => setSelectedOption({ sourceRowKey: `${row.ticker}-${row.expDate}-${row.strike}`,
                             option: optionDetailFromScreenerRow(row),
                             ticker: row.ticker,
                             expirationLabel: row.expLabel,

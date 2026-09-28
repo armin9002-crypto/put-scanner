@@ -1,3 +1,4 @@
+import { updateFinancialTableScroll } from '../lib/financialTableScroll';
 import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { OptionIntegrityReasonCode, OptionIntegrityStatus, OptionsChainData, SortField, SortDirection } from '../lib/types';
@@ -1332,7 +1333,7 @@ export default function OptionsPage() {
               </div>
               {freshnessLabel && <span className="status-badge" data-status={staleCachedChain ? 'failed' : 'fresh'}>{freshnessLabel}</span>}
             </div>
-            <div className="max-h-[calc(100dvh-230px)] min-h-[260px] max-w-full overflow-auto overscroll-contain sm:max-h-[calc(100dvh-250px)]">
+            <div onScroll={updateFinancialTableScroll} className="financial-table-scroll max-h-[calc(100dvh-230px)] min-h-[260px] max-w-full overflow-auto overscroll-contain sm:max-h-[calc(100dvh-250px)]">
               <table className="financial-table min-w-[520px] md:min-w-[980px] lg:min-w-[1180px] xl:min-w-0 w-full table-fixed text-xs">
                 <thead
                   style={{

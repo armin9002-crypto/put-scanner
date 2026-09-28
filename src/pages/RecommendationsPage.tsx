@@ -156,6 +156,7 @@ function RecommendationCard({
   selection,
   asOf,
   watched,
+  overlayActive,
   onEvidence,
   onOpen,
   onWatch,
@@ -164,6 +165,7 @@ function RecommendationCard({
   selection: RecommendationSelection;
   asOf: string;
   watched: boolean;
+  overlayActive: boolean;
   onEvidence: () => void;
   onOpen: () => void;
   onWatch: () => void;
@@ -181,7 +183,7 @@ function RecommendationCard({
   const technical = underlyingTechnicalStatePresentation(candidate.underlying.technicalAssessment.state);
   const moneyness = candidate.canonicalRow.moneynessState ? shortPutMoneynessPresentation(candidate.canonicalRow.moneynessState) : null;
   return (
-    <article className="recommendation-card surface-card">
+    <article className="recommendation-card surface-card" data-overlay-active={overlayActive || undefined}>
       <button type="button" className="recommendation-card__summary" onClick={onEvidence}>
         <div className="min-w-0">
           <div className="recommendation-card__eyebrow">#{selection.shortlistRank} {distinctions.length > 0 ? `· ${distinctions.join(' · ')}` : '· RANKED OPPORTUNITY'}</div>
@@ -483,7 +485,7 @@ export default function RecommendationsPage() {
               <div className="recommendations-verdict-strip__coverage"><span>{run.coverage.contractsEvaluated.toLocaleString()} contracts</span><span>{run.coverage.expirationsCovered.reduce((sum, item) => sum + item.expirationDates.length, 0)} chains</span><span>{run.coverage.hardFailedBeforeChainAcquisition.length} underlying hard-fails</span></div>
             </section>
 
-            {surfaced.length > 0 && <section className="recommendations-primary-section"><SectionHeader title="Top Opportunities" description={`Ranked policy survivors · maximum ${RECOMMENDATION_POLICY.selection.maximumShortlistSize}, no minimum. Open Evidence for the complete audit trail.`} /><div className="recommendations-primary-grid">{surfaced.map(({ selection, candidate }) => <RecommendationCard key={candidate.id} candidate={candidate} selection={selection} asOf={run.asOf} watched={watchIds.has(makeWatchlistId(candidate.ticker, candidate.expiration, candidate.strike))} onEvidence={() => setEvidenceCandidateId(candidate.id)} onOpen={() => openContract(candidate)} onWatch={() => toggleWatch(candidate)} />)}</div></section>}
+            {surfaced.length > 0 && <section className="recommendations-primary-section"><SectionHeader title="Top Opportunities" description={`Ranked policy survivors · maximum ${RECOMMENDATION_POLICY.selection.maximumShortlistSize}, no minimum. Open Evidence for the complete audit trail.`} /><div className="recommendations-primary-grid">{surfaced.map(({ selection, candidate }) => <RecommendationCard overlayActive={evidenceCandidateId === candidate.id || drawerCandidateId === candidate.id} key={candidate.id} candidate={candidate} selection={selection} asOf={run.asOf} watched={watchIds.has(makeWatchlistId(candidate.ticker, candidate.expiration, candidate.strike))} onEvidence={() => setEvidenceCandidateId(candidate.id)} onOpen={() => openContract(candidate)} onWatch={() => toggleWatch(candidate)} />)}</div></section>}
 
             <HowRecommendationsWork run={run} />
 

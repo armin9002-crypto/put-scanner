@@ -1,3 +1,5 @@
+import { ChangedValue } from '../components/ui/ChangedValue';
+import { updateFinancialTableScroll } from '../lib/financialTableScroll';
 import { resolvePortfolioMark } from '../lib/portfolioValuation';
 import { uiTextCssPx } from '../lib/uiTextSizePreference';
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type MouseEvent as ReactMouseEvent, type ReactNode, type SetStateAction } from 'react';
@@ -176,6 +178,7 @@ interface TradeModalProps {
   onDelete: (id: string) => void;
 }
 interface DrawerSelection {
+  sourceRowKey: string;
   option: OptionDetail;
   ticker: string;
   expirationLabel: string;
@@ -637,7 +640,7 @@ function SummaryCard({ label, value, color, detail }: { label: string; value: st
   return (
     <div className="portfolio-summary-card rounded-lg p-2 min-w-0" title={detail} style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
       <div className="portfolio-summary-card__label text-[9px] uppercase tracking-wider mb-0.5" title={detail ?? label} style={{ color: 'var(--text-dim)' }}>{label}</div>
-      <div key={value} className="portfolio-summary-card__value motion-value text-xs xl:text-sm font-mono font-semibold tabular-nums" title={detail ?? value} style={{ color: color ?? 'var(--text)' }}>{value}</div>
+      <ChangedValue value={value} className="portfolio-summary-card__value text-xs xl:text-sm font-mono font-semibold tabular-nums" title={detail ?? value} style={{ color: color ?? 'var(--text)' }} />
     </div>
   );
 }
@@ -798,7 +801,7 @@ function CompactExposureBars({
                   </span>
                 </div>
                 <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--surface-alt)' }}>
-                  <div className="h-full rounded-full" style={{ width: `${width}%`, backgroundColor: 'var(--accent)' }} />
+                  <div className="motion-analytical-bar h-full rounded-full" style={{ width: `${width}%`, backgroundColor: 'var(--accent)' }} />
                 </div>
                 <div className="flex justify-between gap-2 mt-1 text-[11px] leading-none" style={{ color: 'var(--text-dim)' }}>
                   <span>{group.tradeCount} position{group.tradeCount === 1 ? '' : 's'}</span>
@@ -936,7 +939,7 @@ function ConcentrationBars({
                   <span className="font-mono tabular-nums flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>{formatCompactCurrency(group.grossRisk)}</span>
                 </div>
                 <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--surface-alt)' }}>
-                  <div className="h-full rounded-full" style={{ width: `${width}%`, backgroundColor: 'var(--accent)' }} />
+                  <div className="motion-analytical-bar h-full rounded-full" style={{ width: `${width}%`, backgroundColor: 'var(--accent)' }} />
                 </div>
                 <div className="flex justify-between gap-2 mt-1 text-[11px] leading-none" style={{ color: 'var(--text-dim)' }}>
                   <span>{formatPctValue(percentOfTotal(group.grossRisk, totalGrossRisk))}</span>
@@ -2219,6 +2222,7 @@ export default function PortfolioPage() {
     const askYield = calculateYieldPercent(executableOptionPrice(ask), trade.strike, dte);
     const lastYield = calculateYieldPercent(executableOptionPrice(last), trade.strike, dte);
     setDrawerSelection({
+      sourceRowKey: trade.id,
       ticker: trade.ticker,
       expirationLabel: expiryLabel(trade.expiration),
       dte,
@@ -2273,7 +2277,7 @@ export default function PortfolioPage() {
     const freshness = getPortfolioQuoteFreshness(trade);
     const visibleFreshness = resolvePortfolioMark(trade, markBasis).source === 'last_fallback' ? 'Stale Last' : freshness.state === 'stale' || freshness.state === 'unavailable' ? freshness.label : '';
     const entryDate = isPortfolioContractPosition(trade) ? formatPositionEntryDate(trade) : formatHistoryDate(trade.soldDate);
-    return <MobilePositionRow key={trade.id} ticker={trade.ticker} strike={formatCurrency(trade.strike)} contracts={trade.contracts} expiration={formatDteValue(calculateRemainingDte(trade))} entryDate={entryDate} pnl={formatCurrency(calculateTotalGainLoss(trade, markBasis), 0)} captured={formatPctValue(calculatePercentCaptured(trade, markBasis))} mark={formatOptionPrice(calculateCurrentOptionMark(trade, markBasis))} entryDelta={formatDelta(trade.entryDelta)} showEntryDelta={showEntryDeltas} currentDelta={formatDelta(trade.latestMarketData?.delta)} entryIv={formatPercentPoints(trade.entryIv, 1)} currentIv={formatPercentPoints(trade.latestMarketData?.iv, 1)} showEntryIv={showEntryDeltas} freshness={visibleFreshness} distance={formatPctValue(calculateDistanceToStrike(trade))} entryVix={isFiniteNumber(trade.entryVixClose) ? trade.entryVixClose.toFixed(2) : DASH} health={getPositionHealth(trade, markBasis)} onOpen={() => openDrawer(trade)} onEdit={() => editContractPosition(trade)} />;
+    return <MobilePositionRow key={trade.id} overlayActive={drawerSelection?.sourceRowKey === trade.id} ticker={trade.ticker} strike={formatCurrency(trade.strike)} contracts={trade.contracts} expiration={formatDteValue(calculateRemainingDte(trade))} entryDate={entryDate} pnl={formatCurrency(calculateTotalGainLoss(trade, markBasis), 0)} captured={formatPctValue(calculatePercentCaptured(trade, markBasis))} mark={formatOptionPrice(calculateCurrentOptionMark(trade, markBasis))} entryDelta={formatDelta(trade.entryDelta)} showEntryDelta={showEntryDeltas} currentDelta={formatDelta(trade.latestMarketData?.delta)} entryIv={formatPercentPoints(trade.entryIv, 1)} currentIv={formatPercentPoints(trade.latestMarketData?.iv, 1)} showEntryIv={showEntryDeltas} freshness={visibleFreshness} distance={formatPctValue(calculateDistanceToStrike(trade))} entryVix={isFiniteNumber(trade.entryVixClose) ? trade.entryVixClose.toFixed(2) : DASH} health={getPositionHealth(trade, markBasis)} onOpen={() => openDrawer(trade)} onEdit={() => editContractPosition(trade)} />;
   };
 
   if (isPhone && !isPhoneLandscape) {
@@ -2296,7 +2300,7 @@ export default function PortfolioPage() {
                   ['Current AY', formatPctValue(markSummary.portfolioCurrentAnnualizedYield), 'var(--text)'],
                   ['Avg Delta', formatDelta(markSummary.weightedAverageDelta), 'var(--text)'],
                   ['Avg DTE', isFiniteNumber(summary.weightedAverageRemainingDte) ? `${Math.round(summary.weightedAverageRemainingDte)} DTE` : DASH, 'var(--text)'],
-                ].map(([label, value, color], index) => <div key={label} className="portfolio-mobile-metric min-w-0" data-primary={index < 4 ? 'true' : 'false'}><div className="portfolio-mobile-metric-label uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>{label}</div><div key={value} className="portfolio-mobile-metric-value motion-value font-mono font-semibold tabular-nums" style={{ color }}>{value}</div></div>)}
+                ].map(([label, value, color], index) => <div key={label} className="portfolio-mobile-metric min-w-0" data-primary={index < 4 ? 'true' : 'false'}><div className="portfolio-mobile-metric-label uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>{label}</div><ChangedValue value={value} className="portfolio-mobile-metric-value font-mono font-semibold tabular-nums" style={{ color }} /></div>)}
               </div>
               <div className="portfolio-mobile-mark-control mt-2 flex items-center gap-3"><span className="portfolio-mobile-mark-label flex-none"><b>Mark basis</b><small>Revalues P&amp;L + Current AY</small></span><div className="min-w-0 flex-1"><MobileSegmentedControl value={markBasis} onChange={setMarkBasis} label="Portfolio mark basis" options={MARK_BASIS_OPTIONS.map(value => ({ value, label: value.charAt(0).toUpperCase() + value.slice(1) }))} /></div></div>
               {marketDetails}
@@ -2563,7 +2567,7 @@ export default function PortfolioPage() {
             </div>
 
             <div className="portfolio-schedule-surface hidden md:block rounded-lg overflow-hidden" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-              <div className="overflow-x-auto max-w-full overscroll-contain">
+              <div onScroll={updateFinancialTableScroll} className="financial-table-scroll overflow-x-auto max-w-full overscroll-contain">
                 <table className="financial-table min-w-max w-full text-[12px] leading-none">
                   <thead className="sticky top-0 z-10">
                     <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
@@ -2647,7 +2651,7 @@ export default function PortfolioPage() {
                       const redeployBadges = getRedeployBadges(trade, markBasis);
                       const health = getPositionHealth(trade, markBasis);
                       return (
-                        <tr key={trade.id} data-trade-id={trade.id} data-trade-ticker={trade.ticker.trim().toUpperCase()} className="portfolio-schedule-trade-highlight scroll-mt-20" style={{ borderBottom: '1px solid var(--border)', backgroundColor: highlightedTradeId === trade.id || activeScheduleTicker === trade.ticker.trim().toUpperCase() ? 'var(--accent-bg)' : index % 2 ? 'var(--row-alt)' : 'transparent', boxShadow: highlightedTradeId === trade.id ? 'inset 3px 0 var(--accent)' : undefined, opacity: activeScheduleTicker && activeScheduleTicker !== trade.ticker.trim().toUpperCase() ? 0.72 : 1 }}>
+                        <tr key={trade.id} data-overlay-active={drawerSelection?.sourceRowKey === trade.id || undefined} data-trade-id={trade.id} data-trade-ticker={trade.ticker.trim().toUpperCase()} className="portfolio-schedule-trade-highlight scroll-mt-20" style={{ borderBottom: '1px solid var(--border)', backgroundColor: highlightedTradeId === trade.id || activeScheduleTicker === trade.ticker.trim().toUpperCase() ? 'var(--accent-bg)' : index % 2 ? 'var(--row-alt)' : 'transparent', boxShadow: highlightedTradeId === trade.id ? 'inset 3px 0 var(--accent)' : undefined, opacity: activeScheduleTicker && activeScheduleTicker !== trade.ticker.trim().toUpperCase() ? 0.72 : 1 }}>
                           <td className="px-2 py-1 text-left font-mono font-bold whitespace-nowrap">
                             <Link to={buildOptionsPath(trade.ticker, trade.expiration)} state={optionsNavigationState} onClick={event => navigateToPortfolioOptions(event, isPortfolioContractPosition(trade) ? trade.lots[0] : trade)} className="underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</Link>
                           </td>
@@ -3232,7 +3236,7 @@ function ArchiveHistorySection({
         </div>
       </div>
       <div className={`${desktopHistoryClass} rounded-lg overflow-hidden`} style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-        <div className="overflow-x-auto max-w-full overscroll-contain">
+        <div onScroll={updateFinancialTableScroll} className="financial-table-scroll overflow-x-auto max-w-full overscroll-contain">
           <table className="portfolio-history-table financial-table min-w-max w-full text-[12px] leading-none">
             <thead>
               <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>

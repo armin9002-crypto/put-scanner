@@ -20,6 +20,7 @@ export default function MobilePositionRow({
   distance,
   entryVix,
   health,
+  overlayActive = false,
   onOpen,
   onEdit,
 }: {
@@ -41,6 +42,7 @@ export default function MobilePositionRow({
   distance: string;
   entryVix: string;
   health: { label: string; color: string; bg: string; border: string; title: string };
+  overlayActive?: boolean;
   onOpen: () => void;
   onEdit: () => void;
 }) {
@@ -49,7 +51,7 @@ export default function MobilePositionRow({
   const capturedColor = captured.startsWith('-') ? 'var(--red)' : 'var(--green)';
 
   return (
-    <article className="mobile-position-row" data-expanded={expanded ? 'true' : 'false'}>
+    <article className="mobile-position-row" data-overlay-active={overlayActive || undefined} data-expanded={expanded ? 'true' : 'false'}>
       <div className="mobile-position-row__summary">
         <button
           type="button"

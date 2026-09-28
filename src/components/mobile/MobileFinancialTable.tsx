@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { updateFinancialTableScroll } from '../../lib/financialTableScroll';
 
 export interface MobileFinancialColumn {
   key: string;
@@ -18,7 +19,7 @@ export default function MobileFinancialTable({ label, columns, children, busy = 
   busy?: boolean;
 }) {
   return (
-    <div className="mobile-financial-table-scroll" role="region" aria-label={`${label}, scroll for more columns and rows`} tabIndex={0}>
+    <div className="mobile-financial-table-scroll" onScroll={updateFinancialTableScroll} role="region" aria-label={`${label}, scroll for more columns and rows`} tabIndex={0}>
       <table className="mobile-financial-table" aria-label={label} aria-busy={busy}
         style={{ width: `calc(${columns.reduce((total, column) => total + column.width, 0)}rem * var(--ui-text-scale))` }}>
         <colgroup>{columns.map(column => <col key={column.key} style={{ width: `calc(${column.width}rem * var(--ui-text-scale))` }} />)}</colgroup>

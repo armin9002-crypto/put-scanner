@@ -1,3 +1,4 @@
+import { updateFinancialTableScroll } from '../lib/financialTableScroll';
 import { Fragment, lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef, type MouseEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -44,6 +45,7 @@ type SortField = 'ticker' | 'strike' | 'expiry' | 'dte' | 'moneyness' | 'bid' | 
 type SortDir = 'asc' | 'desc';
 
 interface DrawerSelection {
+  sourceRowKey: string;
   option: OptionDetail;
   ticker: string;
   expirationLabel: string;
@@ -447,13 +449,13 @@ export default function WatchlistPage() {
             {groupedRows.flatMap(group => [
               groupMode !== 'none' ? <MobileFinancialTableDivider key={`${group.key}-divider`} columns={mobileWatchlistColumns.length}>{groupMode === 'underlying' ? group.label : `${group.label} · ${group.rows.length} saved`}</MobileFinancialTableDivider> : null,
               ...(group.rows as unknown as LiveRow[]).map(row => {
-                const openDetails = () => setSelectedOption({ option: optionDetailFromWatchlistRow(row), ticker: row.ticker, expirationLabel: row.expiryFormatted, dte: row.dte, underlyingPrice: row.currentPrice });
+                const openDetails = () => setSelectedOption({ sourceRowKey: row.id, option: optionDetailFromWatchlistRow(row), ticker: row.ticker, expirationLabel: row.expiryFormatted, dte: row.dte, underlyingPrice: row.currentPrice });
                 const inOpenPortfolio = isWatchlistContractInOpenPortfolio(row, openPortfolioContractKeys);
                 const muted = row.expired || row.status === 'unavailable';
                 const freshness = getOptionLastTradeFreshness(row.lastTradeDate);
                 const path = buildOptionsPath(row.ticker, row.expiryTimestamp);
                 return (
-                  <tr key={row.id} className="mobile-financial-table-row" style={{ opacity: muted ? 0.65 : 1 }} tabIndex={0} aria-label={`Open ${row.ticker} ${row.expiry} ${formatMoney(row.strike)} put details`} onClick={openDetails} onKeyDown={event => {
+                  <tr key={row.id} className="mobile-financial-table-row" data-overlay-active={selectedOption?.sourceRowKey === row.id || undefined} style={{ opacity: muted ? 0.65 : 1 }} tabIndex={0} aria-label={`Open ${row.ticker} ${row.expiry} ${formatMoney(row.strike)} put details`} onClick={openDetails} onKeyDown={event => {
                     if (event.target !== event.currentTarget) return;
                     if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openDetails(); }
                   }}>
@@ -610,7 +612,7 @@ export default function WatchlistPage() {
                         <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Strike</div>
                         <button
                           type="button"
-                          onClick={() => setSelectedOption({
+                          onClick={() => setSelectedOption({ sourceRowKey: row.id,
                             option: optionDetailFromWatchlistRow(row),
                             ticker: row.ticker,
                             expirationLabel: row.expiryFormatted,
@@ -692,7 +694,7 @@ export default function WatchlistPage() {
               <div><h2>Saved contracts</h2><p>Quotes, yield context, and the next review note.</p></div>
               <div className="watchlist-table-toolbar__meta"><span className="watchlist-table-scroll-hint">Scroll for status &amp; notes →</span><span>{sortedRows.length} saved</span></div>
             </div>
-            <div className="watchlist-table-scroll overflow-x-auto max-w-full overscroll-contain" tabIndex={0} aria-label="Saved contracts table. Scroll horizontally for status and notes.">
+            <div onScroll={updateFinancialTableScroll} className="financial-table-scroll watchlist-table-scroll overflow-x-auto max-w-full overscroll-contain" tabIndex={0} aria-label="Saved contracts table. Scroll horizontally for status and notes.">
               <table className="financial-table min-w-max w-full text-[11px]">
                 <thead className="sticky top-0 z-10">
                   <tr style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}>
@@ -730,7 +732,7 @@ export default function WatchlistPage() {
                     return (
                       <Fragment key={row.id}>
                       {groupMode !== 'none' && groupStart && <tr className="watchlist-group-header" style={{ backgroundColor: 'var(--surface-alt)', borderBottom: '1px solid var(--border)' }}><th colSpan={columns.length + 3} className="px-2 py-1 text-left text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>{groupMode === 'underlying' ? group?.label : `${group?.label} · ${group?.rows.length} saved`}</th></tr>}
-                      <tr className="transition-colors" style={{ borderBottom: '1px solid var(--border)', ...bgStyle }}>
+                      <tr data-overlay-active={selectedOption?.sourceRowKey === row.id || undefined} className="transition-colors" style={{ borderBottom: '1px solid var(--border)', ...bgStyle }}>
                         <td className="watchlist-actions-column px-1.5 py-0.5 text-center" style={mutedStyle}>
                           <div className="watchlist-actions-cell__content">
                           <button
@@ -762,7 +764,7 @@ export default function WatchlistPage() {
                         <td className="px-1.5 py-0.5 text-right font-mono tabular-nums whitespace-nowrap" style={mutedStyle}>
                           <button
                             type="button"
-                            onClick={() => setSelectedOption({
+                            onClick={() => setSelectedOption({ sourceRowKey: row.id,
                               option: optionDetailFromWatchlistRow(row),
                               ticker: row.ticker,
                               expirationLabel: row.expiryFormatted,
