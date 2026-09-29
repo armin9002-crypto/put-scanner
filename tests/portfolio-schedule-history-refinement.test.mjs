@@ -121,3 +121,26 @@ test('Portfolio header no longer carries the removed subtitle or replacement cop
   assert.match(header, /title="Portfolio"/);
   assert.doesNotMatch(header, /description=/);
 });
+
+test('Portfolio presentation hierarchy, analytics drill feedback, and desktop action discovery stay presentation-only', async () => {
+  const [source, styles] = await Promise.all([
+    read('src/pages/PortfolioPage.tsx'),
+    read('src/index.css'),
+  ]);
+  for (const label of ['Premium', 'Gross Risk', 'Gain/Loss', '% Captured']) {
+    assert.match(source, new RegExp(`<SummaryCard label="${label.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}"[^>]*priority="primary"`));
+  }
+  for (const label of ['Entry Wtd. Avg. AY', 'Current Wtd. Avg. AY', 'Weighted Avg Delta', 'Weighted Avg DTE']) {
+    assert.match(source, new RegExp(`<SummaryCard label="${label.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}"[^>]*priority="secondary"`));
+  }
+  assert.match(source, /scrollToSchedule\(`\[data-group-key="\$\{ticker\}"\]`\)/);
+  assert.match(source, /scrollToSchedule\(`\[data-trade-id="\$\{trade\.id\}"\]`\)/);
+  assert.match(source, /startTransientHighlight\('group', ticker\)/);
+  assert.match(source, /startTransientHighlight\('trade', trade\.id\)/);
+  assert.match(source, /highlightedTradeId === trade\.id \|\| highlightedScheduleGroupKey === trade\.ticker\.trim\(\)\.toUpperCase\(\) \? 'is-drill-highlight'/);
+  assert.match(styles, /@media \(prefers-reduced-motion: no-preference\) \{[\s\S]*portfolio-drill-pulse 950ms ease-out 1/);
+  assert.match(styles, /@media \(min-width: 768px\) and \(hover: hover\) and \(pointer: fine\)/);
+  assert.match(styles, /\.portfolio-history-actions > \.icon-button:focus-visible[\s\S]*opacity: 1/);
+  assert.match(source, /aria-label=\{`Edit \$\{trade\.ticker\} trade`\}/);
+  assert.match(source, /aria-label=\{`Delete \$\{trade\.ticker\} trade`\}/);
+});

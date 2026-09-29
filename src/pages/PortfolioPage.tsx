@@ -636,9 +636,9 @@ function completeSumValues(values: Array<number | null | undefined>): number | n
   return sumValues(values);
 }
 
-function SummaryCard({ label, value, color, detail }: { label: string; value: string; color?: string; detail?: string }) {
+function SummaryCard({ label, value, color, detail, priority }: { label: string; value: string; color?: string; detail?: string; priority?: 'primary' | 'secondary' }) {
   return (
-    <div className="portfolio-summary-card rounded-lg p-2 min-w-0" title={detail} style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+    <div className="portfolio-summary-card rounded-lg p-2 min-w-0" data-priority={priority} title={detail} style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
       <div className="portfolio-summary-card__label text-[9px] uppercase tracking-wider mb-0.5" title={detail ?? label} style={{ color: 'var(--text-dim)' }}>{label}</div>
       <ChangedValue value={value} className="portfolio-summary-card__value text-xs xl:text-sm font-mono font-semibold tabular-nums" title={detail ?? value} style={{ color: color ?? 'var(--text)' }} />
     </div>
@@ -779,7 +779,7 @@ function CompactExposureBars({
       {groups.length === 0 ? (
         <p className="text-xs" style={{ color: 'var(--text-dim)' }}>{emptyLabel}</p>
       ) : (
-        <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1 min-h-0">
+        <div className="space-y-1.5 max-h-[240px] overflow-y-auto pr-1 min-h-0">
           {groups.map(group => {
             const width = max > 0 ? Math.max(3, (group.grossRisk / max) * 100) : 0;
             const tooltip = [
@@ -838,7 +838,7 @@ function NeedsAttentionList({
       {items.length === 0 ? (
         <p className="text-xs" style={{ color: 'var(--text-dim)' }}>No positions need review.</p>
       ) : (
-        <div className="space-y-1.5 max-h-[240px] overflow-y-auto pr-1 min-h-0">
+        <div className="space-y-1 max-h-[240px] overflow-y-auto pr-1 min-h-0">
           {items.map(trade => {
             const beDistance = getTradeDistanceToBreakeven(trade);
             const strikeDistance = getTradeDistanceToStrike(trade);
@@ -846,7 +846,7 @@ function NeedsAttentionList({
             const quoteEligible = isPortfolioQuoteDecisionEligible(trade);
             const attentionAssessment = assessPortfolioAttention(trade);
             return (
-              <div key={trade.id} className="grid grid-cols-[minmax(88px,1fr)_auto] gap-2 rounded px-2 py-1.5" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
+              <div key={trade.id} className="portfolio-analytics-item grid grid-cols-[minmax(88px,1fr)_auto] gap-2 rounded px-2 py-1.5" style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5 min-w-0">
                     <Link to={buildOptionsPath(trade.ticker, trade.expiration)} state={optionsNavigationState ?? PORTFOLIO_DEFAULT_OPTIONS_STATE} onClick={event => onOptionsNavigate?.(event, trade)} className="font-mono text-[13px] leading-none font-bold truncate underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</Link>
@@ -883,9 +883,9 @@ function CloseCandidatesCard({ candidates, onNavigate, optionsNavigationState, o
       {candidates.length === 0 ? (
         <p className="text-xs" style={{ color: 'var(--text-dim)' }}>No obvious close candidates at the selected mark.</p>
       ) : (
-        <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1 min-h-0">
+        <div className="space-y-1 max-h-[220px] overflow-y-auto pr-1 min-h-0">
           {candidates.map(candidate => (
-            <div key={candidate.trade.id} className="block w-full rounded px-2 py-1.5 text-left" title={candidate.reasons.join(', ')} style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
+            <div key={candidate.trade.id} className="portfolio-analytics-item block w-full rounded px-2 py-1.5 text-left" title={candidate.reasons.join(', ')} style={{ backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
               <div className="grid grid-cols-[minmax(88px,1fr)_auto_auto] gap-2 items-baseline">
                 <Link to={buildOptionsPath(candidate.trade.ticker, candidate.trade.expiration)} state={optionsNavigationState ?? PORTFOLIO_DEFAULT_OPTIONS_STATE} onClick={event => onOptionsNavigate?.(event, candidate.trade)} className="text-left font-mono text-[13px] leading-none font-bold truncate underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{candidate.trade.ticker}</Link>
                 <span className="font-mono text-[12px] leading-none tabular-nums" style={{ color: pnlColor(candidate.percentCaptured) }}>{formatPctValue(candidate.percentCaptured)}</span>
@@ -1519,7 +1519,7 @@ export default function PortfolioPage() {
   const [resolvingArchiveIds, setResolvingArchiveIds] = useState<Set<string>>(() => new Set());
   const [worthlessConfirmationTrade, setWorthlessConfirmationTrade] = useState<PortfolioTrade | null>(null);
   const [activeScheduleTicker, setActiveScheduleTicker] = useState<string | null>(null);
-  const [highlightedExpiration, setHighlightedExpiration] = useState<string | null>(null);
+  const [highlightedScheduleGroupKey, setHighlightedScheduleGroupKey] = useState<string | null>(null);
   const [highlightedTradeId, setHighlightedTradeId] = useState<string | null>(null);
   const [mobileAnalytics, setMobileAnalytics] = useState<'maturity' | 'ticker' | 'attention' | 'close'>('maturity');
   const [analyticsExpanded, setAnalyticsExpanded] = useState(false);
@@ -1703,12 +1703,12 @@ export default function PortfolioPage() {
     }));
   }, []);
 
-  const startTransientHighlight = useCallback((kind: 'expiration' | 'trade', value: string) => {
+  const startTransientHighlight = useCallback((kind: 'group' | 'trade', value: string) => {
     if (highlightTimerRef.current) window.clearTimeout(highlightTimerRef.current);
-    if (kind === 'expiration') setHighlightedExpiration(value);
-    else setHighlightedTradeId(value);
+    setHighlightedScheduleGroupKey(kind === 'group' ? value : null);
+    setHighlightedTradeId(kind === 'trade' ? value : null);
     highlightTimerRef.current = window.setTimeout(() => {
-      setHighlightedExpiration(null);
+      setHighlightedScheduleGroupKey(null);
       setHighlightedTradeId(null);
     }, 2000);
   }, []);
@@ -1716,9 +1716,8 @@ export default function PortfolioPage() {
   const drillToExpiration = useCallback((group: PortfolioExposureGroup) => {
     setGroupMode('expiration');
     setActiveScheduleTicker(null);
-    setHighlightedTradeId(null);
     setCollapsedExpiryGroups(current => ({ ...current, [group.key]: false }));
-    startTransientHighlight('expiration', group.key);
+    startTransientHighlight('group', group.key);
     scrollToSchedule(`[data-expiration="${group.key}"]`);
   }, [scrollToSchedule, startTransientHighlight]);
 
@@ -1726,15 +1725,13 @@ export default function PortfolioPage() {
     const ticker = group.key.trim().toUpperCase();
     setGroupMode('underlying');
     setActiveScheduleTicker(ticker);
-    setHighlightedExpiration(null);
-    setHighlightedTradeId(null);
+    startTransientHighlight('group', ticker);
     setCollapsedUnderlyingGroups(current => ({ ...current, [ticker]: false }));
     scrollToSchedule(`[data-group-key="${ticker}"]`);
-  }, [scrollToSchedule]);
+  }, [scrollToSchedule, startTransientHighlight]);
 
   const drillToTrade = useCallback((trade: PortfolioTrade) => {
     setActiveScheduleTicker(null);
-    setHighlightedExpiration(null);
     if (groupMode === 'expiration') setCollapsedExpiryGroups(current => ({ ...current, [trade.expiration]: false }));
     else if (groupMode === 'underlying') setCollapsedUnderlyingGroups(current => ({ ...current, [trade.ticker.trim().toUpperCase()]: false }));
     startTransientHighlight('trade', trade.id);
@@ -2411,14 +2408,14 @@ export default function PortfolioPage() {
             </div>
 
             <div className="portfolio-summary-grid motion-refresh-region hidden grid-cols-2 md:grid md:grid-cols-4 2xl:grid-cols-8 gap-1.5 mb-3" data-refreshing={refreshing}>
-              <SummaryCard label="Premium" value={formatCurrency(summary.totalPremiumCollected, 0)} color="var(--green)" />
-              <SummaryCard label="Gross Risk" value={formatCurrency(summary.totalEquityAtRisk, 0)} />
-              <SummaryCard label="Gain/Loss" value={formatCurrency(markSummary.totalGainLoss, 0)} color={pnlColor(markSummary.totalGainLoss)} />
-              <SummaryCard label="% Captured" value={formatPctValue(markSummary.percentCaptured)} color={pnlColor(markSummary.percentCaptured)} />
-              <SummaryCard label="Entry Wtd. Avg. AY" value={formatPctValue(markSummary.portfolioOriginalAnnualizedYield)} color="var(--accent-light)" />
-              <SummaryCard label="Current Wtd. Avg. AY" value={formatPctValue(markSummary.portfolioCurrentAnnualizedYield)} color="var(--accent-light)" detail={`Current AY coverage: ${currentAyCoverage.eligibleCount}/${currentAyCoverage.totalCount} open entries by Gross Risk.`} />
-              <SummaryCard label="Weighted Avg Delta" value={formatDelta(markSummary.weightedAverageDelta)} color={pnlColor(markSummary.weightedAverageDelta)} />
-              <SummaryCard label="Weighted Avg DTE" value={isFiniteNumber(summary.weightedAverageRemainingDte) ? `${Math.round(summary.weightedAverageRemainingDte)} DTE` : DASH} />
+              <SummaryCard label="Premium" value={formatCurrency(summary.totalPremiumCollected, 0)} color="var(--green)" priority="primary" />
+              <SummaryCard label="Gross Risk" value={formatCurrency(summary.totalEquityAtRisk, 0)} priority="primary" />
+              <SummaryCard label="Gain/Loss" value={formatCurrency(markSummary.totalGainLoss, 0)} color={pnlColor(markSummary.totalGainLoss)} priority="primary" />
+              <SummaryCard label="% Captured" value={formatPctValue(markSummary.percentCaptured)} color={pnlColor(markSummary.percentCaptured)} priority="primary" />
+              <SummaryCard label="Entry Wtd. Avg. AY" value={formatPctValue(markSummary.portfolioOriginalAnnualizedYield)} color="var(--accent-light)" priority="secondary" />
+              <SummaryCard label="Current Wtd. Avg. AY" value={formatPctValue(markSummary.portfolioCurrentAnnualizedYield)} color="var(--accent-light)" detail={`Current AY coverage: ${currentAyCoverage.eligibleCount}/${currentAyCoverage.totalCount} open entries by Gross Risk.`} priority="secondary" />
+              <SummaryCard label="Weighted Avg Delta" value={formatDelta(markSummary.weightedAverageDelta)} color={pnlColor(markSummary.weightedAverageDelta)} priority="secondary" />
+              <SummaryCard label="Weighted Avg DTE" value={isFiniteNumber(summary.weightedAverageRemainingDte) ? `${Math.round(summary.weightedAverageRemainingDte)} DTE` : DASH} priority="secondary" />
             </div>
             {openTrades.length > 0 && markSummary.totalGainLoss == null && <p className="portfolio-partial-mark mb-3" role="status">Partial marks · one or more open quotes are unavailable; aggregate P&amp;L stays — until refreshed.</p>}
 
@@ -2434,7 +2431,7 @@ export default function PortfolioPage() {
                 <button type="button" onClick={() => setAnalyticsExpanded(expanded => !expanded)} aria-expanded={analyticsExpanded} aria-controls="portfolio-analytics-content" aria-label={`${analyticsExpanded ? 'Collapse' : 'Expand'} Portfolio Analytics`} className="pressable flex min-h-11 min-w-11 items-center justify-center rounded-lg sm:min-h-8 sm:min-w-8" style={{ color: 'var(--text-muted)', backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}><ChevronDown className={`h-4 w-4 transition-transform ${analyticsExpanded ? 'rotate-180' : ''}`} aria-hidden="true" /></button>
               </div>
               <div id="portfolio-analytics-content">{analyticsExpanded && (openTrades.length === 0 ? (
-                <section className="rounded-lg p-3 text-sm" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>No open positions for analytics.</section>
+                <p className="portfolio-analytics-empty text-sm" style={{ color: 'var(--text-muted)' }}>No open positions for analytics.</p>
               ) : (
                 <>
                 <div className="mb-2 md:hidden">
@@ -2494,7 +2491,7 @@ export default function PortfolioPage() {
                 const collapsed = collapsedExpiryGroups[group.expiration] === true;
                 const captured = group.premiumCollected > 0 && group.totalGainLoss != null ? group.totalGainLoss / group.premiumCollected : null;
                 return (
-                  <section key={group.expiration} data-expiration={group.expiration} className="portfolio-expiry-highlight scroll-mt-20 overflow-hidden rounded-lg" style={{ border: `1px solid ${highlightedExpiration === group.expiration ? 'var(--accent)' : 'var(--border)'}`, backgroundColor: highlightedExpiration === group.expiration ? 'var(--accent-bg)' : undefined }}>
+                  <section key={group.expiration} data-expiration={group.expiration} className={`portfolio-expiry-highlight scroll-mt-20 overflow-hidden rounded-lg ${highlightedScheduleGroupKey === group.expiration ? 'is-drill-highlight' : ''}`} style={{ border: `1px solid ${highlightedScheduleGroupKey === group.expiration ? 'var(--accent)' : 'var(--border)'}`, backgroundColor: highlightedScheduleGroupKey === group.expiration ? 'var(--accent-bg)' : undefined }}>
                     <button
                       onClick={() => toggleExpiryGroup(group.expiration)}
                       aria-expanded={!collapsed}
@@ -2515,7 +2512,7 @@ export default function PortfolioPage() {
                     </button>
                     {!collapsed && <div className="space-y-2 p-2" style={{ backgroundColor: 'var(--bg)' }}>
                     {group.trades.map(trade => (
-                <div key={trade.id} data-trade-id={trade.id} data-trade-ticker={trade.ticker.trim().toUpperCase()} className="portfolio-trade-highlight scroll-mt-20 rounded-lg p-3" style={{ backgroundColor: highlightedTradeId === trade.id || activeScheduleTicker === trade.ticker.trim().toUpperCase() ? 'var(--accent-bg)' : 'var(--surface)', border: `1px solid ${highlightedTradeId === trade.id ? 'var(--accent)' : 'var(--border)'}`, opacity: activeScheduleTicker && activeScheduleTicker !== trade.ticker.trim().toUpperCase() ? 0.72 : 1 }}>
+                <div key={trade.id} data-trade-id={trade.id} data-trade-ticker={trade.ticker.trim().toUpperCase()} className={`portfolio-trade-highlight scroll-mt-20 rounded-lg p-3 ${highlightedTradeId === trade.id || highlightedScheduleGroupKey === trade.ticker.trim().toUpperCase() ? 'is-drill-highlight' : ''}`} style={{ backgroundColor: highlightedTradeId === trade.id || activeScheduleTicker === trade.ticker.trim().toUpperCase() ? 'var(--accent-bg)' : 'var(--surface)', border: `1px solid ${highlightedTradeId === trade.id ? 'var(--accent)' : 'var(--border)'}`, opacity: activeScheduleTicker && activeScheduleTicker !== trade.ticker.trim().toUpperCase() ? 0.72 : 1 }}>
                   {(() => {
                     const health = getPositionHealth(trade, markBasis);
                     return (
@@ -2606,9 +2603,9 @@ export default function PortfolioPage() {
                       const groupKey = group ? scheduleGroupKey(group) : 'flat';
                       const collapsed = group ? activeCollapsedGroups[groupKey] === true : false;
                       const captured = group && group.premiumCollected > 0 && group.totalGainLoss != null ? group.totalGainLoss / group.premiumCollected : null;
-                      const isHighlighted = group != null && 'expiration' in group && highlightedExpiration === group.expiration;
+                      const isHighlighted = group != null && highlightedScheduleGroupKey === groupKey;
                       return <Fragment key={groupKey}>
-                        {group && <tr data-group-key={groupKey} data-expiration={'expiration' in group ? group.expiration : undefined} className="portfolio-schedule-group-highlight scroll-mt-20" style={{ backgroundColor: isHighlighted ? 'var(--accent-bg)' : 'var(--surface-alt)', borderTop: `1px solid ${isHighlighted ? 'var(--accent)' : 'var(--accent-border)'}`, borderBottom: '1px solid var(--border)', color: 'var(--text)' }}>
+                        {group && <tr data-group-key={groupKey} data-expiration={'expiration' in group ? group.expiration : undefined} className={`portfolio-schedule-group-highlight scroll-mt-20 ${isHighlighted ? 'is-drill-highlight' : ''}`} style={{ backgroundColor: isHighlighted ? 'var(--accent-bg)' : 'var(--surface-alt)', borderTop: `1px solid ${isHighlighted ? 'var(--accent)' : 'var(--accent-border)'}`, borderBottom: '1px solid var(--border)', color: 'var(--text)' }}>
                           <td className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
                             <button onClick={() => toggleScheduleGroup(groupKey)} aria-expanded={!collapsed} className="inline-flex items-center gap-1 hover:opacity-80">
                               {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
@@ -2651,7 +2648,7 @@ export default function PortfolioPage() {
                       const redeployBadges = getRedeployBadges(trade, markBasis);
                       const health = getPositionHealth(trade, markBasis);
                       return (
-                        <tr key={trade.id} data-overlay-active={drawerSelection?.sourceRowKey === trade.id || undefined} data-trade-id={trade.id} data-trade-ticker={trade.ticker.trim().toUpperCase()} className="portfolio-schedule-trade-highlight scroll-mt-20" style={{ borderBottom: '1px solid var(--border)', backgroundColor: highlightedTradeId === trade.id || activeScheduleTicker === trade.ticker.trim().toUpperCase() ? 'var(--accent-bg)' : index % 2 ? 'var(--row-alt)' : 'transparent', boxShadow: highlightedTradeId === trade.id ? 'inset 3px 0 var(--accent)' : undefined, opacity: activeScheduleTicker && activeScheduleTicker !== trade.ticker.trim().toUpperCase() ? 0.72 : 1 }}>
+                        <tr key={trade.id} data-overlay-active={drawerSelection?.sourceRowKey === trade.id || undefined} data-trade-id={trade.id} data-trade-ticker={trade.ticker.trim().toUpperCase()} className={`portfolio-schedule-trade-highlight scroll-mt-20 ${highlightedTradeId === trade.id ? 'is-drill-highlight' : ''}`} style={{ borderBottom: '1px solid var(--border)', backgroundColor: highlightedTradeId === trade.id || activeScheduleTicker === trade.ticker.trim().toUpperCase() ? 'var(--accent-bg)' : index % 2 ? 'var(--row-alt)' : 'transparent', boxShadow: highlightedTradeId === trade.id ? 'inset 3px 0 var(--accent)' : undefined, opacity: activeScheduleTicker && activeScheduleTicker !== trade.ticker.trim().toUpperCase() ? 0.72 : 1 }}>
                           <td className="px-2 py-1 text-left font-mono font-bold whitespace-nowrap">
                             <Link to={buildOptionsPath(trade.ticker, trade.expiration)} state={optionsNavigationState} onClick={event => navigateToPortfolioOptions(event, isPortfolioContractPosition(trade) ? trade.lots[0] : trade)} className="underline-offset-2 hover:underline" style={{ color: 'var(--accent-light)' }}>{trade.ticker}</Link>
                           </td>
@@ -2716,8 +2713,8 @@ export default function PortfolioPage() {
                           </td>}
                           <td className="px-2 py-1 whitespace-nowrap">
                             <div className="flex items-center gap-1">
-                              <button onClick={() => editContractPosition(trade)} className="p-1.5 rounded" title={isPortfolioContractPosition(trade) && trade.lotCount > 1 ? 'Edit entries' : 'Edit'} style={{ color: 'var(--text-muted)' }}><Edit2 className="w-3.5 h-3.5" /></button>
-                              {(!isPortfolioContractPosition(trade) || trade.lotCount === 1) && <button onClick={() => requestDeleteTrade(isPortfolioContractPosition(trade) ? trade.lots[0].id : trade.id)} className="p-1.5 rounded" title="Delete" style={{ color: 'var(--red)' }}><Trash2 className="w-3.5 h-3.5" /></button>}
+                              <button onClick={() => editContractPosition(trade)} className="p-1.5 rounded" aria-label={`Edit ${trade.ticker} trade`} title={isPortfolioContractPosition(trade) && trade.lotCount > 1 ? 'Edit entries' : 'Edit'} style={{ color: 'var(--text-muted)' }}><Edit2 className="w-3.5 h-3.5" /></button>
+                              {(!isPortfolioContractPosition(trade) || trade.lotCount === 1) && <button onClick={() => requestDeleteTrade(isPortfolioContractPosition(trade) ? trade.lots[0].id : trade.id)} className="p-1.5 rounded" aria-label={`Delete ${trade.ticker} trade`} title="Delete" style={{ color: 'var(--red)' }}><Trash2 className="w-3.5 h-3.5" /></button>}
                             </div>
                           </td>
                         </tr>
