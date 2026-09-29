@@ -430,7 +430,7 @@ function UniverseHeatmap({ rows, period, navigationState }: { rows: EtfPulseRow[
   }), [period, rows]);
 
   if (items.length === 0) {
-    return <div className="py-10 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No ETFs match the current filters.</div>;
+    return <div className="pulse-local-empty-state text-sm" style={{ color: 'var(--text-muted)' }}>No ETFs match the current filters.</div>;
   }
 
   return (
@@ -503,7 +503,7 @@ function MomentumQuadrant({ rows, period, navigationState }: { rows: EtfPulseRow
     : 0;
 
   if (points.length === 0) {
-    return <div className="py-10 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No ETFs with return and RSI data match the current filters.</div>;
+    return <div className="pulse-local-empty-state text-sm" style={{ color: 'var(--text-muted)' }}>No ETFs with return and RSI data match the current filters.</div>;
   }
 
   return (
@@ -1021,7 +1021,7 @@ export default function EtfPulsePage() {
                </tr>
              ))}
            </MobileFinancialTable>
-         ) : filteredRows.length === 0 ? <div className="mobile-financial-empty-state px-6 py-10 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No ETFs match these filters.</div> : (
+         ) : filteredRows.length === 0 ? <div className="pulse-local-empty-state mobile-financial-empty-state px-6 text-sm" style={{ color: 'var(--text-muted)' }}>No ETFs match these filters.</div> : (
            <MobileFinancialTable label="ETF Pulse results" columns={mobilePulseColumns} busy={loading}>
              {filteredRows.map((row, index) => {
                const trend = trendStyle(row);
@@ -1149,7 +1149,7 @@ export default function EtfPulsePage() {
             {loading && rows.length === 0 ? (
               <div className="rounded-xl px-4 py-12 text-center text-sm" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Acquiring ETF Pulse dataset...</div>
             ) : filteredRows.length === 0 ? (
-              <div className="rounded-xl px-4 py-12 text-center text-sm" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>No ETFs match these filters.</div>
+              <div className="pulse-local-empty-state px-4 text-sm" style={{ color: 'var(--text-muted)' }}>No ETFs match these filters.</div>
             ) : filteredRows.map(row => {
               const trend = trendStyle(row);
               return (
@@ -1190,7 +1190,7 @@ export default function EtfPulsePage() {
                   {loading && rows.length === 0 ? (
                     <tr><td colSpan={columns.length} role="status" aria-label="ETF Pulse loading" className="pulse-loading-state px-3 py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}><Loader2 className="mx-auto mb-2 h-4 w-4 animate-spin" style={{ color: 'var(--accent-light)' }} />Acquiring ETF Pulse dataset…</td></tr>
                   ) : filteredRows.length === 0 ? (
-                    <tr><td colSpan={columns.length} className="px-3 py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No ETFs match these filters.</td></tr>
+                    <tr><td colSpan={columns.length} className="pulse-local-empty-state px-3 text-sm" style={{ color: 'var(--text-muted)' }}>No ETFs match these filters.</td></tr>
                   ) : filteredRows.map((row, index) => (
                     <tr key={row.ticker} style={{ borderBottom: '1px solid var(--border)', backgroundColor: index % 2 ? 'var(--row-alt)' : 'transparent' }}>
                       {columns.map(column => bodyCell(column, row, index))}

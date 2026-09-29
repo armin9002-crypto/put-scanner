@@ -786,7 +786,7 @@ export default function HomePage() {
           ))}
         </div>
 
-        {filtered.length === 0 && !pricesLoading && !expirationDatesLoading && <div className="mobile-scanner-empty-state px-6 py-12 text-center"><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>{expirationScope && expirationState.coverage !== 'complete' ? 'No confirmed matches yet · availability incomplete' : 'No matching ETFs'}</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>{expirationState.coverage !== 'complete' ? 'Unverified ETFs are temporarily excluded. Try again later.' : 'Try clearing search or widening your filters.'}</p><button type="button" onClick={resetScannerFilters} className="tap-target mt-3 rounded-lg px-4 text-xs font-semibold" style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)' }}>Reset Filters</button></div>}
+        {filtered.length === 0 && !pricesLoading && !expirationDatesLoading && <div className="mobile-scanner-empty-state px-6 text-center" data-state={expirationState.coverage !== 'complete' ? 'incomplete' : 'local-empty'}><p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>{expirationScope && expirationState.coverage !== 'complete' ? 'No confirmed matches yet · availability incomplete' : 'No matching ETFs'}</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>{expirationState.coverage !== 'complete' ? 'Unverified ETFs are temporarily excluded. Try again later.' : 'Try clearing search or widening your filters.'}</p><button type="button" onClick={resetScannerFilters} className="tap-target mt-3 rounded-lg px-4 text-xs font-semibold" style={{ color: 'var(--accent-light)', backgroundColor: 'var(--accent-bg)' }}>Reset Filters</button></div>}
 
         {mobileFiltersOpen && (
           <MobileBottomSheet
@@ -915,7 +915,7 @@ export default function HomePage() {
           </div>
 
         {filtered.length === 0 && !expirationDatesLoading && (
-          <div className="scanner-empty-state surface-inset">
+          <div className="scanner-empty-state surface-inset" data-state={expirationState.coverage !== 'complete' ? 'incomplete' : 'local-empty'}>
             <p className="font-semibold" style={{ color: 'var(--text)' }}>{expirationScope && expirationState.coverage !== 'complete' ? 'No confirmed matches yet · availability incomplete' : 'No ETFs match your filters.'}</p>
             <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>{expirationState.coverage !== 'complete' ? 'Unverified ETFs are temporarily excluded. Try again later.' : 'Try clearing search or widening the opportunity set.'}</p>
             <button type="button" className="button-secondary mt-3 rounded-md px-3 py-1.5 text-xs" onClick={resetScannerFilters}>Reset Filters</button>
