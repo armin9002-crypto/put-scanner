@@ -87,8 +87,8 @@ async function measurePortfolio(page: Page, testInfo: TestInfo, name: string) {
 async function assertRenderedPortfolioDensity(page: Page, desktop: boolean) {
   const summaryCards = page.locator('.portfolio-summary-grid > *:visible');
   if (desktop) {
-    await expect(summaryCards).toHaveCount(10);
-    await expect(summaryCards.locator('.portfolio-summary-card__label')).toHaveText(['Open Positions', 'Premium', 'Gross Risk', 'Net Risk', 'Gain/Loss', '% Captured', 'Entry Wtd. Avg. AY', 'Current Wtd. Avg. AY', 'Weighted Avg Delta', 'Weighted Avg DTE']);
+    await expect(summaryCards).toHaveCount(8);
+    await expect(summaryCards.locator('.portfolio-summary-card__label')).toHaveText(['Premium', 'Gross Risk', 'Gain/Loss', '% Captured', 'Entry Wtd. Avg. AY', 'Current Wtd. Avg. AY', 'Weighted Avg Delta', 'Weighted Avg DTE']);
     const heights = await summaryCards.evaluateAll(elements => elements.map(element => element.getBoundingClientRect().height));
     expect(Math.max(...heights) - Math.min(...heights)).toBeLessThan(1);
     expect(Math.max(...heights)).toBeLessThan(60);
@@ -120,14 +120,14 @@ async function assertRenderedHistoryDensity(page: Page) {
   await expect(periodLabels).toHaveCount(4);
   for (const label of await periodLabels.allTextContents()) expect(label.trim()).toMatch(/^[A-Z][a-z]{2} '\d{2}$/);
   const valueLabels = page.locator('[data-chart-pnl-label]:visible');
-  await expect(valueLabels).toHaveCount(3);
+  await expect(valueLabels).toHaveCount(4);
   const values = (await valueLabels.allTextContents()).map(value => value.trim());
   expect(values).toContain('$170');
   expect(values).toContain('($150)');
   expect(values).toContain('$0');
   expect(values.every(value => !/\.\d/.test(value))).toBe(true);
   await expect(page.locator('.portfolio-realized-pnl-chart__value--positive:visible')).toHaveCount(2);
-  await expect(page.locator('.portfolio-realized-pnl-chart__value--negative:visible')).toHaveCount(1);
+  await expect(page.locator('.portfolio-realized-pnl-chart__value--negative:visible')).toHaveCount(2);
   const chartLabelSizes = await page.locator('[data-chart-period-label]:visible, [data-chart-pnl-label]:visible').evaluateAll(elements => elements.map(element => parseFloat(getComputedStyle(element).fontSize)));
   expect(chartLabelSizes.every(size => size >= 9 && size <= 12)).toBe(true);
   const activeRows = page.locator('.portfolio-schedule-surface tbody tr[data-trade-id]:visible');
