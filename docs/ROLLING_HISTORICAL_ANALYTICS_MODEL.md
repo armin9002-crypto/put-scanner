@@ -4,7 +4,7 @@ Historical Analytics is a local derived-data surface over the Portfolio trades a
 
 ## Metric families
 
-The Rolling group contains exactly six metrics:
+The Rolling group contains exactly seven metrics:
 
 | Metric | Event date | Calculation |
 | --- | --- | --- |
@@ -12,6 +12,7 @@ The Rolling group contains exactly six metrics:
 | Entry IV | Sold date | Gross-Risk-weighted canonical Entry IV, in percentage points |
 | Entry Delta | Sold date | Gross-Risk-weighted signed canonical Entry Delta |
 | Realized AY | Canonical realization date | Gross-Risk-weighted canonical position Realized AY |
+| Blended Capture | Canonical realization date | Canonical History aggregate realized P&L divided by aggregate Premium for the resolved records in the interval |
 | Original DTE | Sold date | Gross-Risk-weighted canonical Original DTE |
 | Annualized Premium Run Rate | Sold date | Canonical Premium originated in the effective interval; partial history uses actual elapsed calendar days and complete windows use the selected period factor |
 
@@ -22,7 +23,7 @@ The Portfolio State group contains exactly two metrics:
 | Gross Risk Exposure | End of day | Sum of canonical initial Gross Risk for positions open at that EOD |
 | Avg Remaining DTE | End of day | Gross-Risk-weighted remaining DTE for those open positions; `null` when no risk is open |
 
-Gross Risk is the cash-secured initial notional, `strike × 100 × contracts`. Premium is the entry credit, `soldPrice × 100 × contracts`. Existing Portfolio helpers remain authoritative for Entry AY, Original DTE, Realized AY, Entry Delta/IV validation, and lifecycle economics. The retired Annualized Gross Risk Deployed flow is not part of the product surface.
+Gross Risk is the cash-secured initial notional, `strike × 100 × contracts`. Premium is the entry credit, `soldPrice × 100 × contracts`. Existing Portfolio helpers remain authoritative for Entry AY, Original DTE, Realized AY, Blended Capture, Entry Delta/IV validation, and lifecycle economics. The retired Annualized Gross Risk Deployed flow is not part of the product surface.
 
 ## Shared timeline and rolling prefix windows
 
@@ -37,9 +38,11 @@ For a rolling observation:
 - `availableDays` reports elapsed available history while the full lookback is unavailable, allowing the UI to show a raw-derived “x of y months available” label.
 - `requestedWindowMonths` always retains the selected period.
 
-A valid prefix is calculated rather than suppressed. Weighted metrics apply their normal eligibility and coverage rules to the effective interval. Realized AY uses canonical realization dates: actual `closeDate` for closed trades, `expiration` for held-to-expiration trades, and established assignment `resolvedDate` with the existing lifecycle fallback. Open and unresolved records have no realized event.
+A valid prefix is calculated rather than suppressed. Weighted metrics apply their normal eligibility and coverage rules to the effective interval. Realized AY and Blended Capture use canonical realization dates: actual `closeDate` for closed trades, `expiration` for held-to-expiration trades, and established assignment `resolvedDate` with the existing lifecycle fallback. Open and unresolved records have no realized event.
 
-Annualized Premium Run Rate uses `Premium in the effective interval × 365 / availableDays` while the dotted prefix is partial. The exact strategy-start observation has zero elapsed days, so its annualized value and factor are `null` rather than fabricated; subsequent positive-duration observations are finite. Once the requested calendar window is complete, the original selected-period convention remains exact: 3M uses ×4, 6M uses ×2, and 12M uses ×1. At the first full-window point, any small factor change is only the mathematically implied difference between the preceding actual-day partial factor and the requested calendar-period factor; the Premium interval and partial/full boundary remain unchanged. A valid positive-duration window with no originations is economically `0`; malformed premium inputs fail closed.
+Blended Capture first selects every canonically realized record in the inclusive interval whose canonical History realized P&L is finite. It then calls `buildHistoryAnalytics(trades).blendedCapture` on exactly that population, preserving its aggregate numerator/denominator and its treatment of unavailable or zero Premium. It intentionally does not reuse Realized AY eligibility: a record does not need a valid positive Gross Risk or Days Held to be included. `tradesIncluded` is the resolved population count; `grossRiskRepresented` sums only canonical valid positive Gross Risk across that same population. The optional rolling Average Days Held metric is deliberately omitted: the visible History headline uses an arithmetic average, while grouped History uses Gross Risk weighting. Choosing between those definitions requires a product decision.
+
+Annualized Premium Run Rate uses `Premium in the effective interval × 365 / availableDays` while the dashed prefix is partial. The exact strategy-start observation has zero elapsed days, so its annualized value and factor are `null` rather than fabricated; subsequent positive-duration observations are finite. Once the requested calendar window is complete, the original selected-period convention remains exact: 3M uses ×4, 6M uses ×2, and 12M uses ×1. At the first full-window point, any small factor change is only the mathematically implied difference between the preceding actual-day partial factor and the requested calendar-period factor; the Premium interval and partial/full boundary remain unchanged. A valid positive-duration window with no originations is economically `0`; malformed premium inputs fail closed.
 
 ## Portfolio-state EOD reconstruction
 
@@ -57,6 +60,6 @@ An unsafe terminal record is excluded rather than guessed. Each state point repo
 
 Weighted metrics exclude a missing or invalid metric from both numerator and denominator. Valid zero values remain represented, including signed Delta zero and zero Entry AY; Entry IV zero stays invalid under the canonical validator. Zero represented Gross Risk yields `null`.
 
-Entry metrics expose eligible/represented trade and Gross Risk counts. Realized AY exposes resolved represented trades and Gross Risk. Premium exposes originations, trailing Premium, the actual-day partial or selected-window full annualization factor, and annualized output. All returned values are raw numbers; formatting belongs to the chart.
+Entry metrics expose eligible/represented trade and Gross Risk counts. Realized AY exposes resolved represented trades and Gross Risk. Blended Capture exposes all resolved included trades and the valid positive Gross Risk represented by that same population. Premium exposes originations, trailing Premium, the actual-day partial or selected-window full annualization factor, and annualized output. Partial-window dashed segments only connect valid partial observations; genuine unavailable observations remain gaps and are not treated as partial history. All returned values are raw numbers; formatting belongs to the chart.
 
 `buildRollingHistoricalAnalyticsSeries` returns requested/effective window metadata and prefix/full status. `buildPortfolioHistoricalStateSeries` returns daily point-in-time state and lifecycle coverage. Selector, period, hover, and date changes are client-local: zero browser requests, zero function invocations, zero provider acquisitions, zero Supabase writes, and no Portfolio rewrite or schema migration.

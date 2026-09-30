@@ -1,6 +1,6 @@
 import { calculateSimpleAnnualizedValue, isFiniteNumber } from './optionMetrics.ts';
 import { isValidEntryDelta, isValidEntryIv, usMarketDateIso } from './portfolioEntryDelta.ts';
-import { historyRealizedIrr } from './portfolioHistoryAnalytics.ts';
+import { buildHistoryAnalytics, historyRealizedIrr, historyRealizedPnl } from './portfolioHistoryAnalytics.ts';
 import {
   calculateEquityAtRisk,
   calculateOriginalAnnualizedYield,
@@ -15,12 +15,13 @@ export const ROLLING_WINDOW_MONTHS = [3, 6, 12] as const;
 export type RollingWindowMonths = typeof ROLLING_WINDOW_MONTHS[number];
 export type RollingHistoricalMetric =
   | 'realizedIrr'
+  | 'blendedCapture'
   | 'entryAy'
   | 'premiumRunRate'
   | 'entryDelta'
   | 'entryIv'
   | 'originalDte';
-export type RollingHistoricalAggregation = 'gross_risk_weighted_average' | 'annualized_flow';
+export type RollingHistoricalAggregation = 'gross_risk_weighted_average' | 'annualized_flow' | 'aggregate_ratio';
 export type RollingHistoricalFormatterCategory =
   | 'ratio_percent'
   | 'currency'
@@ -51,6 +52,16 @@ export const ROLLING_HISTORICAL_METRIC_CONFIGS: readonly RollingHistoricalMetric
     tooltipMetadata: ['tradesIncluded', 'grossRiskRepresented'],
     title: windowMonths => `${windowMonths}M Rolling Realized AY`,
     subtitle: windowMonths => `Gross-Risk-weighted realized AY for trades realized during the trailing ${windowMonths} calendar months.`,
+  },
+  {
+    key: 'blendedCapture',
+    label: 'Blended Capture',
+    eventDateBasis: 'realized',
+    aggregation: 'aggregate_ratio',
+    formatterCategory: 'ratio_percent',
+    tooltipMetadata: ['tradesIncluded', 'grossRiskRepresented'],
+    title: windowMonths => `${windowMonths}M Rolling Blended Capture`,
+    subtitle: windowMonths => `Aggregate realized P&L divided by aggregate Premium for trades realized during the trailing ${windowMonths} calendar months.`,
   },
   {
     key: 'entryAy',
@@ -159,6 +170,11 @@ interface RealizedRecord extends EntryRecord {
   realizedIrr: number;
 }
 
+interface BlendedCaptureRecord {
+  trade: PortfolioTrade;
+  date: string;
+}
+
 const DAY_MS = 86_400_000;
 
 function parseIsoDate(value: unknown): number | null {
@@ -229,7 +245,7 @@ function entryMetricValue(metric: RollingHistoricalMetric, trade: PortfolioTrade
   }
 }
 
-function recordsInWindow<T extends EntryRecord>(records: readonly T[], startDate: string, endDate: string): T[] {
+function recordsInWindow<T extends { date: string }>(records: readonly T[], startDate: string, endDate: string): T[] {
   return records.filter(record => record.date >= startDate && record.date <= endDate);
 }
 
@@ -329,6 +345,27 @@ function realizedPoint(
   };
 }
 
+function blendedCapturePoint(
+  records: BlendedCaptureRecord[],
+  date: string,
+  context: RollingWindowContext,
+  windowMonths: RollingWindowMonths,
+): RollingHistoricalAnalyticsPoint {
+  const grossRiskRepresented = records.reduce((sum, record) => {
+    const grossRisk = calculateEquityAtRisk(record.trade);
+    return isFiniteNumber(grossRisk) && grossRisk > 0 ? sum + grossRisk : sum;
+  }, 0);
+  return {
+    date,
+    ...pointWindowFields(context),
+    value: buildHistoryAnalytics(records.map(record => record.trade)).blendedCapture,
+    windowMonths,
+    metric: 'blendedCapture',
+    tradesIncluded: records.length,
+    grossRiskRepresented,
+  };
+}
+
 function flowPoint(
   records: EntryRecord[],
   date: string,
@@ -406,12 +443,23 @@ export function buildRollingHistoricalAnalyticsSeries(
         : [];
     }).sort((a, b) => a.date.localeCompare(b.date) || a.trade.id.localeCompare(b.trade.id))
     : [];
+  const blendedCaptureRecords = metric === 'blendedCapture'
+    ? trades.flatMap((trade): BlendedCaptureRecord[] => {
+      const date = canonicalHistoricalRealizedDate(trade);
+      return date != null && date <= endDate && isFiniteNumber(historyRealizedPnl(trade))
+        ? [{ trade, date }]
+        : [];
+    }).sort((a, b) => a.date.localeCompare(b.date) || a.trade.id.localeCompare(b.trade.id))
+    : [];
 
   const points = observationDates.map(date => {
     const context = startDate == null ? null : rollingWindowContext(date, startDate, windowMonths);
     if (context == null) throw new Error('Rolling window could not be resolved for a validated observation date.');
     if (metric === 'realizedIrr') {
       return realizedPoint(recordsInWindow(realizedRecords, context.effectiveWindowStart, date), date, context, windowMonths);
+    }
+    if (metric === 'blendedCapture') {
+      return blendedCapturePoint(recordsInWindow(blendedCaptureRecords, context.effectiveWindowStart, date), date, context, windowMonths);
     }
     const entries = recordsInWindow(entryRecords, context.effectiveWindowStart, date);
     if (metric === 'premiumRunRate') {

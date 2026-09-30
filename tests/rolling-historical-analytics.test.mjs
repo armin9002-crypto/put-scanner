@@ -39,13 +39,13 @@ const close = (actual, expected, message, tolerance = 1e-12) => {
   assert.ok(Math.abs(actual - expected) <= tolerance, `${message}: expected ${expected}, received ${actual}`);
 };
 
-test('the product surface separates six rolling metrics from two portfolio-state metrics', () => {
+test('the product surface separates seven rolling metrics from two portfolio-state metrics', () => {
   assert.deepEqual(ROLLING_WINDOW_MONTHS, [3, 6, 12]);
   assert.deepEqual(
     ROLLING_HISTORICAL_METRIC_CONFIGS.map(config => config.key),
-    ['realizedIrr', 'entryAy', 'premiumRunRate', 'entryDelta', 'entryIv', 'originalDte'],
+    ['realizedIrr', 'blendedCapture', 'entryAy', 'premiumRunRate', 'entryDelta', 'entryIv', 'originalDte'],
   );
-  assert.equal(new Set(ROLLING_HISTORICAL_METRIC_CONFIGS.map(config => config.key)).size, 6);
+  assert.equal(new Set(ROLLING_HISTORICAL_METRIC_CONFIGS.map(config => config.key)).size, 7);
   assert.deepEqual(PORTFOLIO_HISTORICAL_STATE_METRIC_CONFIGS.map(config => config.key), ['grossRiskExposure', 'averageRemainingDte']);
   for (const config of ROLLING_HISTORICAL_METRIC_CONFIGS) {
     assert.ok(config.label && config.formatterCategory && config.tooltipMetadata.length > 0);
@@ -334,10 +334,9 @@ test('Portfolio renders the configured rolling chart below History with local co
   assert.match(chart, /buildRollingHistoricalAnalyticsSeries\(trades, metric, windowMonths\)/);
   assert.match(chart, /useState<HistoricalMetric>\('entryAy'\)/);
   assert.match(chart, /useState<RollingWindowMonths>\(6\)/);
-  assert.match(chart, /ROLLING_HISTORICAL_METRIC_CONFIGS\.map/);
+  assert.match(chart, /ROLLING_HISTORICAL_METRIC_CONFIGS\.filter/);
   assert.match(chart, /ROLLING_WINDOW_MONTHS\.map/);
   assert.match(chart, /getNiceYAxisScale/);
-  assert.match(chart, /buildMetricYAxisScale/);
   assert.match(chart, /preserveAspectRatio="none"/);
   assert.match(chart, /ResizeObserver/);
   assert.match(chart, /data-rolling-plot-width/);
@@ -347,13 +346,12 @@ test('Portfolio renders the configured rolling chart below History with local co
   assert.match(chart, /rolling-historical-analytics__current-value/);
   assert.match(chart, /rolling-historical-analytics__metadata/);
   assert.match(chart, /rolling-historical-analytics__zero/);
-  assert.match(chart, /buildLabelIndexes/);
-  assert.match(chart, /buildValueLabelIndexes/);
-  assert.match(chart, /temporalAnchors/);
-  assert.match(chart, /isFiniteValue\(point\.value\) \? \[\{ point, index \}\] : \[\]/);
+  assert.match(chart, /buildHistoricalCalendarTicks/);
+  assert.match(chart, /selectHistoricalValueLabels/);
+  assert.match(chart, /segmentHistoricalPoints/);
   assert.match(chart, /onPointerMove/);
   assert.match(chart, /onPointerDown/);
-  assert.match(chart, /Valid partial rolling windows are dotted/i);
+  assert.match(chart, /Partial lookbacks are dashed/);
   assert.match(chart, /data-rolling-domain-start/);
   assert.match(chart, /aria-label=\{`\$\{series\.config\.title/);
   assert.match(chart, /sr-only/);
@@ -365,6 +363,6 @@ test('Portfolio renders the configured rolling chart below History with local co
   assert.match(css, /\.rolling-historical-analytics__zero/);
   assert.match(css, /\.rolling-historical-analytics__value-label/);
   assert.match(css, /overflow-y: hidden/);
-  assert.match(docs, /full strategy-history x-domain/);
-  assert.match(docs, /compare, overlay, or dual-axis/);
+  assert.match(docs, /full strategy-history/);
+  assert.match(docs, /same metric and units/);
 });

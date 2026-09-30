@@ -33,15 +33,15 @@ test.describe('rolling historical analytics UI', () => {
     expect(domain.start).toBe('2024-01-01');
     expect(domain.end).toMatch(/^2026-0[89]-\d{2}$/);
 
-    const analytics = chart.getByRole('combobox', { name: 'Analytics' });
-    await expect(analytics.locator('option')).toHaveCount(8);
+    const analytics = chart.getByRole('combobox', { name: 'Metric' });
+    await expect(analytics.locator('option')).toHaveCount(7);
     const initialCloudRequests = cloudHarness.requests.length;
     const initialMarketCounts = [...marketHarness.counts.entries()];
     const metrics = ['entryAy', 'entryIv', 'entryDelta', 'realizedIrr', 'premiumRunRate', 'originalDte'] as const;
     const periods = ['3', '6', '12'] as const;
     for (const metric of metrics) {
       await analytics.selectOption(metric);
-      await expect(chart.locator('h3')).toContainText(/Rolling|Annualized/);
+      await expect(chart).toHaveAttribute('data-analytics-family', 'ROLLING');
       for (const period of periods) {
         await chart.getByRole('button', { name: `${period}M`, exact: true }).click();
         await expect(chart.getByRole('button', { name: `${period}M`, exact: true })).toHaveAttribute('aria-pressed', 'true');
@@ -50,19 +50,21 @@ test.describe('rolling historical analytics UI', () => {
       }
     }
 
+    await chart.getByRole('combobox', { name: 'Series' }).selectOption('PORTFOLIO_STATE');
     for (const metric of ['grossRiskExposure', 'averageRemainingDte'] as const) {
       await analytics.selectOption(metric);
-      await expect(chart.getByText('Point in time', { exact: true })).toBeVisible();
+      await expect(chart).toHaveAttribute('data-analytics-family', 'PORTFOLIO_STATE');
       await expect(chart.getByRole('button', { name: '6M', exact: true })).toHaveCount(0);
     }
 
+    await chart.getByRole('combobox', { name: 'Series' }).selectOption('ROLLING');
     await analytics.selectOption('entryIv');
     await chart.getByRole('button', { name: '6M', exact: true }).click();
     const plot = chart.getByTestId('rolling-historical-analytics-plot');
     await plot.hover({ position: { x: 60, y: 90 } });
     const tooltip = chart.locator('.rolling-historical-analytics__tooltip');
     await expect(tooltip).toBeVisible();
-    await expect(tooltip).toContainText(/Partial window|Full trailing 6M window/);
+    await expect(tooltip).toContainText(/Partial lookback|Full 6M window/);
     await expect(tooltip).toContainText(/trades represented|Gross Risk represented/);
     if (await page.evaluate(() => matchMedia('(pointer: coarse)').matches)) await plot.tap({ position: { x: 120, y: 70 } });
 
