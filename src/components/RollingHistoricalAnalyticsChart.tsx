@@ -1,44 +1,64 @@
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
-import { createPortal } from 'react-dom';
-import { X } from 'lucide-react';
-import { HISTORICAL_VISIBLE_RANGES, HISTORICAL_VISIBLE_RANGE_LABELS, selectHistoricalVisiblePoints, type HistoricalVisibleRange } from '../lib/historicalVisibleRange';
-import { buildHistoricalCalendarTicks, segmentHistoricalPoints, selectHistoricalValueLabels } from '../lib/historicalChartGeometry';
+import { HISTORICAL_VISIBLE_RANGES, selectHistoricalVisiblePoints, type HistoricalVisibleRange } from '../lib/historicalVisibleRange';
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { formatCurrency, formatPercent, formatPercentPoints, formatSignedPercent } from '../lib/format';
-import { getNiceYAxisScale } from '../lib/chartScale';
-import { useBlockingOverlayBehavior } from '../lib/blockingOverlay';
-import { useOverlayDismiss } from '../lib/overlayMotion';
-import { buildPortfolioHistoricalStateSeries, PORTFOLIO_HISTORICAL_STATE_METRIC_CONFIGS, type PortfolioHistoricalStateMetric, type PortfolioHistoricalStatePoint } from '../lib/portfolioHistoricalStateAnalytics';
-import { buildRollingHistoricalAnalyticsSeries, ROLLING_HISTORICAL_METRIC_CONFIGS, ROLLING_WINDOW_MONTHS, type RollingHistoricalAnalyticsPoint, type RollingHistoricalFormatterCategory, type RollingHistoricalMetric, type RollingWindowMonths } from '../lib/rollingHistoricalAnalytics';
+import { getNiceYAxisScale, type YAxisScale } from '../lib/chartScale';
+import {
+  buildPortfolioHistoricalStateSeries,
+  PORTFOLIO_HISTORICAL_STATE_METRIC_CONFIGS,
+  type PortfolioHistoricalStateMetric,
+  type PortfolioHistoricalStatePoint,
+} from '../lib/portfolioHistoricalStateAnalytics';
+import {
+  buildRollingHistoricalAnalyticsSeries,
+  ROLLING_HISTORICAL_METRIC_CONFIGS,
+  ROLLING_WINDOW_MONTHS,
+  type RollingHistoricalAnalyticsPoint,
+  type RollingHistoricalFormatterCategory,
+  type RollingHistoricalMetric,
+  type RollingWindowMonths,
+} from '../lib/rollingHistoricalAnalytics';
 import type { PortfolioTrade } from '../lib/portfolioStorage';
+
+const CHART_WIDTH = 960;
+const CHART_HEIGHT = 292;
+const PLOT = { left: 64, right: 18, top: 16, bottom: 36 } as const;
 
 export type HistoricalMetric = RollingHistoricalMetric | PortfolioHistoricalStateMetric;
 type HistoricalPoint = RollingHistoricalAnalyticsPoint | PortfolioHistoricalStatePoint;
+type HistoricalFormatterCategory = RollingHistoricalFormatterCategory;
+
 interface HistoricalSeriesView {
   metric: HistoricalMetric;
   family: 'ROLLING' | 'PORTFOLIO_STATE';
-  config: { label: string; formatterCategory: RollingHistoricalFormatterCategory; title: string; subtitle: string };
+  config: { label: string; formatterCategory: HistoricalFormatterCategory; title: string; subtitle: string };
   domain: { startDate: string | null; endDate: string };
   points: HistoricalPoint[];
 }
-interface DisplayedSeries { window: RollingWindowMonths; series: HistoricalSeriesView; primary: boolean }
+
+interface PlotPoint { point: HistoricalPoint; index: number; x: number; y: number }
+interface LineSegment { kind: 'solid' | 'partial' | 'gap'; points: PlotPoint[] }
 
 function isFiniteValue(value: number | null | undefined): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
+
 function isRollingPoint(point: HistoricalPoint): point is RollingHistoricalAnalyticsPoint {
   return 'requestedWindowStart' in point;
 }
+
 function isStateMetric(metric: HistoricalMetric): metric is PortfolioHistoricalStateMetric {
   return PORTFOLIO_HISTORICAL_STATE_METRIC_CONFIGS.some(config => config.key === metric);
 }
+
 function formatCompactCurrency(value: number): string {
   const sign = value < 0 ? '-' : '';
   const absolute = Math.abs(value);
-  if (absolute >= 1_000_000) return `${sign}$${(absolute / 1_000_000).toFixed(1)}M`;
-  if (absolute >= 1_000) return `${sign}$${(absolute / 1_000).toFixed(1)}k`;
+  if (absolute >= 1_000_000) return `${sign}$${(absolute / 1_000_000).toFixed(absolute >= 10_000_000 ? 0 : 1)}M`;
+  if (absolute >= 1_000) return `${sign}$${(absolute / 1_000).toFixed(absolute >= 100_000 ? 0 : 1)}k`;
   return `${sign}$${Math.round(absolute)}`;
 }
-function formatMetricValue(value: number | null, category: RollingHistoricalFormatterCategory, metric: HistoricalMetric, axis = false): string {
+
+function formatMetricValue(value: number | null, category: HistoricalFormatterCategory, metric: HistoricalMetric, axis = false): string {
   if (!isFiniteValue(value)) return '—';
   if (category === 'ratio_percent') return metric === 'realizedIrr' ? formatSignedPercent(value * 100, 1) : formatPercent(value, 1);
   if (category === 'percentage_points') return formatPercentPoints(value, 1);
@@ -46,251 +66,360 @@ function formatMetricValue(value: number | null, category: RollingHistoricalForm
   if (category === 'days') return axis ? `${Math.round(value)}` : `${Math.round(value)} DTE`;
   return axis ? formatCompactCurrency(value) : formatCurrency(value, 0);
 }
-function formatDate(value: string): string {
-  return new Date(`${value}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+
+function formatLongDate(value: string): string {
+  const date = new Date(`${value}T00:00:00Z`);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('en-US', {
+    weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC',
+  });
 }
-function latestAvailablePoint(points: readonly HistoricalPoint[]): HistoricalPoint | null {
-  return points[latestAvailableIndex(points)] ?? points[points.length - 1] ?? null;
+
+function formatAxisDate(value: string, longHistory: boolean): string {
+  const date = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString('en-US', longHistory
+    ? { month: 'short', year: '2-digit', timeZone: 'UTC' }
+    : { month: 'short', day: 'numeric', timeZone: 'UTC' });
 }
-function latestAvailableIndex(points: readonly HistoricalPoint[]): number {
+
+function pointX(point: HistoricalPoint, points: readonly HistoricalPoint[], plotWidth: number): number {
+  if (points.length <= 1) return PLOT.left + plotWidth / 2;
+  const start = Date.parse(`${points[0].date}T00:00:00Z`);
+  const end = Date.parse(`${points[points.length - 1].date}T00:00:00Z`);
+  const current = Date.parse(`${point.date}T00:00:00Z`);
+  const ratio = end === start ? 0.5 : (current - start) / (end - start);
+  return PLOT.left + Math.max(0, Math.min(1, ratio)) * plotWidth;
+}
+
+function buildLineSegments(points: readonly HistoricalPoint[], scale: YAxisScale, chartWidth: number, chartHeight: number): LineSegment[] {
+  const plotWidth = Math.max(1, chartWidth - PLOT.left - PLOT.right);
+  const plotHeight = Math.max(1, chartHeight - PLOT.top - PLOT.bottom);
+  const range = scale.max - scale.min || 1;
+  const finite = points.flatMap((point, index): PlotPoint[] => isFiniteValue(point.value) ? [{
+    point,
+    index,
+    x: pointX(point, points, plotWidth),
+    y: PLOT.top + (1 - (point.value - scale.min) / range) * plotHeight,
+  }] : []);
+  const segments: LineSegment[] = [];
+  for (let index = 1; index < finite.length; index += 1) {
+    const previous = finite[index - 1];
+    const current = finite[index];
+    const kind: LineSegment['kind'] = current.index !== previous.index + 1
+      ? 'gap'
+      : (isRollingPoint(previous.point) && !previous.point.fullWindow)
+        || (isRollingPoint(current.point) && !current.point.fullWindow)
+        ? 'partial'
+        : 'solid';
+    const latest = segments[segments.length - 1];
+    if (latest?.kind === kind && latest.points[latest.points.length - 1].index === previous.index) latest.points.push(current);
+    else segments.push({ kind, points: [previous, current] });
+  }
+  return segments;
+}
+
+function pathForPoints(points: readonly PlotPoint[]): string {
+  return points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(' ');
+}
+
+function latestAvailableIndex(points: readonly HistoricalPoint[]): number | null {
   for (let index = points.length - 1; index >= 0; index -= 1) if (isFiniteValue(points[index].value)) return index;
-  return -1;
+  return points.length > 0 ? points.length - 1 : null;
 }
-function coverageLabel(point: HistoricalPoint): string {
-  if (!isRollingPoint(point)) return `${point.coverage.eligibleTrades}/${point.coverage.sourceTrades} lifecycle records eligible · ${point.coverage.excludedUnsafeTerminalTrades} excluded`;
-  const coverage = point.coverage?.representedRiskPercent;
-  if (coverage == null) return point.coverage ? 'Coverage unavailable' : '—';
-  // Keep incomplete coverage distinguishable even when rounding would produce 100%.
-  return `${Number((coverage * 100).toFixed(2))}%${coverage < 1 ? ' incomplete' : ''} coverage`;
+
+function buildMetricYAxisScale(values: number[], metric: HistoricalMetric): YAxisScale | null {
+  const finiteValues = values.filter(isFiniteValue);
+  if (finiteValues.length === 0) return null;
+  const includeZero = metric === 'premiumRunRate' || metric === 'grossRiskExposure' || metric === 'entryDelta' || metric === 'realizedIrr';
+  return getNiceYAxisScale(includeZero ? [...finiteValues, 0] : finiteValues, 5);
 }
-function incompleteCoverage(point: HistoricalPoint | null): boolean {
-  return !!point && (isRollingPoint(point) ? point.coverage != null && point.coverage.representedRiskPercent !== 1 : point.coverage.excludedUnsafeTerminalTrades > 0);
+
+function buildLabelIndexes(points: readonly HistoricalPoint[], chartWidth: number): number[] {
+  if (points.length <= 1) return points.length ? [0] : [];
+  const targetCount = chartWidth < 500 ? 3 : chartWidth < 760 ? 4 : 6;
+  const plotWidth = Math.max(1, chartWidth - PLOT.left - PLOT.right);
+  const indexes = new Set<number>([0, points.length - 1]);
+  for (let anchor = 1; anchor < targetCount - 1; anchor += 1) {
+    const targetX = PLOT.left + plotWidth * anchor / (targetCount - 1);
+    const nearest = points.reduce((best, point, index) => {
+      const distance = Math.abs(pointX(point, points, plotWidth) - targetX);
+      return distance < best.distance ? { index, distance } : best;
+    }, { index: 0, distance: Number.POSITIVE_INFINITY });
+    indexes.add(nearest.index);
+  }
+  const ordered = [...indexes].sort((left, right) => left - right);
+  const minimumSpacing = chartWidth < 500 ? 74 : 88;
+  const finalIndex = points.length - 1;
+  const kept: number[] = [];
+  for (const index of ordered) {
+    const x = pointX(points[index], points, plotWidth);
+    const leftClear = kept.length === 0 || x - pointX(points[kept[kept.length - 1]], points, plotWidth) >= minimumSpacing;
+    const rightClear = index === finalIndex || pointX(points[finalIndex], points, plotWidth) - x >= minimumSpacing;
+    if (index === 0 || index === finalIndex || (leftClear && rightClear)) kept.push(index);
+  }
+  return kept;
 }
+
+function buildValueLabelIndexes(points: readonly HistoricalPoint[], chartWidth: number): number[] {
+  if (chartWidth < 600) return [];
+  const finiteIndexes = points.flatMap((point, index) => isFiniteValue(point.value) ? [index] : []);
+  if (finiteIndexes.length === 0) return [];
+  const plotWidth = Math.max(1, chartWidth - PLOT.left - PLOT.right);
+  const latest = finiteIndexes[finiteIndexes.length - 1];
+  const indexes = new Set<number>([latest]);
+  const temporalAnchors = chartWidth < 860 ? 4 : 5;
+  for (let anchor = 1; anchor <= temporalAnchors; anchor += 1) {
+    const targetX = PLOT.left + plotWidth * anchor / (temporalAnchors + 1);
+    const nearest = finiteIndexes.reduce((best, index) => {
+      const distance = Math.abs(pointX(points[index], points, plotWidth) - targetX);
+      return distance < best.distance ? { index, distance } : best;
+    }, { index: latest, distance: Number.POSITIVE_INFINITY });
+    const x = pointX(points[nearest.index], points, plotWidth);
+    const clear = [...indexes].every(index => Math.abs(pointX(points[index], points, plotWidth) - x) >= 96);
+    if (clear && x >= PLOT.left + 42 && x <= chartWidth - PLOT.right - 42) indexes.add(nearest.index);
+  }
+  return [...indexes].sort((left, right) => left - right);
+}
+
+function formatAvailableMonths(point: RollingHistoricalAnalyticsPoint): string {
+  const months = Math.min(point.requestedWindowMonths, point.availableDays * 12 / 365.2425);
+  return `${months.toFixed(1)} of ${point.requestedWindowMonths} months available`;
+}
+
+function flowAnnualizationLabel(point: RollingHistoricalAnalyticsPoint): string {
+  const factor = point.flow?.annualizationFactor;
+  if (factor == null) return 'annualization unavailable at 0 elapsed days';
+  return `×${factor.toFixed(1)} annualized${point.fullWindow ? '' : ' from actual elapsed days'}`;
+}
+
+function rollingMetadata(point: RollingHistoricalAnalyticsPoint): string[] {
+  const rows: string[] = [];
+  if (point.fullWindow) rows.push(`Full trailing ${point.requestedWindowMonths}M`);
+  else rows.push(`Partial window · ${formatAvailableMonths(point)}`);
+  if (point.coverage) {
+    rows.push(`${point.coverage.representedTrades} of ${point.coverage.totalEligibleTrades} trades represented`);
+    rows.push(`${formatCurrency(point.coverage.representedGrossRisk, 0)} of ${formatCurrency(point.coverage.totalEligibleGrossRisk, 0)} Gross Risk represented`);
+    if (isFiniteValue(point.coverage.representedRiskPercent)) rows.push(`${(point.coverage.representedRiskPercent * 100).toFixed(0)}% Gross Risk coverage`);
+  } else {
+    rows.push(`${point.tradesIncluded} resolved trades`);
+    rows.push(`${formatCurrency(point.grossRiskRepresented, 0)} Gross Risk represented`);
+  }
+  if (point.flow) rows.push(`Trailing ${formatCurrency(point.flow.trailingValue ?? 0, 0)} · ${flowAnnualizationLabel(point)}`);
+  return rows;
+}
+
 function pointMetadata(point: HistoricalPoint | null): string {
   if (!point) return 'No observations yet';
-  if (!isRollingPoint(point)) return `${point.openTrades} open positions · ${formatCompactCurrency(point.grossRiskRepresented)} Gross Risk · EOD${point.coverage.excludedUnsafeTerminalTrades ? ` · ${point.coverage.excludedUnsafeTerminalTrades} excluded` : ''}`;
-  return `${point.tradesIncluded} trades · ${formatCompactCurrency(point.grossRiskRepresented)} Gross Risk${point.coverage ? ` · ${coverageLabel(point)}` : ''} · ${point.fullWindow ? `Full ${point.requestedWindowMonths}M window` : 'Partial lookback'}`;
+  if (!isRollingPoint(point)) {
+    const excluded = point.coverage.excludedUnsafeTerminalTrades > 0 ? ` · ${point.coverage.excludedUnsafeTerminalTrades} unsafe lifecycle record(s) excluded` : '';
+    return `${point.openTrades} positions open at EOD · ${formatCurrency(point.grossRiskRepresented, 0)} Gross Risk${excluded}`;
+  }
+  const prefix = point.fullWindow ? `Full trailing ${point.requestedWindowMonths}M window` : `Partial window · ${formatAvailableMonths(point)}`;
+  if (point.coverage) {
+    const coverage = isFiniteValue(point.coverage.representedRiskPercent) ? ` · ${(point.coverage.representedRiskPercent * 100).toFixed(0)}% risk coverage` : '';
+    return `${prefix} · ${point.coverage.representedTrades}/${point.coverage.totalEligibleTrades} trades · ${formatCurrency(point.coverage.representedGrossRisk, 0)} Gross Risk${coverage}`;
+  }
+  if (point.flow) return `${prefix} · ${point.flow.tradesOriginated} trades · trailing ${formatCurrency(point.flow.trailingValue ?? 0, 0)} · ${flowAnnualizationLabel(point)}`;
+  return `${prefix} · ${point.tradesIncluded} resolved trades · ${formatCurrency(point.grossRiskRepresented, 0)} Gross Risk`;
 }
+
 function historicalSeries(trades: readonly PortfolioTrade[], metric: HistoricalMetric, windowMonths: RollingWindowMonths): HistoricalSeriesView {
-  if (isStateMetric(metric)) return { ...buildPortfolioHistoricalStateSeries(trades, metric), family: 'PORTFOLIO_STATE' };
+  if (isStateMetric(metric)) {
+    const series = buildPortfolioHistoricalStateSeries(trades, metric);
+    return {
+      metric,
+      family: 'PORTFOLIO_STATE',
+      config: { label: series.config.label, formatterCategory: series.config.formatterCategory, title: series.config.title, subtitle: series.config.subtitle },
+      domain: series.domain,
+      points: series.points,
+    };
+  }
   const series = buildRollingHistoricalAnalyticsSeries(trades, metric, windowMonths);
-  return { ...series, family: 'ROLLING', config: { ...series.config, title: series.config.title(windowMonths), subtitle: series.config.subtitle(windowMonths) } };
+  return {
+    metric,
+    family: 'ROLLING',
+    config: { label: series.config.label, formatterCategory: series.config.formatterCategory, title: series.config.title(windowMonths), subtitle: series.config.subtitle(windowMonths) },
+    domain: series.domain,
+    points: series.points,
+  };
 }
 
-function ObservationDataDialog({ displayed, onClose }: { displayed: DisplayedSeries[]; onClose: () => void }) {
-  const titleId = useId();
-  const overlayRef = useRef<HTMLDivElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
-  const requestClose = useOverlayDismiss(onClose, panelRef, overlayRef);
-  useBlockingOverlayBehavior({ panelRef, overlayRef, initialFocusRef: panelRef, onEscape: requestClose });
-  const primary = displayed.find(item => item.primary)!;
-  const rolling = primary.series.family === 'ROLLING';
-  return createPortal(<div ref={overlayRef} className="historical-data-layer fixed inset-0 z-[95] flex items-center justify-center p-4">
-    <button type="button" className="motion-backdrop absolute inset-0 bg-black/60" aria-label="Close observation data" onClick={requestClose} />
-    <div ref={panelRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className="historical-data-panel motion-modal overlay-panel relative z-10 flex flex-col overflow-hidden outline-none">
-      <header><div><h2 id={titleId}>Observation data · {primary.series.config.label}</h2><p>{primary.series.points.length} visible dates · {rolling ? 'Trailing windows' : 'End-of-day state'} · unavailable values shown as —</p></div><button type="button" className="icon-button" aria-label="Close observation data" onClick={requestClose}><X size={20} /></button></header>
-      <div className="historical-data-scroll" tabIndex={0} role="region" aria-label="Visible observations table">
-        <table className="financial-table"><caption className="sr-only">Exact observations backing the visible chart, with source coverage. No constituent trades.</caption>
-          <thead><tr><th scope="col">Date</th>{displayed.length > 1 && <th scope="col">Window</th>}<th scope="col">{primary.series.config.label}</th><th scope="col">{rolling ? 'Trades represented' : 'Open positions'}</th><th scope="col">Gross Risk represented</th><th scope="col">Coverage / exclusions</th><th scope="col">{rolling ? 'Window basis' : 'State basis'}</th></tr></thead>
-          <tbody>{primary.series.points.flatMap((point, index) => displayed.map(item => {
-            const observation = item.series.points[index];
-            if (!observation || observation.date !== point.date) return null;
-            return <tr key={`${point.date}-${item.window}`} data-observation-date={point.date}><th scope="row">{point.date}</th>{displayed.length > 1 && <td>{item.window}M{item.primary ? ' (primary)' : ''}</td>}<td>{formatMetricValue(observation.value, item.series.config.formatterCategory, item.series.metric)}</td><td>{isRollingPoint(observation) ? observation.tradesIncluded : observation.openTrades}</td><td>{formatCurrency(observation.grossRiskRepresented, 2)}</td><td>{coverageLabel(observation)}</td><td>{isRollingPoint(observation) ? `${observation.fullWindow ? 'Full' : 'Partial'} ${item.window}M · ${observation.effectiveWindowStart}–${observation.date}` : 'End of day'}</td></tr>;
-          }))}</tbody>
-        </table>
-        {primary.series.points.length === 0 && <p>No visible observations.</p>}
-      </div>
-    </div>
-  </div>, document.body);
-}
-
-export default function RollingHistoricalAnalyticsChart({ trades, metric: controlledMetric, onMetricChange, windowMonths: controlledWindowMonths, onWindowMonthsChange }: {
-  trades: readonly PortfolioTrade[]; metric?: HistoricalMetric; onMetricChange?: (metric: HistoricalMetric) => void; windowMonths?: RollingWindowMonths; onWindowMonthsChange?: (windowMonths: RollingWindowMonths) => void;
+export default function RollingHistoricalAnalyticsChart({
+  trades,
+  metric: controlledMetric,
+  onMetricChange,
+  windowMonths: controlledWindowMonths,
+  onWindowMonthsChange,
+}: {
+  trades: readonly PortfolioTrade[];
+  metric?: HistoricalMetric;
+  onMetricChange?: (metric: HistoricalMetric) => void;
+  windowMonths?: RollingWindowMonths;
+  onWindowMonthsChange?: (windowMonths: RollingWindowMonths) => void;
 }) {
-  const titleId = useId();
-  const instructionsId = useId();
   const [uncontrolledMetric, setUncontrolledMetric] = useState<HistoricalMetric>('entryAy');
   const [uncontrolledWindowMonths, setUncontrolledWindowMonths] = useState<RollingWindowMonths>(6);
   const metric = controlledMetric ?? uncontrolledMetric;
   const windowMonths = controlledWindowMonths ?? uncontrolledWindowMonths;
-  const [visibleRange, setVisibleRange] = useState<HistoricalVisibleRange>('Since Inception');
-  const [compare, setCompare] = useState(false);
-  const [viewData, setViewData] = useState(false);
-  const [showHelp, setShowHelp] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
-  const [pinnedIndex, setPinnedIndex] = useState<number | null>(null);
-  const [announcement, setAnnouncement] = useState('');
+  const [isInteracting, setIsInteracting] = useState(false);
+  const [plotSize, setPlotSize] = useState({ width: CHART_WIDTH, height: CHART_HEIGHT });
   const plotRef = useRef<HTMLDivElement>(null);
-  const pointerStart = useRef<{ x: number; y: number } | null>(null);
-  const [plotSize, setPlotSize] = useState({ width: 960, height: 292, textScale: 1 });
-  const computedSeries = useMemo(() => historicalSeries(trades, metric, windowMonths), [trades, metric, windowMonths]);
-  const comparison = useMemo(() => compare && !isStateMetric(metric) ? ROLLING_WINDOW_MONTHS.filter(window => window !== windowMonths).map(window => ({ window, series: historicalSeries(trades, metric, window), primary: false })) : [], [compare, metric, trades, windowMonths]);
-  const displayed = useMemo(() => [...comparison, { window: windowMonths, series: computedSeries, primary: true }].map(item => ({ ...item, series: { ...item.series, points: selectHistoricalVisiblePoints(item.series.points, item.series.domain.endDate, visibleRange) } })), [comparison, computedSeries, visibleRange, windowMonths]);
-  const series = displayed[displayed.length - 1].series;
-  const currentPoint = latestAvailablePoint(computedSeries.points);
+  const [visibleRange, setVisibleRange] = useState<HistoricalVisibleRange>('Since Inception');
+  // Remount only the presentation layers when controls change; never morph values.
+  const seriesKey = `${metric}-${windowMonths}-${visibleRange}`;
+  const computedSeries = useMemo(() => historicalSeries(trades, metric, windowMonths), [metric, trades, windowMonths]);
+  const series = useMemo(() => {
+    const points = selectHistoricalVisiblePoints(computedSeries.points, computedSeries.domain.endDate, visibleRange);
+    return { ...computedSeries, points, domain: { ...computedSeries.domain, startDate: points[0]?.date ?? null } };
+  }, [computedSeries, visibleRange]);
+  const scale = useMemo(() => buildMetricYAxisScale(series.points.map(point => point.value ?? Number.NaN), metric), [metric, series.points]);
   const latestIndex = latestAvailableIndex(series.points);
-  const inspecting = selectedIndex != null || pinnedIndex != null;
-  const resolvedIndex = selectedIndex ?? pinnedIndex ?? latestIndex;
-  const selectedPoint = series.points[resolvedIndex] ?? null;
-  const formatValue = (value: number | null, axis = false) => formatMetricValue(value, series.config.formatterCategory, metric, axis);
+  const resolvedSelectedIndex = isInteracting && selectedIndex != null && selectedIndex < series.points.length ? selectedIndex : latestIndex;
+  const selectedPoint = resolvedSelectedIndex == null ? null : series.points[resolvedSelectedIndex];
+  const plotWidth = Math.max(1, plotSize.width - PLOT.left - PLOT.right);
+  const plotHeight = Math.max(1, plotSize.height - PLOT.top - PLOT.bottom);
+  const lineSegments = scale ? buildLineSegments(series.points, scale, plotSize.width, plotSize.height) : [];
+  const labelIndexes = buildLabelIndexes(series.points, plotSize.width);
+  const valueLabelIndexes = buildValueLabelIndexes(series.points, plotSize.width);
 
-  useEffect(() => { setSelectedIndex(null); setPinnedIndex(null); setShowHelp(false); }, [metric, windowMonths, visibleRange, trades]);
   useEffect(() => {
     const element = plotRef.current;
-    if (!element) return;
+    if (!element) return undefined;
     const update = () => {
       const rect = element.getBoundingClientRect();
-      const textScale = Number.parseFloat(getComputedStyle(element).getPropertyValue('--ui-text-scale')) || 1;
-      if (rect.width > 0) setPlotSize({ width: rect.width, height: element.clientHeight || 292, textScale });
+      if (rect.width > 0) setPlotSize({ width: Math.max(320, rect.width), height: Math.max(120, element.clientHeight || CHART_HEIGHT) });
     };
     update();
-    const resize = new ResizeObserver(update);
-    resize.observe(element);
-    const textObserver = new MutationObserver(update);
-    textObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-text-size'] });
-    return () => { resize.disconnect(); textObserver.disconnect(); };
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => observer.disconnect();
   }, []);
 
-  // Geometry and extra windows stay memoized while pointer selection changes.
-  const geometry = useMemo(() => {
-    const left = 64 * plotSize.textScale;
-    const right = 12;
-    const top = 30;
-    const bottom = 28;
-    const width = Math.max(1, plotSize.width - left - right);
-    const height = Math.max(1, plotSize.height - top - bottom);
-    const start = series.points[0]?.date ?? series.domain.endDate;
-    const end = series.points[series.points.length - 1]?.date ?? series.domain.endDate;
-    const startTime = Date.parse(start);
-    const span = Date.parse(end) - startTime;
-    const x = (date: string) => left + (span === 0 ? 0.5 : (Date.parse(date) - startTime) / span) * width;
-    const values = displayed.flatMap(item => item.series.points.flatMap(point => isFiniteValue(point.value) ? [point.value] : []));
-    const includeZero = ['premiumRunRate', 'grossRiskExposure', 'entryDelta', 'realizedIrr', 'blendedCapture'].includes(metric);
-    const scale = values.length ? getNiceYAxisScale(includeZero ? [...values, 0] : values, plotSize.height < 180 ? 3 : 5) : null;
-    const y = (value: number) => top + (1 - (value - (scale?.min ?? 0)) / ((scale?.max ?? 1) - (scale?.min ?? 0) || 1)) * height;
-    const step = series.family === 'PORTFOLIO_STATE';
-    const lines = displayed.map(item => ({ ...item, segments: segmentHistoricalPoints(item.series.points).map(segment => {
-      const points = segment.indexes.map(index => item.series.points[index]);
-      const path = points.map((point, index) => `${index === 0 ? 'M' : step ? 'H' : 'L'} ${x(point.date).toFixed(2)}${index > 0 && step ? ' V' : ''} ${y(point.value!).toFixed(2)}`).join(' ');
-      return { ...segment, points, path };
-    }) }));
-    const fontSize = (plotSize.width < 600 ? 11 : 12) * plotSize.textScale;
-    const labels: { index: number; text: string; x: number; y: number; width: number; height: number; current: boolean }[] = [];
-    if (scale) selectHistoricalValueLabels(series.points).forEach(label => {
-      const point = series.points[label.index];
-      const text = `${label.roles[0]} ${formatMetricValue(point.value, series.config.formatterCategory, metric, true)}`;
-      const labelWidth = text.length * fontSize * 0.62 + 8;
-      if (labelWidth > width) return;
-      const labelX = Math.min(plotSize.width - right - labelWidth, Math.max(left, x(point.date) - labelWidth / 2));
-      const pointY = y(point.value!);
-      const labelY = pointY < top + fontSize + 8 ? pointY + fontSize + 8 : pointY - 9;
-      const box = { index: label.index, text, x: labelX, y: labelY, width: labelWidth, height: fontSize + 5, current: label.roles.includes('Current') };
-      if (!labels.some(other => box.x < other.x + other.width + 8 && box.x + box.width + 8 > other.x && Math.abs(box.y - other.y) < box.height + 5)) labels.push(box);
-    });
-    const maxRisk = Math.max(1, ...series.points.map(point => point.grossRiskRepresented));
-    const stride = Math.max(1, Math.ceil(series.points.length / Math.max(1, Math.floor(width / 5))));
-    const bars = series.family === 'ROLLING' && plotSize.width >= 500 ? series.points.filter((_, index) => index % stride === 0).map(point => ({ x: x(point.date), height: point.grossRiskRepresented / maxRisk * 14 })) : [];
-    return { left, right, top, bottom, width, height, x, y, scale, lines, labels, bars, ticks: buildHistoricalCalendarTicks(start, end, width, 78 * plotSize.textScale), hasPartial: displayed.some(item => item.series.points.some(point => isRollingPoint(point) && !point.fullWindow && isFiniteValue(point.value))), hasGaps: displayed.some(item => item.series.points.some(point => !isFiniteValue(point.value))) };
-  }, [displayed, metric, plotSize, series]);
-
-  const nearestIndex = (clientX: number, target: SVGSVGElement) => {
+  const selectPointAtClientX = (clientX: number, target: SVGSVGElement) => {
+    const selectable = series.points.flatMap((point, index) => isFiniteValue(point.value) ? [{ point, index }] : []);
+    if (selectable.length === 0) return;
     const rect = target.getBoundingClientRect();
-    const localX = (clientX - rect.left) / Math.max(1, rect.width) * plotSize.width;
-    return series.points.reduce((best, point, index) => Math.abs(geometry.x(point.date) - localX) < best.distance ? { index, distance: Math.abs(geometry.x(point.date) - localX) } : best, { index: -1, distance: Infinity }).index;
+    const localX = ((clientX - rect.left) / Math.max(rect.width, 1)) * plotSize.width;
+    const nearest = selectable.reduce((best, item) => {
+      const { point, index } = item;
+      const distance = Math.abs(pointX(point, series.points, plotWidth) - localX);
+      return distance < best.distance ? { index, distance } : best;
+    }, { index: selectable[0].index, distance: Number.POSITIVE_INFINITY });
+    setSelectedIndex(nearest.index);
+    setIsInteracting(true);
   };
-  const announcePoint = (index: number, pinned: boolean) => {
-    const point = series.points[index];
-    setAnnouncement(point ? `${pinned ? 'Pinned' : 'Inspecting'} ${formatDate(point.date)}: ${formatValue(point.value)}. ${pointMetadata(point)}` : 'Selection cleared');
+  const handlePointerMove = (event: ReactPointerEvent<SVGSVGElement>) => selectPointAtClientX(event.clientX, event.currentTarget);
+  const handlePointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    selectPointAtClientX(event.clientX, event.currentTarget);
   };
-  const clearSelection = () => { setPinnedIndex(null); setSelectedIndex(null); setAnnouncement('Selection cleared. Current value shown.'); };
-  const handlePointerDown = (event: PointerEvent<SVGSVGElement>) => { pointerStart.current = { x: event.clientX, y: event.clientY }; };
-  const handlePointerUp = (event: PointerEvent<SVGSVGElement>) => {
-    const start = pointerStart.current;
-    pointerStart.current = null;
-    if (!start || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 10) return;
-    const index = nearestIndex(event.clientX, event.currentTarget);
-    if (index < 0) return;
-    if (pinnedIndex === index) clearSelection();
-    else { setPinnedIndex(index); setSelectedIndex(null); announcePoint(index, true); }
-  };
-  const handleKeyDown = (event: KeyboardEvent<SVGSVGElement>) => {
-    if (event.key === 'Escape') { event.preventDefault(); clearSelection(); return; }
-    if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
-      event.preventDefault();
-      if (!series.points.length) return;
-      const next = event.key === 'Home' ? 0 : event.key === 'End' ? series.points.length - 1 : Math.max(0, Math.min(series.points.length - 1, (resolvedIndex < 0 ? 0 : resolvedIndex) + (event.key === 'ArrowLeft' ? -1 : 1)));
-      setSelectedIndex(next); announcePoint(next, false);
-    } else if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      if (resolvedIndex >= 0) { setPinnedIndex(resolvedIndex); setSelectedIndex(null); announcePoint(resolvedIndex, true); }
-    }
-  };
-  const changeMetric = (next: HistoricalMetric) => { onMetricChange?.(next); if (!onMetricChange) setUncontrolledMetric(next); };
-  const selectedX = selectedPoint ? geometry.x(selectedPoint.date) : null;
-  const showComparison = compare && series.family === 'ROLLING';
 
-  return <section className="rolling-historical-analytics" data-testid="rolling-historical-analytics" data-analytics-family={series.family}
-    data-rolling-domain-start={series.points[0]?.date ?? ''} data-rolling-domain-end={series.domain.endDate}
-    data-rolling-observation-count={series.points.length} data-rolling-plot-width={Math.round(plotSize.width)}
-    data-rolling-current-value={formatValue(currentPoint?.value ?? null)} data-rolling-hover-value={inspecting && selectedPoint ? formatValue(selectedPoint.value) : ''}
-    data-pinned-date={pinnedIndex == null ? '' : series.points[pinnedIndex]?.date ?? ''} data-comparison={showComparison} aria-labelledby={titleId}>
-    <div className="rolling-historical-analytics__header">
-      <div className="rolling-historical-analytics__heading">
-        <div className="rolling-historical-analytics__eyebrow">Historical analytics</div>
-        <div className="rolling-historical-analytics__title-row"><h3 id={titleId}>{series.config.label}</h3><strong className="rolling-historical-analytics__current-value">{formatValue(currentPoint?.value ?? null)}</strong></div>
-        <p className="rolling-historical-analytics__context">{series.family === 'ROLLING' ? `${windowMonths}M rolling` : 'End-of-day state'} · {currentPoint ? `through ${formatDate(currentPoint.date)}` : 'No observations'}</p>
+  const selectedX = selectedPoint ? pointX(selectedPoint, series.points, plotWidth) : null;
+  const selectedY = selectedPoint && scale && isFiniteValue(selectedPoint.value)
+    ? PLOT.top + (1 - (selectedPoint.value - scale.min) / (scale.max - scale.min || 1)) * plotHeight
+    : null;
+  const selectedXPercent = selectedX == null ? null : selectedX / plotSize.width * 100;
+  const tooltipTransform = selectedXPercent != null && selectedXPercent < 22 ? 'translateX(0)' : selectedXPercent != null && selectedXPercent > 78 ? 'translateX(-100%)' : 'translateX(-50%)';
+  const domainStart = series.domain.startDate ?? series.domain.endDate;
+  const longHistory = (Date.parse(`${series.domain.endDate}T00:00:00Z`) - Date.parse(`${domainStart}T00:00:00Z`)) / (86_400_000 * 30.4375) > 18;
+  const context = isInteracting && selectedPoint
+    ? `${formatLongDate(selectedPoint.date)} · ${series.family === 'ROLLING' ? `${windowMonths}M window` : 'point in time'}`
+    : series.config.subtitle;
+  const allMetricConfigs = [
+    ...ROLLING_HISTORICAL_METRIC_CONFIGS.map(config => ({ key: config.key, label: config.label, family: 'Rolling' })),
+    ...PORTFOLIO_HISTORICAL_STATE_METRIC_CONFIGS.map(config => ({ key: config.key, label: config.label, family: 'Portfolio State' })),
+  ];
+
+  return (
+    <section className="rolling-historical-analytics" data-testid="rolling-historical-analytics" data-analytics-family={series.family}
+      data-rolling-domain-start={series.domain.startDate ?? ''} data-rolling-domain-end={series.domain.endDate}
+      data-rolling-observation-count={series.points.length} data-rolling-plot-width={Math.round(plotSize.width)}
+      data-rolling-current-value={selectedPoint?.value == null ? '—' : formatMetricValue(selectedPoint.value, series.config.formatterCategory, metric)}
+      data-rolling-hover-value={isInteracting && selectedPoint?.value != null ? formatMetricValue(selectedPoint.value, series.config.formatterCategory, metric) : ''}
+      aria-labelledby="historical-analytics-title">
+      <div className="rolling-historical-analytics__header">
+        <div className="rolling-historical-analytics__heading">
+          <div className="rolling-historical-analytics__eyebrow">Historical analytics · {series.family === 'ROLLING' ? 'Rolling' : 'Portfolio state'}</div>
+          <div className="rolling-historical-analytics__title-row">
+            <h3 id="historical-analytics-title">{series.config.title}</h3>
+            <strong className="rolling-historical-analytics__current-value" aria-live="polite">{selectedPoint?.value == null ? '—' : formatMetricValue(selectedPoint.value, series.config.formatterCategory, metric)}</strong>
+          </div>
+          <p className="rolling-historical-analytics__context">{context}</p>
+          <p className="rolling-historical-analytics__metadata">{pointMetadata(selectedPoint)}</p>
+        </div>
+        <div className="rolling-historical-analytics__controls">
+          <label className="rolling-historical-analytics__metric-control">
+            <span>Visible range</span>
+            <select aria-label="Visible range" value={visibleRange} onChange={event => { setVisibleRange(event.target.value as HistoricalVisibleRange); setSelectedIndex(null); setIsInteracting(false); }}>
+              {HISTORICAL_VISIBLE_RANGES.map(range => <option key={range} value={range}>{range}</option>)}
+            </select>
+          </label>
+          <label className="rolling-historical-analytics__metric-control">
+            <span>Analytics</span>
+            <select value={metric} onChange={event => { const next = event.target.value as HistoricalMetric; onMetricChange?.(next); if (!onMetricChange) setUncontrolledMetric(next); setSelectedIndex(null); setIsInteracting(false); }} aria-label="Analytics">
+              {['Rolling', 'Portfolio State'].map(family => <optgroup key={family} label={family}>{allMetricConfigs.filter(option => option.family === family).map(option => <option key={option.key} value={option.key}>{option.label}</option>)}</optgroup>)}
+            </select>
+          </label>
+          {series.family === 'ROLLING' ? <div className="rolling-historical-analytics__period" role="group" aria-label="Rolling period">
+            {ROLLING_WINDOW_MONTHS.map(period => <button key={period} type="button" aria-pressed={windowMonths === period} className={windowMonths === period ? 'is-active' : ''} onClick={() => { onWindowMonthsChange?.(period); if (!onWindowMonthsChange) setUncontrolledWindowMonths(period); setSelectedIndex(null); setIsInteracting(false); }}>{period}M</button>)}
+          </div> : <span className="rolling-historical-analytics__point-in-time">Point in time</span>}
+        </div>
       </div>
-      <div className="rolling-historical-analytics__controls" tabIndex={0} role="group" aria-label="Historical analytics controls; scroll for more">
-        <label className="rolling-historical-analytics__metric-control"><span>Series</span><select aria-label="Series" value={series.family} onChange={event => { setCompare(false); changeMetric(event.target.value === 'ROLLING' ? 'entryAy' : 'grossRiskExposure'); }}><option value="ROLLING">Rolling</option><option value="PORTFOLIO_STATE">Portfolio State</option></select></label>
-        <label className="rolling-historical-analytics__metric-control"><span>Metric</span><select value={metric} onChange={event => changeMetric(event.target.value as HistoricalMetric)} aria-label="Metric">
-          {series.family === 'ROLLING' ? <>{['Entry / Strategy', 'Outcomes'].map(group => <optgroup key={group} label={group}>{ROLLING_HISTORICAL_METRIC_CONFIGS.filter(config => (['realizedIrr', 'blendedCapture'].includes(config.key) ? 'Outcomes' : 'Entry / Strategy') === group).map(config => <option key={config.key} value={config.key}>{config.label}</option>)}</optgroup>)}</> : PORTFOLIO_HISTORICAL_STATE_METRIC_CONFIGS.map(config => <option key={config.key} value={config.key}>{config.label}</option>)}
-        </select></label>
-        {series.family === 'ROLLING' && <div className="rolling-historical-analytics__metric-control"><span>Window</span><div className="rolling-historical-analytics__period" role="group" aria-label="Rolling window">{ROLLING_WINDOW_MONTHS.map(period => <button type="button" key={period} aria-pressed={windowMonths === period} className={windowMonths === period ? 'is-active' : ''} onClick={() => { onWindowMonthsChange?.(period); if (!onWindowMonthsChange) setUncontrolledWindowMonths(period); }}>{period}M</button>)}</div></div>}
-        <label className="rolling-historical-analytics__metric-control"><span>Range</span><select aria-label="Range" value={visibleRange} onChange={event => setVisibleRange(event.target.value as HistoricalVisibleRange)}>{HISTORICAL_VISIBLE_RANGES.map(range => <option key={range} value={range}>{HISTORICAL_VISIBLE_RANGE_LABELS[range]}</option>)}</select></label>
-        {series.family === 'ROLLING' && <button type="button" className="historical-control-action" aria-pressed={compare} onClick={() => setCompare(value => !value)}>Compare</button>}
-        <button type="button" className="historical-control-action" onClick={() => setViewData(true)}>View data</button>
-        <button type="button" className="historical-control-action" aria-expanded={showHelp} aria-label="Chart methodology" onClick={() => setShowHelp(value => !value)}>?</button>
+      <div className="rolling-historical-analytics__plot-wrap">
+        <div ref={plotRef} className="rolling-historical-analytics__plot" data-testid="rolling-historical-analytics-plot">
+          {selectedPoint && isInteracting && selectedX != null && <div className="rolling-historical-analytics__tooltip" style={{ left: `${selectedXPercent}%`, transform: tooltipTransform }} role="status">
+            <strong>{formatLongDate(selectedPoint.date)}</strong>
+            <span>{series.config.label}: {formatMetricValue(selectedPoint.value, series.config.formatterCategory, metric)}</span>
+            {isRollingPoint(selectedPoint) ? <>
+              <span>{selectedPoint.fullWindow ? `Full trailing ${selectedPoint.requestedWindowMonths}M window` : `Partial window · ${formatAvailableMonths(selectedPoint)}`}</span>
+              <span>Effective start {formatAxisDate(selectedPoint.effectiveWindowStart, false)} · requested {formatAxisDate(selectedPoint.requestedWindowStart, false)}</span>
+              {rollingMetadata(selectedPoint).slice(1).map(row => <span key={row}>{row}</span>)}
+            </> : <><span>Point in time · end-of-day state</span><span>{selectedPoint.openTrades} open positions · {formatCurrency(selectedPoint.grossRiskRepresented, 0)} Gross Risk</span></>}
+          </div>}
+          <svg className="rolling-historical-analytics__svg" viewBox={`0 0 ${plotSize.width} ${plotSize.height}`} preserveAspectRatio="none" role="img"
+            aria-label={`${series.config.title} time series from ${series.domain.startDate ?? 'the first trade'} through ${series.domain.endDate}`}
+            onPointerMove={handlePointerMove} onPointerDown={handlePointerDown} onPointerLeave={() => { setIsInteracting(false); setSelectedIndex(null); }}>
+            {scale && scale.ticks.map(tick => {
+              const y = PLOT.top + (1 - (tick - scale.min) / (scale.max - scale.min || 1)) * plotHeight;
+              return <g key={tick}><line className="rolling-historical-analytics__grid" x1={PLOT.left} x2={plotSize.width - PLOT.right} y1={y} y2={y} /><text className="rolling-historical-analytics__y-label" x={PLOT.left - 9} y={y + 4} textAnchor="end">{formatMetricValue(tick, series.config.formatterCategory, metric, true)}</text></g>;
+            })}
+            {scale && scale.min <= 0 && scale.max >= 0 && <line className="rolling-historical-analytics__zero" x1={PLOT.left} x2={plotSize.width - PLOT.right} y1={PLOT.top + (1 - (0 - scale.min) / (scale.max - scale.min || 1)) * plotHeight} y2={PLOT.top + (1 - (0 - scale.min) / (scale.max - scale.min || 1)) * plotHeight} />}
+            <line className="rolling-historical-analytics__axis" x1={PLOT.left} x2={plotSize.width - PLOT.right} y1={PLOT.top + plotHeight} y2={PLOT.top + plotHeight} />
+            <g key={`path-${seriesKey}`} className="rolling-historical-analytics__data">
+              {lineSegments.map((segment, index) => {
+                const path = pathForPoints(segment.points);
+                const lineClass = `rolling-historical-analytics__line rolling-historical-analytics__line--${segment.kind}`;
+                return <g key={`${segment.kind}-${index}`}>
+                  <path className={`${lineClass} rolling-historical-analytics__line--depth`} d={path} aria-hidden="true" />
+                  <path className={lineClass} d={path} />
+                </g>;
+              })}
+            </g>
+            <g key={`labels-${seriesKey}`} className="rolling-historical-analytics__labels">
+            {scale && valueLabelIndexes.map(index => {
+              const point = series.points[index];
+              if (!point || !isFiniteValue(point.value)) return null;
+              const x = pointX(point, series.points, plotWidth);
+              const y = PLOT.top + (1 - (point.value - scale.min) / (scale.max - scale.min || 1)) * plotHeight;
+              const latest = index === latestIndex;
+              return <text key={`value-${point.date}`} className={`rolling-historical-analytics__value-label ${latest ? 'is-latest' : ''}`} x={latest ? x - 4 : x} y={y < PLOT.top + 18 ? y + 15 : y - 8} textAnchor={latest ? 'end' : 'middle'}>{formatMetricValue(point.value, series.config.formatterCategory, metric, true)}</text>;
+            })}
+            </g>
+            {selectedX != null && isInteracting && <line className="rolling-historical-analytics__crosshair" x1={selectedX} x2={selectedX} y1={PLOT.top} y2={PLOT.top + plotHeight} />}
+            {selectedX != null && selectedY != null && <circle key={`marker-${seriesKey}-${isInteracting ? 'inspect' : 'latest'}`} className="rolling-historical-analytics__marker" cx={selectedX} cy={selectedY} r="4" />}
+            {labelIndexes.map(index => {
+              const point = series.points[index];
+              if (!point) return null;
+              const x = pointX(point, series.points, plotWidth);
+              return <text key={`${point.date}-${index}`} className="rolling-historical-analytics__x-label" x={x} y={plotSize.height - 10} textAnchor={index === 0 ? 'start' : index === series.points.length - 1 ? 'end' : 'middle'}>{formatAxisDate(point.date, longHistory)}</text>;
+            })}
+          </svg>
+          {!scale && <div className="rolling-historical-analytics__empty">No observations available for this metric yet.</div>}
+        </div>
       </div>
-    </div>
-    <p className={`rolling-historical-analytics__metadata ${incompleteCoverage(currentPoint) ? 'is-incomplete' : ''}`} title={pointMetadata(currentPoint)}>{pointMetadata(currentPoint)}</p>
-    <div className="rolling-historical-analytics__plot-wrap"><div ref={plotRef} className="rolling-historical-analytics__plot" data-testid="rolling-historical-analytics-plot">
-      <div className="historical-chart-legend" aria-label="Chart context">
-        {showComparison && ROLLING_WINDOW_MONTHS.map(window => <span key={window} className={`historical-window historical-window--${window} ${window === windowMonths ? 'is-primary' : ''}`}>{window}M{window === windowMonths ? ' primary' : ''}</span>)}
-        {geometry.hasPartial && <span className="historical-partial-key">Partial lookback</span>}{geometry.hasGaps && <span>Gaps: unavailable</span>}
-        {geometry.bars.length > 0 && <span className="historical-risk-key">Gross Risk context</span>}
-      </div>
-      {showHelp && <div className="historical-chart-help" role="region" aria-label="Chart methodology"><button type="button" onClick={() => setShowHelp(false)} aria-label="Close methodology">×</button><p>{series.config.subtitle}</p><p>Range changes display only. Current is the latest available value. Dashed segments are valid partial lookbacks; missing observations break the line. The faint lower bars show represented Gross Risk, not statistical confidence.</p><p>Tap/click to pin. Left/Right explores dates, Enter pins, Escape clears. View data contains the observations and coverage.</p></div>}
-      {selectedPoint && inspecting && !showHelp && <div className={`rolling-historical-analytics__tooltip ${pinnedIndex != null ? 'is-pinned' : ''}`} style={{ left: selectedX != null && selectedX > plotSize.width / 2 ? '0.35rem' : undefined, right: selectedX != null && selectedX <= plotSize.width / 2 ? '0.35rem' : undefined }}>
-        <strong>{pinnedIndex === resolvedIndex ? 'Pinned · ' : ''}{formatDate(selectedPoint.date)}</strong>
-        {showComparison ? displayed.slice().sort((a, b) => a.window - b.window).map(item => <span key={item.window}>{item.window}M{item.primary ? ' primary' : ''}: <b>{formatMetricValue(item.series.points[resolvedIndex]?.value ?? null, series.config.formatterCategory, metric)}</b>{isRollingPoint(item.series.points[resolvedIndex]) && !item.series.points[resolvedIndex].fullWindow ? ' · Partial' : ''}</span>) : <span>{series.config.label}: <b>{formatValue(selectedPoint.value)}</b></span>}
-        <span className={incompleteCoverage(selectedPoint) ? 'is-incomplete' : ''}>{pointMetadata(selectedPoint)}</span>
-        <span>{formatCurrency(selectedPoint.grossRiskRepresented, 2)} Gross Risk represented</span>
-        {isRollingPoint(selectedPoint) ? <><span>{selectedPoint.effectiveWindowStart}–{selectedPoint.date} · requested {selectedPoint.requestedWindowStart}</span>{selectedPoint.coverage && <span>{selectedPoint.coverage.representedTrades}/{selectedPoint.coverage.totalEligibleTrades} trades · {formatCurrency(selectedPoint.coverage.representedGrossRisk, 2)}/{formatCurrency(selectedPoint.coverage.totalEligibleGrossRisk, 2)} risk</span>}{selectedPoint.flow && <span>Trailing Premium {selectedPoint.flow.trailingValue == null ? '—' : formatCurrency(selectedPoint.flow.trailingValue, 2)} · annualization {selectedPoint.flow.annualizationFactor == null ? 'unavailable' : `×${selectedPoint.flow.annualizationFactor.toFixed(2)}`}</span>}</> : <span>{coverageLabel(selectedPoint)}</span>}
-      </div>}
-      {pinnedIndex != null && <button type="button" className="historical-clear-pin" onClick={clearSelection} aria-label="Clear pinned observation">Clear pin</button>}
-      <svg className="rolling-historical-analytics__svg" viewBox={`0 0 ${plotSize.width} ${plotSize.height}`} preserveAspectRatio="none" role="group" tabIndex={0} aria-roledescription="interactive time series chart"
-        aria-label={`${series.config.title} time series from ${series.points[0]?.date ?? 'the first trade'} through ${series.domain.endDate}`} aria-describedby={instructionsId}
-        onPointerMove={event => { if (event.pointerType === 'mouse') { const next = nearestIndex(event.clientX, event.currentTarget); setSelectedIndex(next < 0 ? null : next); } }} onPointerDown={handlePointerDown} onPointerUp={handlePointerUp} onPointerCancel={() => { pointerStart.current = null; }} onPointerLeave={() => setSelectedIndex(null)} onBlur={() => setSelectedIndex(null)} onKeyDown={handleKeyDown}>
-        {geometry.scale?.ticks.map(tick => <g key={tick}><line className="rolling-historical-analytics__grid" x1={geometry.left} x2={plotSize.width - geometry.right} y1={geometry.y(tick)} y2={geometry.y(tick)} /><text className="rolling-historical-analytics__y-label" x={geometry.left - 9} y={geometry.y(tick) + 4} textAnchor="end">{formatValue(tick, true)}</text></g>)}
-        {geometry.scale && geometry.scale.min <= 0 && geometry.scale.max >= 0 && <line className="rolling-historical-analytics__zero" x1={geometry.left} x2={plotSize.width - geometry.right} y1={geometry.y(0)} y2={geometry.y(0)} />}
-        <line className="rolling-historical-analytics__axis" x1={geometry.left} x2={plotSize.width - geometry.right} y1={geometry.top + geometry.height} y2={geometry.top + geometry.height} />
-        {geometry.bars.map((bar, index) => <rect key={index} className="historical-context-bar" x={bar.x - 1} y={geometry.top + geometry.height - bar.height} width={2} height={bar.height} />)}
-        {geometry.scale && geometry.lines.map(item => <g key={item.window} data-window={series.family === 'ROLLING' ? item.window : 'state'} data-primary={item.primary} className={`historical-series ${item.primary ? 'is-primary' : `is-secondary historical-series--${item.window}`}`}>
-          {item.segments.map((segment, index) => <g key={index}>
-            {item.primary && ['premiumRunRate', 'grossRiskExposure'].includes(metric) && segment.points.length > 1 && <path className="historical-series-area" d={`${segment.path} L ${geometry.x(segment.points[segment.points.length - 1].date)} ${geometry.y(0)} L ${geometry.x(segment.points[0].date)} ${geometry.y(0)} Z`} />}
-            <path className={`rolling-historical-analytics__line rolling-historical-analytics__line--${segment.kind}`} d={segment.path} />
-            {segment.points.length === 1 && <circle className="historical-island" cx={geometry.x(segment.points[0].date)} cy={geometry.y(segment.points[0].value!)} r={2.5} />}
-          </g>)}
-        </g>)}
-        {geometry.labels.map(label => <text key={label.index} className={`rolling-historical-analytics__value-label ${label.current ? 'is-latest' : ''}`} x={label.x} y={label.y}>{label.text}</text>)}
-        {selectedX != null && inspecting && <line className="rolling-historical-analytics__crosshair" x1={selectedX} x2={selectedX} y1={geometry.top} y2={geometry.top + geometry.height} />}
-        {selectedX != null && selectedPoint && isFiniteValue(selectedPoint.value) && <circle className="rolling-historical-analytics__marker" cx={selectedX} cy={geometry.y(selectedPoint.value)} r={4} />}
-        {geometry.ticks.map(tick => <text key={tick.date} className="rolling-historical-analytics__x-label" x={geometry.x(tick.date)} y={plotSize.height - 7} textAnchor={geometry.x(tick.date) < geometry.left + 30 ? 'start' : geometry.x(tick.date) > plotSize.width - 45 ? 'end' : 'middle'}>{tick.label}</text>)}
-      </svg>
-      {!geometry.scale && <div className="rolling-historical-analytics__empty">No observations available for this metric yet.</div>}
-    </div></div>
-    <p className="sr-only" id={instructionsId}>Left and Right explore observations. Enter or Space pins. Escape clears. Tap or click to pin an observation. Partial lookbacks are dashed; unavailable observations are gaps without connecting lines.</p>
-    <span className="sr-only" role="status" aria-live="polite">{announcement}</span>
-    {viewData && <ObservationDataDialog displayed={displayed} onClose={() => setViewData(false)} />}
-  </section>;
+      <p className="sr-only">The chart uses the full strategy-history horizontal domain. Valid partial rolling windows are dotted, complete windows are solid, and missing observations remain gaps with dotted bridges. Tap or drag to inspect exact source observations.</p>
+    </section>
+  );
 }

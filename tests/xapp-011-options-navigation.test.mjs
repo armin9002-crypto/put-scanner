@@ -12,11 +12,6 @@ import {
 
 const expiry = Date.parse('2027-01-15T00:00:00Z') / 1_000;
 
-test('Portfolio navigation preserves the canonical Blended Capture selection', () => {
-  const origin = createOptionsOrigin('portfolio', { presentation: { sortField: 'expiration', sortDir: 'asc', groupMode: 'expiration', mobileAnalytics: 'maturity', analyticsExpanded: false, mobileHistoryOpen: true, historicalMetric: 'blendedCapture', historicalWindowMonths: 6 } });
-  assert.equal(parseOptionsOrigin(origin)?.presentation?.historicalMetric, 'blendedCapture');
-});
-
 test('XAPP-011 allows only the six internal semantic origins', () => {
   for (const [kind, path] of [
     ['scanner', '/'],

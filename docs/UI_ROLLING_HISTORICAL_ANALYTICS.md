@@ -4,27 +4,22 @@ Portfolio History ends with one Historical Analytics surface derived from canoni
 
 ## Controls and information hierarchy
 
-Series selects Rolling or Portfolio State. Metric groups Rolling into Entry / Strategy (Entry AY, Entry IV, Entry Delta, Original DTE, Annualized Premium Run Rate) and Outcomes (Realized AY, Blended Capture). Portfolio State offers Gross Risk Exposure and Avg Remaining DTE. Entry AY is the default.
+The Analytics selector is grouped into Rolling and Portfolio State families. Rolling offers Entry AY, Entry IV, Entry Delta, Realized AY, Original DTE, and Annualized Premium Run Rate. Portfolio State offers Gross Risk Exposure and Avg Remaining DTE. Entry AY is the default.
 
-Rolling metrics show a 3M / 6M / 12M Window control, defaulting to 6M; State hides it and identifies EOD state. Range offers 3M, 6M, YTD, 1Y, 2Y, 3Y, and All. All retains the full strategy-history domain. Ranges slice computed observations without altering calculations; YTD starts January 1 of the canonical current New York market year. Compare is off by default; it overlays 3M/6M/12M for the same metric and units on one axis. The selected Window remains primary, and additional windows are computed only when enabled.
+Rolling metrics show a 3M / 6M / 12M control, defaulting to 6M. State metrics replace that control with **POINT IN TIME**, making the semantic change explicit. All choices retain the full strategy-history x-domain. The surface intentionally has no compare, overlay, or dual-axis mode.
 
-The headline and its through-date always represent the primary series' latest available observation, independent of inspection or display range. Metadata is a compact, horizontally scrollable line. Hover temporarily inspects; click or tap pins. Leaving restores the pin, or current when unpinned. Click the same observation, Clear pin, or Escape to clear. Arrow keys explore dates, Home/End reach endpoints, Enter/Space pins; only deliberate selections are announced. Tooltips preserve unavailable values and show exact supporting risk, requested/effective dates, coverage, and flow annualization. Comparison inspection lists all windows at that exact date without substituting nearby observations.
-
-View data reuses the displayed observations, including null rows, in a focus-trapped modal (desktop) or bottom sheet (phone), with date, value, represented trades/open positions, Gross Risk, coverage/exclusions, and window/state basis. Comparison adds one row per window/date. No constituent trades or provider requests are involved. Methodology is available in a contained chart overlay.
+The header promotes the metric, latest available value, date, and concise coverage context. Hover or touch temporarily inspects an exact observation; leaving the plot restores the latest value. Rolling tooltips distinguish **Partial** from **Full**, show requested and effective starts, available days, represented trades/risk, and whether the Premium factor comes from actual elapsed days or the complete selected window. State tooltips identify end-of-day state and open-book coverage.
 
 ## Line and axis semantics
 
 The chart uses straight segments and real observations only:
 
 - a solid line joins two full rolling-window observations;
-- a dashed prefix joins valid partial observations and the partial-to-full transition;
-- missing/nonfinite observations break the path entirely; singleton valid islands remain visible;
-- no invented point, smoothing, or interpolated tooltip is created;
-- Premium Run Rate uses a restrained area fill; EOD state uses steps, with a restrained area for Gross Risk Exposure.
+- a dotted prefix joins valid partial observations and the partial-to-full transition;
+- a lighter dotted bridge connects the real endpoints around an interior `null` gap;
+- no synthetic point, smoothing, area fill, or interpolated tooltip is created.
 
-Calendar ticks occupy actual year, month, week, or day boundaries, thinning with measured width and text size. Primary value labels identify Current, visible High, and visible Low; shared points deduplicate, and collisions hide lower-priority labels. Axes and values use 12px base type on desktop and 11px on narrow plots, respecting global text scale. Currency, percent, percentage-point, signed Delta, and days formats follow the shared financial language. Zero is included where economically meaningful; other y-domains remain data-driven.
-
-Only visible special states receive in-chart keys. Incomplete coverage is explicitly identified with its percentage and quiet dotted emphasis; missing Delta/IV is never zero. Faint Gross Risk micro-bars sit within the primary plot on wider charts; narrow plots retain supporting data through inspection and View data. These are exposure context, not statistical confidence.
+This makes early usable history visible without implying a complete lookback. Sparse x-axis labels are selected from the actual domain: three on narrow phones, four at medium widths, and six on wider layouts. Multi-year labels use semantic month/year formatting. Currency, percent, percentage-point, signed Delta, and days formats follow the shared financial language. Zero is included where economically meaningful; other y-domains remain data-driven.
 
 Portfolio State is daily-sampled. Gross Risk Exposure therefore visibly steps with EOD openings and terminal events; Avg Remaining DTE decays between entries and can jump when book composition changes. Zero exposure plots at zero, while no-position Avg Remaining DTE remains a gap.
 
@@ -36,6 +31,8 @@ The zero baseline is proportional to the true padded positive/negative data doma
 
 ## Responsive and accessibility rules
 
-The chart fills its measured card width. Touch users tap to pin while vertical page panning remains available. Controls scroll in one contained row at narrow widths and large text. Plot heights remain 18.25rem desktop, 13.25rem portrait mobile, and 9.75rem compact phone landscape. Legends, help, and inspection remain inside the chart; no persistent lower panels or additional subplot are introduced. Dialog dismissal reuses the shared reduced-motion-aware overlay and focus behavior.
+The `106fd983` layout, controls, single-series geometry, labels, metadata and pointer/touch inspection are restored. Motion is presentation-only: metric/window/range changes reveal the new real path over 320ms, with a 210ms opacity arrival for the path and value labels. A 9%-opacity same-color under-stroke (5.5% on gap bridges) adds restrained line depth. Tooltip entrance uses the shared 90ms opacity/3px arrival and disappears immediately on leave. Crosshair and the existing inspection/latest marker fade in once over 90ms; their coordinates never transition. Controls use the existing 150ms color/background/border feedback. There are no perpetual animations, geometric path morphs, interpolated values, extra observers, timers, or animation-driven calculations. All new animation/transition rules are inside `prefers-reduced-motion: no-preference`; reduced motion shows final states immediately. Dimensions and placement remain the baseline's.
 
-The engine owns event dates, window/state calculations, lifecycle boundaries, coverage, zero/null semantics, and sampling. The component owns presentation, local state, responsiveness, and inspection only. Financial series and geometry are memoized separately from pointer state. No persistence, additional requests, current-quote substitutions, new dependencies, or perpetual animation are introduced. Average Days Held was deliberately omitted because History headline and grouped weighting differ; Blended Capture reuses canonical History aggregation on the exact realized-window population.
+The chart fills its measured card width. Desktop and tablet pointers expose a crosshair and marker; touch users can tap or drag while vertical page panning remains available. Mobile compacts the heading and controls and uses readable axis type without widening the page. The SVG has a semantic label and a screen-reader description of full-history, partial, full, and missing-data behavior.
+
+The engine owns event dates, window/state calculations, lifecycle boundaries, coverage, zero/null semantics, and sampling. The component owns presentation, local state, responsiveness, and inspection only. Adding persistence, provider requests, current-quote substitutions, overlays, or a second axis requires a separate product decision.

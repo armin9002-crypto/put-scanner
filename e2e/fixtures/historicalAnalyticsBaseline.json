@@ -1,0 +1,657 @@
+{
+  "commit": "106fd983ba9a013e2dba1304bc5d8058278504d7",
+  "date": "2026-09-29T17:00:00Z",
+  "description": "Captured from the exact restored pre-motion files using historical-analytics-restoration.spec.ts, system Chrome on Windows. Hash covers settled heading, controls, plot, original paths and all SVG labels. No account data.",
+  "captures": {
+    "1440x900-small": {
+      "size": [
+        1384,
+        401.390625
+      ],
+      "plot": [
+        13,
+        96.39,
+        1358,
+        292
+      ],
+      "sha256": "282424f151af0539f672a1291719f5337e81b7cd6cb735d87d38c3d820388de3"
+    },
+    "1440x900-medium": {
+      "size": [
+        1384,
+        412.28125
+      ],
+      "plot": [
+        13,
+        107.28,
+        1358,
+        292
+      ],
+      "sha256": "b3a7f1ac10cb6ed7b6a8640e575d3c7fc08c80d7e6f7289944b04f30446d0b81"
+    },
+    "1440x900-large": {
+      "size": [
+        1384,
+        423.1875
+      ],
+      "plot": [
+        13,
+        118.19,
+        1358,
+        292
+      ],
+      "sha256": "7c37e5b2bcd8123eefeda45a6802fb05761577908f1772fa581ed3a4439b5100"
+    },
+    "320x844-small": {
+      "size": [
+        292,
+        415.5625
+      ],
+      "plot": [
+        11.39,
+        192.17,
+        269.22,
+        212
+      ],
+      "sha256": "fd6ed1cc83152c670effa1bef1c78c6cbc2548dee950d0a4386635d273288b29"
+    },
+    "320x844-medium": {
+      "size": [
+        292,
+        435.03125
+      ],
+      "plot": [
+        11.39,
+        211.64,
+        269.22,
+        212
+      ],
+      "sha256": "a93453160831435bb3ef8b1579e79546646aaf7c288f328803fef22a451921b5"
+    },
+    "320x844-large": {
+      "size": [
+        292,
+        472.5625
+      ],
+      "plot": [
+        11.39,
+        249.17,
+        269.22,
+        212
+      ],
+      "sha256": "57e3cf67c89bef961f12192585fdded2e906a027c49cae99256ff90521a4d86f"
+    },
+    "375x812-small": {
+      "size": [
+        347,
+        415.5625
+      ],
+      "plot": [
+        11.39,
+        192.17,
+        324.22,
+        212
+      ],
+      "sha256": "280157f4bea02179f673dfb9897639ce10879968fc6093456c1bf2bafa811e6f"
+    },
+    "375x812-medium": {
+      "size": [
+        347,
+        435.03125
+      ],
+      "plot": [
+        11.39,
+        211.64,
+        324.22,
+        212
+      ],
+      "sha256": "99b9c79495640cf98e1dc0a77d750fc8ca2cea5a06968c675c95abd47e14d13c"
+    },
+    "375x812-large": {
+      "size": [
+        347,
+        454.59375
+      ],
+      "plot": [
+        11.39,
+        231.2,
+        324.22,
+        212
+      ],
+      "sha256": "f95c0eea8097d70758446a1794a2f3bb7ecf50f5ce6a4981da567387df545eb3"
+    },
+    "390x844-small": {
+      "size": [
+        362,
+        402.171875
+      ],
+      "plot": [
+        11.39,
+        178.78,
+        339.22,
+        212
+      ],
+      "sha256": "46ed5e2266d7e061a3eeb66327e92d67fe958f3e410cd0dc55728728c01f0b5c"
+    },
+    "390x844-medium": {
+      "size": [
+        362,
+        435.03125
+      ],
+      "plot": [
+        11.39,
+        211.64,
+        339.22,
+        212
+      ],
+      "sha256": "cbad5cf5a07c4a08a9f97c8d8afe1bc550b0343885da7f0cb8dbfa36d4ef2618"
+    },
+    "390x844-large": {
+      "size": [
+        362,
+        454.59375
+      ],
+      "plot": [
+        11.39,
+        231.2,
+        339.22,
+        212
+      ],
+      "sha256": "2e1229db80fa40296e336bbe27a528a4282d30b74ad00d549cdbbe1ee967a2c7"
+    },
+    "430x932-small": {
+      "size": [
+        402,
+        388.265625
+      ],
+      "plot": [
+        11.39,
+        164.88,
+        379.22,
+        212
+      ],
+      "sha256": "36888530347c8a89cd10c3c75376071c7b40e4b709e4f825510810d14e1bcaf6"
+    },
+    "430x932-medium": {
+      "size": [
+        402,
+        435.03125
+      ],
+      "plot": [
+        11.39,
+        211.64,
+        379.22,
+        212
+      ],
+      "sha256": "fed6157518d327ff7c82723a2c29ee200180af9c7b5aaf1b8533c342a4cb4a15"
+    },
+    "430x932-large": {
+      "size": [
+        402,
+        454.59375
+      ],
+      "plot": [
+        11.39,
+        231.2,
+        379.22,
+        212
+      ],
+      "sha256": "d442721b823a09938cbe75b0345356d6c95702da99851b2c8614d1ab01462ae7"
+    },
+    "844x390-small": {
+      "size": [
+        806.875,
+        228.375
+      ],
+      "plot": [
+        9.8,
+        62.58,
+        787.28,
+        156
+      ],
+      "sha256": "6046f6890fab2f23bae64392bd3ec9dad1f62428541a364f797e0e0663d2540e"
+    },
+    "844x390-medium": {
+      "size": [
+        806.875,
+        230.609375
+      ],
+      "plot": [
+        9.8,
+        64.81,
+        787.28,
+        156
+      ],
+      "sha256": "fda15a13973623c75520361abadcfacf2999cd7d558507989727cfda8a6f6cfc"
+    },
+    "844x390-large": {
+      "size": [
+        806.875,
+        235.734375
+      ],
+      "plot": [
+        9.8,
+        69.94,
+        787.28,
+        156
+      ],
+      "sha256": "6931f737949d0e0058d33552578c49d61be8012b37fd0b1c0b3c9c86fdc6c811"
+    },
+    "dark-entryAy": {
+      "size": [
+        1384,
+        401.390625
+      ],
+      "plot": [
+        13,
+        96.39,
+        1358,
+        292
+      ],
+      "sha256": "282424f151af0539f672a1291719f5337e81b7cd6cb735d87d38c3d820388de3"
+    },
+    "dark-realizedIrr": {
+      "size": [
+        1384,
+        401.390625
+      ],
+      "plot": [
+        13,
+        96.39,
+        1358,
+        292
+      ],
+      "sha256": "75f34620705c518d146070dbadf7302a41411e14fe2aab82d67223062ce0539c"
+    },
+    "dark-entryDelta": {
+      "size": [
+        1384,
+        401.390625
+      ],
+      "plot": [
+        13,
+        96.39,
+        1358,
+        292
+      ],
+      "sha256": "5d4c5a3299c4a62b9d96bcf113569fcdd4ee0ea215adfe2020f71712c4aa6083"
+    },
+    "dark-entryIv": {
+      "size": [
+        1384,
+        401.390625
+      ],
+      "plot": [
+        13,
+        96.39,
+        1358,
+        292
+      ],
+      "sha256": "de1da941639182ef1c284884282e6da8207e3f285ea30e3e77d4d4f056d528df"
+    },
+    "dark-premiumRunRate": {
+      "size": [
+        1384,
+        401.390625
+      ],
+      "plot": [
+        13,
+        96.39,
+        1358,
+        292
+      ],
+      "sha256": "11f790252af5df6a993258a8768447689dbe1638343695c55dbaca829801abcd"
+    },
+    "dark-originalDte": {
+      "size": [
+        1384,
+        401.390625
+      ],
+      "plot": [
+        13,
+        96.39,
+        1358,
+        292
+      ],
+      "sha256": "ae259dbf9c33df822ffedc3eac97c86aa3c976f9c53b782d137bba06072705bf"
+    },
+    "dark-grossRiskExposure": {
+      "size": [
+        1384,
+        401.390625
+      ],
+      "plot": [
+        13,
+        96.39,
+        1358,
+        292
+      ],
+      "sha256": "18d0a1edba668e9f47ef321f4d6c959a00dbb5385cdf40fd2f09a4f2648259f6"
+    },
+    "dark-averageRemainingDte": {
+      "size": [
+        1384,
+        401.390625
+      ],
+      "plot": [
+        13,
+        96.39,
+        1358,
+        292
+      ],
+      "sha256": "a7593dda0c73f93d1f95a264a65f13f2d432964b0b3b33dfbe579996ad805d40"
+    },
+    "light-entryAy": {
+      "size": [
+        1384,
+        401.390625
+      ],
+      "plot": [
+        13,
+        96.39,
+        1358,
+        292
+      ],
+      "sha256": "282424f151af0539f672a1291719f5337e81b7cd6cb735d87d38c3d820388de3"
+    },
+    "light-realizedIrr": {
+      "size": [
+        1384,
+        401.390625
+      ],
+      "plot": [
+        13,
+        96.39,
+        1358,
+        292
+      ],
+      "sha256": "75f34620705c518d146070dbadf7302a41411e14fe2aab82d67223062ce0539c"
+    },
+    "light-entryDelta": {
+      "size": [
+        1384,
+        401.390625
+      ],
+      "plot": [
+        13,
+        96.39,
+        1358,
+        292
+      ],
+      "sha256": "5d4c5a3299c4a62b9d96bcf113569fcdd4ee0ea215adfe2020f71712c4aa6083"
+    },
+    "light-entryIv": {
+      "size": [
+        1384,
+        401.390625
+      ],
+      "plot": [
+        13,
+        96.39,
+        1358,
+        292
+      ],
+      "sha256": "de1da941639182ef1c284884282e6da8207e3f285ea30e3e77d4d4f056d528df"
+    },
+    "light-premiumRunRate": {
+      "size": [
+        1384,
+        401.390625
+      ],
+      "plot": [
+        13,
+        96.39,
+        1358,
+        292
+      ],
+      "sha256": "11f790252af5df6a993258a8768447689dbe1638343695c55dbaca829801abcd"
+    },
+    "light-originalDte": {
+      "size": [
+        1384,
+        401.390625
+      ],
+      "plot": [
+        13,
+        96.39,
+        1358,
+        292
+      ],
+      "sha256": "ae259dbf9c33df822ffedc3eac97c86aa3c976f9c53b782d137bba06072705bf"
+    },
+    "light-grossRiskExposure": {
+      "size": [
+        1384,
+        401.390625
+      ],
+      "plot": [
+        13,
+        96.39,
+        1358,
+        292
+      ],
+      "sha256": "18d0a1edba668e9f47ef321f4d6c959a00dbb5385cdf40fd2f09a4f2648259f6"
+    },
+    "light-averageRemainingDte": {
+      "size": [
+        1384,
+        401.390625
+      ],
+      "plot": [
+        13,
+        96.39,
+        1358,
+        292
+      ],
+      "sha256": "a7593dda0c73f93d1f95a264a65f13f2d432964b0b3b33dfbe579996ad805d40"
+    },
+    "sepia-entryAy": {
+      "size": [
+        1384,
+        401.390625
+      ],
+      "plot": [
+        13,
+        96.39,
+        1358,
+        292
+      ],
+      "sha256": "282424f151af0539f672a1291719f5337e81b7cd6cb735d87d38c3d820388de3"
+    },
+    "sepia-realizedIrr": {
+      "size": [
+        1384,
+        401.390625
+      ],
+      "plot": [
+        13,
+        96.39,
+        1358,
+        292
+      ],
+      "sha256": "75f34620705c518d146070dbadf7302a41411e14fe2aab82d67223062ce0539c"
+    },
+    "sepia-entryDelta": {
+      "size": [
+        1384,
+        401.390625
+      ],
+      "plot": [
+        13,
+        96.39,
+        1358,
+        292
+      ],
+      "sha256": "5d4c5a3299c4a62b9d96bcf113569fcdd4ee0ea215adfe2020f71712c4aa6083"
+    },
+    "sepia-entryIv": {
+      "size": [
+        1384,
+        401.390625
+      ],
+      "plot": [
+        13,
+        96.39,
+        1358,
+        292
+      ],
+      "sha256": "de1da941639182ef1c284884282e6da8207e3f285ea30e3e77d4d4f056d528df"
+    },
+    "sepia-premiumRunRate": {
+      "size": [
+        1384,
+        401.390625
+      ],
+      "plot": [
+        13,
+        96.39,
+        1358,
+        292
+      ],
+      "sha256": "11f790252af5df6a993258a8768447689dbe1638343695c55dbaca829801abcd"
+    },
+    "sepia-originalDte": {
+      "size": [
+        1384,
+        401.390625
+      ],
+      "plot": [
+        13,
+        96.39,
+        1358,
+        292
+      ],
+      "sha256": "ae259dbf9c33df822ffedc3eac97c86aa3c976f9c53b782d137bba06072705bf"
+    },
+    "sepia-grossRiskExposure": {
+      "size": [
+        1384,
+        401.390625
+      ],
+      "plot": [
+        13,
+        96.39,
+        1358,
+        292
+      ],
+      "sha256": "18d0a1edba668e9f47ef321f4d6c959a00dbb5385cdf40fd2f09a4f2648259f6"
+    },
+    "sepia-averageRemainingDte": {
+      "size": [
+        1384,
+        401.390625
+      ],
+      "plot": [
+        13,
+        96.39,
+        1358,
+        292
+      ],
+      "sha256": "a7593dda0c73f93d1f95a264a65f13f2d432964b0b3b33dfbe579996ad805d40"
+    },
+    "dark-blue-entryAy": {
+      "size": [
+        1384,
+        401.390625
+      ],
+      "plot": [
+        13,
+        96.39,
+        1358,
+        292
+      ],
+      "sha256": "282424f151af0539f672a1291719f5337e81b7cd6cb735d87d38c3d820388de3"
+    },
+    "dark-blue-realizedIrr": {
+      "size": [
+        1384,
+        401.390625
+      ],
+      "plot": [
+        13,
+        96.39,
+        1358,
+        292
+      ],
+      "sha256": "75f34620705c518d146070dbadf7302a41411e14fe2aab82d67223062ce0539c"
+    },
+    "dark-blue-entryDelta": {
+      "size": [
+        1384,
+        401.390625
+      ],
+      "plot": [
+        13,
+        96.39,
+        1358,
+        292
+      ],
+      "sha256": "5d4c5a3299c4a62b9d96bcf113569fcdd4ee0ea215adfe2020f71712c4aa6083"
+    },
+    "dark-blue-entryIv": {
+      "size": [
+        1384,
+        401.390625
+      ],
+      "plot": [
+        13,
+        96.39,
+        1358,
+        292
+      ],
+      "sha256": "de1da941639182ef1c284884282e6da8207e3f285ea30e3e77d4d4f056d528df"
+    },
+    "dark-blue-premiumRunRate": {
+      "size": [
+        1384,
+        401.390625
+      ],
+      "plot": [
+        13,
+        96.39,
+        1358,
+        292
+      ],
+      "sha256": "11f790252af5df6a993258a8768447689dbe1638343695c55dbaca829801abcd"
+    },
+    "dark-blue-originalDte": {
+      "size": [
+        1384,
+        401.390625
+      ],
+      "plot": [
+        13,
+        96.39,
+        1358,
+        292
+      ],
+      "sha256": "ae259dbf9c33df822ffedc3eac97c86aa3c976f9c53b782d137bba06072705bf"
+    },
+    "dark-blue-grossRiskExposure": {
+      "size": [
+        1384,
+        401.390625
+      ],
+      "plot": [
+        13,
+        96.39,
+        1358,
+        292
+      ],
+      "sha256": "18d0a1edba668e9f47ef321f4d6c959a00dbb5385cdf40fd2f09a4f2648259f6"
+    },
+    "dark-blue-averageRemainingDte": {
+      "size": [
+        1384,
+        401.390625
+      ],
+      "plot": [
+        13,
+        96.39,
+        1358,
+        292
+      ],
+      "sha256": "a7593dda0c73f93d1f95a264a65f13f2d432964b0b3b33dfbe579996ad805d40"
+    }
+  }
+}

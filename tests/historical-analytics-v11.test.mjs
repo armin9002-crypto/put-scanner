@@ -195,9 +195,9 @@ test('Realized chart scale uses a proportional dynamic zero and adaptive slot ge
   assert.match(page, /Realized history metric/);
   assert.match(page, /Blended Capture/);
   assert.match(chart, /rolling-historical-analytics__line--\$\{segment\.kind\}/);
-  assert.match(chart, /segmentHistoricalPoints/);
-  assert.match(chart, /point\.fullWindow/);
-  assert.match(chart, /Partial lookback/);
-  assert.match(chart, /unavailable observations are gaps without connecting lines/);
+  assert.match(chart, /kind: 'solid' \| 'partial' \| 'gap'/);
+  assert.match(chart, /selectedPoint\.fullWindow/);
+  assert.match(chart, /formatAvailableMonths/);
+  assert.match(chart, /of \$\{point\.requestedWindowMonths\} months available/);
   assert.doesNotMatch(chart, /synthetic/i);
 });

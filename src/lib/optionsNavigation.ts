@@ -132,7 +132,7 @@ function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[])
 const PORTFOLIO_HISTORY_OUTCOMES = ['all', 'expired_worthless', 'closed', 'expired_itm', 'assigned'] as const;
 const PORTFOLIO_HISTORY_GROUPS = ['year', 'expiration', 'underlying', 'none'] as const;
 const PORTFOLIO_HISTORY_SORT_FIELDS = ['ticker', 'expiration', 'strike', 'contracts', 'grossRisk', 'entry', 'daysHeld', 'soldPrice', 'ny', 'entryVix', 'entryIv', 'priceAtExpiration', 'premium', 'realizedPnl', 'realizedIrr', 'percentCaptured', 'entryDelta', 'outcome'] as const;
-const PORTFOLIO_HISTORICAL_METRICS = ['realizedIrr', 'blendedCapture', 'entryAy', 'premiumRunRate', 'entryDelta', 'entryIv', 'originalDte', 'grossRiskExposure', 'averageRemainingDte'] as const;
+const PORTFOLIO_HISTORICAL_METRICS = ['realizedIrr', 'entryAy', 'premiumRunRate', 'entryDelta', 'entryIv', 'originalDte', 'grossRiskExposure', 'averageRemainingDte'] as const;
 
 function boundedBooleanMap(value: unknown): value is Record<string, boolean> {
   if (!isRecord(value)) return false;
