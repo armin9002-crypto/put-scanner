@@ -69,8 +69,9 @@ export default async function handler(req, res) {
     };
   }
 
-  res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=900');
+  const cacheControl = req.query.revalidate === '1' ? 'private, no-store' : 'public, s-maxage=300, stale-while-revalidate=900';
+  res.setHeader('Cache-Control', cacheControl);
   res.setHeader('X-Upstream-Requests', String(chunks.length));
-  res.setHeader('X-PutScanner-Cache-Strategy', 'public, s-maxage=300, stale-while-revalidate=900');
+  res.setHeader('X-PutScanner-Cache-Strategy', cacheControl);
   return res.status(200).json(prices);
 }

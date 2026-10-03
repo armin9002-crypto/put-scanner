@@ -349,7 +349,7 @@ export default function HomePage() {
     const generation = ++expirationRequestRef.current.generation;
     expirationRequestRef.current.controller = controller;
     setExpirationDatesLoading(true);
-    fetchScreenerExpirationAvailability({ signal: controller.signal, nowMs })
+    fetchScreenerExpirationAvailability({ signal: controller.signal })
       .then(result => {
         if (controller.signal.aborted || generation !== expirationRequestRef.current.generation) return;
         const nextState = buildExpirationState(

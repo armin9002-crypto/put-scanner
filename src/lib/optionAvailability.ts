@@ -1,4 +1,5 @@
 import { calculateDte } from './optionMetrics.ts';
+import { normalizeMarketTimestamp } from './marketTimestamp.ts';
 import { elapsedUsEquityTradingSessions, isUsEquityRegularSession, usMarketDateIso } from './usMarketCalendar.ts';
 
 const DAY_MS = 86_400_000;
@@ -22,8 +23,10 @@ export const OPTION_AVAILABILITY_MAX_SESSION_AGE = 3;
 export const OPTION_AVAILABILITY_CACHE_HARD_TTL_MS = 14 * DAY_MS;
 
 export function optionAvailabilitySessionAge(observedAt: number, nowMs = Date.now()): number | null {
-  if (!Number.isFinite(observedAt) || observedAt > nowMs) return null;
-  const observedDate = usMarketDateIso(observedAt);
+  if (!Number.isFinite(observedAt) || normalizeMarketTimestamp(observedAt, { nowMs }) !== observedAt) return null;
+  // Server observations can be slightly ahead of the browser clock. Use the
+  // canonical five-minute skew bound, without changing the stored observation.
+  const observedDate = usMarketDateIso(Math.min(observedAt, nowMs));
   const currentDate = usMarketDateIso(nowMs);
   if (!observedDate || !currentDate) return null;
   return elapsedUsEquityTradingSessions(observedDate, currentDate);
@@ -40,12 +43,13 @@ export function isTrustedOptionAvailabilityObservation(
 
 /** Revalidate once a new regular session is actually open; closed-market time is quiet. */
 export function optionAvailabilityNeedsRevalidation(observedAt: number | null | undefined, nowMs = Date.now()): boolean {
-  if (!Number.isFinite(observedAt) || (observedAt as number) > nowMs) return true;
+  if (observedAt == null || optionAvailabilitySessionAge(observedAt, nowMs) == null) return true;
   if (!isUsEquityRegularSession(nowMs)) return false;
-  const observedDate = usMarketDateIso(observedAt as number);
+  const effectiveObservedAt = Math.min(observedAt, nowMs);
+  const observedDate = usMarketDateIso(effectiveObservedAt);
   const currentDate = usMarketDateIso(nowMs);
   if (!observedDate || !currentDate) return true;
-  return observedDate !== currentDate || !isUsEquityRegularSession(observedAt as number);
+  return observedDate !== currentDate || !isUsEquityRegularSession(effectiveObservedAt);
 }
 
 export function trustedFutureListedExpirations(

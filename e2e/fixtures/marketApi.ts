@@ -131,7 +131,12 @@ export async function installDeterministicMarketApi(page: Page, options: MarketF
       const payload = chart((url.searchParams.get('ticker') || 'TQQQ').toUpperCase());
       return json(route, url.searchParams.has('start') || url.searchParams.has('end') ? { ...payload, timeframe: 'custom' } : payload);
     }
-    if (endpoint === 'screener-expirations') return json(route, { datasetVersion: 4, fetchedAt: options.expirationFetchedAt ?? 1_798_000_000_000, complete: true, expirationsByTicker: options.expirationsByTicker ?? Object.fromEntries(SCREENER_CHUNKS.flatMap(chunk => chunk.tickers).map(ticker => [ticker, [NEAR_EXPIRATION, EXPIRATION, SECOND_EXPIRATION]])), errors: [], diagnostics: { upstreamRequests: 42, maxObservedConcurrency: 3, circuitBreakerRejections: 0 } }, 200, { 'X-PutScanner-Upstream-Requests': '42' });
+    if (endpoint === 'screener-expirations') {
+      // Stamp acquisition at response time on the test's browser clock, including
+      // when Playwright freezes it. A fixed future date invalidates real trust gates.
+      const fetchedAt = options.expirationFetchedAt ?? await page.evaluate(() => Date.now());
+      return json(route, { datasetVersion: 4, fetchedAt, complete: true, expirationsByTicker: options.expirationsByTicker ?? Object.fromEntries(SCREENER_CHUNKS.flatMap(chunk => chunk.tickers).map(ticker => [ticker, [NEAR_EXPIRATION, EXPIRATION, SECOND_EXPIRATION]])), errors: [], diagnostics: { upstreamRequests: 42, maxObservedConcurrency: 3, circuitBreakerRejections: 0 } }, 200, { 'X-PutScanner-Upstream-Requests': '42' });
+    }
     if (endpoint === 'screener-batch') {
       const chunkId = Number(url.searchParams.get('chunk'));
       const chunk = SCREENER_CHUNKS[chunkId];

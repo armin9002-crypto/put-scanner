@@ -15,6 +15,14 @@ export { calculatePutDelta } from './putDelta';
 
 const API_BASE = '/api';
 
+// Revalidation must cross browser/CDN caches as well as the local broker cache.
+// Keep it distinct from `fresh`, which can override provider circuit cooldowns.
+function revalidationTransport(url: string, mode: RefreshMode | undefined): { url: string; cache?: RequestCache } {
+  return mode && mode !== 'cache-first'
+    ? { url: `${url}&revalidate=1&_=${Date.now()}`, cache: 'no-store' }
+    : { url };
+}
+
 interface FetchOptionsOptions {
   bypassCache?: boolean;
   fresh?: boolean;
@@ -65,7 +73,8 @@ export async function fetchBatchPricesResult(tickers: string[], options: { mode?
     signal: options.signal,
     validator: data => isValidBatchResponse(data, normalizedTickers),
     fetcher: async signal => {
-      const res = await fetchObservedMarketData('prices', `${API_BASE}/prices?tickers=${encodeURIComponent(normalizedTickers.join(','))}`, { signal }, 'fetchBatchPrices');
+      const transport = revalidationTransport(`${API_BASE}/prices?tickers=${encodeURIComponent(normalizedTickers.join(','))}`, options.mode);
+      const res = await fetchObservedMarketData('prices', transport.url, { signal, cache: transport.cache }, 'fetchBatchPrices');
       if (!res.ok) {
         const error = new Error('Failed to fetch batch prices') as Error & { status: number };
         error.status = res.status;
@@ -161,8 +170,8 @@ export async function fetchOptions(ticker: string, date?: number, options: Fetch
     let url = `${API_BASE}/options?ticker=${encodeURIComponent(normalizedTicker)}&v=${OPTIONS_CACHE_SCHEMA_VERSION}`;
     if (date) url += `&date=${date}`;
     if (fresh) url += `&fresh=1&_=${Date.now()}`;
-
-    const res = await fetchObservedMarketData('options', url, { signal, ...(fresh ? { cache: 'no-store' as RequestCache } : {}) }, source);
+    const transport = fresh ? { url, cache: 'no-store' as RequestCache } : revalidationTransport(url, mode);
+    const res = await fetchObservedMarketData('options', transport.url, { signal, cache: transport.cache }, source);
     if (!res.ok) {
       const error = new Error(`Failed to fetch options for ${normalizedTicker}`) as Error & { status: number };
       error.status = res.status;
@@ -256,7 +265,8 @@ export async function fetchSparklineResult(ticker: string, options: { mode?: Ref
     signal: options.signal,
     validator: isSparklineData,
     fetcher: async signal => {
-      const res = await fetchObservedMarketData('price', `${API_BASE}/price?ticker=${encodeURIComponent(ticker)}&range=1d&interval=1m`, { signal }, 'fetchSparkline');
+      const transport = revalidationTransport(`${API_BASE}/price?ticker=${encodeURIComponent(ticker)}&range=1d&interval=1m`, options.mode);
+      const res = await fetchObservedMarketData('price', transport.url, { signal, cache: transport.cache }, 'fetchSparkline');
       if (!res.ok) throw new Error(`Failed to fetch sparkline for ${ticker}`);
       const data = await res.json();
       if (data.error) throw new Error(data.error);

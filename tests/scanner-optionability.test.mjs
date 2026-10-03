@@ -81,11 +81,12 @@ test('whole request fallback drops negatives and expired dates; provider observa
   assert.deepEqual(normalizeScreenerExpirationAvailability(previous, false, now + 4 * 86400000).expirationsByTicker, {});
 });
 
-test('real shared request cache retains positive evidence after a failed next-session refresh', async () => {
+test('real shared request cache retains positive evidence after a failed next-session refresh', async t => {
   const key = 'screener_expirations_v4';
   const originalFetch = globalThis.fetch;
   const observed = Date.parse('2026-09-18T21:00:00Z');
   const mondayOpen = Date.parse('2026-09-21T14:00:00Z');
+  t.mock.method(Date, 'now', () => mondayOpen);
   const dynamicFuture = Math.floor(Date.parse('2026-10-16T00:00:00Z') / 1000);
   const previous = payload(Object.fromEntries(SCREENER_TICKERS.map(ticker => [ticker, ticker === 'TQQQ' ? [dynamicFuture] : []])), { complete: true, fetchedAt: observed });
   primeMarketDataCache({ key, softTtlMs: 2 * hour, hardTtlMs: 14 * 86400000, schemaVersion: 4, storage: 'local', validator: () => true }, previous, observed);

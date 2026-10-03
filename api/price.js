@@ -119,7 +119,7 @@ export default async function handler(req, res) {
       }
     }
 
-    res.setHeader('Cache-Control', extended
+    res.setHeader('Cache-Control', req.query.revalidate === '1' ? 'private, no-store' : extended
       ? 'public, s-maxage=300, stale-while-revalidate=900'
       : 'public, s-maxage=120, stale-while-revalidate=300');
     return res.status(200).json(response);

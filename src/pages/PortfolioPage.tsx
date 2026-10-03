@@ -1977,7 +1977,6 @@ export default function PortfolioPage() {
       if (open.length === 0) {
         if (refreshGeneration !== quoteRefreshGenerationRef.current) return;
         setTrades(sweepTrades);
-        setLastRefreshed(new Date());
         return;
       }
 
@@ -1988,7 +1987,7 @@ export default function PortfolioPage() {
         return null;
       });
       const batchPrices = batchPriceResult?.data ?? null;
-      let partialFailure = batchPriceResult?.staleFallbackUsed === true;
+      let partialFailure = batchPriceResult == null || batchPriceResult.staleFallbackUsed;
       const requestItems = open.map(trade => {
         const timestamp = isoToUnixSeconds(trade.expiration);
         return timestamp == null ? null : { ticker: trade.ticker, expirationTimestamp: timestamp };
@@ -2106,8 +2105,8 @@ export default function PortfolioPage() {
       const latest = loadPortfolioTrades();
       const reconciled = mergePortfolioMarketRefresh(latest, refreshed);
       const persisted = persistTrades(reconciled);
-      setRefreshWarning(!persisted || (partialFailure && reconciled.some(trade => trade.status === 'open' && resolvePortfolioMark(trade, markBasis).value == null)));
-      if (persisted) setLastRefreshed(new Date());
+      setRefreshWarning(!persisted || partialFailure);
+      if (persisted && !partialFailure) setLastRefreshed(new Date());
     } catch {
       if (refreshGeneration === quoteRefreshGenerationRef.current && !controller.signal.aborted) setRefreshWarning(true);
     } finally {
@@ -2117,7 +2116,7 @@ export default function PortfolioPage() {
         setRefreshing(false);
       }
     }
-  }, [persistTrades, markBasis]);
+  }, [persistTrades]);
 
   useEffect(() => {
     if (autoRefreshStartedRef.current) return;

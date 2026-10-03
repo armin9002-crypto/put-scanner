@@ -40,7 +40,7 @@ export default async function handler(req, res) {
       throw error;
     }
 
-    const cacheControl = fresh || inspection.status === 'no_options'
+    const cacheControl = fresh || req.query.revalidate === '1' || inspection.status === 'no_options'
         ? 'no-store'
         : date
           ? 'public, s-maxage=600, stale-while-revalidate=1800'
